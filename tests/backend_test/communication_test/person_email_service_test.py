@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from backend.common.communication_enums import ContextType
+from backend.common.exceptions import ConflictError, NotFoundError
 from backend.communication.person_email_service import (
     BodyFormat,
     EmailPolicy,
@@ -285,6 +286,192 @@ class ConversationTest(_Fixture):
         await self.service.conversation(self.session, _policy())
 
         self.users.get_all_by_ids.assert_not_awaited()
+
+
+class SendNewTest(_Fixture):
+    async def _send_new(self, policy=None, **overrides):
+        args = {
+            "sender_user_id": 900,
+            "to": ["ann@x.com"],
+            "subject": "Your round",
+            "body": "Hi Ann,\n<b>see</b> you",
+        }
+        args.update(overrides)
+        return await self.service.send_new(self.session, policy or _policy(), **args)
+
+    async def test_text_is_escaped_for_gmail_and_kept_as_typed(self):
+        message = await self._send_new()
+
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertEqual(kwargs["body"], "Hi Ann,<br>&lt;b&gt;see&lt;/b&gt; you")
+        self.assertEqual(kwargs["body_text"], "Hi Ann,\n<b>see</b> you")
+        self.assertEqual(
+            (kwargs["user_id"], kwargs["context_type"], kwargs["context_id"]),
+            (32, ContextType.ACTIVITY, 8),
+        )
+        self.assertEqual(kwargs["sender_address"], _ALIAS)
+        self.assertEqual(kwargs["sender_user_id"], 900)
+        self.assertNotIn("thread_id", kwargs)
+        self.assertEqual(message.message_id, 999)
+        self.session.commit.assert_not_called()
+
+    async def test_rich_html_goes_out_as_written_with_no_text_copy(self):
+        await self._send_new(_policy(body_format=BodyFormat.RICH), body="<p>Hi</p>")
+
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertEqual((kwargs["body"], kwargs["body_text"]), ("<p>Hi</p>", None))
+
+    async def test_recipients_match_case_and_spacing_and_are_sent_as_offered(self):
+        await self._send_new(to=[" ANN@X.com ", "ann.work@y.com", "ann@x.com"])
+
+        self.assertEqual(
+            self.conversation.send.call_args.kwargs["to"],
+            ["ann@x.com", "ann.work@y.com"],
+        )
+
+    async def test_an_address_that_is_not_offered_is_refused(self):
+        for to in (["ann@x.com", "eve@evil.com"], [], ["Ann <ann@x.com>"]):
+            with self.subTest(to=to):
+                with self.assertRaises(ValueError):
+                    await self._send_new(to=to)
+
+        self.conversation.send.assert_not_awaited()
+
+    async def test_the_subject_is_one_line_and_fits_a_reply_prefix(self):
+        await self._send_new(subject="  Your\r\nround \tdates ")
+        self.assertEqual(
+            self.conversation.send.call_args.kwargs["subject"], "Your round dates"
+        )
+
+        for subject in ("", " \n ", "x" * 991):
+            with self.subTest(length=len(subject)):
+                with self.assertRaises(ValueError):
+                    await self._send_new(subject=subject)
+
+        await self._send_new(subject="x" * 990)
+        self.assertEqual(len(self.conversation.send.call_args.kwargs["subject"]), 990)
+
+    async def test_text_body_must_say_something_and_not_too_much(self):
+        for body in ("", "  \n ", "x" * 10_001):
+            with self.subTest(length=len(body)):
+                with self.assertRaises(ValueError):
+                    await self._send_new(body=body)
+
+        self.conversation.send.assert_not_awaited()
+        await self._send_new(body="x" * 10_000)
+
+    async def test_no_sender_address_or_no_write_refuses_before_gmail(self):
+        for policy in (_policy(sender_address=None), _policy(may_send=False)):
+            with self.subTest(policy=policy):
+                with self.assertRaises(ValueError):
+                    await self._send_new(policy)
+
+        self.conversation.send.assert_not_awaited()
+
+
+class ReplyTest(_Fixture):
+    def setUp(self):
+        super().setUp()
+        self.threads = {
+            70: _thread(70),
+            71: _thread(71, user_id=33),
+            72: _thread(72, context_id=9),
+            73: _thread(73, context_type=ContextType.APPLICATION),
+        }
+        self.messages = {
+            70: [_out(1, 0), _in(2, 5, sender="Ann <Ann@X.com>")],
+            71: [_in(3, 0, thread_id=71)],
+            72: [_in(4, 0, thread_id=72)],
+            73: [_in(5, 0, thread_id=73)],
+        }
+
+    async def _reply(self, policy=None, thread_id=70, last_seen=2, body="Thanks!\nBo"):
+        return await self.service.reply(
+            self.session,
+            policy or _policy(),
+            sender_user_id=900,
+            thread_id=thread_id,
+            body=body,
+            last_seen_message_id=last_seen,
+        )
+
+    async def test_reply_goes_to_the_newest_human_sender_in_the_same_thread(self):
+        await self._reply()
+
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertEqual(kwargs["to"], ["ann@x.com"])
+        self.assertEqual(kwargs["subject"], "Re: Your round")
+        self.assertEqual(kwargs["thread_id"], 70)
+        self.assertEqual(kwargs["body"], "Thanks!<br>Bo")
+        self.assertEqual(kwargs["body_text"], "Thanks!\nBo")
+        self.assertEqual(kwargs["sender_address"], _ALIAS)
+        self.assertEqual(
+            (kwargs["user_id"], kwargs["context_type"], kwargs["context_id"]),
+            (32, ContextType.ACTIVITY, 8),
+        )
+
+    async def test_a_newer_message_than_the_one_seen_is_a_conflict(self):
+        with self.assertRaises(ConflictError) as caught:
+            await self._reply(last_seen=1)
+
+        self.assertEqual(caught.exception.code, "THREAD_CHANGED")
+        self.conversation.send.assert_not_awaited()
+
+    async def test_a_thread_of_another_person_round_or_context_is_not_found(self):
+        for thread_id in (71, 72, 73, 404):
+            with self.subTest(thread_id=thread_id):
+                with self.assertRaises(NotFoundError):
+                    await self._reply(thread_id=thread_id, last_seen=None)
+
+        self.conversation.send.assert_not_awaited()
+
+    async def test_no_sender_address_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self._reply(_policy(sender_address=None))
+
+        self.conversation.send.assert_not_awaited()
+
+    async def test_an_empty_reply_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self._reply(body="  ")
+
+        self.conversation.send.assert_not_awaited()
+
+
+class ReplyIntoTest(_Fixture):
+    """The core the Inbox shares: no policy, the caller names the sender."""
+
+    async def test_a_thread_nobody_wrote_in_has_nobody_to_reply_to(self):
+        self.messages = {70: []}
+
+        with self.assertRaises(ValueError):
+            await self.service.reply_into(
+                self.session,
+                _thread(70),
+                body="<p>x</p>",
+                body_format=BodyFormat.RICH,
+                last_seen_message_id=None,
+                sender_address=_ALIAS,
+                sender_user_id=900,
+            )
+
+        self.conversation.send.assert_not_awaited()
+
+    async def test_rich_reply_keeps_the_html(self):
+        self.messages = {70: [_in(2, 5)]}
+
+        await self.service.reply_into(
+            self.session,
+            _thread(70),
+            body="<p>x</p>",
+            body_format=BodyFormat.RICH,
+            last_seen_message_id=2,
+            sender_address=_ALIAS,
+            sender_user_id=900,
+        )
+
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertEqual((kwargs["body"], kwargs["body_text"]), ("<p>x</p>", None))
 
 
 if __name__ == "__main__":
