@@ -308,7 +308,7 @@ const ParticipantDetailPage = () => {
               <StateChips
                 isActive={!person.isDeactivated}
                 isBlocked={person.isBlocked}
-                hasPendingBlockRequest={false}
+                hasPendingBlockRequest={Boolean(detail.pendingBlockRequest)}
               />
               <MarkBadges noShow={marks.noShow} redFlag={marks.redFlag} />
             </div>
