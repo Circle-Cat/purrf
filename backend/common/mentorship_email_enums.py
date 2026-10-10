@@ -16,6 +16,7 @@ class MentorshipEmailStage(StrEnum):
     MENTOR_CHECK_IN = "mentor_check_in"
     MIDTERM_REMINDER = "midterm_reminder"
     FINAL_FOLLOWUP = "final_followup"
+    FEEDBACK_INVITE = "feedback_invite"
 
 
 class MentorshipEmailNotificationState(StrEnum):
@@ -26,7 +27,6 @@ class MentorshipEmailNotificationState(StrEnum):
     NOT_NOTIFIED = "not_notified"
     SCHEDULED = "scheduled"
     NOTIFIED = "notified"
-    FEEDBACK_INVITE = "feedback_invite"
 
 
 class MentorshipEmailSendStatus(StrEnum):

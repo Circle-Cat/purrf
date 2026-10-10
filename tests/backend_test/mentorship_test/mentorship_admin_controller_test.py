@@ -10,6 +10,7 @@ from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
     UnregisteredFilterDto,
 )
+from backend.common.mentorship_email_enums import MentorshipEmailStage
 from backend.common.mentorship_enums import ParticipantRole
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.matching_run_dto import MatchingDraftChangesDto
@@ -280,6 +281,18 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
                     ),
                     ("midterm_reminder", "not_notified"),
                 )
+
+    def test_notification_filter_accepts_every_stage(self):
+        for stage in MentorshipEmailStage:
+            with self.subTest(stage=stage):
+                dto = ParticipantSearchFilterDto(notification_stage=stage.value)
+                self.assertEqual(dto.notification_stage, stage)
+        self.assertEqual(
+            ParticipantSearchFilterDto(
+                notification_stage="feedback_invite"
+            ).notification_stage,
+            MentorshipEmailStage.FEEDBACK_INVITE,
+        )
 
     def test_notification_filter_rejects_unknown_values(self):
         for field, value in (
