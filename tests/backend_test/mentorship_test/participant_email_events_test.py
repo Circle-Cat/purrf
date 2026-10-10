@@ -128,9 +128,7 @@ class RenderTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("A participant replied", body)
 
     async def test_a_missing_round_still_renders(self):
-        _, received = await render_registry.render(
-            Mock(), _received(roundName=None)
-        )
+        _, received = await render_registry.render(Mock(), _received(roundName=None))
         _, bounced = await render_registry.render(Mock(), _bounced(roundName=""))
 
         self.assertIn("(ann@x.com).", received)

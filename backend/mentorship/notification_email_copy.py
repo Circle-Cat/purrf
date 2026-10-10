@@ -634,7 +634,5 @@ def participant_email_bounced(
         "Your email to a mentorship participant was not delivered",
         f"<p>Your email to {who or 'a participant'} ({html.escape(bounced_to or '')}) "
         f"about \u201c{html.escape(subject or '')}\u201d{_in_round(round_name)} "
-        "was not delivered.</p>"
-        + _participant_page(who, "see the thread")
-        + _FOOTER,
+        "was not delivered.</p>" + _participant_page(who, "see the thread") + _FOOTER,
     )
