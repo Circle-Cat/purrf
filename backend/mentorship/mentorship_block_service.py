@@ -111,16 +111,18 @@ class MentorshipBlockService:
         try:
             for pairs in by_round.values():
                 for pair in pairs:
-                    cancelled[pair.pair_id] = (
-                        await self.meeting_service.cancel_upcoming_for_pairs(
-                            session, [pair.pair_id]
-                        )
+                    cancelled[
+                        pair.pair_id
+                    ] = await self.meeting_service.cancel_upcoming_for_pairs(
+                        session, [pair.pair_id]
                     )
         except ConflictError as refused:
             raise ConflictError(CALENDAR_REFUSED, code=refused.code) from refused
 
         partner_of = {
-            pair.pair_id: pair.mentee_id if pair.mentor_id == user_id else pair.mentor_id
+            pair.pair_id: pair.mentee_id
+            if pair.mentor_id == user_id
+            else pair.mentor_id
             for pairs in by_round.values()
             for pair in pairs
         }
@@ -130,8 +132,10 @@ class MentorshipBlockService:
             return names.get(uid, f"User {uid}")
 
         for round_id, pairs in by_round.items():
-            participant = await self.participants_repository.get_by_user_id_and_round_id(
-                session, user_id, round_id
+            participant = (
+                await self.participants_repository.get_by_user_id_and_round_id(
+                    session, user_id, round_id
+                )
             )
             before = participant.approval_status if participant is not None else None
             moved = before in _WITHDRAWABLE

@@ -294,14 +294,14 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
     async def _meeting_ids(self):
         rows = await self.session.execute(
             select(MentorshipMeetingEntity.meeting_id).where(
-                MentorshipMeetingEntity.pair_id.in_(
-                    [self.pair_ann_id, self.pair_bo_id]
-                )
+                MentorshipMeetingEntity.pair_id.in_([self.pair_ann_id, self.pair_bo_id])
             )
         )
         return sorted(rows.scalars().all())
 
-    async def test_approving_a_block_ends_the_pairs_and_keeps_the_reason_out_of_notes(self):
+    async def test_approving_a_block_ends_the_pairs_and_keeps_the_reason_out_of_notes(
+        self,
+    ):
         raised = await self.service.raise_request(
             self.session,
             actor_id=self.raiser_id,
@@ -329,16 +329,24 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         self.assertIs(self.cy_reg.approval_status, ApprovalStatus.MATCHED)
         self.assertEqual(await self._meeting_ids(), ["g-ann-past"])
         notes = [
-            *await self.notes.list_for_user_round(self.session, self.zed_id, self.spring_id),
-            *await self.notes.list_for_user_round(self.session, self.ann_id, self.spring_id),
-            *await self.notes.list_for_user_round(self.session, self.bo_id, self.spring_id),
+            *await self.notes.list_for_user_round(
+                self.session, self.zed_id, self.spring_id
+            ),
+            *await self.notes.list_for_user_round(
+                self.session, self.ann_id, self.spring_id
+            ),
+            *await self.notes.list_for_user_round(
+                self.session, self.bo_id, self.spring_id
+            ),
         ]
         self.assertEqual(len(notes), 3)
         for note in notes:
             self.assertEqual(note.request_id, raised.id)
             self.assertEqual(note.author_user_id, self.reviewer_id)
             self.assertNotIn("Harassed", note.body)
-        self.calendar.cancel.assert_awaited_once_with(["g-ann-up"], calendar_id="cal-test")
+        self.calendar.cancel.assert_awaited_once_with(
+            ["g-ann-up"], calendar_id="cal-test"
+        )
 
     async def test_an_operator_block_ends_the_pairs_with_no_request(self):
         await self.service.block_directly(
@@ -385,7 +393,9 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
                 [],
             )
 
-        self.calendar.cancel = AsyncMock(side_effect=lambda ids, calendar_id: (list(ids), []))
+        self.calendar.cancel = AsyncMock(
+            side_effect=lambda ids, calendar_id: (list(ids), [])
+        )
         await self.service.block_directly(
             self.session,
             actor_id=self.operator_id,

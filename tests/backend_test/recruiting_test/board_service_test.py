@@ -1345,7 +1345,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self._users_by_id({2: self._user(user_id=2), 3: self._user(user_id=3)})
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
-    async def test_get_application_detail_names_only_the_reviewer_of_a_pending_block(self):
+    async def test_get_application_detail_names_only_the_reviewer_of_a_pending_block(
+        self,
+    ):
         self._detail_fixture()
         self.approvals.get_pending_for_target = AsyncMock(
             return_value=SimpleNamespace(
@@ -1368,7 +1370,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         dumped = result.model_dump(by_alias=True)["pendingBlockRequest"]
         self.assertEqual(
-            dumped, {"requestId": 901, "reviewer": {"userId": 77, "name": "Rita Reviewer"}}
+            dumped,
+            {"requestId": 901, "reviewer": {"userId": 77, "name": "Rita Reviewer"}},
         )
         self.assertNotIn("Harassed", str(result.model_dump(by_alias=True)))
 

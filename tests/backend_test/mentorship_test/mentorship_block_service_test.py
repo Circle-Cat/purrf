@@ -74,9 +74,7 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
         self.regs = {
             (BLOCKED, SEVEN): SimpleNamespace(approval_status=ApprovalStatus.MATCHED),
             (BLOCKED, EIGHT): SimpleNamespace(approval_status=ApprovalStatus.MATCHED),
-            (BLOCKED, NINE): SimpleNamespace(
-                approval_status=ApprovalStatus.SIGNED_UP
-            ),
+            (BLOCKED, NINE): SimpleNamespace(approval_status=ApprovalStatus.SIGNED_UP),
             (ANN, SEVEN): SimpleNamespace(approval_status=ApprovalStatus.MATCHED),
             (BO, SEVEN): SimpleNamespace(approval_status=ApprovalStatus.MATCHED),
             (MO, EIGHT): SimpleNamespace(approval_status=ApprovalStatus.MATCHED),
@@ -93,9 +91,10 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.participants.get_by_user_id_and_round_id = AsyncMock(
-            side_effect=lambda session, user_id, round_id: self.regs.get(
-                (user_id, round_id)
-            )
+            side_effect=lambda session, user_id, round_id: self.regs.get((
+                user_id,
+                round_id,
+            ))
         )
         self.order = []
         self.cancelled = {601: 2, 602: 0, 603: 1}
@@ -180,7 +179,9 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_only_partners_left_with_no_pair_become_un_matched(self):
         await self._block()
 
-        self.assertIs(self.regs[(ANN, SEVEN)].approval_status, ApprovalStatus.UN_MATCHED)
+        self.assertIs(
+            self.regs[(ANN, SEVEN)].approval_status, ApprovalStatus.UN_MATCHED
+        )
         self.assertIs(self.regs[(BO, SEVEN)].approval_status, ApprovalStatus.UN_MATCHED)
         self.assertIs(self.regs[(MO, EIGHT)].approval_status, ApprovalStatus.MATCHED)
 

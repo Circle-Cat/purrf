@@ -166,7 +166,7 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
 
 
 class TestBlockServiceApply(_BlockServiceTestBase):
-    """The block kernel: the three consequences, with no triggering
+    """The block kernel: the four consequences, with no triggering
     application to hang them on."""
 
     async def test_ends_mentorship_after_the_flags_and_before_the_sweep(self):
