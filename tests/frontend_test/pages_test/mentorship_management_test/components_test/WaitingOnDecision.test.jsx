@@ -99,6 +99,67 @@ describe("WaitingOnDecision", () => {
     ).toBeInTheDocument();
   });
 
+  const ending = {
+    requestId: 61,
+    action: "end_pair",
+    raisedBy: { userId: 9, name: "Dana Wu" },
+    reviewer: { userId: 8, name: "Rae Kim" },
+    pairId: 80,
+    pair: {
+      pairId: 80,
+      mentor: { userId: 3104, name: "Mia Ko" },
+      mentee: { userId: 23, name: "Cy Lee" },
+    },
+    createdAt: "2026-10-10T08:00:00Z",
+  };
+  const cyPair = {
+    pairId: 80,
+    partner: { id: 23, firstName: "Cy", lastName: "Lee", isActive: true },
+  };
+
+  it("names the pair being ended and what approving it does", async () => {
+    const user = userEvent.setup();
+    renderBlock({
+      requests: [ending],
+      pairs: [cyPair],
+      viewerId: 8,
+      canApprove: true,
+    });
+
+    expect(
+      screen.getByText(
+        "End pair \u2014 raised by Dana Wu \u00b7 sent to Rae Kim \u2014 about the pair with Cy Lee",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(
+      await screen.findByText(/^The pair with Cy Lee ends/),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the partner off the reviewers when ending a pair is reassigned", async () => {
+    const user = userEvent.setup();
+    getMentorshipApprovers.mockResolvedValue({
+      data: [
+        { userId: 8, name: "Rae Kim" },
+        { userId: 23, name: "Cy Lee" },
+        { userId: 12, name: "Sam Oyelaran" },
+      ],
+    });
+    renderBlock({ requests: [ending], pairs: [cyPair] });
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Sam Oyelaran" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("option", { name: "Cy Lee" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("says nothing of a pair when the request names none or one not listed", () => {
     const pairs = [
       { pairId: 80, partner: { firstName: "Bob", lastName: "Smith" } },

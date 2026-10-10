@@ -67,6 +67,15 @@ const WaitingOnDecision = ({
       : "";
   };
 
+  const pairPartner = (request) => {
+    const pair = pairs.find((p) => p.pairId === request.pairId);
+    if (pair) return { id: pair.partner?.id, name: userDisplayName(pair.partner) };
+    const other = sameUser(request.pair?.mentor?.userId, personId)
+      ? request.pair?.mentee
+      : request.pair?.mentor;
+    return other ? { id: other.userId, name: approvalPersonLabel(other) } : null;
+  };
+
   return (
     <section aria-label="Waiting on a decision" className="space-y-2">
       <h3 className="text-sm font-semibold">Waiting on a decision</h3>
@@ -146,7 +155,13 @@ const WaitingOnDecision = ({
         reviewers={reviewers.approvers}
         reviewersLoading={reviewers.isLoading}
         reviewersError={reviewers.error}
-        excludeUserIds={[open?.reviewer?.userId, personId]}
+        excludeUserIds={[
+          open?.reviewer?.userId,
+          personId,
+          open && typeOf(open)?.partnerMayNotReview
+            ? pairPartner(open)?.id
+            : null,
+        ]}
         submitting={busy}
         onConfirm={({ reviewerId }) =>
           act(
@@ -173,7 +188,9 @@ const WaitingOnDecision = ({
           rejecting
             ? "Your reason is shown to the person who asked."
             : `${
-                (open && typeOf(open)?.consequences(personName)) ||
+                (open && typeOf(open)?.consequences(personName, {
+                    partnerName: pairPartner(open)?.name,
+                  })) ||
                 "It takes effect at once and cannot be undone."
               }${open ? aboutPair(open) : ""}`
         }

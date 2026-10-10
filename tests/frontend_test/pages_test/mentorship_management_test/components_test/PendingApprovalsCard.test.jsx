@@ -85,6 +85,36 @@ describe("PendingApprovalsCard", () => {
     );
   });
 
+  it("names both people when ending a pair and reviews it on the mentee's page", async () => {
+    const user = userEvent.setup();
+    renderCard([
+      {
+        requestId: 61,
+        action: "end_pair",
+        round: { roundId: 7, name: "Spring 2026" },
+        person: null,
+        pair: {
+          pairId: 80,
+          mentor: { userId: 11, name: "Mia Ko" },
+          mentee: { userId: 21, name: "Ann Lee" },
+        },
+        raisedBy: { userId: 9, name: "Ada Ng" },
+        reason: null,
+        createdAt: "2026-10-10T09:00:00+00:00",
+      },
+    ]);
+
+    expect(
+      screen.getByText(
+        "End pair \u00b7 Spring 2026 \u00b7 mentor Mia Ko and mentee Ann Lee",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(
+      "/mentorship-management/participants/21?round=7",
+    );
+  });
+
   it("renders nothing with nothing waiting", () => {
     renderCard([]);
 

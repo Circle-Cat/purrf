@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
 import {
   approvalActionLabel,
+  approvalPairLabel,
   approvalPersonLabel,
   approvalReviewLink,
 } from "@/pages/MentorshipManagement/utils/approvalLabels";
@@ -13,9 +14,9 @@ import {
  * top of Mentorship Management. Renders nothing when there are none.
  *
  * Decisions are not taken here: each row's Review opens the page of what the
- * request is about -- the round's matching results, or the person in the
- * Needs exemption list -- and the reviewer decides there, with the thing in
- * front of them.
+ * request is about -- the round's matching results, the person in the
+ * Needs exemption list, or (ending a pair) the mentee's page -- and the
+ * reviewer decides there, with the thing in front of them.
  *
  * @param {object} props
  * @param {object[]} props.requests Pending requests, oldest first.
@@ -43,6 +44,7 @@ const PendingApprovalsCard = ({ requests }) => {
                   {approvalActionLabel(r.action)}
                   {r.round?.name ? ` · ${r.round.name}` : ""}
                   {r.person ? ` · ${approvalPersonLabel(r.person)}` : ""}
+                  {r.pair ? ` · ${approvalPairLabel(r.pair)}` : ""}
                 </p>
                 <p className="text-muted-foreground">
                   From {approvalPersonLabel(r.raisedBy)}
