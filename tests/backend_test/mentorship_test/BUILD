@@ -485,3 +485,16 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "participant_email_service_test",
+    srcs = ["participant_email_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/common:permissions",
+        "//backend/communication",
+        "//backend/dto",
+        "//backend/mentorship",
+    ],
+)

@@ -3,9 +3,10 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from backend.dto.base_dto import BaseDto
+from backend.dto.base_request_dto import BaseRequestDto
 
 # Thread and message subjects are String(998); a reply adds "Re: ".
 SUBJECT_MAX_LENGTH = 990
@@ -124,6 +125,28 @@ class EmailSendRequestDto(BaseDto):
     body: str
     thread_id: int | None = None
     last_seen_message_id: int | None = None
+
+
+class TextEmailSendRequestDto(BaseRequestDto):
+    """A new plain-text email to one or more of the person's addresses."""
+
+    to: list[str] = Field(min_length=1)
+    subject: str = Field(min_length=1, max_length=SUBJECT_MAX_LENGTH)
+    body: str = Field(min_length=1, max_length=TEXT_BODY_MAX_LENGTH)
+
+
+class TextEmailReplyRequestDto(BaseRequestDto):
+    """A plain-text reply; ``last_seen_message_id`` is the newest message on screen."""
+
+    body: str = Field(min_length=1, max_length=TEXT_BODY_MAX_LENGTH)
+    last_seen_message_id: int
+
+
+class EmailRefreshDto(BaseDto):
+    """The conversation after a refresh, and how many inbound messages it found."""
+
+    conversation: EmailConversationDto
+    new_replies: int
 
 
 class EmailTemplateDto(BaseDto):
