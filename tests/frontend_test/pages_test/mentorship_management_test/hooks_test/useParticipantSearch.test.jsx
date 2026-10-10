@@ -25,10 +25,10 @@ const ROUNDS = [
 ];
 
 /** Renders the hook under a router at `url`, also exposing the location. */
-const renderSearch = (url = "/", rounds = ROUNDS) =>
+const renderSearch = (url = "/", rounds = ROUNDS, options) =>
   renderHook(
     () => ({
-      search: useParticipantSearch(rounds),
+      search: useParticipantSearch(rounds, options),
       location: useLocation(),
     }),
     {
@@ -589,5 +589,134 @@ describe("useParticipantSearch", () => {
     act(() => result.current.search.submitSearch());
     await waitFor(() => expect(paramsOf(result).get("q")).toBe("ali"));
     expect(result.current.search.listKey).not.toBe(key);
+  });
+
+  describe("Notification filter", () => {
+    const ON = { notificationsOn: true };
+
+    it("commits to the URL and sends both halves", async () => {
+      const { result } = renderSearch("/", ROUNDS, ON);
+      act(() =>
+        result.current.search.setNotification({
+          stage: "midterm_reminder",
+          state: "not_notified",
+        }),
+      );
+      act(() => result.current.search.submitSearch());
+      await waitFor(() =>
+        expect(searchParticipants).toHaveBeenCalledWith(
+          expect.objectContaining({
+            notificationStage: "midterm_reminder",
+            notificationState: "not_notified",
+          }),
+        ),
+      );
+      expect(paramsOf(result).get("notifyStage")).toBe("midterm_reminder");
+      expect(paramsOf(result).get("notifyState")).toBe("not_notified");
+      expect(result.current.search.notificationFiltered).toBe(true);
+    });
+
+    it("reads it back from the URL into the draft", async () => {
+      const { result } = renderSearch(
+        "/?round=7&notifyStage=admission&notifyState=notified",
+        ROUNDS,
+        ON,
+      );
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+      expect(result.current.search.notification).toEqual({
+        stage: "admission",
+        state: "notified",
+      });
+    });
+
+    it("ignores half a filter or unknown values", async () => {
+      for (const query of [
+        "notifyStage=admission",
+        "notifyStage=admission&notifyState=replied",
+        "notifyStage=rejected&notifyState=notified",
+      ]) {
+        searchParticipants.mockClear();
+        renderSearch(`/?round=7&${query}`, ROUNDS, ON);
+        await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+        expect(searchParticipants.mock.calls[0][0].notificationStage).toBe(
+          undefined,
+        );
+      }
+    });
+
+    it("does not send the notification filter while notifications are off", async () => {
+      const { result } = renderSearch(
+        "/?round=7&notifyStage=admission&notifyState=notified",
+      );
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+      expect(searchParticipants.mock.calls[0][0].notificationStage).toBe(
+        undefined,
+      );
+      expect(result.current.search.notificationFiltered).toBe(false);
+    });
+
+    it("sends it with the Not registered list", async () => {
+      searchUnregistered.mockResolvedValue({ data: { rows: [], total: 0 } });
+      renderSearch(
+        "/?round=7&notRegistered=1&notifyStage=round_recruitment&notifyState=not_notified",
+        ROUNDS,
+        ON,
+      );
+      await waitFor(() =>
+        expect(searchUnregistered).toHaveBeenCalledWith(
+          "7",
+          expect.objectContaining({
+            notificationStage: "round_recruitment",
+            notificationState: "not_notified",
+          }),
+        ),
+      );
+    });
+
+    it("drops a stage the next list does not offer, and all of it for Eligible", async () => {
+      const { result } = renderSearch("/", ROUNDS, ON);
+      act(() =>
+        result.current.search.setNotification({
+          stage: "match_result",
+          state: "notified",
+        }),
+      );
+      act(() => result.current.search.setListNotRegistered(true));
+      expect(result.current.search.notification).toEqual({
+        stage: "",
+        state: "",
+      });
+
+      act(() =>
+        result.current.search.setNotification({
+          stage: "admission",
+          state: "notified",
+        }),
+      );
+      act(() => result.current.search.setListNotRegistered(false));
+      expect(result.current.search.notification.stage).toBe("admission");
+
+      act(() => result.current.search.setListEligible(true));
+      expect(result.current.search.notification).toEqual({
+        stage: "",
+        state: "",
+      });
+    });
+
+    it("changes the list key with the filter", async () => {
+      const { result } = renderSearch("/?round=7", ROUNDS, ON);
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+      const before = result.current.search.listKey;
+      act(() =>
+        result.current.search.setNotification({
+          stage: "admission",
+          state: "scheduled",
+        }),
+      );
+      act(() => result.current.search.submitSearch());
+      await waitFor(() =>
+        expect(result.current.search.listKey).not.toBe(before),
+      );
+    });
   });
 });

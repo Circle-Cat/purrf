@@ -3,6 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { searchParticipants, searchUnregistered } from "@/api/mentorshipApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
+import {
+  NOTIFICATION_STATES,
+  STAGE_OPTIONS,
+  stagesForList,
+} from "@/pages/MentorshipManagement/components/email/emailLabels";
 
 const LIMIT = 20;
 
@@ -26,11 +31,19 @@ export const PARAM = Object.freeze({
   NOT_REGISTERED: "notRegistered",
   ELIGIBLE: "eligible",
   NEEDS_EXEMPTION: "needsExemption",
+  NOTIFY_STAGE: "notifyStage",
+  NOTIFY_STATE: "notifyState",
 });
 
 const ACCOUNT_STATUSES = ["active", "blocked", "deactivated"];
 const INTERNAL_VALUES = ["internal", "external"];
 const ONBOARDING_STATUSES = ["completed", "incomplete"];
+const STAGE_VALUES = STAGE_OPTIONS.map((o) => o.value);
+const STATE_VALUES = NOTIFICATION_STATES.map((o) => o.value);
+const NO_NOTIFICATION = Object.freeze({ stage: "", state: "" });
+
+const offersStage = (notRegistered, stage) =>
+  stagesForList(notRegistered).some((o) => o.value === stage);
 
 const readDigits = (params, key) => {
   const raw = params.get(key) ?? "";
@@ -67,10 +80,20 @@ const readOneOf = (params, key, allowed) => {
  * rewritten without it. In Not registered the role filter means the admitted role, and
  * training and approval do not apply.
  *
+ * The notification filter (a stage and its state) is a draft like the rest; a
+ * stage the picked list does not offer is dropped, and Eligible and Needs
+ * exemption drop it whole.
+ *
  * @param {Array<{id: number, isInProgress?: boolean}>|null} rounds - Rounds,
  *   latest first; null while loading.
+ * @param {{notificationsOn?: boolean}} [options] - With notificationsOn (the
+ *   Kit email flag), the committed notification filter is sent on the
+ *   Registered and Not registered lists.
  */
-export const useParticipantSearch = (rounds) => {
+export const useParticipantSearch = (
+  rounds,
+  { notificationsOn = false } = {},
+) => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const hasSearched = searchParams.has(PARAM.ROUND);
@@ -111,6 +134,18 @@ export const useParticipantSearch = (rounds) => {
     !notRegisteredRequested &&
     !eligibleRequested &&
     isInProgress(committedRoundId);
+  const urlNotifyStage = readOneOf(params, PARAM.NOTIFY_STAGE, STAGE_VALUES);
+  const urlNotifyState = readOneOf(params, PARAM.NOTIFY_STATE, STATE_VALUES);
+  const committedNotifyStage =
+    urlNotifyStage &&
+    urlNotifyState &&
+    !eligible &&
+    !needsExemption &&
+    offersStage(notRegistered, urlNotifyStage)
+      ? urlNotifyStage
+      : "";
+  const committedNotifyState = committedNotifyStage ? urlNotifyState : "";
+  const notificationFiltered = notificationsOn && committedNotifyStage !== "";
   const sortBy = params.get(PARAM.SORT) || null;
   const order = sortBy && params.get(PARAM.ORDER) === "desc" ? "desc" : "asc";
   const offset = Number.parseInt(readDigits(params, PARAM.OFFSET) || "0", 10);
@@ -133,6 +168,10 @@ export const useParticipantSearch = (rounds) => {
   const [listNotRegistered, setListNotRegistered] = useState(notRegistered);
   const [listEligible, setListEligible] = useState(eligible);
   const [listNeedsExemption, setListNeedsExemption] = useState(needsExemption);
+  const [notification, setNotification] = useState({
+    stage: committedNotifyStage,
+    state: committedNotifyState,
+  });
 
   // Keep the inputs in step when the URL changes underneath them (back,
   // forward, or a pasted link).
@@ -150,6 +189,14 @@ export const useParticipantSearch = (rounds) => {
   useEffect(() => setListNotRegistered(notRegistered), [notRegistered]);
   useEffect(() => setListEligible(eligible), [eligible]);
   useEffect(() => setListNeedsExemption(needsExemption), [needsExemption]);
+  useEffect(
+    () =>
+      setNotification({
+        stage: committedNotifyStage,
+        state: committedNotifyState,
+      }),
+    [committedNotifyStage, committedNotifyState],
+  );
 
   // Write the resolved round back into a search whose round is unknown,
   // replacing the entry so back does not return to the unresolved link.
@@ -240,6 +287,12 @@ export const useParticipantSearch = (rounds) => {
         internal: committedInternal || undefined,
         limit: LIMIT,
         offset,
+        notificationStage: notificationFiltered
+          ? committedNotifyStage
+          : undefined,
+        notificationState: notificationFiltered
+          ? committedNotifyState
+          : undefined,
       };
       try {
         const { data } = notRegistered
@@ -291,6 +344,9 @@ export const useParticipantSearch = (rounds) => {
       committedApproval,
       eligible,
       needsExemption,
+      notificationFiltered,
+      committedNotifyStage,
+      committedNotifyState,
       notRegistered,
       offset,
       sortBy,
@@ -336,6 +392,8 @@ export const useParticipantSearch = (rounds) => {
       [PARAM.ROUND]: committedRoundId,
       [PARAM.ROLE]: committedRole,
       [PARAM.APPROVAL]: committedApproval,
+      [PARAM.NOTIFY_STAGE]: committedNotifyStage,
+      [PARAM.NOTIFY_STATE]: committedNotifyState,
       ...withSort(nextSortBy, nextOrder),
       [PARAM.OFFSET]: nextOffset || "",
       [PARAM.NOT_REGISTERED]: notRegistered ? "1" : "",
@@ -355,6 +413,8 @@ export const useParticipantSearch = (rounds) => {
         committedRoundId,
         committedRole,
         committedApproval,
+        notificationFiltered ? committedNotifyStage : "",
+        notificationFiltered ? committedNotifyState : "",
         notRegistered,
         eligible,
         needsExemption,
@@ -366,10 +426,17 @@ export const useParticipantSearch = (rounds) => {
   const canListEligible = canListNotRegistered;
   const canListNeedsExemption = canListNotRegistered;
 
+  /** Drop the drafted notification stage unless the list offers it. */
+  const keepNotificationFor = (inNotRegistered) =>
+    setNotification((n) =>
+      offersStage(inNotRegistered, n.stage) ? n : NO_NOTIFICATION,
+    );
+
   /** Pick the round; one not in progress goes back to Registered. */
   const setRoundId = (id) => {
     setDraftRoundId(id);
     if (!isInProgress(id)) {
+      keepNotificationFor(false);
       setListNotRegistered(false);
       setListEligible(false);
       setListNeedsExemption(false);
@@ -384,6 +451,7 @@ export const useParticipantSearch = (rounds) => {
     if (on && !canListEligible) return;
     setListEligible(on);
     if (on) {
+      setNotification(NO_NOTIFICATION);
       setListNotRegistered(false);
       setListNeedsExemption(false);
     }
@@ -397,6 +465,7 @@ export const useParticipantSearch = (rounds) => {
     if (on && !canListNeedsExemption) return;
     setListNeedsExemption(on);
     if (on) {
+      setNotification(NO_NOTIFICATION);
       setListNotRegistered(false);
       setListEligible(false);
     }
@@ -409,6 +478,7 @@ export const useParticipantSearch = (rounds) => {
   const pickNotRegistered = (on) => {
     if (on && !canListNotRegistered) return;
     setListNotRegistered(on);
+    keepNotificationFor(on);
     if (on) {
       setOnboardingStatus("");
       setApprovalStatus("");
@@ -427,6 +497,13 @@ export const useParticipantSearch = (rounds) => {
       canListNeedsExemption &&
       !inNotRegistered &&
       !inEligible;
+    const notifyStage =
+      !inEligible &&
+      !inNeedsExemption &&
+      notification.state &&
+      offersStage(inNotRegistered, notification.stage)
+        ? notification.stage
+        : "";
     const before = searchParams.toString();
     const after = writeUrl({
       [PARAM.ID]: userId,
@@ -437,6 +514,8 @@ export const useParticipantSearch = (rounds) => {
       [PARAM.ROUND]: draftRoundId,
       [PARAM.ROLE]: participantRole,
       [PARAM.APPROVAL]: inNotRegistered ? "" : approvalStatus,
+      [PARAM.NOTIFY_STAGE]: notifyStage,
+      [PARAM.NOTIFY_STATE]: notifyStage ? notification.state : "",
       ...withSort(sortBy, order),
       [PARAM.NOT_REGISTERED]: inNotRegistered ? "1" : "",
       [PARAM.ELIGIBLE]: inEligible ? "1" : "",
@@ -490,6 +569,9 @@ export const useParticipantSearch = (rounds) => {
     setApprovalStatus,
     onboardingStatus,
     setOnboardingStatus,
+    notification,
+    setNotification,
+    notificationFiltered,
     submitSearch,
     committedRoundId,
     listKey,
