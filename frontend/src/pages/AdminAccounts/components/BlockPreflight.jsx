@@ -44,7 +44,10 @@ const BlockPreflight = ({ preflight, timezone }) => {
       <ul className="space-y-1">
         <li>· Lock the person out of all of Purrf until unblocked</li>
         {preflight === null ? (
-          <li>· Still counting the applications, interviews and mentorship pairs this reaches</li>
+          <li>
+            · Still counting the applications, interviews and mentorship pairs
+            this reaches
+          </li>
         ) : (
           <>
             {/* The sweep tags every application it touches but only rejects
@@ -77,8 +80,8 @@ const BlockPreflight = ({ preflight, timezone }) => {
       <p>
         ⚠ Unblocking later restores access, but reinstates none of the above —
         not the applications, not the interviews, not the mentorship pairs.
-        Mentorship eligibility is gone for good, because it is derived from an application that this action
-        rejects.
+        Mentorship eligibility is gone for good, because it is derived from an
+        application that this action rejects.
       </p>
     </div>
   );
