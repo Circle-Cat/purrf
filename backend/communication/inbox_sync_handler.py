@@ -1,10 +1,10 @@
-"""Syncs Inbox threads and records what their new mail calls for.
+"""Syncs mail threads and records what their new mail calls for.
 
-Registered in the email context registry for the three *_INBOX contexts and
-ACTIVITY. A full resync calls ``resync_all`` once per registered context, so
-only one context gets the full handler; the rest get
-``alias_without_resync()``, which syncs a thread the same way but leaves the
-sweep to the full handler.
+One instance per notifier: the Inbox one is registered for the *_INBOX
+contexts, and a domain may build another for its own contexts. A full resync
+calls ``resync_all`` once per registered context, so each instance is
+registered in full for one context; the rest get ``alias_without_resync()``,
+which syncs a thread the same way but leaves the sweep to the full handler.
 """
 
 import logging
@@ -20,18 +20,23 @@ INBOX_CONTEXT_TYPES = [
 
 
 class InboxSyncHandler:
-    def __init__(self, conversation_service, thread_repository, notifier, logger):
+    def __init__(
+        self, conversation_service, thread_repository, notifier, logger, context_types
+    ):
         """
         Args:
             conversation_service (EmailConversationService): Pulls a thread from Gmail.
             thread_repository (EmailThreadRepository): Lists and re-reads threads.
-            notifier (InboxNotifier): Records events for newly synced mail.
+            notifier: Has ``async after_sync(session, thread, new_messages)``;
+                records events for newly synced mail.
             logger: Application logger.
+            context_types (list[str]): The contexts ``resync_all`` sweeps.
         """
         self._conversation = conversation_service
         self._threads = thread_repository
         self._notifier = notifier
         self._logger = logger
+        self._context_types = list(context_types)
 
     async def sync_tracked_thread(self, session, thread, messages=None):
         """Sync one changed Inbox thread and record its events. Does not commit.
@@ -55,7 +60,7 @@ class InboxSyncHandler:
         return len(new_messages)
 
     async def resync_all(self, session):
-        """Sync every Inbox thread, each in its own savepoint. Commits per thread.
+        """Sync every thread of this handler's contexts, each in its own savepoint. Commits per thread.
 
         A failing thread is rolled back, logged and counted, and the sweep
         moves on, as in ``EmailSyncService._sweep``.
@@ -67,7 +72,7 @@ class InboxSyncHandler:
             dict: ``{"threads": <synced>, "failed": <failed>}``.
         """
         threads = await self._threads.list_by_context_types(
-            session, INBOX_CONTEXT_TYPES
+            session, self._context_types
         )
         # Plain ids: a rollback below expires every loaded entity.
         thread_ids = [t.thread_id for t in threads]

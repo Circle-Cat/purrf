@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 from backend.common.communication_enums import ContextType
-from backend.communication.inbox_sync_handler import InboxSyncHandler
+from backend.communication.inbox_sync_handler import INBOX_CONTEXT_TYPES, InboxSyncHandler
 
 
 def _session():
@@ -27,6 +27,7 @@ class InboxSyncHandlerTest(unittest.IsolatedAsyncioTestCase):
             thread_repository=self.threads,
             notifier=self.notifier,
             logger=self.logger,
+            context_types=INBOX_CONTEXT_TYPES,
         )
         self.session = _session()
 
@@ -85,6 +86,22 @@ class InboxSyncHandlerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(events, [("sync", 1), ("commit",), ("sync", 2), ("commit",)])
         self.assertEqual(self.session.begin_nested.call_count, 2)
+
+    async def test_a_handler_sweeps_only_the_contexts_it_was_given(self):
+        handler = InboxSyncHandler(
+            conversation_service=self.conversation,
+            thread_repository=self.threads,
+            notifier=self.notifier,
+            logger=self.logger,
+            context_types=[ContextType.ACTIVITY],
+        )
+        self.threads.list_by_context_types.return_value = []
+
+        await handler.resync_all(self.session)
+
+        self.threads.list_by_context_types.assert_awaited_once_with(
+            self.session, [ContextType.ACTIVITY]
+        )
 
     async def test_one_failing_thread_does_not_stop_the_resync(self):
         a, b = Mock(thread_id=1), Mock(thread_id=2)

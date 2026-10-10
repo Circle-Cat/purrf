@@ -188,7 +188,10 @@ from backend.communication.inbox_controller import InboxController
 from backend.communication.inbox_service import InboxThreadService
 from backend.communication.inbox_router import InboxRouter
 from backend.communication.inbox_notifier import InboxNotifier
-from backend.communication.inbox_sync_handler import InboxSyncHandler
+from backend.communication.inbox_sync_handler import (
+    INBOX_CONTEXT_TYPES,
+    InboxSyncHandler,
+)
 from backend.communication.thread_service import ThreadServiceResolver
 from backend.communication.gmail_push_controller import GmailPushController
 from backend.communication.gmail_push_service import GmailPushService
@@ -1091,6 +1094,7 @@ class AppDependencyBuilder:
             thread_repository=self.email_thread_repository,
             notifier=self.inbox_notifier,
             logger=self.logger,
+            context_types=INBOX_CONTEXT_TYPES,
         )
         # A full resync calls resync_all once per registered context; only
         # MENTORSHIP_INBOX gets the sweeping handler.

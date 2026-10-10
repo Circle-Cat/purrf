@@ -25,7 +25,7 @@ from backend.communication.gmail_sync_service import GmailSyncService, PushOutco
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_notifier import InboxNotifier
 from backend.communication.inbox_router import InboxRouter
-from backend.communication.inbox_sync_handler import InboxSyncHandler
+from backend.communication.inbox_sync_handler import INBOX_CONTEXT_TYPES, InboxSyncHandler
 from backend.communication.thread_service import ThreadServiceResolver
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.email_message_entity import EmailMessageEntity
@@ -102,6 +102,7 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
                 ),
             ),
             logger=Mock(),
+            context_types=INBOX_CONTEXT_TYPES,
         )
         registry = EmailContextRegistry()
         registry.register(ContextType.MENTORSHIP_INBOX, handler)

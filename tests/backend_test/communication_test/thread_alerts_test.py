@@ -87,6 +87,19 @@ class AlertsAfterSyncTest(unittest.TestCase):
 
         self.assertEqual(alerts.bounces, [])
 
+    def test_human_mail_stored_before_the_archive_does_not_tip(self):
+        archived = SimpleNamespace(thread_id=70, subject="Hi", archived_at=_at(10))
+        new = [_in(5)]
+
+        alerts = alerts_after_sync(archived, [_out(0)] + new, new)
+
+        self.assertIsNone(alerts.needs_reply_from)
+
+    def test_a_new_auto_reply_does_not_tip(self):
+        alerts = self._alerts([_out(0)], [_in(5, kind=InboundKind.AUTO_REPLY)])
+
+        self.assertIsNone(alerts.needs_reply_from)
+
 
 if __name__ == "__main__":
     unittest.main()
