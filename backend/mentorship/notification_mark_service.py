@@ -124,7 +124,9 @@ class NotificationMarkService:
         skipped: list[NotificationMarkSkipDto] = []
         for user_id in ids:
             if not stage_offered(stage, user_id in registered):
-                skipped.append(NotificationMarkSkipDto(user_id=user_id, reason=NOT_OFFERED))
+                skipped.append(
+                    NotificationMarkSkipDto(user_id=user_id, reason=NOT_OFFERED)
+                )
                 continue
             if user_id in already:
                 skipped.append(
