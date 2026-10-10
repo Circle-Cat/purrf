@@ -40,6 +40,28 @@ export const listNotifiedStages = async (roundId) =>
     })
   ).data;
 
+/**
+ * Lists one person's sends in a round that have played out, newest first:
+ * sent to them, or not, with why. Ones still to go out are not included.
+ *
+ * @param {number|string} roundId - The mentorship round's id.
+ * @param {number|string} userId - The person's user id.
+ * @returns {Promise<Array<{
+ *   sendId: number,
+ *   stage: string,
+ *   subject: string,
+ *   delivered: boolean,
+ *   reason: string|null,
+ *   at: string,
+ * }>>}
+ */
+export const listPersonSends = async (roundId, userId) =>
+  (
+    await request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON, {
+      params: { roundId, userId },
+    })
+  ).data;
+
 const action = async (sendId, name, body) =>
   (
     await request.post(

@@ -17,6 +17,7 @@ import { formatInTz } from "@/utils/dateTime";
 import { userDisplayName } from "@/utils/userName";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
 
 // The backend refuses anything longer.
 const MAX_NOTE_LENGTH = 5000;
@@ -100,18 +101,56 @@ export const AddNoteDialog = ({
   );
 };
 
+const at = (iso) => formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
+
+const NoteEntry = ({ note, partner }) => (
+  <li className="text-sm">
+    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+      {TAG_LABELS[note.tag] && (
+        <Badge variant="secondary">{TAG_LABELS[note.tag]}</Badge>
+      )}
+      {partner && <span>with {partner}</span>}
+      <span>
+        {note.author?.name ?? unresolvedPersonLabel(note.author?.userId)} ·{" "}
+        {at(note.createdAt)}
+      </span>
+      {note.requestId != null && <span>(via approval)</span>}
+    </div>
+    <p className="mt-1 whitespace-pre-wrap break-words">{note.body}</p>
+  </li>
+);
+
+const SendEntry = ({ send }) => (
+  <li className="text-sm">
+    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+      <Badge variant="secondary">Notification</Badge>
+      <span>Kit · {at(send.at)}</span>
+    </div>
+    <p className="mt-1 break-words">
+      {stageLabel(send.stage)} · {send.subject}
+    </p>
+    {send.delivered ? (
+      <p className="text-xs text-slate-500">Sent</p>
+    ) : (
+      <p className="text-xs text-red-600">Not sent. {send.reason}</p>
+    )}
+  </li>
+);
+
 /**
- * Everything written about a person in one round, in the order the API
- * sends it (newest first), whatever kind it is. A note an approval wrote
- * says so.
+ * Everything about a person in one round, newest first: the notes written
+ * about them, whatever kind, and the Kit notifications that went out to them
+ * or failed to. A note an approval wrote says so.
  *
- * @param {{notes: Object[], roundId: number|string, userId: number|string,
- *          canAdd: boolean, onAdded: () => void, pairs?: Object[]}} props
+ * @param {{notes: Object[], sends?: Object[], roundId: number|string,
+ *          userId: number|string, canAdd: boolean, onAdded: () => void,
+ *          pairs?: Object[]}} props
  *   pairs: the round's pairs, to name the partner of the pair a note is
  *   about.
  */
 const NoteTimeline = ({
   notes,
+  sends = [],
   roundId,
   userId,
   canAdd,
@@ -122,6 +161,19 @@ const NoteTimeline = ({
   const partnerOf = new Map(
     pairs.map((pair) => [pair.pairId, userDisplayName(pair.partner)]),
   );
+  const entries = [
+    ...notes.map((note) => ({
+      key: `note-${note.noteId}`,
+      time: note.createdAt,
+      note,
+    })),
+    ...sends.map((send) => ({
+      key: `send-${send.sendId}`,
+      time: send.at,
+      send,
+    })),
+  ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
   return (
     <section>
       <header className="mb-2 flex items-center gap-3">
@@ -137,36 +189,23 @@ const NoteTimeline = ({
           </Button>
         )}
       </header>
-      {notes.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">No notes yet.</p>
       ) : (
         <ul className="space-y-3">
-          {notes.map((note) => (
-            <li key={note.noteId} className="text-sm">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                {TAG_LABELS[note.tag] && (
-                  <Badge variant="secondary">{TAG_LABELS[note.tag]}</Badge>
-                )}
-                {note.pairId != null && partnerOf.get(note.pairId) && (
-                  <span>with {partnerOf.get(note.pairId)}</span>
-                )}
-                <span>
-                  {note.author?.name ??
-                    unresolvedPersonLabel(note.author?.userId)}{" "}
-                  ·{" "}
-                  {formatInTz(
-                    note.createdAt,
-                    MEETING_TIMEZONE,
-                    "yyyy-MM-dd HH:mm",
-                  )}
-                </span>
-                {note.requestId != null && <span>(via approval)</span>}
-              </div>
-              <p className="mt-1 whitespace-pre-wrap break-words">
-                {note.body}
-              </p>
-            </li>
-          ))}
+          {entries.map(({ key, note, send }) =>
+            note ? (
+              <NoteEntry
+                key={key}
+                note={note}
+                partner={
+                  note.pairId != null ? partnerOf.get(note.pairId) : undefined
+                }
+              />
+            ) : (
+              <SendEntry key={key} send={send} />
+            ),
+          )}
         </ul>
       )}
       {canAdd && (
