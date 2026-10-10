@@ -4728,6 +4728,183 @@ describe("ApplicationDetailPage — Emails tab", () => {
     );
   });
 
+  const threadChanged = () =>
+    Object.assign(new Error("This thread has new messages."), {
+      response: {
+        status: 409,
+        data: {
+          success: false,
+          message: "This thread has new messages.",
+          data: { code: "THREAD_CHANGED" },
+        },
+      },
+    });
+
+  const replyableThread = (extraMessages = []) => ({
+    threadId: 1,
+    subject: "Interview Availability",
+    needsReply: true,
+    replyTo: "cand.reply@x.com",
+    messages: [
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        toAddresses: "cand@x.com",
+        bodyHtml: "<p>Hello there</p>",
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
+      {
+        messageId: 12,
+        direction: "inbound",
+        fromAddress: "cand.reply@x.com",
+        toAddresses: "recruiting@circlecat.org",
+        bodyHtml: "<p>Sounds good</p>",
+        bodyText: "Sounds good",
+        createdAt: "2026-07-23T01:00:00Z",
+        attachments: [{ name: "resume.pdf", size: 2048 }],
+      },
+      ...extraMessages,
+    ],
+  });
+
+  it("ticks the contact email by default and sends to every ticked address", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        threads: [],
+        defaultTo: "cand@x.com",
+        canSend: true,
+        recipientOptions: [
+          { address: "cand@x.com", label: "Primary contact" },
+          { address: "ana@purrf.example", label: "Alternative" },
+        ],
+      },
+    });
+    const user = await renderComposeOpen();
+    expect(
+      screen.getByRole("checkbox", { name: /cand@x\.com/ }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /ana@purrf\.example/ }),
+    ).not.toBeChecked();
+    await user.click(
+      screen.getByRole("checkbox", { name: /ana@purrf\.example/ }),
+    );
+    setEditorHtml("<p>hello</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand@x.com", "ana@purrf.example"],
+        subject: "Hi",
+        body: "<p>hello</p>",
+        threadId: null,
+      }),
+    );
+  });
+
+  it("replies to the thread's reply address with the last message seen", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [replyableThread()], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen({ replyThread: true });
+    const dialog = screen.getByRole("dialog", { name: "Reply" });
+    expect(within(dialog).getByText("cand.reply@x.com")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    setEditorHtml("<p>Thanks</p>");
+    await user.click(within(dialog).getByRole("button", { name: /^send$/i }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand.reply@x.com"],
+        subject: "Re: Interview Availability",
+        body: "<p>Thanks</p>",
+        threadId: 1,
+        lastSeenMessageId: 12,
+      }),
+    );
+  });
+
+  it("keeps the reply draft and shows the new message when the thread changed", async () => {
+    const newer = {
+      messageId: 13,
+      direction: "inbound",
+      fromAddress: "cand.reply@x.com",
+      toAddresses: "recruiting@circlecat.org",
+      bodyHtml: "<p>One more question</p>",
+      bodyText: "One more question",
+      createdAt: "2026-07-23T02:00:00Z",
+    };
+    api.getApplicationEmails
+      .mockResolvedValueOnce({
+        data: { threads: [replyableThread()], defaultTo: "cand@x.com" },
+      })
+      .mockResolvedValueOnce({
+        data: { threads: [replyableThread([newer])], defaultTo: "cand@x.com" },
+      });
+    api.sendApplicationEmail.mockRejectedValueOnce(threadChanged());
+    const user = await renderComposeOpen({ replyThread: true });
+    const dialog = screen.getByRole("dialog", { name: "Reply" });
+    setEditorHtml("<p>Thanks</p>");
+    await user.click(within(dialog).getByRole("button", { name: /^send$/i }));
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "Not sent: this thread has new messages since you opened it.",
+    );
+    expect(within(dialog).getByText("One more question")).toBeInTheDocument();
+    expect(editorEl().innerHTML).toContain("Thanks");
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: /^send$/i }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenLastCalledWith(
+        "101",
+        expect.objectContaining({ threadId: 1, lastSeenMessageId: 13 }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Reply" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("links each attachment to the application's download endpoint", async () => {
+    api.applicationEmailAttachmentUrl.mockImplementation(
+      (id, messageId, index) =>
+        `/api/recruiting/applications/${id}/emails/messages/${messageId}/attachments/${index}`,
+    );
+    await openEmails(replyableThread());
+    const link = screen.getByRole("link", { name: /resume\.pdf/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "/api/recruiting/applications/101/emails/messages/12/attachments/0",
+    );
+    expect(link).toHaveAttribute("download");
+  });
+
+  it("hides Send email and Reply when the conversation says it cannot send", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        threads: [replyableThread()],
+        defaultTo: "cand@x.com",
+        canSend: false,
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await screen.findByText("Interview Availability");
+    expect(
+      screen.queryByRole("button", { name: "Send email" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reply" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("read.all viewer who is not an owner sees no compose control", async () => {
     authState.userId = 999;
     api.getApplicationDetail.mockResolvedValue({
