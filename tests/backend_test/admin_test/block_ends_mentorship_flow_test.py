@@ -26,6 +26,10 @@ from backend.common.mentorship_enums import (
     PairStatus,
     ParticipantRole,
 )
+from backend.common.recruiting_enums import ApplicationStage, JobKind
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.application_interview_entity import ApplicationInterviewEntity
+from backend.entity.job_entity import JobEntity
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -192,6 +196,23 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
             _google("g-ann-up", self.pair_ann, now + timedelta(days=2)),
             _google("g-ann-past", self.pair_ann, now - timedelta(days=2)),
         ])
+        job = JobEntity(kind=JobKind.ACTIVITY, title="Zed block flow job")
+        await self.insert_entities([job])
+        application = ApplicationEntity(
+            job_id=job.job_id, user_id=self.zed_id, stage=ApplicationStage.TECH
+        )
+        await self.insert_entities([application])
+        await self.insert_entities([
+            ApplicationInterviewEntity(
+                application_id=application.application_id,
+                stage=ApplicationStage.TECH,
+                round=1,
+                google_event_id="zed-interview-event",
+                start_at=now + timedelta(days=3),
+                end_at=now + timedelta(days=3, hours=1),
+                scheduled_by=self.operator_id,
+            )
+        ])
         # Release the setup savepoint so the rollback in the refusal test
         # discards only what the block did.
         await self.session.commit()
@@ -355,6 +376,14 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         self.assertIs(self.pair_ann.status, PairStatus.ACTIVE)
         self.assertIs(self.zed_reg.approval_status, ApprovalStatus.MATCHED)
         self.interviews_svc.cancel_for_round.assert_not_awaited()
+        self.assertEqual(await self._meeting_ids(), ["g-ann-past", "g-ann-up"])
+        for user_id in (self.zed_id, self.ann_id, self.bo_id):
+            self.assertEqual(
+                await self.notes.list_for_user_round(
+                    self.session, user_id, self.spring_id
+                ),
+                [],
+            )
 
         self.calendar.cancel = AsyncMock(side_effect=lambda ids, calendar_id: (list(ids), []))
         await self.service.block_directly(
@@ -366,6 +395,15 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         await self._refresh_all()
         self.assertTrue(self.zed.is_blocked)
         self.assertIs(self.pair_ann.status, PairStatus.INACTIVE)
+        self.interviews_svc.cancel_for_round.assert_awaited_once()
+        count = 0
+        for user_id in (self.zed_id, self.ann_id, self.bo_id):
+            count += len(
+                await self.notes.list_for_user_round(
+                    self.session, user_id, self.spring_id
+                )
+            )
+        self.assertEqual(count, 3)
 
     async def test_the_preflight_counts_the_mentorship_it_ends(self):
         view = await self.service.preflight(self.session, self.zed_id)
