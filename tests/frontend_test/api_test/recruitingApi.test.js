@@ -39,6 +39,7 @@ import {
   getApplicationEmails,
   sendApplicationEmail,
   getApplicationEmailTemplates,
+  applicationEmailAttachmentUrl,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -109,6 +110,12 @@ describe("recruitingApi", () => {
     await getApplicationEmailTemplates(10);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/10/email-templates",
+    );
+  });
+
+  it("applicationEmailAttachmentUrl points at the attachment download endpoint", () => {
+    expect(applicationEmailAttachmentUrl(10, 55, 2)).toBe(
+      "/api/recruiting/applications/10/emails/messages/55/attachments/2",
     );
   });
 
