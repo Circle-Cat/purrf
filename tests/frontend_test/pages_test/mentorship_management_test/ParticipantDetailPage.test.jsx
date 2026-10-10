@@ -42,7 +42,10 @@ vi.mock("@/api/adminAccountsApi", () => ({
   getBlockPreflight: vi.fn(),
   getUserAdmins: vi.fn(),
 }));
-vi.mock("@/api/mentorshipEmailApi", () => ({ listPersonSends: vi.fn() }));
+vi.mock("@/api/mentorshipEmailApi", () => ({
+  listPersonSends: vi.fn(),
+  markNotified: vi.fn(),
+}));
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 
@@ -699,5 +702,113 @@ describe("ParticipantDetailPage", () => {
     await screen.findByRole("heading", { name: "Alice Chen" });
     expect(listPersonSends).not.toHaveBeenCalled();
     expect(screen.queryByText("Notification")).not.toBeInTheDocument();
+  });
+
+  it("offers Mark as notified with the Kit flag, knowing what Kit sent and what was marked", async () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true,
+    });
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        notes: [
+          noteOf({
+            noteId: 77,
+            tag: "notified",
+            notificationStage: "onboarding_reminder",
+          }),
+        ],
+      }),
+    });
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Mark as notified" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    expect(
+      within(dialog).getByText("Mark as notified — Alice Chen"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("option", {
+        name: "Match result (already notified)",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("option", {
+        name: "Onboarding reminder (already notified)",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("option", { name: "Mid-term reminder" }),
+    ).toBeEnabled();
+    expect(
+      within(dialog).queryByRole("option", { name: /New round invitation/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not call a stage notified when Kit's send to them did not go out", async () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true,
+    });
+    listPersonSends.mockResolvedValue([
+      {
+        sendId: 15,
+        stage: "admission",
+        subject: "Welcome",
+        delivered: false,
+        reason: "bounced",
+        at: "2026-10-12T16:00:00Z",
+      },
+    ]);
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Mark as notified" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    expect(
+      within(dialog).getByRole("option", { name: "Admission & onboarding" }),
+    ).toBeEnabled();
+    expect(
+      within(dialog).queryByRole("option", {
+        name: "Admission & onboarding (already notified)",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers someone not registered only what reaches them", async () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true,
+    });
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({ registration: null }),
+    });
+    listPersonSends.mockResolvedValue([]);
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Mark as notified" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([
+      "Select a notification…",
+      "New round invitation",
+      "Admission & onboarding",
+      "Onboarding reminder",
+    ]);
+  });
+
+  it("does not offer Mark as notified without the Kit flag", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: "Add a note" });
+    expect(
+      screen.queryByRole("button", { name: "Mark as notified" }),
+    ).not.toBeInTheDocument();
   });
 });

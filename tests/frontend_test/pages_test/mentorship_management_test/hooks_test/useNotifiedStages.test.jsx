@@ -5,6 +5,7 @@ import { listNotifiedStages } from "@/api/mentorshipEmailApi";
 
 vi.mock("@/api/mentorshipEmailApi", () => ({
   listNotifiedStages: vi.fn(),
+  markNotified: vi.fn(),
 }));
 
 describe("useNotifiedStages", () => {
@@ -85,6 +86,27 @@ describe("useNotifiedStages", () => {
     await waitFor(() => expect(result.current.stagesByUser.has(12)).toBe(true));
     expect(result.current.stagesByUser.has(11)).toBe(false);
     expect(listNotifiedStages).toHaveBeenLastCalledWith("3");
+  });
+
+  it("adds stages marked by hand after the sent ones, and lets Kit's own win", async () => {
+    listNotifiedStages.mockResolvedValue([
+      {
+        userId: 11,
+        stages: ["admission"],
+        scheduled: [
+          { stage: "midterm_reminder", sendAt: "2026-11-02T17:30:00Z" },
+        ],
+        manual: ["admission", "match_result"],
+      },
+    ]);
+    const { result } = renderHook(() => useNotifiedStages("7"));
+
+    await waitFor(() => expect(result.current.stagesByUser.size).toBe(1));
+    expect(result.current.stagesByUser.get(11)).toEqual([
+      { stage: "admission", scheduledAt: null },
+      { stage: "match_result", scheduledAt: null, manual: true },
+      { stage: "midterm_reminder", scheduledAt: "2026-11-02T17:30:00Z" },
+    ]);
   });
 
   it("reloads in place", async () => {
