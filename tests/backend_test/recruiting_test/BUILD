@@ -318,3 +318,14 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "application_email_policy_test",
+    srcs = ["application_email_policy_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+        "//backend/dto",
+        "//backend/recruiting",
+    ],
+)
