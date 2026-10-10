@@ -1,6 +1,7 @@
 import copy
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 from dateutil.parser import isoparse
 from backend.mentorship.matching_eligibility import (
@@ -31,6 +32,7 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingStatus,
     PairStatus,
+    ParticipantNoteTag,
 )
 
 
@@ -122,6 +124,8 @@ def _round_ended():
 
 class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        self.mock_notes = MagicMock()
+        self.mock_notes.list_tagged = AsyncMock(return_value=[])
         self.mock_users_repo = MagicMock()
         self.mock_users_repo.get_users_and_emails_by_ids = AsyncMock()
 
@@ -190,8 +194,59 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             application_repository=self.mock_application_repo,
             matching_eligibility_service=self.mock_eligibility,
             mentorship_approval_service=self.mock_approvals,
-            note_repository=MagicMock(),
+            note_repository=self.mock_notes,
             approval_service=MagicMock(),
+        )
+
+    async def test_each_row_counts_the_marks_in_its_own_round(self):
+        self.mock_rounds_repo.get_all_rounds.return_value = []
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(user_id=21, round_id=7),
+                _make_row(user_id=21, round_id=5),
+                _make_row(user_id=22, round_id=7),
+            ],
+            3,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (21, 22)
+            },
+            {},
+        )
+
+        def _note(user_id, round_id, tag):
+            return SimpleNamespace(user_id=user_id, round_id=round_id, tag=tag)
+
+        self.mock_notes.list_tagged.return_value = [
+            _note(21, 7, ParticipantNoteTag.NO_SHOW),
+            _note(21, 7, ParticipantNoteTag.NO_SHOW),
+            _note(21, 5, ParticipantNoteTag.RED_FLAG),
+            _note(22, 7, ParticipantNoteTag.RED_FLAG),
+        ]
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(user_id=21)
+        )
+
+        self.assertEqual(
+            [
+                (r.user_id, r.round_id, r.marks.no_show, r.marks.red_flag)
+                for r in result.participant_rows
+            ],
+            [(21, 7, 2, 0), (21, 5, 0, 1), (22, 7, 0, 1)],
+        )
+        self.mock_notes.list_tagged.assert_awaited_once_with(
+            self.mock_session,
+            [21, 22],
+            [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+        )
+        self.assertEqual(
+            result.participant_rows[0].marks.model_dump(by_alias=True),
+            {"noShow": 2, "redFlag": 0},
         )
 
     async def test_meeting_log_says_whether_its_round_is_in_progress(self):

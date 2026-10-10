@@ -210,6 +210,10 @@ from backend.mentorship.exempt_matching_handler import ExemptMatchingHandler
 from backend.mentorship.withdraw_participant_handler import (
     WithdrawParticipantHandler,
 )
+from backend.mentorship.mark_participant_handler import (
+    MarkNoShowHandler,
+    MarkRedFlagHandler,
+)
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -749,6 +753,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             rounds_repository=self.mentorship_round_repository,
             logger=self.logger,
+            matching_eligibility_service=self.matching_eligibility_service,
         )
         self.exempt_matching_handler = ExemptMatchingHandler(
             matching_eligibility_service=self.matching_eligibility_service,
@@ -767,6 +772,16 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             logger=self.logger,
         )
+        mark_dependencies = dict(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
+        self.mark_no_show_handler = MarkNoShowHandler(**mark_dependencies)
+        self.mark_red_flag_handler = MarkRedFlagHandler(**mark_dependencies)
         self.approval_service = ApprovalService(
             approval_request_repository=self.approval_request_repository,
             user_permissions_repository=self.user_permissions_repository,
@@ -776,6 +791,8 @@ class AppDependencyBuilder:
                 self.publish_matching_handler,
                 self.exempt_matching_handler,
                 self.withdraw_participant_handler,
+                self.mark_no_show_handler,
+                self.mark_red_flag_handler,
                 self.job_review_handler,
             ],
         )

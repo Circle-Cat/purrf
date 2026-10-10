@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from backend.dto.base_dto import BaseDto
 from backend.dto.mentorship_approval_dto import MentorshipApprovalDto
 from backend.dto.partner_dto import PartnerDto
@@ -41,14 +43,22 @@ class PersonRowDto(BaseDto):
 
 class ExemptionFindingDto(BaseDto):
     """One history problem that keeps someone out of matching. ``reason`` is
-    quit_after_match or meetings_short; a shortfall carries the meetings held
-    and required."""
+    quit_after_match, meetings_short, no_show or red_flag; a shortfall carries
+    the meetings held and required."""
 
     reason: str
     round_id: int | None = None
     round_name: str | None = None
     completed: int | None = None
     required: int | None = None
+
+
+class MarkCountsDto(BaseDto):
+    """How many no show and red flag marks the person got in the row's
+    round."""
+
+    no_show: int = 0
+    red_flag: int = 0
 
 
 class ParticipantRowDto(PersonRowDto):
@@ -64,6 +74,8 @@ class ParticipantRowDto(PersonRowDto):
     # the request for it waiting on a reviewer, if there is one.
     exemption_findings: list[ExemptionFindingDto] = []
     exemption_request: MentorshipApprovalDto | None = None
+    # The marks the person got in this row's round.
+    marks: MarkCountsDto = Field(default_factory=MarkCountsDto)
 
 
 class ParticipantSearchDto(BaseDto):

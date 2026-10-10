@@ -555,6 +555,19 @@ class TestAppDependencyBuilder(TestCase):
             builder.withdraw_participant_handler.meeting_service,
             mock_meeting_service_cls.return_value,
         )
+        for action, handler in (
+            ("mark_no_show", builder.mark_no_show_handler),
+            ("mark_red_flag", builder.mark_red_flag_handler),
+        ):
+            self.assertIs(builder.approval_service.handler_for(action), handler)
+            self.assertIs(
+                handler.note_repository,
+                builder.mentorship_participant_note_repository,
+            )
+            self.assertIs(
+                handler.pairs_repository,
+                mock_mentorship_pairs_repo_cls.return_value,
+            )
         self.assertIs(
             builder.matching_run_service.matching_eligibility_service,
             builder.matching_eligibility_service,
@@ -583,6 +596,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(
             builder.approval_service.handler_for("publish_matching"),
             builder.publish_matching_handler,
+        )
+        self.assertIs(
+            builder.publish_matching_handler.matching_eligibility_service,
+            builder.matching_eligibility_service,
         )
         # One approval service serves recruiting too.
         self.assertIs(
