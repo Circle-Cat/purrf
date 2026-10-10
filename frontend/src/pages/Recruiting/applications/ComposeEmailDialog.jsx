@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import DOMPurify from "dompurify";
 import { getApplicationEmailTemplates } from "@/api/recruitingApi";
+import { sanitizeEmailHtml } from "@/utils/emailHtml";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,29 +26,6 @@ const splitAddresses = (value) =>
     .filter(Boolean);
 
 /**
- * Markup a candidate email body may carry. Deliberately narrow: the composer
- * authors rich text, and what leaves here has to survive Gmail's own
- * sanitizing anyway, so anything structural (tables, images, styles) or
- * active (script, iframe, event handlers) is dropped rather than sent.
- */
-const EMAIL_ALLOWED_TAGS = [
-  "p",
-  "br",
-  "b",
-  "strong",
-  "i",
-  "em",
-  "u",
-  "ul",
-  "ol",
-  "li",
-  "a",
-];
-
-/** Attributes kept on the allowed tags — enough for a working hyperlink. */
-const EMAIL_ALLOWED_ATTR = ["href", "target", "rel"];
-
-/**
  * The value the template Select is permanently held at. Radix documents "" as
  * "no selection, show the placeholder" (react-select@2.2.6 forbids it as an
  * item value for exactly that reason), and because the committed value never
@@ -59,13 +36,6 @@ const EMAIL_ALLOWED_ATTR = ["href", "target", "rel"];
  * applied is reported as adjacent text instead.
  */
 const TEMPLATE_PICKER_VALUE = "";
-
-/** Sanitize composer HTML down to the tags Gmail bodies are allowed to carry. */
-const sanitizeEmailHtml = (html) =>
-  DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: EMAIL_ALLOWED_TAGS,
-    ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
-  });
 
 /**
  * Matches the free-text `[UPPERCASE]` markers templates leave for the sender
