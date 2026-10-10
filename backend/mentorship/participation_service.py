@@ -253,8 +253,9 @@ class ParticipationService:
         was turned down and for someone who took part and then left, and only
         the pairing tells them apart; `withdrawn` is an approved withdrawal.
 
-        If the user is not in a MATCHED state, an empty partners list is returned
-        along with the current match status. If the user is MATCHED, this method
+        If the user is not MATCHED, UNMATCHED, REJECTED or WITHDRAWN, an empty
+        partners list is returned along with the current match status. For those
+        four statuses, this method
         retrieves the user's mentorship pairs for the round and constructs
         partner details for each counterpart. A pairing that has since ended is
         still who the user was matched with, so it is reported with
@@ -296,12 +297,14 @@ class ParticipationService:
         partners: list[PartnerDto] = []
 
         # A pairing is reported for the statuses that can have produced one:
-        # the user is matched, or they took part and left -- `rejected` covers
-        # quitting, being removed, and a mentor being suspended; `withdrawn`
-        # is an approved withdrawal. The remaining statuses never had a
-        # pairing, so the pairs table is not touched for them.
+        # the user is matched; was matched and their pair ended, leaving them
+        # un_matched; or took part and left -- `rejected` covers quitting,
+        # being removed, and a mentor being suspended; `withdrawn` is an
+        # approved withdrawal. Signed-up and unregistered never had one, so the
+        # pairs table is not touched for them.
         if current_status not in (
             MatchStatus.MATCHED,
+            MatchStatus.UNMATCHED,
             MatchStatus.REJECTED,
             MatchStatus.WITHDRAWN,
         ):
@@ -321,7 +324,7 @@ class ParticipationService:
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, live_partner_ids
             )
-            if live_partner_ids
+            if live_partner_ids and current_status == MatchStatus.MATCHED
             else {}
         )
 

@@ -473,6 +473,33 @@ class TestExecute(PublishMatchingHandlerTestBase):
 
         self.assertNotIn(23, self._notes())
 
+    async def test_a_new_pair_for_someone_already_matched_is_noted(self):
+        # Mia already mentors 31 and is matched; this run gives her Ann too.
+        self.existing = [_pair(600, 11, 31)]
+        self.people[11] = _person(
+            11, "Mia", "Ortiz", status=ApprovalStatus.MATCHED, cap=2
+        )
+        self.results["22"] = _unmatched()
+
+        await self._execute()
+
+        self.assertIs(self._status(11), ApprovalStatus.MATCHED)
+        mia = [
+            call.kwargs
+            for call in self.notes.create.await_args_list
+            if call.kwargs["user_id"] == 11
+        ]
+        self.assertEqual(len(mia), 1)
+        self.assertEqual(mia[0]["pair_id"], 700)
+        self.assertIs(mia[0]["tag"], ParticipantNoteTag.STATUS_CHANGE)
+        self.assertEqual(mia[0]["author_user_id"], REVIEWER)
+        self.assertEqual(
+            mia[0]["body"],
+            "Paired with Ann Lee when the matching result was published. "
+            "Raised by Ada Raiser, reason: Reviewed every pair; approved by "
+            "Rae Reviewer.",
+        )
+
     async def test_each_change_is_noted_by_the_approver_with_who_asked_and_why(self):
         await self._execute()
 

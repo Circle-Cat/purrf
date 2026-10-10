@@ -8,7 +8,7 @@ from pydantic import Field
 from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
-from backend.dto.mentorship_approval_dto import ApprovalPersonDto
+from backend.dto.mentorship_approval_dto import ApprovalPairDto, ApprovalPersonDto
 from backend.dto.participant_search_dto import ParticipantRowDto, PersonRowDto
 from backend.dto.round_feedback_dto import ParticipantFeedbackDto
 
@@ -51,6 +51,7 @@ class PendingRequestDto(BaseDto):
     raised_by: ApprovalPersonDto
     reviewer: ApprovalPersonDto
     pair_id: int | None = None
+    pair: ApprovalPairDto | None = None
     reason: str | None = None
     created_at: datetime | None = None
 

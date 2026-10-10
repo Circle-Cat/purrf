@@ -200,9 +200,7 @@ class WithdrawParticipantHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.meetings.cancel_upcoming_for_pairs.assert_awaited_once_with(
             self.session, [501, 502]
         )
-        # Only the withdrawn person's registration is read; partners keep
-        # whatever status they had.
-        self.participants.get_by_user_id_and_round_id.assert_awaited_once_with(
+        self.participants.get_by_user_id_and_round_id.assert_any_await(
             self.session, PERSON, ROUND
         )
         self.session.commit.assert_not_awaited()
@@ -243,6 +241,50 @@ class WithdrawParticipantHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(body.startswith("signed_up -> withdrawn"), body)
         self.assertIn("Pairs ended: none. Upcoming meetings cancelled: 0.", body)
         self.assertIn("reason: none given", body)
+
+    async def test_a_partner_left_with_no_pair_becomes_un_matched_and_is_noted(self):
+        partner_a = SimpleNamespace(approval_status=ApprovalStatus.MATCHED)
+        partner_b = SimpleNamespace(approval_status=ApprovalStatus.MATCHED)
+        registrations = {
+            PERSON: self.registration,
+            PARTNER_A: partner_a,
+            PARTNER_B: partner_b,
+        }
+        self.participants.get_by_user_id_and_round_id = AsyncMock(
+            side_effect=lambda session, user_id, round_id: registrations[user_id]
+        )
+        bo_other = SimpleNamespace(
+            pair_id=600, mentor_id=44, mentee_id=PARTNER_B, status=PairStatus.ACTIVE
+        )
+        by_user = {
+            PERSON: [self.pair_a, self.old_pair, self.pair_b],
+            PARTNER_A: [self.pair_a],
+            PARTNER_B: [self.pair_b, bo_other],
+        }
+        self.pairs.get_pairs_by_user_and_round = AsyncMock(
+            side_effect=lambda session, user_id, round_id: by_user[user_id]
+        )
+
+        await self.handler.execute(self.session, _request(), actor_id=REVIEWER)
+
+        self.assertIs(partner_a.approval_status, ApprovalStatus.UN_MATCHED)
+        self.assertIs(partner_b.approval_status, ApprovalStatus.MATCHED)
+        notes = {
+            call.kwargs["user_id"]: call.kwargs
+            for call in self.notes.create.await_args_list
+        }
+        self.assertEqual(sorted(notes), [PERSON, PARTNER_A])
+        ann = notes[PARTNER_A]
+        self.assertIs(ann["tag"], ParticipantNoteTag.STATUS_CHANGE)
+        self.assertEqual(ann["pair_id"], 501)
+        self.assertEqual(ann["request_id"], 701)
+        self.assertEqual(ann["author_user_id"], REVIEWER)
+        self.assertEqual(
+            ann["body"],
+            "matched -> un_matched: their partner Mia Ko left this round. "
+            "Raised by Ada Raiser, reason: Stopped replying to both mentees; "
+            "approved by Rae Reviewer.",
+        )
 
     async def test_a_calendar_refusal_stops_before_the_note(self):
         self.meetings.cancel_upcoming_for_pairs.side_effect = ConflictError(

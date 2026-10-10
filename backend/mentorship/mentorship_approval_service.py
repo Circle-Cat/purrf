@@ -6,8 +6,10 @@ decided through a mentorship endpoint, and turns requests into what the
 console shows: who raised it, who reviews it, which round it is about.
 """
 
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.common.name_utils import user_display_name
+from backend.mentorship.end_pair_handler import END_PAIR, pair_target
 from backend.mentorship.exempt_matching_handler import (
     EXEMPT_MATCHING,
     exemption_target,
@@ -24,6 +26,7 @@ MENTORSHIP_ACTIONS = (
     WITHDRAW_PARTICIPANT,
     MARK_NO_SHOW,
     MARK_RED_FLAG,
+    END_PAIR,
 )
 
 # The actions raised about one person in one round from their detail page,
@@ -37,6 +40,7 @@ _MARK_ACTIONS = {
 
 _OWN_WITHDRAWAL = "The person being withdrawn cannot review their own withdrawal."
 _OWN_MARK = "The person being marked cannot review a mark on themselves."
+_IN_PAIR = "Neither person in the pair can review a request to end it."
 
 # The requests whose subject may not be their reviewer, with the refusal.
 _SUBJECT_MAY_NOT_REVIEW = {
@@ -53,6 +57,7 @@ class MentorshipApprovalService:
         matching_storage,
         users_repository,
         rounds_repository,
+        pairs_repository,
         logger,
     ):
         """
@@ -61,12 +66,14 @@ class MentorshipApprovalService:
             matching_storage: Finds a round's current run.
             users_repository: Names the people on a request.
             rounds_repository: Names the round a request is about.
+            pairs_repository: Reads the pair a request to end it names.
             logger: Injected logger.
         """
         self.approval_service = approval_service
         self.matching_storage = matching_storage
         self.users_repository = users_repository
         self.rounds_repository = rounds_repository
+        self.pairs_repository = pairs_repository
         self.logger = logger
 
     async def list_reviewers(self, session, actor_id: int) -> list[dict]:
@@ -276,16 +283,77 @@ class MentorshipApprovalService:
         )
         return (await self._describe(session, [row]))[0]
 
+    async def request_end_pair(
+        self,
+        session,
+        *,
+        round_id: int,
+        user_id: int,
+        pair_id: int,
+        actor_id: int,
+        reviewer_id: int,
+        reason: str,
+    ) -> dict:
+        """Ask a reviewer to approve ending one of a person's pairs in a
+        round. Commits.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_id (int): Whose page it is raised from; one of the pair.
+            pair_id (int): The pair.
+            actor_id (int): Who is asking.
+            reviewer_id (int): Who should decide; neither of the pair.
+            reason (str): Why, possibly empty.
+
+        Returns:
+            dict: The new request.
+
+        Raises:
+            ValueError: The reviewer is one of the pair, or is refused.
+            ConflictError: The pair is not this person's in the round, has
+                ended, the round is not in progress, or a request to end it
+                already waits.
+        """
+        pair = await self.pairs_repository.get_pair_by_id(session, pair_id)
+        if (
+            pair is None
+            or pair.round_id != round_id
+            or user_id not in (pair.mentor_id, pair.mentee_id)
+        ):
+            raise ConflictError(
+                f"Pair {pair_id} is not one of this person's pairs in this round."
+            )
+        if reviewer_id in (pair.mentor_id, pair.mentee_id):
+            raise ValueError(_IN_PAIR)
+        row = await self.approval_service.raise_request(
+            session,
+            action=END_PAIR,
+            raised_by=actor_id,
+            target_id=pair_target(pair_id),
+            payload={
+                "round_id": round_id,
+                "pair_id": pair_id,
+                "mentor_id": pair.mentor_id,
+                "mentee_id": pair.mentee_id,
+            },
+            reason=reason,
+            reviewer_id=reviewer_id,
+        )
+        return (await self._describe(session, [row]))[0]
+
     async def pending_for_participant(
-        self, session, round_id: int, user_id: int
+        self, session, round_id: int, user_id: int, pair_ids=()
     ) -> list[dict]:
         """The requests about this person in this round waiting on a
-        reviewer, for their detail page.
+        reviewer, for their detail page: those about them, then those about
+        one of their pairs.
 
         Args:
             session (AsyncSession): Active database async session.
             round_id (int): The round.
             user_id (int): The person.
+            pair_ids (Iterable[int]): Their pairs in the round.
 
         Returns:
             list[dict]: One per pending request, described like list_mine.
@@ -297,6 +365,12 @@ class MentorshipApprovalService:
             )
             if row is not None:
                 rows.append(row)
+        targets = [pair_target(pair_id) for pair_id in pair_ids]
+        if targets:
+            pending = await self.approval_service.list_pending_for_targets(
+                session, END_PAIR, targets
+            )
+            rows.extend(pending[t] for t in targets if t in pending)
         return await self._describe(session, rows)
 
     async def pending_exemptions(
@@ -328,7 +402,8 @@ class MentorshipApprovalService:
 
         Raises:
             ValueError: Not a mentorship request, a refused reviewer, or the
-                person a withdrawal or mark is about.
+                person a withdrawal or mark is about, or either person in a pair
+                being ended.
             PermissionError: The caller did not raise it.
             ConflictError: It is no longer pending.
         """
@@ -336,6 +411,11 @@ class MentorshipApprovalService:
         refusal = _SUBJECT_MAY_NOT_REVIEW.get(row.action)
         if refusal and reviewer_id == int(row.payload["user_id"]):
             raise ValueError(refusal)
+        if row.action == END_PAIR and reviewer_id in (
+            int(row.payload["mentor_id"]),
+            int(row.payload["mentee_id"]),
+        ):
+            raise ValueError(_IN_PAIR)
         row = await self.approval_service.reassign(
             session, request_id=request_id, actor_id=actor_id, reviewer_id=reviewer_id
         )
@@ -392,9 +472,16 @@ class MentorshipApprovalService:
         return row
 
     async def _describe(self, session, rows) -> list[dict]:
-        user_ids = {u for row in rows for u in (row.raised_by, row.reviewer_id)} | {
-            int(row.payload["user_id"]) for row in rows if "user_id" in row.payload
-        }
+        user_ids = (
+            {u for row in rows for u in (row.raised_by, row.reviewer_id)}
+            | {int(row.payload["user_id"]) for row in rows if "user_id" in row.payload}
+            | {
+                int(row.payload[key])
+                for row in rows
+                for key in ("mentor_id", "mentee_id")
+                if key in row.payload
+            }
+        )
         people = await self.users_repository.get_all_by_ids(session, list(user_ids))
         names = {p.user_id: _name(p) for p in people}
         round_names: dict[int, str | None] = {}
@@ -418,6 +505,13 @@ class MentorshipApprovalService:
                 },
                 "target_id": row.target_id,
                 "pair_id": row.payload.get("pair_id"),
+                "pair": {
+                    "pair_id": int(row.payload["pair_id"]),
+                    "mentor": person(int(row.payload["mentor_id"])),
+                    "mentee": person(int(row.payload["mentee_id"])),
+                }
+                if "mentor_id" in row.payload
+                else None,
                 "person": person(int(row.payload["user_id"]))
                 if "user_id" in row.payload
                 else None,

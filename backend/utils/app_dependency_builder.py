@@ -207,6 +207,7 @@ from backend.repository.mentorship_participant_note_repository import (
 from backend.approval.approval_service import ApprovalService
 from backend.mentorship.publish_matching_handler import PublishMatchingHandler
 from backend.mentorship.exempt_matching_handler import ExemptMatchingHandler
+from backend.mentorship.end_pair_handler import EndPairHandler
 from backend.mentorship.withdraw_participant_handler import (
     WithdrawParticipantHandler,
 )
@@ -772,6 +773,15 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             logger=self.logger,
         )
+        self.end_pair_handler = EndPairHandler(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            meeting_service=self.meeting_service,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
         mark_dependencies = dict(
             participants_repository=self.mentorship_round_participants_repo,
             pairs_repository=self.mentorship_pairs_repository,
@@ -793,6 +803,7 @@ class AppDependencyBuilder:
                 self.withdraw_participant_handler,
                 self.mark_no_show_handler,
                 self.mark_red_flag_handler,
+                self.end_pair_handler,
                 self.job_review_handler,
             ],
         )
@@ -801,6 +812,7 @@ class AppDependencyBuilder:
             matching_storage=self.matching_storage,
             users_repository=self.users_repository,
             rounds_repository=self.mentorship_round_repository,
+            pairs_repository=self.mentorship_pairs_repository,
             logger=self.logger,
         )
         self.mentorship_admin_service = MentorshipAdminService(
