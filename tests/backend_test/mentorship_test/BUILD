@@ -445,3 +445,18 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "notification_mark_flow_test",
+    srcs = ["notification_mark_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
