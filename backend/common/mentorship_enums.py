@@ -164,6 +164,7 @@ class ParticipantNoteTag(StrEnum):
     MATCHING_EXEMPTION = "matching_exemption"
     NO_SHOW = "no_show"
     RED_FLAG = "red_flag"
+    NOTIFIED = "notified"
 
 
 class MeetingSource(str, Enum):
