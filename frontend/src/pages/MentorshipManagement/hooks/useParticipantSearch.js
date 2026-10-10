@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { searchParticipants, searchUnregistered } from "@/api/mentorshipApi";
@@ -62,7 +62,8 @@ const readOneOf = (params, key, allowed) => {
  * submitSearch() (the Search button) writes them to the URL. The list follows
  * the URL: with no search there it stays empty and nothing is requested.
  * Paging and sorting move within the committed search and also go through the
- * URL.
+ * URL. A fetch that finds the page past the end of the list moves to the last
+ * page with rows, replacing the history entry.
  *
  * A search always runs within one round. The default is the first of `rounds`
  * (the API lists the latest first). A search whose round is not in `rounds`
@@ -268,6 +269,10 @@ export const useParticipantSearch = (
     setSearchParams,
   ]);
 
+  // setSearchParams changes with every URL change; fetchRows must not.
+  const setSearchParamsRef = useRef(setSearchParams);
+  setSearchParamsRef.current = setSearchParams;
+
   const { begin, isCurrent } = useRequestGuard();
 
   const fetchRows = useCallback(
@@ -318,7 +323,22 @@ export const useParticipantSearch = (
           notRegistered,
           rows: (notRegistered ? data.rows : data.participantRows) ?? [],
         });
-        setTotal(data.total ?? 0);
+        const nextTotal = data.total ?? 0;
+        setTotal(nextTotal);
+        // A refreshed list can be shorter than the page asked for.
+        if (offset > 0 && offset >= nextTotal) {
+          const lastOffset =
+            nextTotal > 0 ? Math.floor((nextTotal - 1) / LIMIT) * LIMIT : 0;
+          setSearchParamsRef.current(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              if (lastOffset > 0) next.set(PARAM.OFFSET, String(lastOffset));
+              else next.delete(PARAM.OFFSET);
+              return next;
+            },
+            { replace: true },
+          );
+        }
       } catch (err) {
         if (!isCurrent(seq)) return;
         if (silent) return;

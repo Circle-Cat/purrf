@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigationType } from "react-router-dom";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { searchParticipants, searchUnregistered } from "@/api/mentorshipApi";
 
@@ -30,6 +30,7 @@ const renderSearch = (url = "/", rounds = ROUNDS, options) =>
     () => ({
       search: useParticipantSearch(rounds, options),
       location: useLocation(),
+      navigationType: useNavigationType(),
     }),
     {
       wrapper: ({ children }) => (
@@ -589,6 +590,39 @@ describe("useParticipantSearch", () => {
     act(() => result.current.search.submitSearch());
     await waitFor(() => expect(paramsOf(result).get("q")).toBe("ali"));
     expect(result.current.search.listKey).not.toBe(key);
+  });
+
+  describe("a page past the end", () => {
+    it("moves to the last page with rows, replacing the history entry", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 25 }));
+      const { result } = renderSearch("/?round=7&offset=40");
+      await waitFor(() => expect(paramsOf(result).get("offset")).toBe("20"));
+      await waitFor(() =>
+        expect(searchParticipants).toHaveBeenLastCalledWith(
+          expect.objectContaining({ offset: 20 }),
+        ),
+      );
+      await act(async () => {});
+      expect(paramsOf(result).get("round")).toBe("7");
+      expect(result.current.navigationType).toBe("REPLACE");
+      expect(searchParticipants).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops the offset when nothing is left", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 0 }));
+      const { result } = renderSearch("/?round=7&offset=20");
+      await waitFor(() => expect(paramsOf(result).has("offset")).toBe(false));
+      expect(paramsOf(result).get("round")).toBe("7");
+    });
+
+    it("leaves a page within range alone", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 25 }));
+      const { result } = renderSearch("/?round=7&offset=20");
+      await waitFor(() => expect(result.current.search.total).toBe(25));
+      await act(async () => {});
+      expect(paramsOf(result).get("offset")).toBe("20");
+      expect(searchParticipants).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("Notification filter", () => {

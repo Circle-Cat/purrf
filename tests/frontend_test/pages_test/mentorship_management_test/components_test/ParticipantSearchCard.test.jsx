@@ -411,6 +411,9 @@ describe("ParticipantSearchCard", () => {
     });
 
     it("a new search returns to the first page", async () => {
+      searchParticipants.mockResolvedValue({
+        data: { participantRows: [participantRow()], total: 100 },
+      });
       await renderCard({ url: "/?round=7&offset=40" });
       await mounted();
 
@@ -1500,7 +1503,9 @@ describe("ParticipantSearchCard", () => {
     });
 
     it("clicking the Name header a third time clears the sort back to the default order", async () => {
-      searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
+      searchParticipants.mockResolvedValue({
+        data: { participantRows: [participantRow()], total: 100 },
+      });
       await renderCard({
         url: "/?round=7&sort=user_id&order=desc&offset=20",
       });
