@@ -485,6 +485,23 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it("names both people when asked to end a pair", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_requested", {
+        action: "end_pair",
+        mentorName: "Mia Ko",
+        menteeName: "Ann Lee",
+        personName: "mentor Mia Ko and mentee Ann Lee",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: end the pair of mentor Mia Ko and mentee Ann Lee in Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     [
       "mark_no_show",

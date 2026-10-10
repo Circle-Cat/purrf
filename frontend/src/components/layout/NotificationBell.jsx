@@ -21,7 +21,8 @@ import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailL
 
 /**
  * What a mentorship approval asks for, from its event's details.
- * @param {{action?: string, roundName?: string, personName?: string}} details
+ * @param {{action?: string, roundName?: string, personName?: string,
+ *          mentorName?: string, menteeName?: string}} details
  * @returns {string}
  */
 const approvalAsk = (details) => {
@@ -41,6 +42,11 @@ const approvalAsk = (details) => {
   if (details?.action === "mark_red_flag") {
     const person = details?.personName?.trim() || "someone";
     return `raise a red flag on ${person}${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "end_pair") {
+    const mentor = details?.mentorName?.trim() || "someone";
+    const mentee = details?.menteeName?.trim() || "someone";
+    return `end the pair of mentor ${mentor} and mentee ${mentee}${round ? ` in ${round}` : ""}`;
   }
   if (details?.action === "publish_matching") {
     return `publish the matching result${round ? ` for ${round}` : ""}`;

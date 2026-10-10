@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   approvalActionLabel,
+  approvalPairLabel,
   approvalPersonLabel,
   approvalReviewLink,
   exemptionWhyLines,
@@ -17,6 +18,7 @@ describe("approvalLabels", () => {
     );
     expect(approvalActionLabel("mark_no_show")).toBe("No show mark");
     expect(approvalActionLabel("mark_red_flag")).toBe("Red flag");
+    expect(approvalActionLabel("end_pair")).toBe("End pair");
     expect(approvalActionLabel("job_review")).toBe("Approval");
   });
 
@@ -41,6 +43,35 @@ describe("approvalLabels", () => {
 
     expect(link).toEqual({
       pathname: "/mentorship-management/participants/3104",
+      search: "?round=7",
+    });
+  });
+
+  it("names both people in a pair, mentor first", () => {
+    expect(
+      approvalPairLabel({
+        pairId: 80,
+        mentor: { userId: 11, name: "Mia Ko" },
+        mentee: { userId: 21, name: null },
+      }),
+    ).toBe("mentor Mia Ko and mentee ID 21");
+    expect(approvalPairLabel(null)).toBe("");
+  });
+
+  it("reviews ending a pair on the mentee's page for the round", () => {
+    expect(
+      approvalReviewLink({
+        action: "end_pair",
+        round: { roundId: 7 },
+        person: null,
+        pair: {
+          pairId: 80,
+          mentor: { userId: 11, name: "Mia Ko" },
+          mentee: { userId: 21, name: "Ann Lee" },
+        },
+      }),
+    ).toEqual({
+      pathname: "/mentorship-management/participants/21",
       search: "?round=7",
     });
   });

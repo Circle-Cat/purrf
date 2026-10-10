@@ -50,6 +50,10 @@ export default function MatchingResultDialog({
   const isMatched = currentStatus === MatchStatus.MATCHED;
   const isDisabled = !canViewMatch && !isMatched;
 
+  // Someone moved to unmatched when their pairing ended was matched first.
+  const wasPaired =
+    currentStatus === MatchStatus.UNMATCHED && partners.length > 0;
+
   const participationEnded = {
     title: "Participation Ended",
     description:
@@ -93,10 +97,10 @@ export default function MatchingResultDialog({
   };
 
   // Being matched and having a current partner are two different facts: a
-  // pairing ends when the counterpart leaves the round, and the user stays
-  // matched. The round's own copy only fits while one of them is live.
+  // pairing ends when the counterpart leaves the round or the pair is ended.
+  // The round's own copy only fits while one of them is live.
   const isEveryPairingEnded =
-    isMatched &&
+    (isMatched || wasPaired) &&
     partners.length > 0 &&
     partners.every((partner) => partner.isActive === false);
 

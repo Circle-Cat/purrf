@@ -26,6 +26,29 @@ const renderDialog = (props = {}) => {
 };
 
 describe("ApprovalRequestDialog", () => {
+  it("stops counting a picked reviewer once they are left out", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const props = {
+      open: true,
+      onOpenChange: vi.fn(),
+      title: "Request publishing",
+      description: "Sent to a reviewer.",
+      reviewers: REVIEWERS,
+      confirmLabel: "Send request",
+      onConfirm,
+    };
+    const { rerender } = render(<ApprovalRequestDialog {...props} />);
+    await user.selectOptions(screen.getByLabelText("Reviewer"), "12");
+
+    rerender(<ApprovalRequestDialog {...props} excludeUserIds={[12]} />);
+
+    const send = screen.getByRole("button", { name: "Send request" });
+    expect(send).toBeDisabled();
+    expect(screen.getByLabelText("Reviewer")).toHaveValue("");
+    await user.click(send);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
   it("sends the chosen reviewer and the trimmed reason", async () => {
     const user = userEvent.setup();
     const onConfirm = renderDialog({ askReason: true });

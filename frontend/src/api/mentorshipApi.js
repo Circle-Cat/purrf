@@ -420,6 +420,25 @@ export const requestParticipantMark = (
   });
 
 /**
+ * Ask a named reviewer to approve ending one of a person's pairs in a round
+ * in progress. Resolves to `data` = the new approval request; refused with
+ * 409 when the pair is not theirs, has ended, or already waits to end, and
+ * with 400 when the reviewer is one of the pair.
+ * @param {number|string} roundId
+ * @param {number|string} userId Whose page it is raised from.
+ * @param {{pairId: number, reviewerId: number, reason: string}} body
+ */
+export const requestParticipantEndPair = (
+  roundId,
+  userId,
+  { pairId, reviewerId, reason },
+) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_END_PAIR_REQUEST(roundId, userId),
+    { pairId, reviewerId, reason },
+  );
+
+/**
  * One person in one round, as the admin detail page shows it: who they are,
  * their registration and pairs, notes, this round's feedback, a pending
  * block request, and the rounds they took part in before this one.

@@ -1,4 +1,5 @@
 import {
+  requestParticipantEndPair,
   requestParticipantMark,
   requestParticipantWithdrawal,
 } from "@/api/mentorshipApi";
@@ -18,6 +19,13 @@ export const PAIR_RULE = Object.freeze({
   OPTIONAL: "optional",
 });
 
+/**
+ * Whether one of the person's pairs is still going.
+ * @param {{partner?: {isActive?: boolean}}|null|undefined} pair
+ * @returns {boolean}
+ */
+export const isActivePair = (pair) => pair?.partner?.isActive !== false;
+
 const MARK_CONSEQUENCES =
   "Recorded on their history. It keeps them out of matching until an exemption, including later in this round. It cannot be undone. They are not told.";
 
@@ -26,7 +34,8 @@ const MARK_CONSEQUENCES =
  * per kind of request. `isAvailable` says whether it can be asked for now;
  * `pair` says whether it names one of the person's pairs this round; `raise`
  * sends it; `consequences` is what approving it does, shown before sending
- * and again to the reviewer.
+ * and again to the reviewer. `pairChoices` narrows the pairs it can be about;
+ * `partnerMayNotReview` keeps the chosen pair's partner off the reviewer list.
  */
 export const STATUS_REQUEST_TYPES = Object.freeze([
   {
@@ -34,7 +43,7 @@ export const STATUS_REQUEST_TYPES = Object.freeze([
     label: "Withdraw from round",
     pair: PAIR_RULE.NONE,
     consequences: (name) =>
-      `${name} leaves this round: every pair they have in it ends, and their meetings that have not started are cancelled. Their partners stay matched. This cannot be undone.`,
+      `${name} leaves this round: every pair they have in it ends, and their meetings that have not started are cancelled. A partner left with no other pair becomes unmatched. This cannot be undone.`,
     isAvailable: ({ canWrite, round, registration }) =>
       Boolean(
         canWrite &&
@@ -74,11 +83,47 @@ export const STATUS_REQUEST_TYPES = Object.freeze([
         reason,
       }),
   },
+  {
+    key: APPROVAL_ACTION.END_PAIR,
+    label: "End this pair",
+    pair: PAIR_RULE.REQUIRED,
+    partnerMayNotReview: true,
+    reviewerHint: () => "Neither person in the pair can review it.",
+    pairChoices: (pairs, pendingRequests = []) => {
+      const waiting = new Set(
+        pendingRequests
+          .filter((r) => r.action === APPROVAL_ACTION.END_PAIR)
+          .map((r) => r.pairId),
+      );
+      return (pairs ?? []).filter(
+        (pair) => isActivePair(pair) && !waiting.has(pair.pairId),
+      );
+    },
+    consequences: (_name, { partnerName } = {}) =>
+      `${partnerName ? `The pair with ${partnerName} ends` : "The pair you pick ends"} and its meetings that have not started are cancelled. Whoever has no other pair left becomes unmatched; both can be paired with someone else; these two cannot be paired again this round. This cannot be undone. Neither of them is told.`,
+    isAvailable: ({ canWrite, round, registration, pendingRequests }) =>
+      Boolean(
+        canWrite &&
+        round?.inProgress &&
+        STILL_IN_ROUND.has(registration?.approvalStatus) &&
+        statusRequestType(APPROVAL_ACTION.END_PAIR).pairChoices(
+          registration?.pairs,
+          pendingRequests,
+        ).length > 0,
+      ),
+    raise: (roundId, userId, { reviewerId, reason, pairId }) =>
+      requestParticipantEndPair(roundId, userId, {
+        pairId,
+        reviewerId,
+        reason,
+      }),
+  },
 ]);
 
 /**
  * The request types that can be asked for right now: those that apply and
- * are not already waiting on a decision for this person.
+ * are not already waiting on a decision for this person; a type about
+ * one pair is offered while some pair has none waiting.
  * @param {{canWrite: boolean, round: Object, registration: Object|null, pendingRequests?: {action: string}[]}} context
  * @returns {Object[]}
  */
@@ -87,7 +132,8 @@ export const availableStatusRequestTypes = (context) => {
     (context.pendingRequests ?? []).map((request) => request.action),
   );
   return STATUS_REQUEST_TYPES.filter(
-    (type) => !waiting.has(type.key) && type.isAvailable(context),
+    (type) =>
+      (type.pairChoices || !waiting.has(type.key)) && type.isAvailable(context),
   );
 };
 
