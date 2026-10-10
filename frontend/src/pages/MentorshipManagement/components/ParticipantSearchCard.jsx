@@ -813,14 +813,6 @@ const ParticipantSearchCard = () => {
               </SelectItem>
             </SelectContent>
           </Select>
-          {kitEmailOn && !listEligible && !listNeedsExemption && (
-            <NotificationFilter
-              stages={stagesForList(listNotRegistered)}
-              stage={notification.stage}
-              state={notification.state}
-              onChange={setNotification}
-            />
-          )}
           <Select
             value={
               listNotRegistered
@@ -842,8 +834,11 @@ const ParticipantSearchCard = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={REGISTERED}>Registered</SelectItem>
-              <SelectItem value={ELIGIBLE} disabled={!canListEligible}>
-                Eligible for matching
+              <SelectItem
+                value={NOT_REGISTERED}
+                disabled={!canListNotRegistered}
+              >
+                Not registered
               </SelectItem>
               <SelectItem
                 value={NEEDS_EXEMPTION}
@@ -851,14 +846,19 @@ const ParticipantSearchCard = () => {
               >
                 Needs exemption
               </SelectItem>
-              <SelectItem
-                value={NOT_REGISTERED}
-                disabled={!canListNotRegistered}
-              >
-                Not registered
+              <SelectItem value={ELIGIBLE} disabled={!canListEligible}>
+                Eligible for matching
               </SelectItem>
             </SelectContent>
           </Select>
+          {kitEmailOn && !listEligible && !listNeedsExemption && (
+            <NotificationFilter
+              stages={stagesForList(listNotRegistered)}
+              stage={notification.stage}
+              state={notification.state}
+              onChange={setNotification}
+            />
+          )}
           <Button
             type="button"
             size="sm"
