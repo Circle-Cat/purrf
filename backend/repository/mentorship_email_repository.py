@@ -123,6 +123,44 @@ class MentorshipEmailRepository:
             (user_id, stage) for user_id, stage in (await session.execute(stmt)).all()
         ]
 
+    async def list_scheduled_stages(
+        self, session: AsyncSession, round_id: int
+    ) -> list[tuple[int, str, datetime]]:
+        """(user_id, stage, send_at) for every send of this round that was
+        confirmed but not yet sent by Kit, leaving out the people Kit will not
+        reach. A send still importing counts: its recipients not yet handed to
+        Kit are still pending."""
+        stmt = (
+            select(
+                MentorshipEmailRecipientEntity.user_id,
+                MentorshipEmailSendEntity.stage,
+                MentorshipEmailSendEntity.send_at,
+            )
+            .join(
+                MentorshipEmailSendEntity,
+                MentorshipEmailSendEntity.send_id
+                == MentorshipEmailRecipientEntity.send_id,
+            )
+            .where(
+                MentorshipEmailSendEntity.round_id == round_id,
+                MentorshipEmailSendEntity.status.in_([
+                    MentorshipEmailSendStatus.PREPARING,
+                    MentorshipEmailSendStatus.SCHEDULED,
+                ]),
+                MentorshipEmailSendEntity.send_at.is_not(None),
+                MentorshipEmailRecipientEntity.result.in_([
+                    MentorshipEmailRecipientResult.PENDING,
+                    MentorshipEmailRecipientResult.HANDED_TO_KIT,
+                ]),
+            )
+            .order_by(
+                MentorshipEmailRecipientEntity.user_id,
+                MentorshipEmailSendEntity.send_at,
+                MentorshipEmailSendEntity.stage,
+            )
+        )
+        return [tuple(row) for row in (await session.execute(stmt)).all()]
+
     async def list_recipients(
         self, session: AsyncSession, send_id: int
     ) -> list[MentorshipEmailRecipientEntity]:
