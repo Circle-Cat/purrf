@@ -470,6 +470,61 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
 
         self.assertEqual([p.user_id for p in payload.mentees], [str(paired.user_id)])
 
+    async def test_a_partner_from_an_ended_pair_this_round_is_unexpected(self):
+        round_entity, busy, idle, paired, _ = await self._rematch_round()
+        await self.session.execute(
+            MentorshipPairsEntity.__table__.update()
+            .where(MentorshipPairsEntity.mentor_id == busy.user_id)
+            .values(status=PairStatus.INACTIVE)
+        )
+        await self._preference(paired, specific_industry={})
+        # Her own choice stays, and the ended partner is added once.
+        await self.session.execute(
+            MentorshipRoundParticipantsEntity.__table__.update()
+            .where(MentorshipRoundParticipantsEntity.user_id == paired.user_id)
+            .values(unexpected_partner_user_id=[idle.user_id])
+        )
+
+        payload = await self.service.build_matching_payload(
+            self.session,
+            round_entity.round_id,
+            [busy.user_id, idle.user_id, paired.user_id],
+        )
+
+        mentee = payload.mentees[0]
+        self.assertEqual(
+            mentee.unexpected_partner_ids, [str(idle.user_id), str(busy.user_id)]
+        )
+        by_id = {m.user_id: m for m in payload.mentors}
+        self.assertEqual(
+            by_id[str(busy.user_id)].unexpected_partner_ids, [str(paired.user_id)]
+        )
+        self.assertEqual(by_id[str(idle.user_id)].unexpected_partner_ids, [])
+
+    async def test_an_ended_pair_in_another_round_is_not_unexpected(self):
+        round_entity, busy, idle, _, waiting = await self._rematch_round()
+        older = await self._round(name="2026 Spring")
+        await self.insert_entities([
+            MentorshipPairsEntity(
+                round_id=older.round_id,
+                mentor_id=busy.user_id,
+                mentee_id=waiting.user_id,
+                completed_count=0,
+                status=PairStatus.INACTIVE,
+                mentor_action_status=MentorActionStatus.PENDING,
+                mentee_action_status=MenteeActionStatus.PENDING,
+                recommendation_reason="",
+            )
+        ])
+
+        payload = await self.service.build_matching_payload(
+            self.session,
+            round_entity.round_id,
+            [busy.user_id, idle.user_id, waiting.user_id],
+        )
+
+        self.assertEqual(payload.mentees[0].unexpected_partner_ids, [])
+
     async def test_rejects_a_selection_missing_a_whole_side(self):
         round_entity, mentor, _ = await self._minimal_round()
 
