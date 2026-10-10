@@ -23,6 +23,8 @@ from backend.dto.mentorship_approval_dto import (
     ParticipantMarkRequestDto,
 )
 from backend.dto.participant_detail_dto import ParticipantNoteCreateDto
+from backend.communication.attachment_download import attachment_response
+from backend.dto.email_dto import TextEmailReplyRequestDto, TextEmailSendRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
@@ -49,6 +51,10 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
     MENTORSHIP_ADMIN_PARTICIPANT_DETAIL,
     MENTORSHIP_ADMIN_PARTICIPANT_NOTES,
+    MENTORSHIP_ADMIN_PARTICIPANT_EMAILS,
+    MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY,
+    MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH,
+    MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT,
 )
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
@@ -63,6 +69,7 @@ class MentorshipAdminController:
         matching_draft_service,
         mentorship_approval_service,
         launchdarkly_service,
+        participant_email_service,
         database,
     ):
         self.mentorship_admin_service = mentorship_admin_service
@@ -71,6 +78,7 @@ class MentorshipAdminController:
         self.matching_draft_service = matching_draft_service
         self.mentorship_approval_service = mentorship_approval_service
         self.launchdarkly_service = launchdarkly_service
+        self.participant_email_service = participant_email_service
         self.database = database
         self.router = APIRouter(tags=["mentorship-admin"])
 
@@ -290,6 +298,34 @@ class MentorshipAdminController:
             response_model=None,
         )
 
+        read = authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])
+        write = authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])
+        for path, method, gate, handler in (
+            (MENTORSHIP_ADMIN_PARTICIPANT_EMAILS, "GET", read, self.get_participant_emails),
+            (MENTORSHIP_ADMIN_PARTICIPANT_EMAILS, "POST", write, self.send_participant_email),
+            (
+                MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH,
+                "POST",
+                write,
+                self.refresh_participant_emails,
+            ),
+            (
+                MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY,
+                "POST",
+                write,
+                self.reply_participant_email,
+            ),
+            (
+                MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT,
+                "GET",
+                read,
+                self.download_participant_email_attachment,
+            ),
+        ):
+            self.router.add_api_route(
+                path, endpoint=gate(handler), methods=[method], response_model=None
+            )
+
     async def search_participants(
         self,
         filters: ParticipantSearchFilterDto = Depends(),
@@ -421,6 +457,87 @@ class MentorshipAdminController:
                 body=body.body,
             )
         return api_response(message="Note added.", data=result)
+
+    async def get_participant_emails(
+        self, round_id: int, user_id: int, current_user: UserContextDto
+    ):
+        """The person's email threads for the round, and what the viewer may do."""
+        async with self.database.session() as session:
+            result = await self.participant_email_service.get_emails(
+                session, round_id, user_id, current_user
+            )
+        return api_response(message="Successfully retrieved the emails.", data=result)
+
+    async def send_participant_email(
+        self,
+        round_id: int,
+        user_id: int,
+        email: TextEmailSendRequestDto,
+        current_user: UserContextDto,
+    ):
+        """Send a new plain-text email to the person."""
+        async with self.database.session() as session:
+            result = await self.participant_email_service.send_email(
+                session,
+                round_id,
+                user_id,
+                current_user,
+                to=email.to,
+                subject=email.subject,
+                body=email.body,
+            )
+        return api_response(message="Email sent.", data=result)
+
+    async def reply_participant_email(
+        self,
+        round_id: int,
+        user_id: int,
+        thread_id: int,
+        email: TextEmailReplyRequestDto,
+        current_user: UserContextDto,
+    ):
+        """Reply in one of the person's round threads."""
+        async with self.database.session() as session:
+            result = await self.participant_email_service.reply(
+                session,
+                round_id,
+                user_id,
+                current_user,
+                thread_id=thread_id,
+                body=email.body,
+                last_seen_message_id=email.last_seen_message_id,
+            )
+        return api_response(message="Reply sent.", data=result)
+
+    async def refresh_participant_emails(
+        self, round_id: int, user_id: int, current_user: UserContextDto
+    ):
+        """Pull the person's round threads from Gmail."""
+        async with self.database.session() as session:
+            result = await self.participant_email_service.refresh(
+                session, round_id, user_id, current_user
+            )
+        return api_response(message="Emails refreshed.", data=result)
+
+    async def download_participant_email_attachment(
+        self,
+        round_id: int,
+        user_id: int,
+        message_id: int,
+        index: int,
+        current_user: UserContextDto,
+    ):
+        """One attachment of a message in the person's round threads, as a download."""
+        async with self.database.session() as session:
+            content, name = await self.participant_email_service.attachment(
+                session,
+                round_id,
+                user_id,
+                current_user,
+                message_id=message_id,
+                index=index,
+            )
+        return attachment_response(content, name)
 
     async def get_meeting_log(self, pair_id: int):
         """

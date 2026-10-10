@@ -604,6 +604,7 @@ class TestAppDependencyBuilder(TestCase):
             matching_draft_service=builder.matching_draft_service,
             mentorship_approval_service=builder.mentorship_approval_service,
             launchdarkly_service=builder.launchdarkly_service,
+            participant_email_service=builder.participant_email_service,
             database=mock_database_cls.return_value,
         )
         # One approval service, holding the publish handler, is what locks

@@ -498,3 +498,17 @@ py_test(
         "//backend/mentorship",
     ],
 )
+
+py_test(
+    name = "participant_email_routes_test",
+    srcs = ["participant_email_routes_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)

@@ -102,6 +102,19 @@ MENTORSHIP_ADMIN_PARTICIPANT_DETAIL = (
 MENTORSHIP_ADMIN_PARTICIPANT_NOTES = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/notes"
 )
+MENTORSHIP_ADMIN_PARTICIPANT_EMAILS = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/{thread_id}/reply"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/refresh"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails"
+    "/messages/{message_id}/attachments/{index}"
+)
 MENTORSHIP_ADMIN_APPROVERS = "/mentorship/admin/approvals/approvers"
 MENTORSHIP_ADMIN_APPROVALS_MINE = "/mentorship/admin/approvals/mine"
 MENTORSHIP_ADMIN_APPROVAL_REASSIGN = "/mentorship/admin/approvals/{request_id}/reassign"

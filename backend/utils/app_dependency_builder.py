@@ -262,6 +262,10 @@ from backend.mentorship.matching_run_complete_service import (
 )
 from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
+from backend.mentorship.participant_email_service import (
+    MentorshipParticipantEmailPolicy,
+    ParticipantEmailService,
+)
 from backend.mentorship.mentorship_email_controller import MentorshipEmailController
 from backend.mentorship.mentorship_email_service import MentorshipEmailService
 from backend.mentorship.mentorship_email_prepare_service import (
@@ -878,15 +882,6 @@ class AppDependencyBuilder:
             matching_run_complete_service=self.matching_run_complete_service,
             database=self.database,
         )
-        self.mentorship_admin_controller = MentorshipAdminController(
-            mentorship_admin_service=self.mentorship_admin_service,
-            matching_run_service=self.matching_run_service,
-            matching_run_read_service=self.matching_run_read_service,
-            matching_draft_service=self.matching_draft_service,
-            mentorship_approval_service=self.mentorship_approval_service,
-            launchdarkly_service=self.launchdarkly_service,
-            database=self.database,
-        )
         self.mentorship_email_prepare_service = MentorshipEmailPrepareService(
             database=self.database,
             mentorship_email_repository=self.mentorship_email_repository,
@@ -1117,6 +1112,25 @@ class AppDependencyBuilder:
             user_emails_repository=self.user_emails_repository,
             context_registry=self.email_context_registry,
             gmail_client=self.gmail_client,
+        )
+        self.participant_email_service = ParticipantEmailService(
+            policy=MentorshipParticipantEmailPolicy(
+                rounds_repository=self.mentorship_round_repository,
+                users_repository=self.users_repository,
+                person_email_service=self.person_email_service,
+                aliases=self.inbox_aliases,
+            ),
+            person_email_service=self.person_email_service,
+        )
+        self.mentorship_admin_controller = MentorshipAdminController(
+            mentorship_admin_service=self.mentorship_admin_service,
+            matching_run_service=self.matching_run_service,
+            matching_run_read_service=self.matching_run_read_service,
+            matching_draft_service=self.matching_draft_service,
+            mentorship_approval_service=self.mentorship_approval_service,
+            launchdarkly_service=self.launchdarkly_service,
+            participant_email_service=self.participant_email_service,
+            database=self.database,
         )
         # Optional: an environment whose mailbox has no watch yet boots
         # normally and the daily job reports it as skipped.
