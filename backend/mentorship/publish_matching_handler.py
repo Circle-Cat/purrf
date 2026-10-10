@@ -231,12 +231,14 @@ class PublishMatchingHandler(ApprovalHandler):
         pair_of_mentee = {pair.mentee_id: pair.pair_id for pair in created}
         new_pairs: dict[int, list[tuple[int, int]]] = {}
         for pair in created:
-            new_pairs.setdefault(pair.mentor_id, []).append(
-                (pair.mentee_id, pair.pair_id)
-            )
-            new_pairs.setdefault(pair.mentee_id, []).append(
-                (pair.mentor_id, pair.pair_id)
-            )
+            new_pairs.setdefault(pair.mentor_id, []).append((
+                pair.mentee_id,
+                pair.pair_id,
+            ))
+            new_pairs.setdefault(pair.mentee_id, []).append((
+                pair.mentor_id,
+                pair.pair_id,
+            ))
 
         paired = {user_id for pair in pairs for user_id in pair}
         in_run = {int(mentee_id) for mentee_id in rows} | {

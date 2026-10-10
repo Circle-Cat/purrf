@@ -3,8 +3,9 @@
 Mentor Mia has two mentees this round; she is withdrawn. Her pairs end, the
 meetings of those pairs that have not started are cancelled, her mentees,
 left with no pair, become un_matched, and next round she -- and only she --
-is flagged for quitting after being matched. The fixture keeps every id distinct: raiser, reviewer, the
-mentor, each mentee, an unrelated pair and its meetings."""
+is flagged for quitting after being matched. The fixture keeps every id
+distinct: raiser, reviewer, the mentor, each mentee, an unrelated pair and its
+meetings."""
 
 import unittest
 import uuid

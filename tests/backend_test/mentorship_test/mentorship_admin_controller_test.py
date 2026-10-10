@@ -588,9 +588,11 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
 
     async def test_requesting_to_end_a_pair_names_the_person_and_pair(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
-        body = EndPairRequestDto.model_validate(
-            {"pairId": 501, "reviewerId": 8, "reason": ""}
-        )
+        body = EndPairRequestDto.model_validate({
+            "pairId": 501,
+            "reviewerId": 8,
+            "reason": "",
+        })
 
         response = await self.controller.request_end_pair(7, 21, body, caller)
 
@@ -608,9 +610,11 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
     async def test_requesting_to_end_a_pair_is_refused_while_the_flag_is_off(self):
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
-        body = EndPairRequestDto.model_validate(
-            {"pairId": 501, "reviewerId": 8, "reason": ""}
-        )
+        body = EndPairRequestDto.model_validate({
+            "pairId": 501,
+            "reviewerId": 8,
+            "reason": "",
+        })
 
         with self.assertRaises(PermissionError):
             await self.controller.request_end_pair(7, 21, body, caller)

@@ -159,9 +159,7 @@ class EndPairHandler(ApprovalHandler):
             f"{names.get(actor_id, f'User {actor_id}')}. {cancelled} upcoming "
             f"meetings cancelled."
         )
-        moved = (
-            f"; {ApprovalStatus.MATCHED.value} -> {ApprovalStatus.UN_MATCHED.value}"
-        )
+        moved = f"; {ApprovalStatus.MATCHED.value} -> {ApprovalStatus.UN_MATCHED.value}"
         for user_id in (mentor_id, mentee_id):
             await self.note_repository.create(
                 session,

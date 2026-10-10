@@ -115,7 +115,11 @@ class EndPairFlowTest(BaseRepositoryTestLib):
         self.mentee_a = _user("Ann")
         self.mentee_b = _user("Bo")
         await self.insert_entities([
-            self.raiser, self.reviewer, self.mentor, self.mentee_a, self.mentee_b
+            self.raiser,
+            self.reviewer,
+            self.mentor,
+            self.mentee_a,
+            self.mentee_b,
         ])
         self.round = MentorshipRoundEntity(
             name="Spring 2026",

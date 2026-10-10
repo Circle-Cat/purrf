@@ -79,7 +79,9 @@ class UnmatchIfUnpairedTest(unittest.IsolatedAsyncioTestCase):
         moved = await self._run([LEFT])
 
         self.assertEqual(moved, set())
-        self.assertIs(self.registrations[LEFT].approval_status, ApprovalStatus.WITHDRAWN)
+        self.assertIs(
+            self.registrations[LEFT].approval_status, ApprovalStatus.WITHDRAWN
+        )
 
     async def test_someone_not_registered_is_skipped(self):
         del self.registrations[MENTEE]

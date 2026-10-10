@@ -324,9 +324,10 @@ class MatchingPayloadService:
             ],
             "unexpected_partner_ids": [
                 str(i)
-                for i in dict.fromkeys(
-                    [*(participant.unexpected_partner_user_id or []), *ended_partner_ids]
-                )
+                for i in dict.fromkeys([
+                    *(participant.unexpected_partner_user_id or []),
+                    *ended_partner_ids,
+                ])
             ],
             # Both sides carry these. The matcher reads them to avoid pairing two
             # people who have never been through a round, which is a question
