@@ -348,6 +348,7 @@ describe("ChangeStatusDialog", () => {
       types: [statusRequestType("end_pair")],
       pairs: [pairWith(80, "Ann"), pairWith(81, "Bo")],
     });
+    expect(screen.getByText(/^The pair you pick ends/)).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Which pair"), "80");
     await waitFor(() =>
       expect(
@@ -357,6 +358,9 @@ describe("ChangeStatusDialog", () => {
       ).toBeInTheDocument(),
     );
     await user.selectOptions(screen.getByLabelText("Reviewer"), "1081");
+    expect(
+      screen.getByRole("button", { name: "Send for approval" }),
+    ).toBeEnabled();
 
     await user.selectOptions(screen.getByLabelText("Which pair"), "81");
 

@@ -177,9 +177,9 @@ describe("WaitingOnDecision", () => {
       ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Approve" }));
-    expect(
-      await screen.findByText(/^The pair with Mia Ko ends/),
-    ).toBeInTheDocument();
+    const description = await screen.findByText(/^The pair with Mia Ko ends/);
+    expect(description.textContent.match(/Mia Ko/g)).toHaveLength(1);
+    expect(description.textContent).not.toMatch(/about the pair/);
     expect(screen.queryByText(/pair with Cy Lee/)).not.toBeInTheDocument();
   });
 

@@ -195,7 +195,7 @@ const WaitingOnDecision = ({
                     partnerName: pairPartner(open)?.name,
                   })) ||
                 "It takes effect at once and cannot be undone."
-              }${open ? aboutPair(open) : ""}`
+              }${open && !typeOf(open)?.partnerMayNotReview ? aboutPair(open) : ""}`
         }
         submitting={busy}
         onConfirm={(comment) =>
