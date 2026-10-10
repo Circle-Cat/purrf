@@ -608,7 +608,9 @@ class MentorshipRoundParticipantsRepository:
         if only_user_ids is not None:
             base_stmt = base_stmt.where(UsersEntity.user_id.in_(sorted(only_user_ids)))
         if user_id_condition is not None:
-            base_stmt = base_stmt.where(user_id_condition.applied_to(UsersEntity.user_id))
+            base_stmt = base_stmt.where(
+                user_id_condition.applied_to(UsersEntity.user_id)
+            )
 
         total = (
             await session.scalar(select(func.count()).select_from(base_stmt.subquery()))

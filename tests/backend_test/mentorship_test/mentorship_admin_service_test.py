@@ -450,7 +450,9 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 self.mock_email_service.notified_user_ids.assert_awaited_once_with(
                     self.mock_session, 7, "midterm_reminder", **flags
                 )
-                call = self.mock_participants_repo.search_participants_for_admin.await_args
+                call = (
+                    self.mock_participants_repo.search_participants_for_admin.await_args
+                )
                 self.assertEqual(
                     call.kwargs["user_id_condition"],
                     UserIdCondition(self.notified_query, exclude=exclude),

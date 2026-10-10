@@ -1004,9 +1004,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         await self._hire_for_activity(cid)
         await self._register(self.user, bob, cid)
         filters = ParticipantSearchFilterDto(round_id=self.rounds[0].round_id)
-        bob_only = select(UsersEntity.user_id).where(
-            UsersEntity.user_id == bob.user_id
-        )
+        bob_only = select(UsersEntity.user_id).where(UsersEntity.user_id == bob.user_id)
 
         kept, kept_total = await self.repo.search_participants_for_admin(
             self.session,
@@ -1767,13 +1765,9 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         await self.insert_entities([ann, ben])
         await self._hire_for_activity(ann)
         await self._hire_for_activity(ben, role=ParticipantRole.MENTOR)
-        ann_only = select(UsersEntity.user_id).where(
-            UsersEntity.user_id == ann.user_id
-        )
+        ann_only = select(UsersEntity.user_id).where(UsersEntity.user_id == ann.user_id)
 
-        kept = await self._unregistered_ids(
-            user_id_condition=UserIdCondition(ann_only)
-        )
+        kept = await self._unregistered_ids(user_id_condition=UserIdCondition(ann_only))
         left = await self._unregistered_ids(
             user_id_condition=UserIdCondition(ann_only, exclude=True)
         )
