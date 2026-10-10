@@ -83,8 +83,6 @@ def alerts_after_sync(thread, messages, new_messages) -> ThreadAlerts:
     if not needs_reply(before, thread.archived_at) and needs_reply(
         messages, thread.archived_at
     ):
-        newest = max(
-            (m for m in new_messages if is_human_inbound(m)), key=message_time
-        )
+        newest = max((m for m in new_messages if is_human_inbound(m)), key=message_time)
         needs_reply_from = newest.from_address
     return ThreadAlerts(needs_reply_from=needs_reply_from, bounces=bounces)

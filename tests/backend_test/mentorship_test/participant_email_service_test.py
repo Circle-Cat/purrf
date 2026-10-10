@@ -31,7 +31,9 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
         self.session = Mock()
         self.session.commit = AsyncMock()
         self.rounds = Mock()
-        self.rounds.get_by_round_id = AsyncMock(return_value=SimpleNamespace(round_id=8))
+        self.rounds.get_by_round_id = AsyncMock(
+            return_value=SimpleNamespace(round_id=8)
+        )
         self.users = Mock()
         self.users.get_user_by_user_id = AsyncMock(
             return_value=SimpleNamespace(user_id=32)
@@ -138,7 +140,13 @@ class ServiceTest(_Fixture):
         )
 
         result = await self.service.send_email(
-            self.session, 8, 32, self._writer(), to=["ann@x.com"], subject="Hi", body="Hello"
+            self.session,
+            8,
+            32,
+            self._writer(),
+            to=["ann@x.com"],
+            subject="Hi",
+            body="Hello",
         )
 
         self.assertIs(result, self.conversation)
@@ -147,7 +155,12 @@ class ServiceTest(_Fixture):
         self.assertEqual((policy.user_id, policy.context_id), (32, 8))
         self.assertEqual(
             self.person_email.send_new.call_args.kwargs,
-            {"sender_user_id": 900, "to": ["ann@x.com"], "subject": "Hi", "body": "Hello"},
+            {
+                "sender_user_id": 900,
+                "to": ["ann@x.com"],
+                "subject": "Hi",
+                "body": "Hello",
+            },
         )
 
     async def test_reply_passes_the_thread_and_what_was_seen(self):
@@ -209,7 +222,13 @@ class ServiceTest(_Fixture):
 
         with self.assertRaises(NotFoundError):
             await self.service.send_email(
-                self.session, 8, 32, self._writer(), to=["ann@x.com"], subject="Hi", body="Hello"
+                self.session,
+                8,
+                32,
+                self._writer(),
+                to=["ann@x.com"],
+                subject="Hi",
+                body="Hello",
             )
 
         self.person_email.send_new.assert_not_awaited()

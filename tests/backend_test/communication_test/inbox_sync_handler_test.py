@@ -2,7 +2,10 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 from backend.common.communication_enums import ContextType
-from backend.communication.inbox_sync_handler import INBOX_CONTEXT_TYPES, InboxSyncHandler
+from backend.communication.inbox_sync_handler import (
+    INBOX_CONTEXT_TYPES,
+    InboxSyncHandler,
+)
 
 
 def _session():

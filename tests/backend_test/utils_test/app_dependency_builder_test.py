@@ -1045,9 +1045,7 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(builder.inbox_notifier._services, builder.thread_service_resolver)
         # A person's round threads tell mentorship, not the Inbox.
         self.assertNotIn(ContextType.ACTIVITY, INBOX_CONTEXT_TYPES)
-        self.assertIsNot(
-            registry.get(ContextType.ACTIVITY), builder.inbox_sync_handler
-        )
+        self.assertIsNot(registry.get(ContextType.ACTIVITY), builder.inbox_sync_handler)
         self.assertIs(
             registry.get(ContextType.ACTIVITY), builder.participant_email_sync_handler
         )

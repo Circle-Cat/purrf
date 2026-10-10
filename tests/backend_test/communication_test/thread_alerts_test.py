@@ -81,9 +81,7 @@ class AlertsAfterSyncTest(unittest.TestCase):
         self.assertIsNone(alerts.needs_reply_from)
 
     def test_a_bounce_before_any_send_is_not_an_alert(self):
-        alerts = self._alerts(
-            [], [_in(5, kind=InboundKind.BOUNCE, failed="a@x.com")]
-        )
+        alerts = self._alerts([], [_in(5, kind=InboundKind.BOUNCE, failed="a@x.com")])
 
         self.assertEqual(alerts.bounces, [])
 

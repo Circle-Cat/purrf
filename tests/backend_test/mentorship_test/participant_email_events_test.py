@@ -34,7 +34,9 @@ def _received(**details):
 
 
 def _bounced(**details):
-    return _event(MentorshipEvent.EMAIL_BOUNCED, **{"bouncedTo": "ann@x.com", **details})
+    return _event(
+        MentorshipEvent.EMAIL_BOUNCED, **{"bouncedTo": "ann@x.com", **details}
+    )
 
 
 class _Patched(unittest.IsolatedAsyncioTestCase):

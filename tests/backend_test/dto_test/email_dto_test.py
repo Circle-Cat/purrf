@@ -121,9 +121,11 @@ class EmailSendRequestDtoTest(unittest.TestCase):
 
 class TextEmailRequestDtoTest(unittest.TestCase):
     def test_send_needs_a_recipient_a_subject_and_a_body_within_limits(self):
-        ok = TextEmailSendRequestDto.model_validate(
-            {"to": ["ann@x.com"], "subject": " Hi ", "body": "x" * 10_000}
-        )
+        ok = TextEmailSendRequestDto.model_validate({
+            "to": ["ann@x.com"],
+            "subject": " Hi ",
+            "body": "x" * 10_000,
+        })
         self.assertEqual(ok.subject, "Hi")
 
         for bad in (
@@ -138,9 +140,10 @@ class TextEmailRequestDtoTest(unittest.TestCase):
                     TextEmailSendRequestDto.model_validate(bad)
 
     def test_reply_names_the_last_message_seen(self):
-        dto = TextEmailReplyRequestDto.model_validate(
-            {"body": "Thanks", "lastSeenMessageId": 12}
-        )
+        dto = TextEmailReplyRequestDto.model_validate({
+            "body": "Thanks",
+            "lastSeenMessageId": 12,
+        })
         self.assertEqual(dto.last_seen_message_id, 12)
 
         with self.assertRaises(ValueError):

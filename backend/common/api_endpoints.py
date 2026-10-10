@@ -105,9 +105,7 @@ MENTORSHIP_ADMIN_PARTICIPANT_NOTES = (
 MENTORSHIP_ADMIN_PARTICIPANT_EMAILS = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails"
 )
-MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY = (
-    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/{thread_id}/reply"
-)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY = "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/{thread_id}/reply"
 MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/refresh"
 )

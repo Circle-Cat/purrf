@@ -111,11 +111,15 @@ class ParticipantEmailRoutesTest(unittest.TestCase):
         )
 
         self.emails.reply.side_effect = ConflictError("new mail", code="THREAD_CHANGED")
-        stale = self._writer().post(url, json={"body": "Thanks", "lastSeenMessageId": 11})
+        stale = self._writer().post(
+            url, json={"body": "Thanks", "lastSeenMessageId": 11}
+        )
         self.assertEqual(stale.status_code, HTTPStatus.CONFLICT)
         self.assertEqual(stale.json()["data"], {"code": "THREAD_CHANGED"})
 
-        reader = self._reader().post(url, json={"body": "Thanks", "lastSeenMessageId": 12})
+        reader = self._reader().post(
+            url, json={"body": "Thanks", "lastSeenMessageId": 12}
+        )
         self.assertEqual(reader.status_code, HTTPStatus.FORBIDDEN)
 
     def test_refresh_needs_write_and_reports_new_replies(self):
@@ -134,7 +138,9 @@ class ParticipantEmailRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.content, b"%PDF")
-        self.assertIn("filename*=UTF-8''cv.pdf", response.headers["content-disposition"])
+        self.assertIn(
+            "filename*=UTF-8''cv.pdf", response.headers["content-disposition"]
+        )
         self.assertEqual(
             self.emails.attachment.await_args.kwargs, {"message_id": 5, "index": 0}
         )

@@ -301,8 +301,18 @@ class MentorshipAdminController:
         read = authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])
         write = authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])
         for path, method, gate, handler in (
-            (MENTORSHIP_ADMIN_PARTICIPANT_EMAILS, "GET", read, self.get_participant_emails),
-            (MENTORSHIP_ADMIN_PARTICIPANT_EMAILS, "POST", write, self.send_participant_email),
+            (
+                MENTORSHIP_ADMIN_PARTICIPANT_EMAILS,
+                "GET",
+                read,
+                self.get_participant_emails,
+            ),
+            (
+                MENTORSHIP_ADMIN_PARTICIPANT_EMAILS,
+                "POST",
+                write,
+                self.send_participant_email,
+            ),
             (
                 MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH,
                 "POST",
