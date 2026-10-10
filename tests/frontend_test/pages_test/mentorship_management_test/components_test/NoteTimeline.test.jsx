@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
@@ -6,6 +6,10 @@ import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import { addParticipantNote } from "@/api/mentorshipApi";
 import { stagesForList } from "@/pages/MentorshipManagement/components/email/emailLabels";
 import { noteOf } from "../participantDetail.helper";
+import {
+  replyOf,
+  threadOf,
+} from "../../../components_test/email_test/email.helper";
 
 vi.mock("@/api/mentorshipApi", () => ({ addParticipantNote: vi.fn() }));
 vi.mock("@/api/mentorshipEmailApi", () => ({ markNotified: vi.fn() }));
@@ -89,7 +93,7 @@ describe("NoteTimeline", () => {
 
   it("says so when there are no notes", () => {
     renderTimeline();
-    expect(screen.getByText("No notes yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing here yet.")).toBeInTheDocument();
   });
 
   it("lists notes in the order given, with author, time and body", () => {
@@ -255,5 +259,108 @@ describe("NoteTimeline", () => {
       ),
     );
     expect(screen.getByLabelText("Note")).toHaveValue("Late again");
+  });
+
+  describe("emails", () => {
+    const notes = [
+      noteOf({
+        noteId: 2,
+        body: "Newer note",
+        createdAt: "2026-10-05T18:00:00Z",
+      }),
+      noteOf({
+        noteId: 1,
+        body: "Older note",
+        createdAt: "2026-09-01T18:00:00Z",
+      }),
+    ];
+
+    it("puts each thread among the notes by its newest message", () => {
+      renderTimeline({ notes, emailThreads: [threadOf()] });
+      const entries = Array.from(
+        screen.getByText("Newer note").closest("ul").children,
+      );
+      expect(entries.map((li) => li.textContent)).toEqual([
+        expect.stringContaining("Newer note"),
+        expect.stringContaining("Checking in"),
+        expect.stringContaining("Older note"),
+      ]);
+      const email = entries[1];
+      expect(within(email).getByText("Email")).toBeInTheDocument();
+      expect(within(email).getByText("2026-10-02 10:30")).toBeInTheDocument();
+      expect(within(email).getByText("by Dana Wu")).toBeInTheDocument();
+      expect(within(email).getByText("All good, thanks")).toBeInTheDocument();
+      expect(within(email).getByText("Needs reply")).toBeInTheDocument();
+    });
+
+    it("offers Reply only when it can reply", async () => {
+      const onReply = vi.fn();
+      const { unmount } = renderTimeline({
+        emailThreads: [threadOf()],
+        onReply,
+      });
+      expect(
+        screen.queryByRole("button", { name: "Reply" }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      renderTimeline({ emailThreads: [threadOf()], canReply: true, onReply });
+      await userEvent.click(screen.getByRole("button", { name: "Reply" }));
+      expect(onReply).toHaveBeenCalledWith(threadOf());
+    });
+
+    it("links attachments through attachmentUrl", () => {
+      renderTimeline({
+        emailThreads: [
+          threadOf({
+            messages: [
+              replyOf({ attachments: [{ name: "plan.pdf", size: 2048 }] }),
+            ],
+          }),
+        ],
+        attachmentUrl: (messageId, index) => `/dl/${messageId}/${index}`,
+      });
+      expect(screen.getByRole("link", { name: /plan\.pdf/ })).toHaveAttribute(
+        "href",
+        "/dl/411/0",
+      );
+    });
+
+    it("has no Refresh emails without a way to refresh", () => {
+      renderTimeline();
+      expect(
+        screen.queryByRole("button", { name: "Refresh emails" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it.each([
+      [0, "No new messages"],
+      [1, "1 new message"],
+      [3, "3 new messages"],
+    ])("says what a refresh found (%i)", async (count, text) => {
+      const onRefreshEmails = vi.fn().mockResolvedValue(count);
+      renderTimeline({ onRefreshEmails });
+      await userEvent.click(
+        screen.getByRole("button", { name: "Refresh emails" }),
+      );
+      expect(await screen.findByText(text)).toBeInTheDocument();
+      expect(onRefreshEmails).toHaveBeenCalledTimes(1);
+    });
+
+    it("says nothing when a refresh failed", async () => {
+      const onRefreshEmails = vi.fn().mockResolvedValue(null);
+      renderTimeline({ onRefreshEmails });
+      await userEvent.click(
+        screen.getByRole("button", { name: "Refresh emails" }),
+      );
+      expect(onRefreshEmails).toHaveBeenCalledTimes(1);
+      await onRefreshEmails.mock.results[0].value;
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Refresh emails" }),
+        ).toBeEnabled(),
+      );
+      expect(screen.queryByText(/new messages?$/i)).not.toBeInTheDocument();
+    });
   });
 });
