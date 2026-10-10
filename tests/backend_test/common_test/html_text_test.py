@@ -42,9 +42,7 @@ class TextToHtmlTest(unittest.TestCase):
         )
 
     def test_indentation_and_space_runs_are_kept_inside_the_div(self):
-        self.assertEqual(
-            text_to_html("  a   b\n    c"), _wrap("  a   b<br>    c")
-        )
+        self.assertEqual(text_to_html("  a   b\n    c"), _wrap("  a   b<br>    c"))
 
     def test_round_trip_keeps_indentation_free_text(self):
         self.assertEqual(html_to_text(text_to_html("a\nb")), "a\nb")
