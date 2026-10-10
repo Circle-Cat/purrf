@@ -68,3 +68,9 @@ py_test(
     srcs = ["training_course_dto_test.py"],
     deps = ["//backend/dto"],
 )
+
+py_test(
+    name = "email_dto_test",
+    srcs = ["email_dto_test.py"],
+    deps = ["//backend/dto"],
+)
