@@ -160,6 +160,79 @@ describe("WaitingOnDecision", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("names the mentor on the mentee's page when the pair is not in the list", async () => {
+    const user = userEvent.setup();
+    renderBlock({
+      requests: [ending],
+      pairs: [],
+      personId: 23,
+      personName: "Cy Lee",
+      viewerId: 8,
+      canApprove: true,
+    });
+
+    expect(
+      screen.getByText(
+        "End pair \u2014 raised by Dana Wu \u00b7 sent to Rae Kim \u2014 about the pair with Mia Ko",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(
+      await screen.findByText(/^The pair with Mia Ko ends/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/pair with Cy Lee/)).not.toBeInTheDocument();
+  });
+
+  it("names the mentee on the mentor's page when the pair is not in the list", async () => {
+    const user = userEvent.setup();
+    renderBlock({
+      requests: [ending],
+      pairs: [],
+      personId: 3104,
+      viewerId: 8,
+      canApprove: true,
+    });
+
+    expect(
+      screen.getByText(
+        "End pair \u2014 raised by Dana Wu \u00b7 sent to Rae Kim \u2014 about the pair with Cy Lee",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(
+      await screen.findByText(/^The pair with Cy Lee ends/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/pair with Mia Ko/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the mentor off the reviewers on the mentee's page when the pair is not in the list", async () => {
+    const user = userEvent.setup();
+    getMentorshipApprovers.mockResolvedValue({
+      data: [
+        { userId: 8, name: "Rae Kim" },
+        { userId: 3104, name: "Mia Ko" },
+        { userId: 12, name: "Sam Oyelaran" },
+      ],
+    });
+    renderBlock({
+      requests: [ending],
+      pairs: [],
+      personId: 23,
+      personName: "Cy Lee",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Sam Oyelaran" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("option", { name: "Mia Ko" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("says nothing of a pair when the request names none or one not listed", () => {
     const pairs = [
       { pairId: 80, partner: { firstName: "Bob", lastName: "Smith" } },

@@ -60,12 +60,6 @@ const WaitingOnDecision = ({
   const open = dialog?.request;
   const rejecting = dialog?.kind === "reject";
   const typeOf = (request) => statusRequestType(request.action);
-  const aboutPair = (request) => {
-    const pair = pairs.find((p) => p.pairId === request.pairId);
-    return pair
-      ? ` — about the pair with ${userDisplayName(pair.partner)}`
-      : "";
-  };
 
   const pairPartner = (request) => {
     const pair = pairs.find((p) => p.pairId === request.pairId);
@@ -74,6 +68,11 @@ const WaitingOnDecision = ({
       ? request.pair?.mentee
       : request.pair?.mentor;
     return other ? { id: other.userId, name: approvalPersonLabel(other) } : null;
+  };
+
+  const aboutPair = (request) => {
+    const partner = pairPartner(request);
+    return partner?.name ? ` — about the pair with ${partner.name}` : "";
   };
 
   return (
