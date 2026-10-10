@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Response
 
+from backend.communication.attachment_download import attachment_response
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
@@ -15,6 +16,7 @@ from backend.dto.interview_dto import InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.email_dto import EmailSendRequestDto
 from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT,
     RECRUITING_APPLICATION_EMAILS_ENDPOINT,
     RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
     RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
@@ -140,6 +142,13 @@ class BoardController:
             endpoint=authenticate(
                 permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
             )(self.get_application_email_templates),
+            methods=["GET"],
+            response_model=None,
+        )
+        # Attachments of the Emails tab: the same gate as reading it.
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT,
+            endpoint=authenticate()(self.get_application_email_attachment),
             methods=["GET"],
             response_model=None,
         )
@@ -331,6 +340,20 @@ class BoardController:
                 session, current_user, application_id
             )
         return api_response(message="Email templates fetched.", data=result)
+
+    async def get_application_email_attachment(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        message_id: int,
+        index: int,
+    ):
+        """One attachment of an Emails-tab message, as a download."""
+        async with self.database.session() as session:
+            content, name = await self.board_service.get_application_email_attachment(
+                session, current_user, application_id, message_id, index
+            )
+        return attachment_response(content, name)
 
     async def get_other_applications(
         self, current_user: UserContextDto, application_id: int

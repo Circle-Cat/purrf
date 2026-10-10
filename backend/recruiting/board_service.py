@@ -708,6 +708,43 @@ class BoardService:
             return False
         return True
 
+    async def get_application_email_attachment(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        message_id: int,
+        index: int,
+    ) -> tuple[bytes, str]:
+        """One attachment of a message in the application's threads.
+
+        Gated exactly like reading the Emails tab.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application.
+            message_id (int): A message in one of its threads.
+            index (int): Position in the message's attachments.
+
+        Returns:
+            tuple[bytes, str]: The content and the file name.
+
+        Raises:
+            ValueError: No standing on the application or candidate, or
+                ``attachment not found``.
+            NotFoundError: The message is not in this application's threads.
+        """
+        application, _ = await self._require_conversation_reader(
+            session, current_user, application_id
+        )
+        policy = await self.application_email_policy.resolve(
+            session, application, may_send=False
+        )
+        return await self.person_email_service.read_attachment(
+            session, policy, message_id, index
+        )
+
     async def _has_owner_standing(
         self,
         session: AsyncSession,

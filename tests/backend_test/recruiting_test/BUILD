@@ -171,6 +171,7 @@ py_test(
     name = "board_controller_test",
     srcs = ["board_controller_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/dto",

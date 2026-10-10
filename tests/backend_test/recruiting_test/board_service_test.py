@@ -667,6 +667,34 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             )
         self.email_svc.conversation.assert_not_awaited()
 
+    async def test_an_attachment_is_read_with_the_tab_gate_and_the_application(self):
+        self._setup_owned_application(application_id=7, user_id=5, owner=2)
+
+        content = await self.service.get_application_email_attachment(
+            self.session, self._ctx(user_id=2), 7, 31, 0
+        )
+
+        self.assertEqual(content, (b"%PDF", "cv.pdf"))
+        policy, message_id, index = self.email_svc.read_attachment.call_args.args[1:]
+        self.assertEqual(
+            (policy.user_id, policy.context_type, policy.context_id, message_id, index),
+            (5, ContextType.APPLICATION, 7, 31, 0),
+        )
+        self.assertFalse(policy.can_send)
+
+    async def test_an_attachment_needs_standing_on_the_candidate(self):
+        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(app, self._job(job_id=100, owner_ids=(2,)))]
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.get_application_email_attachment(
+                self.session, self._ctx(user_id=42), 7, 31, 0
+            )
+
+        self.email_svc.read_attachment.assert_not_awaited()
+
     async def test_send_application_email_write_forbids_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
         ctx = self._ctx(
