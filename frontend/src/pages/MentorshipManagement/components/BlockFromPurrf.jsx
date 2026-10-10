@@ -24,8 +24,8 @@ const REQUEST_DESCRIPTION =
 /**
  * Ask a user admin to block this person from Purrf, from their mentorship
  * page. While a request waits, says who it waits on instead; when the caller
- * raised it, they can reassign or withdraw it. Blocking is
- * about the account, not the round, so it is offered in any round.
+ * raised it, they can reassign or withdraw it. Blocking is about the account,
+ * not the round, so it is offered in any round.
  *
  * @param {{person: Object, pendingBlockRequest: Object|null,
  *          canWrite: boolean, onRequested: () => void}} props
@@ -47,10 +47,14 @@ const BlockFromPurrf = ({
   // read last settled for (success or failure).
   const [ownRequest, setOwnRequest] = useState(null);
   const [settledFor, setSettledFor] = useState(null);
+  // A withdrawn request stays in the prop until the page reloads.
+  const [withdrawnId, setWithdrawnId] = useState(null);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
 
+  const pending =
+    pendingBlockRequest?.requestId === withdrawnId ? null : pendingBlockRequest;
   const personId = person.userId;
   useEffect(() => {
     // Without write access the read is a guaranteed 403.
@@ -101,6 +105,7 @@ const BlockFromPurrf = ({
     setWithdrawing(true);
     withdrawBlockRequest(ownRequest.id)
       .then(() => {
+        setWithdrawnId(ownRequest.id);
         setOwnRequest(null);
         toast.success("Block request withdrawn.");
         onRequested();
@@ -109,9 +114,9 @@ const BlockFromPurrf = ({
       .finally(() => setWithdrawing(false));
   };
 
-  if (pendingBlockRequest) {
+  if (pending) {
     if (!settled) return null;
-    if (ownRequest) {
+    if (ownRequest && ownRequest.id === pending.requestId) {
       return (
         <>
           <span className="text-sm text-amber-800">
@@ -153,8 +158,7 @@ const BlockFromPurrf = ({
     }
     return (
       <p className="text-sm text-amber-800">
-        Block requested — waiting on{" "}
-        {approvalPersonLabel(pendingBlockRequest.reviewer)}
+        Block requested — waiting on {approvalPersonLabel(pending.reviewer)}
       </p>
     );
   }

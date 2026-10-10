@@ -97,6 +97,20 @@ describe("BlockFromPurrf", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("drops a withdrawn request at once, before the page reloads", async () => {
+    getRaisedBlockRequests.mockResolvedValue({ data: [OWN] });
+    withdrawBlockRequest.mockResolvedValue({ data: {} });
+    renderPending({ onRequested: vi.fn() });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Withdraw" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Block from Purrf" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/waiting on/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sent to/)).not.toBeInTheDocument();
+  });
+
   it("reassigns to another admin, leaving out the current reviewer, the caller and the person", async () => {
     getRaisedBlockRequests.mockResolvedValue({ data: [OWN] });
     getUserAdmins.mockResolvedValue({
