@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -4919,6 +4920,32 @@ describe("ApplicationDetailPage — Emails tab", () => {
         "Sending email is not set up here",
       );
     }
+  });
+
+  it("closes the compose dialog on moving to another application", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [replyableThread()], defaultTo: "cand@x.com" },
+    });
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(screen.getByRole("button", { name: /^Reply/ }));
+    expect(screen.getByRole("dialog", { name: "Reply" })).toBeInTheDocument();
+
+    await act(() => router.navigate("/recruiting/applications/102"));
+    await waitFor(() =>
+      expect(api.getApplicationDetail).toHaveBeenCalledWith("102"),
+    );
+    await waitLoaded();
+    // A dialog left open would make the rest of the page inert to user.click.
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Emails" }));
+    await screen.findByText("Interview Availability");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Reply" }),
+    ).not.toBeInTheDocument();
   });
 
   it("read.all viewer who is not an owner sees no compose control", async () => {

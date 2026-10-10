@@ -1106,6 +1106,7 @@ const ApplicationDetailPage = () => {
     reload: () => getApplicationEmails(applicationId).then(({ data }) => data),
     onConversation: (data) =>
       setEmails(data ?? { threads: [], defaultTo: null }),
+    contextKey: applicationId,
   });
 
   const load = useCallback(() => {

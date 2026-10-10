@@ -170,4 +170,88 @@ describe("useComposeEmail", () => {
     act(() => hook.result.current.openReply(threadOf()));
     expect(hook.result.current.dialogProps.staleMessages).toEqual([]);
   });
+
+  it("closes the dialog and drops the reply when the context key changes", async () => {
+    const submit = vi.fn().mockRejectedValueOnce(threadChangedError());
+    const reload = vi.fn().mockResolvedValue(
+      conversationOf({
+        threads: [
+          threadOf({
+            messages: [messageOf(), replyOf(), replyOf({ messageId: 412 })],
+          }),
+        ],
+      }),
+    );
+    const onConversation = vi.fn();
+    const hook = renderHook(
+      ({ contextKey }) =>
+        useComposeEmail({ submit, reload, onConversation, contextKey }),
+      { initialProps: { contextKey: "A" } },
+    );
+    act(() => hook.result.current.openReply(threadOf()));
+    await act(async () => {
+      await hook.result.current.dialogProps.onSend(REPLY).catch(() => {});
+    });
+    expect(hook.result.current.dialogProps.staleMessages).toHaveLength(1);
+
+    hook.rerender({ contextKey: "A" });
+    expect(hook.result.current.dialogProps.open).toBe(true);
+    expect(hook.result.current.dialogProps.replyThread.threadId).toBe(41);
+    expect(hook.result.current.dialogProps.staleMessages).toHaveLength(1);
+
+    hook.rerender({ contextKey: "B" });
+    expect(hook.result.current.dialogProps.open).toBe(false);
+    expect(hook.result.current.dialogProps.replyThread).toBeNull();
+    expect(hook.result.current.dialogProps.staleMessages).toEqual([]);
+  });
+
+  it("closes with a toast when the reloaded conversation lost the thread", async () => {
+    const { hook, submit, reload, onConversation } = setup();
+    const fresh = conversationOf({ threads: [threadOf({ threadId: 99 })] });
+    submit.mockRejectedValueOnce(threadChangedError());
+    reload.mockResolvedValue(fresh);
+    act(() => hook.result.current.openReply(threadOf()));
+
+    await act(async () => {
+      await hook.result.current.dialogProps.onSend(REPLY).catch(() => {});
+    });
+
+    expect(onConversation).toHaveBeenCalledWith(fresh);
+    expect(toast.error).toHaveBeenCalledWith(
+      "This thread is no longer available.",
+    );
+    expect(hook.result.current.dialogProps.open).toBe(false);
+  });
+
+  it("keeps a send that finishes after the context changed out of the new conversation", async () => {
+    let finish;
+    const submit = vi.fn().mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const onConversation = vi.fn();
+    const hook = renderHook(
+      ({ contextKey }) =>
+        useComposeEmail({ submit, reload: vi.fn(), onConversation, contextKey }),
+      { initialProps: { contextKey: "A" } },
+    );
+    act(() => hook.result.current.openCompose());
+    let sent;
+    act(() => {
+      sent = hook.result.current.dialogProps.onSend(NEW_EMAIL).catch((e) => e);
+    });
+    hook.rerender({ contextKey: "B" });
+    act(() => hook.result.current.openCompose());
+
+    await act(async () => {
+      finish(conversationOf());
+      await sent;
+    });
+
+    expect(await sent).toBeInstanceOf(Error);
+    expect(onConversation).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Email sent.");
+    expect(hook.result.current.dialogProps.open).toBe(true);
+  });
 });
