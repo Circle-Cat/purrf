@@ -68,7 +68,8 @@ const asIs = (iso) => iso;
  *
  * A new email goes to the addresses ticked from `recipientOptions`; nothing
  * can be typed, and `defaultTo` starts ticked. A reply goes to the thread's
- * `replyTo`, shown but fixed, under the thread's `Re:` subject.
+ * `replyTo`, shown but fixed, under the thread's `Re:` subject; a thread with
+ * no `replyTo` shows "Unknown" and cannot be sent.
  *
  * `mode` "rich" is the recruiting composer: an HTML editor, preset templates
  * and a signature from `loadTemplates`, and a warning before sending
@@ -149,7 +150,8 @@ const ComposeEmailDialog = ({
     loadTemplates,
   };
   const replyThreadId = replyThread?.threadId ?? null;
-  const replyTo = replyThread ? (replyThread.replyTo ?? defaultTo) : null;
+  // No fallback: the backend refuses a reply to a thread with no reply address.
+  const replyTo = replyThread?.replyTo ?? null;
 
   /** Whether the body still holds nothing but the signature we put there. */
   const isUntouchedPrefill = () =>
@@ -235,7 +237,7 @@ const ComposeEmailDialog = ({
   const doSend = () => {
     if (sending) return;
     onSend({
-      to: replyThread ? (replyTo ? [replyTo] : []) : to,
+      to: replyThread ? [replyTo] : to,
       subject: subject.trim(),
       body: rich
         ? sanitizeEmailHtml(editorRef.current?.innerHTML ?? "")
@@ -259,10 +261,11 @@ const ComposeEmailDialog = ({
    * Everything `handleSubmit` requires. It is the Send button's `disabled`
    * condition too: handleSubmit returns silently — no toast, no field error —
    * so anything it rejects has to read as a disabled button rather than a dead
-   * click. A new email with no address ticked is the real case.
+   * click. A new email with no address ticked, or a reply to a thread with
+   * no reply address, are the real cases.
    */
   const canSend =
-    (replyThread != null || to.length > 0) &&
+    (replyThread != null ? replyTo != null : to.length > 0) &&
     Boolean(subject.trim()) &&
     bodyReady;
 

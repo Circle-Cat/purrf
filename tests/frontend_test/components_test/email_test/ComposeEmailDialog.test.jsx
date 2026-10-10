@@ -126,6 +126,18 @@ describe("ComposeEmailDialog", () => {
     });
   });
 
+  it("shows Unknown and refuses to send a reply with no reply address", async () => {
+    const p = props({ replyThread: threadOf({ replyTo: null }) });
+    const user = userEvent.setup();
+    render(<ComposeEmailDialog {...p} />);
+
+    const dialog = screen.getByRole("dialog", { name: "Reply" });
+    expect(within(dialog).getByText("Unknown")).toBeInTheDocument();
+    expect(within(dialog).queryByText("alice@x.com")).not.toBeInTheDocument();
+    await user.type(message(), "Thanks");
+    expect(sendButton()).toBeDisabled();
+  });
+
   it("keeps the draft when the conversation reloads under an open reply", async () => {
     const p = props({ replyThread: threadOf() });
     const user = userEvent.setup();
