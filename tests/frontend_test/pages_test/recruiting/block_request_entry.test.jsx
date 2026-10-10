@@ -659,6 +659,49 @@ describe("Request block — someone else's request is waiting", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("waits for the caller's own requests before showing someone else's", async () => {
+    let resolveRaised;
+    adminApi.getRaisedBlockRequests.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRaised = resolve;
+      }),
+    );
+    api.getApplicationDetail.mockResolvedValue({ data: withPending(42) });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText(/waiting on/)).not.toBeInTheDocument();
+
+    resolveRaised({ data: [] });
+
+    expect(
+      await screen.findByText("Block requested — waiting on Sam Steward"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows someone else's request to a viewer who cannot raise one", async () => {
+    authState.permissions = [];
+    api.getApplicationDetail.mockResolvedValue({ data: withPending(42) });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      await screen.findByText("Block requested — waiting on Sam Steward"),
+    ).toBeInTheDocument();
+    expect(adminApi.getRaisedBlockRequests).not.toHaveBeenCalled();
+  });
+
+  it("shows someone else's request when reading the caller's own fails", async () => {
+    adminApi.getRaisedBlockRequests.mockRejectedValue(new Error("boom"));
+    api.getApplicationDetail.mockResolvedValue({ data: withPending(42) });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      await screen.findByText("Block requested — waiting on Sam Steward"),
+    ).toBeInTheDocument();
+  });
+
   it("shows the caller's own request as their own, not as someone else's", async () => {
     adminApi.getRaisedBlockRequests.mockResolvedValue({
       data: [requestDto(77, "Rita Reviewer")],
