@@ -411,6 +411,17 @@ py_test(
 )
 
 py_test(
+    name = "notification_mark_service_test",
+    srcs = ["notification_mark_service_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
     name = "mentorship_email_prepare_service_test",
     srcs = ["mentorship_email_prepare_service_test.py"],
     deps = [
