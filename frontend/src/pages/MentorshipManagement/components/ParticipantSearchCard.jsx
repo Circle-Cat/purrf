@@ -250,18 +250,30 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
 };
 
 /**
- * The stages a person was notified of this round, one badge each.
+ * A person's notifications this round, one badge per stage: sent, or still to
+ * go out with its Pacific send time.
  *
- * @param {{ stages: string[]|undefined }} props
+ * @param {{ stages: Array<{stage: string, scheduledAt: string|null}>|undefined }} props
  */
 const NotificationsCell = ({ stages }) =>
   stages?.length ? (
     <div className="flex flex-wrap gap-1">
-      {stages.map((stage) => (
-        <Badge key={stage} variant="outline">
-          {stageLabel(stage)}
-        </Badge>
-      ))}
+      {stages.map(({ stage, scheduledAt }) =>
+        scheduledAt ? (
+          <Badge
+            key={stage}
+            variant="outline"
+            className="border-dashed text-muted-foreground"
+          >
+            {stageLabel(stage)} · Scheduled{" "}
+            {formatInTz(scheduledAt, MEETING_TIMEZONE, "MM-dd HH:mm")} PT
+          </Badge>
+        ) : (
+          <Badge key={stage} variant="outline">
+            {stageLabel(stage)}
+          </Badge>
+        ),
+      )}
     </div>
   ) : (
     "—"
