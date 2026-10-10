@@ -30,7 +30,7 @@ describe("useNotifiedStages", () => {
     ]);
   });
 
-  it("shows a stage still to go out as scheduled, even if sent before", async () => {
+  it("keeps a stage sent before and scheduled again as both, sent first", async () => {
     listNotifiedStages.mockResolvedValue([
       {
         userId: 11,
@@ -53,6 +53,7 @@ describe("useNotifiedStages", () => {
     await waitFor(() => expect(result.current.stagesByUser.size).toBe(2));
     expect(result.current.stagesByUser.get(11)).toEqual([
       { stage: "admission", scheduledAt: null },
+      { stage: "match_result", scheduledAt: null },
       { stage: "match_result", scheduledAt: "2026-10-12T16:00:00Z" },
       { stage: "midterm_reminder", scheduledAt: "2026-11-02T17:30:00Z" },
     ]);
