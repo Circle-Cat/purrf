@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -975,6 +981,31 @@ describe("ParticipantDetailPage", () => {
           lastSeenMessageId: 411,
         }),
       );
+    });
+
+    it("closes the compose dialog on moving to another person", async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await user.click(
+        await screen.findByRole("button", { name: "Send email" }),
+      );
+      expect(
+        await screen.findByRole("dialog", { name: "Send email" }),
+      ).toBeInTheDocument();
+
+      // The open dialog hides the page from role queries and user.click.
+      fireEvent.click(screen.getByText("Bob Smith · ID 22").closest("a"));
+      await waitFor(() =>
+        expect(getParticipantEmails).toHaveBeenCalledWith("7", "22"),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("where")).toHaveTextContent(
+          "/mentorship-management/participants/22",
+        ),
+      );
+      await screen.findByText("Bob Smith · ID 22");
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
     it("refreshes the emails and says how many messages came in", async () => {

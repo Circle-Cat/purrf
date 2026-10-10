@@ -210,6 +210,7 @@ const ParticipantDetailPage = () => {
     submit: emails.submit,
     reload: emails.reload,
     onConversation: emails.setConversation,
+    contextKey: `${roundId}|${userId}`,
   });
 
   // Which pair's meeting log is open. The URL's pair wins; with no pair in
