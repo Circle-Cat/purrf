@@ -124,19 +124,28 @@ describe("EmailThreadCard", () => {
     const onReply = vi.fn();
     const { unmount } = renderCard({ onReply });
     expect(
-      screen.queryByRole("button", { name: "Reply" }),
+      screen.queryByRole("button", { name: /^Reply/ }),
     ).not.toBeInTheDocument();
     unmount();
 
     renderCard({ canReply: true, onReply });
-    await userEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Reply to Checking in" }),
+    );
     expect(onReply).toHaveBeenCalledWith(threadOf());
   });
 
   it("keeps Reply but disabled and titled with a hint", () => {
     renderCard({ canReply: true, replyDisabledHint: "Needs the grant" });
-    const reply = screen.getByRole("button", { name: "Reply" });
+    const reply = screen.getByRole("button", { name: "Reply to Checking in" });
     expect(reply).toBeDisabled();
     expect(reply).toHaveAttribute("title", "Needs the grant");
+  });
+
+  it("names Reply after a thread with no subject", () => {
+    renderCard({ thread: threadOf({ subject: null }), canReply: true });
+    expect(
+      screen.getByRole("button", { name: "Reply to (no subject)" }),
+    ).toBeInTheDocument();
   });
 });

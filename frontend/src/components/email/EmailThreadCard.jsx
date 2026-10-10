@@ -155,6 +155,7 @@ const EmailThreadCard = ({
           variant="outline"
           disabled={Boolean(replyDisabledHint)}
           title={replyDisabledHint}
+          aria-label={`Reply to ${thread.subject || "(no subject)"}`}
           onClick={() => onReply(thread)}
         >
           Reply

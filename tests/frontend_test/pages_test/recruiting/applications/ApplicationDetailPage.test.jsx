@@ -1238,7 +1238,9 @@ describe("ApplicationDetailPage — owner without the advance grant", () => {
 
     const send = await screen.findByRole("button", { name: "Send email" });
     expectClosed(send);
-    expectClosed(screen.getByRole("button", { name: "Reply" }));
+    expectClosed(
+      screen.getByRole("button", { name: "Reply to Interview Availability" }),
+    );
     fireEvent.click(send);
     expect(api.getApplicationEmailTemplates).not.toHaveBeenCalled();
   });
@@ -1282,7 +1284,7 @@ describe("ApplicationDetailPage — owner without the advance grant", () => {
       expect(button).not.toHaveAttribute("title");
     }
     await user.click(screen.getByRole("tab", { name: "Emails" }));
-    for (const name of ["Send email", "Reply"]) {
+    for (const name of ["Send email", "Reply to Interview Availability"]) {
       const button = await screen.findByRole("button", { name });
       expect(button).toBeEnabled();
       expect(button).not.toHaveAttribute("title");
@@ -3121,7 +3123,7 @@ describe("ApplicationDetailPage — history row emails", () => {
       within(row).queryByRole("button", { name: "Send email" }),
     ).not.toBeInTheDocument();
     expect(
-      within(row).queryByRole("button", { name: "Reply" }),
+      within(row).queryByRole("button", { name: /^Reply/ }),
     ).not.toBeInTheDocument();
     expect(
       within(row).queryByRole("button", { name: "Refresh" }),
@@ -4034,7 +4036,9 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
 
-    await user.click(screen.getByRole("button", { name: "Reply" }));
+    await user.click(
+      screen.getByRole("button", { name: "Reply to Interview Availability" }),
+    );
     expect(screen.getByLabelText("Subject")).toHaveValue(
       "Re: Interview Availability",
     );
@@ -4070,7 +4074,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     await user.click(
       screen.getByRole("button", {
-        name: replyThread ? "Reply" : "Send email",
+        name: replyThread ? /^Reply to / : "Send email",
       }),
     );
     return user;

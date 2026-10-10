@@ -56,7 +56,7 @@ describe("EmailConversation", () => {
       screen.queryByRole("button", { name: "Send email" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Reply" }),
+      screen.queryByRole("button", { name: /^Reply/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -64,7 +64,7 @@ describe("EmailConversation", () => {
     renderConversation({ sendDisabledHint: "Needs the grant" });
     for (const button of [
       screen.getByRole("button", { name: "Send email" }),
-      ...screen.getAllByRole("button", { name: "Reply" }),
+      ...screen.getAllByRole("button", { name: /^Reply to / }),
     ]) {
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute("title", "Needs the grant");
@@ -77,7 +77,7 @@ describe("EmailConversation", () => {
     renderConversation({ onCompose, onReply });
     await userEvent.click(screen.getByRole("button", { name: "Send email" }));
     expect(onCompose).toHaveBeenCalledTimes(1);
-    await userEvent.click(screen.getAllByRole("button", { name: "Reply" })[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: /^Reply to / })[0]);
     expect(onReply).toHaveBeenCalledWith(threadOf());
   });
 });
