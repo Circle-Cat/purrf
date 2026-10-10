@@ -2627,7 +2627,9 @@ describe("ParticipantSearchCard", () => {
         "Sent on Teams",
       );
       await userEvent.click(
-        within(dialog).getByRole("button", { name: "Mark as notified \u00b7 1" }),
+        within(dialog).getByRole("button", {
+          name: "Mark as notified \u00b7 1",
+        }),
       );
 
       await waitFor(() =>
