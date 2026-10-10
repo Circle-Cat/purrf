@@ -28,9 +28,7 @@ from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.dto.email_dto import (
     EmailConversationDto,
-    EmailMessageDto,
     EmailSendRequestDto,
-    EmailThreadDto,
 )
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
@@ -122,11 +120,29 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             return_value={}
         )
         self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
-        self.email_svc = AsyncMock()
-        self.email_svc.list_conversation = AsyncMock(return_value=[])
-        # sync returns the list of newly-persisted messages (Task 2); default
-        # empty so a sync writes no timeline activity.
-        self.email_svc.sync_context = AsyncMock(return_value=[])
+        # Stands in for PersonEmailService.
+        self.email_svc = MagicMock()
+        self.email_svc.default_sender_address = "recruiting@circlecat.org"
+        self.email_svc.person_email_addresses = AsyncMock(return_value=[])
+        self.email_svc.conversation = AsyncMock(
+            side_effect=lambda session, policy: EmailConversationDto(
+                threads=[],
+                can_send=policy.can_send,
+                default_to=policy.default_to,
+                recipient_options=list(policy.recipient_options),
+            )
+        )
+        self.email_svc.send_new = AsyncMock(
+            return_value=SimpleNamespace(
+                thread_id=10, subject="Hi", to_addresses="cand@example.com"
+            )
+        )
+        self.email_svc.reply = AsyncMock(
+            return_value=SimpleNamespace(
+                thread_id=55, subject="Re: Hi", to_addresses="Cand <cand@example.com>"
+            )
+        )
+        self.email_svc.read_attachment = AsyncMock(return_value=(b"%PDF", "cv.pdf"))
         # Real ApplicationAccess wired to the SAME test doubles BoardService
         # itself uses, so delegated `_load_owned_application`/
         # `_validate_interview_assignee` calls are indistinguishable from the
@@ -274,21 +290,19 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         subject="Hi",
         body="<p>x</p>",
         thread_id=None,
+        last_seen_message_id=None,
     ):
         return EmailSendRequestDto(
-            to=list(to), subject=subject, body=body, thread_id=thread_id
+            to=list(to),
+            subject=subject,
+            body=body,
+            thread_id=thread_id,
+            last_seen_message_id=last_seen_message_id,
         )
 
     def _caller(self, user_id=3):
         """A UserContextDto for the recruiter making the call."""
         return self._ctx(user_id=user_id)
-
-    def _email_service(self):
-        """The already-constructed BoardService plus its email-related mocks."""
-        return self.service, SimpleNamespace(
-            email_conversation_service=self.email_svc,
-            user_emails_repository=self.user_emails_repo,
-        )
 
     def _setup_owned_application(
         self, application_id=7, job_id=100, user_id=5, owner=2
@@ -304,20 +318,28 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- application email: send --
 
-    async def test_send_application_email_delegates_to_conversation_service(self):
+    async def test_send_application_email_sends_a_new_email_as_the_owner(self):
         self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value="c@x.com")
+
         result = await self.service.send_application_email(
             self.session, self._ctx(user_id=2), 7, self._email_dto(to=["c@x.com"])
         )
-        self.email_svc.send.assert_awaited_once()
-        _, kw = self.email_svc.send.call_args
-        self.assertEqual(kw["user_id"], 5)
-        self.assertEqual(kw["context_type"], ContextType.APPLICATION)
-        self.assertEqual(kw["context_id"], 7)
-        self.assertEqual(kw["to"], ["c@x.com"])
-        self.assertEqual(kw["sender_user_id"], 2)
-        self.assertIsNone(kw["thread_id"])
+
+        policy = self.email_svc.send_new.call_args.args[1]
+        self.assertEqual(
+            (policy.user_id, policy.context_type, policy.context_id),
+            (5, ContextType.APPLICATION, 7),
+        )
+        self.assertEqual([o.address for o in policy.recipient_options], ["c@x.com"])
+        self.assertEqual(
+            self.email_svc.send_new.call_args.kwargs,
+            {"sender_user_id": 2, "to": ["c@x.com"], "subject": "Hi", "body": "<p>x</p>"},
+        )
+        self.email_svc.reply.assert_not_awaited()
+        self.assertEqual(self.call_order, ["record", "commit"])
         self.assertIsInstance(result, EmailConversationDto)
+        self.assertTrue(result.can_send)
 
     async def test_send_application_email_rejects_non_owner(self):
         self._setup_owned_application(owner=2)
@@ -325,7 +347,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.send_application_email(
                 self.session, self._ctx(user_id=99), 7, self._email_dto()
             )
-        self.email_svc.send.assert_not_awaited()
+        self.email_svc.send_new.assert_not_awaited()
 
     async def test_send_application_email_missing_application(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
@@ -333,33 +355,53 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.send_application_email(
                 self.session, self._ctx(user_id=2), 7, self._email_dto()
             )
-        self.email_svc.send.assert_not_awaited()
+        self.email_svc.send_new.assert_not_awaited()
 
-    async def test_send_application_email_empty_to_uses_contact_email(self):
-        self._setup_owned_application(user_id=5, owner=2)
-        self.user_emails_repo.get_contact_email = AsyncMock(return_value="fb@x.com")
+    async def test_a_reply_goes_through_the_thread_and_ignores_to(self):
+        self._setup_owned_application(owner=2)
+
         await self.service.send_application_email(
-            self.session, self._ctx(user_id=2), 7, self._email_dto(to=[])
+            self.session,
+            self._ctx(user_id=2),
+            7,
+            self._email_dto(to=["someone@else.com"], thread_id=55, last_seen_message_id=12),
         )
-        _, kw = self.email_svc.send.call_args
-        self.assertEqual(kw["to"], ["fb@x.com"])
 
-    async def test_send_application_email_no_recipient_raises(self):
-        self._setup_owned_application(user_id=5, owner=2)
-        self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
+        self.assertEqual(
+            self.email_svc.reply.call_args.kwargs,
+            {
+                "sender_user_id": 2,
+                "thread_id": 55,
+                "body": "<p>x</p>",
+                "last_seen_message_id": 12,
+            },
+        )
+        self.email_svc.send_new.assert_not_awaited()
+
+    async def test_a_reply_without_the_last_seen_message_is_refused(self):
+        self._setup_owned_application(owner=2)
+
         with self.assertRaises(ValueError):
             await self.service.send_application_email(
-                self.session, self._ctx(user_id=2), 7, self._email_dto(to=[])
+                self.session, self._ctx(user_id=2), 7, self._email_dto(thread_id=55)
             )
-        self.email_svc.send.assert_not_awaited()
 
-    async def test_send_application_email_reply_passes_thread_id(self):
+        self.email_svc.reply.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_failed_send_records_and_commits_nothing(self):
         self._setup_owned_application(owner=2)
-        await self.service.send_application_email(
-            self.session, self._ctx(user_id=2), 7, self._email_dto(thread_id=55)
+        self.email_svc.send_new.side_effect = ValueError(
+            "'x@y.com' is not an address this person can be written to at"
         )
-        _, kw = self.email_svc.send.call_args
-        self.assertEqual(kw["thread_id"], 55)
+
+        with self.assertRaises(ValueError):
+            await self.service.send_application_email(
+                self.session, self._ctx(user_id=2), 7, self._email_dto(to=["x@y.com"])
+            )
+
+        self.record_event.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
 
     # -- application email: templates --
 
@@ -542,48 +584,51 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- application email: get --
 
-    async def test_get_application_conversation_pure_read_does_not_sync(self):
+    async def test_get_application_conversation_lets_an_advancing_owner_compose(self):
+        self._setup_owned_application(user_id=5, owner=2)
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value="c@x.com")
+
+        result = await self.service.get_application_conversation(
+            self.session,
+            self._ctx(user_id=2, permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]),
+            7,
+        )
+
+        self.assertTrue(result.can_send)
+        self.assertEqual(result.default_to, "c@x.com")
+        self.session.commit.assert_not_awaited()
+
+    async def test_an_owner_without_the_advance_permission_reads_only(self):
         self._setup_owned_application(owner=2)
+
         result = await self.service.get_application_conversation(
             self.session, self._ctx(user_id=2), 7
         )
-        self.email_svc.sync_context.assert_not_awaited()
-        self.email_svc.list_conversation.assert_awaited_once()
-        self.assertIsInstance(result, EmailConversationDto)
+
+        self.assertFalse(result.can_send)
+        self.assertIsNone(result.default_to)
+        self.user_emails_repo.get_contact_email.assert_not_awaited()
 
     async def test_get_application_conversation_allows_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
         ctx = self._ctx(
-            user_id=99, permissions=[Permission.RECRUITING_APPLICATION_READ_ALL]
+            user_id=99,
+            permissions=[
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+                Permission.RECRUITING_APPLICATION_ADVANCE,
+            ],
         )
+
         result = await self.service.get_application_conversation(self.session, ctx, 7)
+
         self.assertIsInstance(result, EmailConversationDto)
+        self.assertFalse(result.can_send)
 
     async def test_conversation_read_allows_owner_of_another_posting_of_the_candidate(
         self,
     ):
         """The cross-posting history rows read mail through this endpoint,
-        so an owner of ANY posting the candidate applied to can read it —
-        the same "single entry gate" get_resume already resolves by."""
-        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        sibling_job = self._job(job_id=200, owner_ids=(42,))
-        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (app, self._job(job_id=100, owner_ids=(2,))),
-                (sibling_app, sibling_job),
-            ]
-        )
-
-        result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=42), 7
-        )
-
-        self.assertIsInstance(result, EmailConversationDto)
-        self.email_svc.list_conversation.assert_awaited_once()
-
-    async def test_conversation_read_gives_a_candidate_scope_caller_no_prefill(self):
-        """A read-only caller has no compose box to seed."""
+        so an owner of ANY posting the candidate applied to can read it."""
         app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
         sibling_app = self._application(application_id=8, job_id=200, user_id=5)
         self.app_repo.list_by_user = AsyncMock(
@@ -597,7 +642,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=42), 7
         )
 
+        self.assertIsInstance(result, EmailConversationDto)
         self.assertIsNone(result.default_to)
+        policy = self.email_svc.conversation.call_args.args[1]
+        self.assertEqual((policy.user_id, policy.context_id), (5, 7))
         self.user_emails_repo.get_contact_email.assert_not_awaited()
 
     async def test_conversation_read_forbids_a_caller_with_no_standing_anywhere(self):
@@ -610,7 +658,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.get_application_conversation(
                 self.session, self._ctx(user_id=42), 7
             )
-        self.email_svc.list_conversation.assert_not_awaited()
+        self.email_svc.conversation.assert_not_awaited()
 
     async def test_send_application_email_write_forbids_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
@@ -621,58 +669,34 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.send_application_email(
                 self.session, ctx, 7, self._email_dto()
             )
-        self.email_svc.send.assert_not_awaited()
-
-    async def test_conversation_prefills_only_the_candidate_as_to(self):
-        """Only the candidate's contact address is looked up for To."""
-        service, mocks = self._email_service()
-        thread = EmailThreadDto(
-            thread_id=10,
-            subject="S",
-            synced_at=None,
-            created_at=datetime.now(timezone.utc),
-            messages=[
-                EmailMessageDto(
-                    message_id=1,
-                    direction="outbound",
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ],
-        )
-        mocks.email_conversation_service.list_conversation = AsyncMock(
-            return_value=[thread]
-        )
-        mocks.user_emails_repository.get_contact_email = AsyncMock(
-            return_value="candidate@x"
-        )
-
-        result = await service._build_application_conversation(
-            self.session, application_id=7, user_id=42
-        )
-
-        self.assertEqual(result.default_to, "candidate@x")
-        mocks.user_emails_repository.get_contact_email.assert_awaited_once_with(
-            self.session, 42
-        )
+        self.email_svc.send_new.assert_not_awaited()
 
     # -- application email: timeline events --
 
     async def test_send_application_email_logs_email_sent_activity(self):
         self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        self.email_svc.send = AsyncMock(return_value=SimpleNamespace(thread_id=10))
-        dto = self._email_dto(to=["c@x"], subject="Hello")
+
         await self.service.send_application_email(
-            self.session, self._ctx(user_id=2), 7, dto
+            self.session,
+            self._ctx(user_id=2),
+            7,
+            self._email_dto(thread_id=55, last_seen_message_id=12),
         )
+
         self.record_event.assert_awaited_once()
-        _args, kwargs = self.record_event.await_args
+        kwargs = self.record_event.await_args.kwargs
         self.assertEqual(kwargs["subject_id"], 7)
-        self.assertEqual(kwargs["actor_id"], 2)  # the sending recruiter
+        self.assertEqual(kwargs["actor_id"], 2)
         self.assertEqual(kwargs["event_type"], "recruiting.email_sent")
-        self.assertEqual(kwargs["details"]["subject"], "Hello")
-        self.assertEqual(kwargs["details"]["to"], ["c@x"])
-        self.assertEqual(kwargs["details"]["threadId"], 10)
-        self.assertEqual(kwargs["details"]["direction"], "outbound")
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "subject": "Re: Hi",
+                "to": ["cand@example.com"],
+                "threadId": 55,
+                "direction": "outbound",
+            },
+        )
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(

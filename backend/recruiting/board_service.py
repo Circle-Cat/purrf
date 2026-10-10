@@ -1,4 +1,5 @@
 import re
+from email.utils import getaddresses
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,6 @@ from backend.dto.email_dto import (
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType
 from backend.common.name_utils import display_name_of
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
@@ -41,6 +41,7 @@ from backend.notification_management.event_recorder import record_event
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
+from backend.recruiting.application_email_policy import RecruitingApplicationEmailPolicy
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 _MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
@@ -154,7 +155,7 @@ class BoardService:
         evaluation_repository,
         notification_repository,
         user_emails_repository,
-        email_conversation_service,
+        person_email_service,
         application_interview_repository,
         application_access,
         interview_scheduling_service,
@@ -204,10 +205,9 @@ class BoardService:
                 (mentioned users notified) -- independent, explicit calls,
                 not merged with the activity log (see the notification-system
                 design spec for why).
-            email_conversation_service (EmailConversationService): Person-anchored
-                email transport/DB layer; the Emails-tab endpoints resolve an
-                application to its (user_id, APPLICATION:application_id) context
-                and delegate send/sync/read here.
+            person_email_service (PersonEmailService): Email with the applicant;
+                the Emails-tab endpoints resolve an application to its
+                (user_id, APPLICATION:application_id) policy and delegate here.
             application_interview_repository (ApplicationInterviewRepository):
                 Read-only lookup used by ``get_application_detail`` to embed
                 the current stage+round's scheduled meeting, if any.
@@ -245,7 +245,10 @@ class BoardService:
         self.evaluation_repository = evaluation_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
-        self.email_conversation_service = email_conversation_service
+        self.person_email_service = person_email_service
+        self.application_email_policy = RecruitingApplicationEmailPolicy(
+            person_email_service, user_emails_repository
+        )
         self.application_interview_repository = application_interview_repository
         self.application_access = application_access
         self.interview_scheduling_service = interview_scheduling_service
@@ -450,53 +453,56 @@ class BoardService:
         application_id: int,
         dto,
     ) -> EmailConversationDto:
-        """Send (or reply to) a candidate email for one application.
+        """Send a new candidate email, or reply in one of the application's threads.
 
-        Owner-only (mirrors advancing the candidate): the caller must be a
-        configured owner of the application's posting. Resolves the application
-        to its candidate ``user_id`` and delegates to the shared email service
-        under ``(APPLICATION, application_id)``. Returns the refreshed
-        conversation so the Emails tab can re-render in one round-trip.
+        Owner-only (mirrors advancing the candidate). Without ``thread_id`` it
+        is a new email to the chosen ``to``, each of which must be one of the
+        applicant's addresses. With it, a reply to whoever the thread's reply
+        goes to; ``to`` and ``subject`` are ignored and
+        ``last_seen_message_id`` is required. Records ``email_sent`` and
+        commits, then returns the conversation.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application being emailed about.
-            dto (EmailSendRequestDto): Compose payload (to/subject/body,
-                optional thread_id for a reply).
+            dto (EmailSendRequestDto): The compose payload.
 
         Returns:
-            EmailConversationDto: The application's full conversation after send.
+            EmailConversationDto: The application's conversation after the send.
 
         Raises:
-            ValueError: If the application is missing, the caller is not an
-                owner, or no recipient can be determined.
+            ValueError: Missing application, caller not an owner, a reply
+                without ``last_seen_message_id``, or content refused.
+            NotFoundError: The reply's thread is not this application's.
+            ConflictError: ``THREAD_CHANGED`` when a newer message arrived.
         """
         application = await self._require_application_owner(
             session, current_user, application_id, allow_read_all=False
         )
-        recipients = list(dto.to)
-        if not recipients:
-            contact = await self.user_emails_repository.get_contact_email(
-                session, application.user_id
-            )
-            if contact:
-                recipients = [contact]
-        if not recipients:
-            raise ValueError(
-                "No recipient: the candidate has no contact email; provide 'to'."
-            )
-        message = await self.email_conversation_service.send(
-            session,
-            user_id=application.user_id,
-            context_type=ContextType.APPLICATION,
-            context_id=application_id,
-            to=recipients,
-            subject=dto.subject,
-            body=dto.body,
-            sender_user_id=current_user.user_id,
-            thread_id=dto.thread_id,
+        policy = await self.application_email_policy.resolve(
+            session, application, may_send=True
         )
+        if dto.thread_id is None:
+            message = await self.person_email_service.send_new(
+                session,
+                policy,
+                sender_user_id=current_user.user_id,
+                to=dto.to,
+                subject=dto.subject,
+                body=dto.body,
+            )
+        else:
+            if dto.last_seen_message_id is None:
+                raise ValueError("lastSeenMessageId is required to reply")
+            message = await self.person_email_service.reply(
+                session,
+                policy,
+                sender_user_id=current_user.user_id,
+                thread_id=dto.thread_id,
+                body=dto.body,
+                last_seen_message_id=dto.last_seen_message_id,
+            )
         await record_event(
             session,
             subject_type="application",
@@ -504,16 +510,14 @@ class BoardService:
             actor_id=current_user.user_id,
             event_type=RecruitingEvent.EMAIL_SENT,
             details={
-                "subject": dto.subject,
-                "to": recipients,
+                "subject": message.subject,
+                "to": [a for _, a in getaddresses([message.to_addresses or ""]) if a],
                 "threadId": message.thread_id,
                 "direction": "outbound",
             },
         )
         await session.commit()
-        return await self._build_application_conversation(
-            session, application_id, application.user_id
-        )
+        return await self.person_email_service.conversation(session, policy)
 
     async def list_application_email_templates(
         self,
@@ -638,9 +642,8 @@ class BoardService:
         The history rows render without Send; sending stays owner-only in
         ``send_application_email``.
 
-        A candidate-scope caller also gets no compose prefill (``default_to``
-        comes back empty): it exists to seed a compose box they aren't allowed
-        to open.
+        A caller who cannot send gets no compose choices (``can_send`` false,
+        no ``default_to``, no recipient options).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -656,6 +659,29 @@ class BoardService:
                 owner/``read.all`` standing on it or on any other
                 application by the same candidate.
         """
+        application, is_direct = await self._require_conversation_reader(
+            session, current_user, application_id
+        )
+        may_send = is_direct and await self._may_send_email(
+            session, current_user, application.job_id
+        )
+        policy = await self.application_email_policy.resolve(
+            session, application, may_send=may_send
+        )
+        return await self.person_email_service.conversation(session, policy)
+
+    async def _require_conversation_reader(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> tuple[ApplicationEntity, bool]:
+        """The application, and whether the caller reads it directly.
+
+        Raises:
+            ValueError: Missing application, or no owner/``read.all``
+                standing on it or on any other application by the candidate.
+        """
         application = await self.application_repository.get_by_id(
             session, application_id
         )
@@ -668,12 +694,19 @@ class BoardService:
             session, current_user, application.user_id
         ):
             raise ValueError("you are not an owner of this job")
-        return await self._build_application_conversation(
-            session,
-            application_id,
-            application.user_id,
-            compose_prefill=is_direct,
-        )
+        return application, is_direct
+
+    async def _may_send_email(
+        self, session: AsyncSession, current_user: UserContextDto, job_id: int
+    ) -> bool:
+        """What sending requires: the advance permission and owning the posting."""
+        if not current_user.has_permission(Permission.RECRUITING_APPLICATION_ADVANCE):
+            return False
+        try:
+            await self._require_owner(session, current_user, job_id, allow_read_all=False)
+        except ValueError:
+            return False
+        return True
 
     async def _has_owner_standing(
         self,
@@ -733,32 +766,6 @@ class BoardService:
             session, current_user, application.job_id, allow_read_all=allow_read_all
         )
         return application
-
-    async def _build_application_conversation(
-        self,
-        session: AsyncSession,
-        application_id: int,
-        user_id: int,
-        *,
-        compose_prefill: bool = True,
-    ) -> EmailConversationDto:
-        """Assemble the EmailConversationDto for one application.
-
-        ``default_to`` prefills the compose To field with the candidate's
-        contact address.
-
-        ``compose_prefill=False`` drops that (and skips the contact lookup it
-        needs): a read-only caller has no compose box to seed.
-        """
-        threads = await self.email_conversation_service.list_conversation(
-            session, ContextType.APPLICATION, application_id
-        )
-        if not compose_prefill:
-            return EmailConversationDto(threads=threads, default_to=None)
-        default_to = await self.user_emails_repository.get_contact_email(
-            session, user_id
-        )
-        return EmailConversationDto(threads=threads, default_to=default_to)
 
     async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
         """Build BoardCardDto list for (application, user) rows, resolving

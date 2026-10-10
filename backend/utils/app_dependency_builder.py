@@ -1224,7 +1224,7 @@ class AppDependencyBuilder:
             self.evaluation_repository,
             self.notification_repository,
             self.user_emails_repository,
-            self.email_conversation_service,
+            self.person_email_service,
             self.application_interview_repository,
             self.application_access,
             self.interview_scheduling_service,
