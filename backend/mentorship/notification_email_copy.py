@@ -251,6 +251,9 @@ def _approval_ask(
     if action == "mark_red_flag":
         person = html.escape((person_name or "").strip() or "someone")
         return f"raise a red flag on {person}{in_round}"
+    if action == "end_pair":
+        pair = html.escape((person_name or "").strip() or "a pair")
+        return f"end the pair of {pair}{in_round}"
     if action == "publish_matching":
         return (
             f"publish the matching result for {html.escape(name)}"

@@ -93,6 +93,9 @@ MENTORSHIP_ADMIN_WITHDRAW_REQUEST = (
 MENTORSHIP_ADMIN_MARK_REQUEST = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/mark-request"
 )
+MENTORSHIP_ADMIN_END_PAIR_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/end-pair-request"
+)
 MENTORSHIP_ADMIN_PARTICIPANT_DETAIL = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
 )

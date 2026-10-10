@@ -10,7 +10,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import NamedTuple
 
-from backend.common.mentorship_enums import ParticipantRole
+from backend.common.mentorship_enums import PairStatus, ParticipantRole
 from backend.common.mentorship_survey_codes import (
     CAREER_TRANSITION_MAP,
     DEVELOPMENT_REGION_MAP,
@@ -177,11 +177,20 @@ class MatchingPayloadService:
             for user_id in user_ids
         }
 
-        active_pairs = await self.mentorship_pairs_repository.get_active_pairs_by_round(
+        round_pairs = await self.mentorship_pairs_repository.list_pairs_by_round(
             session, round_id
         )
+        active_pairs = [p for p in round_pairs if p.status == PairStatus.ACTIVE]
         held = Counter(pair.mentor_id for pair in active_pairs)
         paired_mentees = {pair.mentee_id for pair in active_pairs}
+        # The matcher has no idea who was paired and parted this round; told
+        # nothing, it would propose the same two again.
+        ended_partners: dict[int, list[int]] = {}
+        for pair in round_pairs:
+            if pair.status == PairStatus.ACTIVE:
+                continue
+            ended_partners.setdefault(pair.mentor_id, []).append(pair.mentee_id)
+            ended_partners.setdefault(pair.mentee_id, []).append(pair.mentor_id)
 
         mentors: list[PersonRecord] = []
         mentees: list[PersonRecord] = []
@@ -213,6 +222,7 @@ class MatchingPayloadService:
                 is_mentor=is_mentor,
                 round_counts=round_counts[user.user_id],
                 open_slots=open_slots,
+                ended_partner_ids=ended_partners.get(user.user_id, []),
             )
             (mentors if is_mentor else mentees).append(record)
 
@@ -285,11 +295,14 @@ class MatchingPayloadService:
         is_mentor: bool,
         round_counts: tuple[int, int],
         open_slots: int | None,
+        ended_partner_ids: list[int],
     ) -> PersonRecord:
         """Turn one set of rows into a contract record.
 
         ``open_slots`` is what a mentor can still take in this round, and is
         what travels as ``max_partners``; None for a mentee.
+        ``ended_partner_ids`` are this round's partners from ended pairs, sent as
+        unexpected so the same two are not proposed again.
         """
         survey = (preference.profile_survey or {}) if preference else {}
         common = {
@@ -310,7 +323,11 @@ class MatchingPayloadService:
                 str(i) for i in (participant.expected_partner_user_id or [])
             ],
             "unexpected_partner_ids": [
-                str(i) for i in (participant.unexpected_partner_user_id or [])
+                str(i)
+                for i in dict.fromkeys([
+                    *(participant.unexpected_partner_user_id or []),
+                    *ended_partner_ids,
+                ])
             ],
             # Both sides carry these. The matcher reads them to avoid pairing two
             # people who have never been through a round, which is a question

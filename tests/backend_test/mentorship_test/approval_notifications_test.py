@@ -230,6 +230,24 @@ class ApprovalNotificationsTest(BaseRepositoryTestLib):
             body,
         )
 
+    async def test_an_end_pair_email_names_both_people_and_the_round(self):
+        self.request.action = "end_pair"
+        await self.session.flush()
+        event = await self._event(
+            "mentorship.approval_requested",
+            self.raiser,
+            action="end_pair",
+            personName="mentor Mia <Ko> and mentee Ann Lee",
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "asked you to approve a request to end the pair of mentor Mia "
+            "&lt;Ko&gt; and mentee Ann Lee in Spring 2026.",
+            body,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.approval_enums import ApprovalRequestStatus
+from backend.common.exceptions import ConflictError
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 
@@ -47,6 +48,24 @@ def _mark(action="mark_no_show", request_id=51, pair_id=501):
     return row
 
 
+MENTOR = 11
+MENTEE = PERSON
+PAIR = 501
+
+
+def _end_pair(request_id=61):
+    row = _request(action="end_pair", request_id=request_id)
+    row.target_type = "mentorship_pair"
+    row.target_id = str(PAIR)
+    row.payload = {
+        "round_id": 7,
+        "pair_id": PAIR,
+        "mentor_id": MENTOR,
+        "mentee_id": MENTEE,
+    }
+    return row
+
+
 def _user(user_id, first, last):
     return SimpleNamespace(
         user_id=user_id, first_name=first, last_name=last, preferred_name=None
@@ -76,11 +95,17 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
             return_value=SimpleNamespace(name="Spring 2026")
         )
         self.session = AsyncMock()
+        self.pair = SimpleNamespace(
+            pair_id=PAIR, round_id=7, mentor_id=MENTOR, mentee_id=MENTEE
+        )
+        self.pairs = MagicMock()
+        self.pairs.get_pair_by_id = AsyncMock(return_value=self.pair)
         self.service = MentorshipApprovalService(
             approval_service=self.approvals,
             matching_storage=self.storage,
             users_repository=self.users,
             rounds_repository=self.rounds,
+            pairs_repository=self.pairs,
             logger=MagicMock(),
         )
 
@@ -129,6 +154,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                 "withdraw_participant",
                 "mark_no_show",
                 "mark_red_flag",
+                "end_pair",
             ),
         )
         self.assertEqual(
@@ -142,6 +168,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                     "target_id": "r7-x-y",
                     "person": None,
                     "pair_id": None,
+                    "pair": None,
                     "raised_by": {"user_id": RAISER, "name": "Ada Ng"},
                     "reviewer": {"user_id": REVIEWER, "name": "Rae Kim"},
                     "reason": "Reviewed every pair",
@@ -434,6 +461,110 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             await self.service.pending_for_participant(self.session, 7, PERSON), []
         )
+
+    async def test_ending_a_pair_asks_about_the_pair_with_both_people(self):
+        self.approvals.raise_request.return_value = _end_pair()
+
+        result = await self.service.request_end_pair(
+            self.session,
+            round_id=7,
+            user_id=MENTOR,
+            pair_id=PAIR,
+            actor_id=RAISER,
+            reviewer_id=REVIEWER,
+            reason="They never met",
+        )
+
+        self.approvals.raise_request.assert_awaited_once_with(
+            self.session,
+            action="end_pair",
+            raised_by=RAISER,
+            target_id="501",
+            payload={
+                "round_id": 7,
+                "pair_id": PAIR,
+                "mentor_id": MENTOR,
+                "mentee_id": MENTEE,
+            },
+            reason="They never met",
+            reviewer_id=REVIEWER,
+        )
+        self.assertEqual(result["pair"]["pair_id"], PAIR)
+        self.assertEqual(result["pair"]["mentor"]["user_id"], MENTOR)
+        self.assertEqual(result["pair"]["mentee"]["user_id"], MENTEE)
+        self.assertIsNone(result["person"])
+
+    async def test_a_pair_that_is_not_theirs_in_the_round_is_refused(self):
+        for pair in (
+            None,
+            SimpleNamespace(
+                pair_id=PAIR, round_id=6, mentor_id=MENTOR, mentee_id=MENTEE
+            ),
+            SimpleNamespace(pair_id=PAIR, round_id=7, mentor_id=12, mentee_id=22),
+        ):
+            with self.subTest(pair=pair):
+                self.pairs.get_pair_by_id.return_value = pair
+                with self.assertRaises(ConflictError):
+                    await self.service.request_end_pair(
+                        self.session,
+                        round_id=7,
+                        user_id=MENTOR,
+                        pair_id=PAIR,
+                        actor_id=RAISER,
+                        reviewer_id=REVIEWER,
+                        reason="",
+                    )
+        self.approvals.raise_request.assert_not_awaited()
+
+    async def test_neither_person_in_the_pair_may_review_ending_it(self):
+        for reviewer in (MENTOR, MENTEE):
+            with self.subTest(reviewer=reviewer):
+                with self.assertRaises(ValueError) as caught:
+                    await self.service.request_end_pair(
+                        self.session,
+                        round_id=7,
+                        user_id=MENTEE,
+                        pair_id=PAIR,
+                        actor_id=RAISER,
+                        reviewer_id=reviewer,
+                        reason="",
+                    )
+                self.assertEqual(
+                    str(caught.exception),
+                    "Neither person in the pair can review a request to end it.",
+                )
+        self.approvals.raise_request.assert_not_awaited()
+
+    async def test_ending_a_pair_cannot_be_handed_to_either_person(self):
+        self.approvals.get_request.return_value = _end_pair()
+        for reviewer in (MENTOR, MENTEE):
+            with self.subTest(reviewer=reviewer):
+                with self.assertRaises(ValueError):
+                    await self.service.reassign(
+                        self.session,
+                        request_id=61,
+                        actor_id=RAISER,
+                        reviewer_id=reviewer,
+                    )
+        self.approvals.reassign.assert_not_awaited()
+
+    async def test_a_pending_end_pair_is_listed_for_either_person(self):
+        self.approvals.list_pending_for_targets.return_value = {"501": _end_pair()}
+
+        result = await self.service.pending_for_participant(
+            self.session, 7, MENTOR, pair_ids=[PAIR, 502]
+        )
+
+        self.approvals.list_pending_for_targets.assert_awaited_once_with(
+            self.session, "end_pair", ["501", "502"]
+        )
+        self.assertEqual([r["action"] for r in result], ["end_pair"])
+        self.assertEqual(result[0]["pair_id"], PAIR)
+
+    async def test_no_pairs_means_no_end_pair_lookup(self):
+        await self.service.pending_for_participant(self.session, 7, MENTOR)
+
+        self.approvals.list_pending_for_targets.assert_not_awaited()
 
 
 if __name__ == "__main__":

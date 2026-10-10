@@ -1,10 +1,11 @@
 """A withdrawal end to end against a real database.
 
 Mentor Mia has two mentees this round; she is withdrawn. Her pairs end, the
-meetings of those pairs that have not started are cancelled, her mentees stay
-matched, and next round she -- and only she -- is flagged for quitting after
-being matched. The fixture keeps every id distinct: raiser, reviewer, the
-mentor, each mentee, an unrelated pair and its meetings."""
+meetings of those pairs that have not started are cancelled, her mentees,
+left with no pair, become un_matched, and next round she -- and only she --
+is flagged for quitting after being matched. The fixture keeps every id
+distinct: raiser, reviewer, the mentor, each mentee, an unrelated pair and its
+meetings."""
 
 import unittest
 import uuid
@@ -281,8 +282,15 @@ class WithdrawParticipantFlowTest(BaseRepositoryTestLib):
             self.other_pair,
         )
         self.assertIs(self.mentor_reg.approval_status, ApprovalStatus.WITHDRAWN)
-        self.assertIs(self.a_reg.approval_status, ApprovalStatus.MATCHED)
-        self.assertIs(self.b_reg.approval_status, ApprovalStatus.MATCHED)
+        self.assertIs(self.a_reg.approval_status, ApprovalStatus.UN_MATCHED)
+        self.assertIs(self.b_reg.approval_status, ApprovalStatus.UN_MATCHED)
+        ann_notes = await self.notes.list_for_user_round(
+            self.session, self.mentee_a.user_id, self.round.round_id
+        )
+        self.assertEqual(len(ann_notes), 1)
+        self.assertEqual(ann_notes[0].pair_id, self.pair_a.pair_id)
+        self.assertEqual(ann_notes[0].request_id, closed.request_id)
+        self.assertIn("matched -> un_matched: their partner", ann_notes[0].body)
         self.assertIs(self.pair_a.status, PairStatus.INACTIVE)
         self.assertIs(self.pair_b.status, PairStatus.INACTIVE)
         self.assertIs(self.other_pair.status, PairStatus.ACTIVE)

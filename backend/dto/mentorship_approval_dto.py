@@ -23,6 +23,12 @@ class ParticipantMarkRequestDto(ApprovalRequestCreateDto):
     pair_id: int | None = None
 
 
+class EndPairRequestDto(ApprovalRequestCreateDto):
+    """Body of a request to end one of a person's pairs."""
+
+    pair_id: int
+
+
 class ApprovalReassignDto(BaseRequestDto):
     """Body of handing a pending request to another reviewer."""
 
@@ -46,6 +52,14 @@ class ApprovalRoundDto(BaseDto):
     name: str | None = None
 
 
+class ApprovalPairDto(BaseDto):
+    """The pair a request to end it is about."""
+
+    pair_id: int
+    mentor: ApprovalPersonDto
+    mentee: ApprovalPersonDto
+
+
 class MentorshipApprovalDto(BaseDto):
     """One mentorship approval request as the console shows it."""
 
@@ -54,8 +68,9 @@ class MentorshipApprovalDto(BaseDto):
     status: ApprovalRequestStatus
     round: ApprovalRoundDto
     target_id: str
-    # Who the request is about, for an exemption.
+    # Who the request is about, for one about a person.
     person: ApprovalPersonDto | None = None
+    pair: ApprovalPairDto | None = None
     raised_by: ApprovalPersonDto
     reviewer: ApprovalPersonDto
     reason: str | None = None

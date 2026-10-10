@@ -293,6 +293,43 @@ py_test(
 )
 
 py_test(
+    name = "pair_endings_test",
+    srcs = ["pair_endings_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "end_pair_handler_test",
+    srcs = ["end_pair_handler_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "end_pair_flow_test",
+    srcs = ["end_pair_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "withdraw_participant_flow_test",
     srcs = ["withdraw_participant_flow_test.py"],
     env_inherit = ["DATABASE_URL"],
