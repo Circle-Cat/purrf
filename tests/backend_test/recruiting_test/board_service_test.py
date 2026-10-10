@@ -338,7 +338,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([o.address for o in policy.recipient_options], ["c@x.com"])
         self.assertEqual(
             self.email_svc.send_new.call_args.kwargs,
-            {"sender_user_id": 2, "to": ["c@x.com"], "subject": "Hi", "body": "<p>x</p>"},
+            {
+                "sender_user_id": 2,
+                "to": ["c@x.com"],
+                "subject": "Hi",
+                "body": "<p>x</p>",
+            },
         )
         self.email_svc.reply.assert_not_awaited()
         self.assertEqual(self.call_order, ["record", "commit"])
@@ -368,7 +373,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session,
             self._ctx(user_id=2),
             7,
-            self._email_dto(to=["someone@else.com"], thread_id=55, last_seen_message_id=12),
+            self._email_dto(
+                to=["someone@else.com"], thread_id=55, last_seen_message_id=12
+            ),
         )
 
         self.assertEqual(
@@ -597,7 +604,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_application_conversation(
             self.session,
-            self._ctx(user_id=2, permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]),
+            self._ctx(
+                user_id=2, permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            ),
             7,
         )
 

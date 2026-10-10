@@ -478,7 +478,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         # leaves the wrapper closure's `permissions` cell as None.
         self.assertIsNone(self._endpoint_permissions(route.endpoint))
 
-
     async def test_get_application_email_attachment_downloads(self):
         self.board_service.get_application_email_attachment = AsyncMock(
             return_value=(b"%PDF", 'cv "1".pdf')

@@ -703,7 +703,9 @@ class BoardService:
         if not current_user.has_permission(Permission.RECRUITING_APPLICATION_ADVANCE):
             return False
         try:
-            await self._require_owner(session, current_user, job_id, allow_read_all=False)
+            await self._require_owner(
+                session, current_user, job_id, allow_read_all=False
+            )
         except ValueError:
             return False
         return True
