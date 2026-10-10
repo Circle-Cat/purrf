@@ -67,6 +67,10 @@ class MentorshipEvent(StrEnum):
     APPROVAL_DECIDED = "mentorship.approval_decided"
     # A Kit notification send finished preparing: scheduled in Kit, or failed.
     EMAIL_SEND_PREPARED = "mentorship.email_send_prepared"
+    # Mail on a person's round thread: a reply now needs an answer, or one of
+    # our sends bounced. Subject is the email thread.
+    EMAIL_RECEIVED = "mentorship.email_received"
+    EMAIL_BOUNCED = "mentorship.email_bounced"
 
 
 class RoundStatus(str, Enum):

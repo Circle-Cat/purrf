@@ -460,3 +460,14 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "participant_email_notifier_test",
+    srcs = ["participant_email_notifier_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
