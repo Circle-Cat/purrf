@@ -228,3 +228,11 @@ py_test(
     srcs = ["kit_client_test.py"],
     deps = ["//backend/common:kit_client"],
 )
+
+py_test(
+    name = "html_text_test",
+    srcs = ["html_text_test.py"],
+    deps = [
+        "//backend/common:html_text",
+    ],
+)

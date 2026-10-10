@@ -68,11 +68,17 @@ py_library(
 )
 
 py_library(
+    name = "html_text",
+    srcs = ["html_text.py"],
+)
+
+py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
     deps = [
         ":environment_constants",
         ":exceptions",
+        ":html_text",
         "@pypi//google_api_python_client",
         "@pypi//google_auth",
     ],
