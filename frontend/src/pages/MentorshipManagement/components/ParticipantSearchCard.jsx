@@ -255,15 +255,15 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
 };
 
 /**
- * A person's notifications this round, one badge per stage: notified, or
+ * A person's notifications this round, one badge per stage: notified (by Kit, or by hand as "Notified manually"), or
  * scheduled with its Pacific send time, in the Notification filter's words.
  *
- * @param {{ stages: Array<{stage: string, scheduledAt: string|null}>|undefined }} props
+ * @param {{ stages: Array<{stage: string, scheduledAt: string|null, manual?: boolean}>|undefined }} props
  */
 const NotificationsCell = ({ stages }) =>
   stages?.length ? (
     <div className="flex flex-wrap gap-1">
-      {stages.map(({ stage, scheduledAt }) =>
+      {stages.map(({ stage, scheduledAt, manual }) =>
         scheduledAt ? (
           <Badge
             key={`${stage}-scheduled`}
@@ -275,7 +275,8 @@ const NotificationsCell = ({ stages }) =>
           </Badge>
         ) : (
           <Badge key={`${stage}-notified`} variant="outline">
-            {stageLabel(stage)} · {notificationStateLabel("notified")}
+            {stageLabel(stage)} ·{" "}
+            {manual ? "Notified manually" : notificationStateLabel("notified")}
           </Badge>
         ),
       )}

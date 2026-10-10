@@ -46,7 +46,10 @@ vi.mock("@/api/adminAccountsApi", () => ({
   reassignBlockRequest: vi.fn(),
   withdrawBlockRequest: vi.fn(),
 }));
-vi.mock("@/api/mentorshipEmailApi", () => ({ listPersonSends: vi.fn() }));
+vi.mock("@/api/mentorshipEmailApi", () => ({
+  listPersonSends: vi.fn(),
+  markNotified: vi.fn(),
+}));
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 
