@@ -183,6 +183,8 @@ const BlockFromPurrf = ({
       RAISED_FROM,
     )
       .then(({ data }) => {
+        setOwnRequest(data);
+        setWithdrawnId(null);
         setOpen(false);
         toast.success(`Block requested — sent to ${data.reviewerName}.`);
         onRequested();

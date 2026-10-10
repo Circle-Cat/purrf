@@ -111,6 +111,34 @@ describe("BlockFromPurrf", () => {
     expect(screen.queryByText(/sent to/)).not.toBeInTheDocument();
   });
 
+  it("offers reassign and withdraw right after raising, once the page shows the request", async () => {
+    createBlockRequest.mockResolvedValue({ data: OWN });
+    const props = { person: PERSON, canWrite: true, onRequested: vi.fn() };
+    const { rerender } = render(
+      <BlockFromPurrf {...props} pendingBlockRequest={null} />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Block from Purrf" }),
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Reviewer"),
+      "77",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(props.onRequested).toHaveBeenCalled());
+
+    rerender(<BlockFromPurrf {...props} pendingBlockRequest={PENDING} />);
+    expect(
+      await screen.findByText(/Block requested — sent to Uma Admin/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reassign" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Withdraw" }),
+    ).toBeInTheDocument();
+  });
+
   it("reassigns to another admin, leaving out the current reviewer, the caller and the person", async () => {
     getRaisedBlockRequests.mockResolvedValue({ data: [OWN] });
     getUserAdmins.mockResolvedValue({
