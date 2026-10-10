@@ -18,6 +18,10 @@ it once at startup for that side effect.
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import RecruitingEvent
+from backend.communication.thread_recipients import (
+    thread_senders,
+    thread_senders_else,
+)
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import (
     Resolver,
@@ -30,7 +34,6 @@ from backend.repository.application_assignment_repository import (
 from backend.repository.application_comment_mention_repository import (
     ApplicationCommentMentionRepository,
 )
-from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
@@ -38,7 +41,6 @@ from backend.repository.approval_request_repository import (
 
 # Stateless, so one module-level instance serves every resolver.
 _assignment_repository = ApplicationAssignmentRepository()
-_email_message_repository = EmailMessageRepository()
 _job_repository = JobRepository()
 _approval_request_repository = ApprovalRequestRepository()
 _mention_repository = ApplicationCommentMentionRepository()
@@ -275,8 +277,7 @@ async def _email_senders(session: AsyncSession, event: EventEntity) -> set[int]:
     Raises:
         ValueError: If the event carries no thread id.
     """
-    thread_id = _required_id(event, "threadId")
-    return await _email_message_repository.list_sender_ids_by_thread(session, thread_id)
+    return await thread_senders(session, _required_id(event, "threadId"))
 
 
 @register_recipients(RecruitingEvent.EMAIL_RECEIVED, subject_type="application")
@@ -302,8 +303,11 @@ async def _email_senders_else_owners(
     Raises:
         ValueError: If the event carries no thread id.
     """
-    senders = await _email_senders(session, event)
-    return senders or await _owners_only(session, event)
+    return await thread_senders_else(
+        session,
+        _required_id(event, "threadId"),
+        lambda: _owners_only(session, event),
+    )
 
 
 _APPLICATION_RESOLVERS: dict[str, Resolver] = {
