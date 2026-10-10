@@ -60,37 +60,59 @@ class PersonAddress:
     is_primary: bool
 
 
+def choose_default(addresses: list[PersonAddress], preferred: str | None) -> str | None:
+    """The address to preselect among the offered ones.
+
+    Args:
+        addresses (list[PersonAddress]): The offered addresses, in display order.
+        preferred (str | None): The domain's preferred address.
+
+    Returns:
+        str | None: ``preferred`` as spelled in ``addresses`` when it is offered,
+            else the first offered address, else None.
+    """
+    key = (preferred or "").strip().lower()
+    for candidate in addresses:
+        if key and candidate.address.lower() == key:
+            return candidate.address
+    return addresses[0].address if addresses else None
+
+
 def recipient_options(addresses, default) -> list[EmailRecipientOptionDto]:
     """The compose choices: ``default`` first, then every other address once.
 
     The only place option labels are set, keyed by the explicit default and
-    never by an earlier label.
+    never by an earlier label. Nothing outside ``addresses`` is offered.
 
     Args:
-        addresses (list[str]): The person's addresses, in display order.
-        default (str | None): The preselected address; offered even when it
-            is not among ``addresses``.
+        addresses (list[str]): The offered addresses, in display order.
+        default (str | None): The preselected address, normally from
+            ``choose_default``.
 
     Returns:
-        list[EmailRecipientOptionDto]: ``default`` labelled ``Primary contact``,
-            the rest ``Alternative``; case-insensitive duplicates dropped.
+        list[EmailRecipientOptionDto]: The entry equal to ``default`` labelled
+            ``Primary contact``, the rest ``Alternative``; case-insensitive
+            duplicates dropped.
     """
     default_key = (default or "").strip().lower()
-    options = []
+    cleaned = []
     seen = set()
-    for raw in ([default] if default_key else []) + list(addresses):
+    for raw in addresses:
         address = (raw or "").strip()
         key = address.lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        options.append(
-            EmailRecipientOptionDto(
-                address=address,
-                label="Primary contact" if key == default_key else "Alternative",
-            )
+        if key and key not in seen:
+            seen.add(key)
+            cleaned.append(address)
+    cleaned.sort(key=lambda address: address.lower() != default_key)
+    return [
+        EmailRecipientOptionDto(
+            address=address,
+            label="Primary contact"
+            if address.lower() == default_key
+            else "Alternative",
         )
-    return options
+        for address in cleaned
+    ]
 
 
 _NO_SENDER = "This environment has no address to send these emails from"
@@ -193,25 +215,24 @@ class PersonEmailService:
     async def person_email_addresses(
         self, session, user_id: int
     ) -> list[PersonAddress]:
-        """Every address on the person's account, the primary first. No labels.
+        """The person's verified addresses, the primary first. No labels.
 
-        Pending addresses are included: they are on the account the way the
-        participant page shows them, and imported people only have those.
+        Only verified addresses are offered; unverified ones never appear.
 
         Args:
             session (AsyncSession): The active DB session.
             user_id (int): The person.
 
         Returns:
-            list[PersonAddress]: Primary, then the others by when they were
-                added; case-insensitive duplicates dropped.
+            list[PersonAddress]: Verified primary, then the other verified ones
+                by when they were added; case-insensitive duplicates dropped.
         """
         rows = await self._user_emails.list_by_user_id(session, user_id)
         addresses = []
         seen = set()
         for row in sorted(rows, key=lambda r: (not r.is_primary, r.email_id)):
             address = (row.email or "").strip()
-            if not address or address.lower() in seen:
+            if not row.otp_confirmed or not address or address.lower() in seen:
                 continue
             seen.add(address.lower())
             addresses.append(

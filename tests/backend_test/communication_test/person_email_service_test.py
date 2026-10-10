@@ -10,6 +10,7 @@ from backend.communication.person_email_service import (
     EmailPolicy,
     PersonAddress,
     PersonEmailService,
+    choose_default,
     recipient_options,
 )
 from backend.dto.email_dto import (
@@ -158,13 +159,24 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
         )
 
 
+def _row(email_id, email, is_primary=False, otp_confirmed=True):
+    return SimpleNamespace(
+        email_id=email_id,
+        email=email,
+        is_primary=is_primary,
+        otp_confirmed=otp_confirmed,
+    )
+
+
 class PersonEmailAddressesTest(_Fixture):
-    async def test_primary_first_then_the_others_in_the_order_added(self):
+    async def test_only_verified_addresses_primary_first_then_in_the_order_added(self):
         self.user_emails.list_by_user_id.return_value = [
-            SimpleNamespace(email_id=3, email="old@y.com", is_primary=False),
-            SimpleNamespace(email_id=5, email="ann@x.com", is_primary=True),
-            SimpleNamespace(email_id=4, email="pending@z.com", is_primary=False),
-            SimpleNamespace(email_id=6, email="OLD@y.com", is_primary=False),
+            _row(3, "old@y.com"),
+            _row(5, "ann@x.com", is_primary=True),
+            _row(4, "pending@z.com", otp_confirmed=False),
+            _row(6, "OLD@y.com"),
+            _row(7, "ANN@x.com", otp_confirmed=False),
+            _row(8, "  ", otp_confirmed=True),
         ]
 
         addresses = await self.service.person_email_addresses(self.session, 32)
@@ -174,15 +186,54 @@ class PersonEmailAddressesTest(_Fixture):
             [
                 PersonAddress(address="ann@x.com", is_primary=True),
                 PersonAddress(address="old@y.com", is_primary=False),
-                PersonAddress(address="pending@z.com", is_primary=False),
             ],
         )
         self.user_emails.list_by_user_id.assert_awaited_once_with(self.session, 32)
+
+    async def test_an_unverified_primary_is_not_offered(self):
+        self.user_emails.list_by_user_id.return_value = [
+            _row(1, "ann@x.com", is_primary=True, otp_confirmed=False),
+            _row(2, "work@y.com"),
+        ]
+
+        addresses = await self.service.person_email_addresses(self.session, 32)
+
+        self.assertEqual(addresses, [PersonAddress("work@y.com", False)])
+
+    async def test_a_person_with_only_unverified_addresses_gets_none(self):
+        self.user_emails.list_by_user_id.return_value = [
+            _row(1, "ann@x.com", is_primary=True, otp_confirmed=False),
+            _row(2, "work@y.com", otp_confirmed=False),
+        ]
+
+        self.assertEqual(
+            await self.service.person_email_addresses(self.session, 32), []
+        )
 
     async def test_no_addresses_is_an_empty_list(self):
         self.assertEqual(
             await self.service.person_email_addresses(self.session, 32), []
         )
+
+
+class ChooseDefaultTest(unittest.TestCase):
+    _ADDRESSES = [
+        PersonAddress("ann@x.com", True),
+        PersonAddress("Old@y.com", False),
+    ]
+
+    def test_the_preferred_address_wins_in_the_stored_spelling(self):
+        self.assertEqual(choose_default(self._ADDRESSES, "old@Y.com"), "Old@y.com")
+
+    def test_a_preferred_address_that_is_not_offered_falls_back_to_the_first(self):
+        self.assertEqual(choose_default(self._ADDRESSES, "gone@z.com"), "ann@x.com")
+
+    def test_no_preferred_address_falls_back_to_the_first(self):
+        self.assertEqual(choose_default(self._ADDRESSES, None), "ann@x.com")
+
+    def test_no_addresses_means_no_default(self):
+        self.assertIsNone(choose_default([], "ann@x.com"))
+        self.assertIsNone(choose_default([], None))
 
 
 class RecipientOptionsTest(unittest.TestCase):
@@ -195,16 +246,16 @@ class RecipientOptionsTest(unittest.TestCase):
             [("ann@x.com", "Primary contact"), ("old@y.com", "Alternative")],
         )
 
-    def test_the_default_is_matched_without_case_and_kept_as_given(self):
+    def test_the_default_is_matched_without_case_and_kept_as_listed(self):
         self.assertEqual(
             self._labelled(["sofia@x.com", "sofia.old@y.com"], "Sofia@X.com"),
-            [("Sofia@X.com", "Primary contact"), ("sofia.old@y.com", "Alternative")],
+            [("sofia@x.com", "Primary contact"), ("sofia.old@y.com", "Alternative")],
         )
 
-    def test_a_default_outside_the_addresses_is_still_offered_first(self):
+    def test_a_default_outside_the_addresses_is_never_offered(self):
         self.assertEqual(
             self._labelled(["ann@x.com"], "contact@z.com"),
-            [("contact@z.com", "Primary contact"), ("ann@x.com", "Alternative")],
+            [("ann@x.com", "Alternative")],
         )
 
     def test_no_default_means_no_primary_contact(self):
