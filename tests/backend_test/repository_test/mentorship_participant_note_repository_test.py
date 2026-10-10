@@ -77,6 +77,35 @@ class TestMentorshipParticipantNoteRepository(BaseRepositoryTestLib):
 
         self.assertIs(row.tag, ParticipantNoteTag.STATUS_CHANGE)
 
+    async def test_create_a_notified_mark_keeps_its_stage(self):
+        row = await self.repo.create(
+            self.session,
+            user_id=self.person.user_id,
+            round_id=self.round.round_id,
+            author_user_id=self.author.user_id,
+            body="Sent on Teams, 10-10.",
+            tag=ParticipantNoteTag.NOTIFIED,
+            notification_stage="match_result",
+        )
+
+        [stored] = await self.repo.list_for_user_round(
+            self.session, self.person.user_id, self.round.round_id
+        )
+        self.assertEqual(stored.note_id, row.note_id)
+        self.assertIs(stored.tag, ParticipantNoteTag.NOTIFIED)
+        self.assertEqual(stored.notification_stage, "match_result")
+
+    async def test_other_notes_have_no_stage(self):
+        row = await self.repo.create(
+            self.session,
+            user_id=self.person.user_id,
+            round_id=self.round.round_id,
+            author_user_id=self.author.user_id,
+            body="Called on Monday.",
+        )
+
+        self.assertIsNone(row.notification_stage)
+
     async def test_list_for_user_round_is_scoped_and_oldest_first(self):
         first = await self.repo.create(
             self.session,
