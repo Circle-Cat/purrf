@@ -275,3 +275,6 @@ MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON = "/mentorship/admin/email-sends/person"
 MENTORSHIP_ADMIN_EMAIL_SEND_PREVIEW = "/mentorship/admin/email-sends/{send_id}/preview"
 MENTORSHIP_ADMIN_EMAIL_SEND_CONFIRM = "/mentorship/admin/email-sends/{send_id}/confirm"
 MENTORSHIP_ADMIN_EMAIL_SEND_CANCEL = "/mentorship/admin/email-sends/{send_id}/cancel"
+MENTORSHIP_ADMIN_NOTIFICATIONS_MARK = (
+    "/mentorship/admin/rounds/{round_id}/notifications/mark"
+)
