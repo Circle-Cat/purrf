@@ -14,11 +14,15 @@ from backend.dto.mentorship_email_dto import (
     EmailScheduledStageDto,
     EmailSendDto,
     KitDraftDto,
+    NotificationMarkResultDto,
+    NotificationMarkSkipDto,
 )
 from backend.mentorship.mentorship_email_controller import MentorshipEmailController
 
 BASE = "/mentorship/admin/email-sends"
 CONFIRM_BODY = {"sendAt": "2026-10-08T13:00:00Z", "previewToken": "t"}
+MARK = "/api/mentorship/admin/rounds/7/notifications/mark"
+MARK_BODY = {"userIds": [11, 12], "stage": "admission", "body": "  Sent on Teams  "}
 
 
 def _dto(**kw) -> EmailSendDto:
@@ -48,6 +52,7 @@ class TestMentorshipEmailController(unittest.TestCase):
         self.service = MagicMock()
         self.prepare_service = MagicMock()
         self.prepare_service.run = AsyncMock()
+        self.mark_service = MagicMock()
         self.ld = MagicMock()
         self.ld.is_kit_email_enabled.return_value = True
         database = MagicMock()
@@ -56,6 +61,7 @@ class TestMentorshipEmailController(unittest.TestCase):
         self.controller = MentorshipEmailController(
             mentorship_email_service=self.service,
             mentorship_email_prepare_service=self.prepare_service,
+            notification_mark_service=self.mark_service,
             launchdarkly_service=self.ld,
             database=database,
         )
@@ -254,6 +260,74 @@ class TestMentorshipEmailController(unittest.TestCase):
         client = self._client([Permission.MENTORSHIP_ADMIN_READ])
         resp = client.post(f"/api{BASE}/5/cancel")
         self.assertEqual(resp.status_code, 403)
+
+    def test_mark_marks_by_the_caller_and_returns_who(self):
+        self.mark_service.mark = AsyncMock(
+            return_value=NotificationMarkResultDto(
+                marked=[12],
+                skipped=[NotificationMarkSkipDto(user_id=11, reason="already_notified")],
+            )
+        )
+        resp = self.client.post(MARK, json=MARK_BODY)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.json()["data"],
+            {"marked": [12], "skipped": [{"userId": 11, "reason": "already_notified"}]},
+        )
+        kwargs = self.mark_service.mark.await_args.kwargs
+        self.assertEqual(kwargs["round_id"], 7)
+        self.assertEqual(kwargs["user_ids"], [11, 12])
+        self.assertEqual(kwargs["stage"], "admission")
+        self.assertEqual(kwargs["body"], "Sent on Teams")
+        self.assertEqual(kwargs["actor_id"], 9)
+
+    def test_mark_needs_write(self):
+        self.mark_service.mark = AsyncMock()
+        client = self._client([Permission.MENTORSHIP_ADMIN_READ])
+
+        resp = client.post(MARK, json=MARK_BODY)
+
+        self.assertEqual(resp.status_code, 403)
+        self.mark_service.mark.assert_not_awaited()
+
+    def test_mark_is_404_while_the_flag_is_off(self):
+        self.ld.is_kit_email_enabled.return_value = False
+        self.mark_service.mark = AsyncMock()
+
+        resp = self.client.post(MARK, json=MARK_BODY)
+
+        self.assertEqual(resp.status_code, 404)
+        self.mark_service.mark.assert_not_awaited()
+
+    def test_mark_refuses_a_bad_body(self):
+        self.mark_service.mark = AsyncMock()
+        for body in (
+            {**MARK_BODY, "body": "   "},
+            {**MARK_BODY, "body": "x" * 5001},
+            {**MARK_BODY, "userIds": []},
+            {**MARK_BODY, "userIds": list(range(1, 502))},
+            {**MARK_BODY, "stage": "pizza_party"},
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(self.client.post(MARK, json=body).status_code, 400)
+        self.mark_service.mark.assert_not_awaited()
+
+    def test_mark_outside_a_round_in_progress_is_409(self):
+        self.mark_service.mark = AsyncMock(
+            side_effect=ConflictError(
+                "Notifications can only be marked while the round is in progress.",
+                code="round_not_in_progress",
+            )
+        )
+        resp = self.client.post(MARK, json=MARK_BODY)
+
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["data"], {"code": "round_not_in_progress"})
+        self.assertEqual(
+            resp.json()["message"],
+            "Notifications can only be marked while the round is in progress.",
+        )
 
 
 if __name__ == "__main__":

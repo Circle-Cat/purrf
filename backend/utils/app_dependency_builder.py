@@ -260,6 +260,7 @@ from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.mentorship_email_controller import MentorshipEmailController
 from backend.mentorship.mentorship_email_service import MentorshipEmailService
+from backend.mentorship.notification_mark_service import NotificationMarkService
 from backend.mentorship.mentorship_email_prepare_service import (
     MentorshipEmailPrepareService,
 )
@@ -889,9 +890,18 @@ class AppDependencyBuilder:
             kit_client=self.kit_client,
             logger=self.logger,
         )
+        self.notification_mark_service = NotificationMarkService(
+            note_repository=self.mentorship_participant_note_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            rounds_repository=self.mentorship_round_repository,
+            users_repository=self.users_repository,
+            mentorship_email_repository=self.mentorship_email_repository,
+            logger=self.logger,
+        )
         self.mentorship_email_controller = MentorshipEmailController(
             mentorship_email_service=self.mentorship_email_service,
             mentorship_email_prepare_service=self.mentorship_email_prepare_service,
+            notification_mark_service=self.notification_mark_service,
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )

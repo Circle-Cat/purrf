@@ -582,6 +582,18 @@ class TestAppDependencyBuilder(TestCase):
                 mock_mentorship_pairs_repo_cls.return_value,
             )
         self.assertIs(
+            builder.mentorship_email_controller.mark_service,
+            builder.notification_mark_service,
+        )
+        self.assertIs(
+            builder.notification_mark_service.note_repository,
+            builder.mentorship_participant_note_repository,
+        )
+        self.assertIs(
+            builder.notification_mark_service.email_repository,
+            builder.mentorship_email_repository,
+        )
+        self.assertIs(
             builder.matching_run_service.matching_eligibility_service,
             builder.matching_eligibility_service,
         )

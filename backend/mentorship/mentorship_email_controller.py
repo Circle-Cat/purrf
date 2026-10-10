@@ -10,10 +10,15 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_EMAIL_SENDS_NOTIFIED,
     MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON,
     MENTORSHIP_ADMIN_KIT_DRAFTS,
+    MENTORSHIP_ADMIN_NOTIFICATIONS_MARK,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
-from backend.dto.mentorship_email_dto import EmailConfirmDto, EmailSendCreateDto
+from backend.dto.mentorship_email_dto import (
+    EmailConfirmDto,
+    EmailSendCreateDto,
+    NotificationMarkDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
 
@@ -23,17 +28,20 @@ WRITE = [Permission.MENTORSHIP_ADMIN_WRITE]
 
 class MentorshipEmailController:
     """HTTP layer for mentorship sends through Kit. Rules and commits live in
-    MentorshipEmailService; preparation runs in MentorshipEmailPrepareService."""
+    MentorshipEmailService; preparation runs in MentorshipEmailPrepareService;
+    marks of people notified by hand are recorded by NotificationMarkService."""
 
     def __init__(
         self,
         mentorship_email_service,
         mentorship_email_prepare_service,
+        notification_mark_service,
         launchdarkly_service,
         database,
     ):
         self.service = mentorship_email_service
         self.prepare_service = mentorship_email_prepare_service
+        self.mark_service = notification_mark_service
         self.launchdarkly_service = launchdarkly_service
         self.database = database
         self.router = APIRouter(tags=["mentorship-admin-email"])
@@ -45,6 +53,7 @@ class MentorshipEmailController:
             (MENTORSHIP_ADMIN_EMAIL_SEND_PREVIEW, "POST", WRITE, self.refresh_preview),
             (MENTORSHIP_ADMIN_EMAIL_SEND_CONFIRM, "POST", WRITE, self.confirm),
             (MENTORSHIP_ADMIN_EMAIL_SEND_CANCEL, "POST", WRITE, self.cancel),
+            (MENTORSHIP_ADMIN_NOTIFICATIONS_MARK, "POST", WRITE, self.mark_notified),
         ]
         for path, method, permissions, handler in routes:
             self.router.add_api_route(
@@ -137,3 +146,19 @@ class MentorshipEmailController:
         async with self.database.session() as session:
             data = await self.service.cancel(session, send_id)
         return api_response(message="Send cancelled.", data=data)
+
+    async def mark_notified(
+        self, round_id: int, body: NotificationMarkDto, current_user: UserContextDto
+    ):
+        if (off := self._disabled(current_user)) is not None:
+            return off
+        async with self.database.session() as session:
+            data = await self.mark_service.mark(
+                session,
+                round_id=round_id,
+                user_ids=body.user_ids,
+                stage=body.stage,
+                body=body.body,
+                actor_id=current_user.user_id,
+            )
+        return api_response(message="Marked as notified.", data=data)
