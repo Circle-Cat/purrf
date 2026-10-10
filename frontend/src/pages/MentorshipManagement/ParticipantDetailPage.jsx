@@ -31,6 +31,7 @@ import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLa
 import { useParticipantDetail } from "@/pages/MentorshipManagement/hooks/useParticipantDetail";
 import PairSection from "@/pages/MentorshipManagement/components/PairSection";
 import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
+import { usePersonSends } from "@/pages/MentorshipManagement/hooks/usePersonSends";
 import ParticipantFeedback from "@/pages/MentorshipManagement/components/ParticipantFeedback";
 import ParticipationHistory from "@/pages/MentorshipManagement/components/ParticipationHistory";
 import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPurrf";
@@ -176,7 +177,10 @@ const ParticipantDetailPage = () => {
   const { permissions, user } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
-  const matchingOn = Boolean(useFeatureFlags()[FEATURE_FLAGS.MATCHING_RUN]);
+  const flags = useFeatureFlags();
+  const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
+  const kitEmailOn = Boolean(flags[FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]);
+  const sends = usePersonSends(kitEmailOn ? roundId : null, userId);
 
   // Which pair's meeting log is open. The URL's pair wins; with no pair in
   // the URL, a single pair opens by itself. Applied once per person, round
@@ -413,6 +417,7 @@ const ParticipantDetailPage = () => {
 
         <NoteTimeline
           notes={detail.notes}
+          sends={sends}
           roundId={round.roundId}
           userId={person.userId}
           pairs={pairs}

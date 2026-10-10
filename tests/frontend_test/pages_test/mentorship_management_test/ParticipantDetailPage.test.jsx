@@ -11,6 +11,7 @@ import {
   getParticipantDetail,
   searchParticipants,
 } from "@/api/mentorshipApi";
+import { listPersonSends } from "@/api/mentorshipEmailApi";
 import { useAuth } from "@/context/auth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -41,6 +42,7 @@ vi.mock("@/api/adminAccountsApi", () => ({
   getBlockPreflight: vi.fn(),
   getUserAdmins: vi.fn(),
 }));
+vi.mock("@/api/mentorshipEmailApi", () => ({ listPersonSends: vi.fn() }));
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 
@@ -86,6 +88,16 @@ describe("ParticipantDetailPage", () => {
     });
     useFeatureFlags.mockReturnValue({});
     getParticipantDetail.mockResolvedValue({ data: detailOf() });
+    listPersonSends.mockResolvedValue([
+      {
+        sendId: 14,
+        stage: "match_result",
+        subject: "Your match",
+        delivered: true,
+        reason: null,
+        at: "2026-10-12T16:00:00Z",
+      },
+    ]);
     getMeetingLog.mockResolvedValue({
       data: { roundVersion: "v2", roundInProgress: true, meetings: [] },
     });
@@ -669,5 +681,23 @@ describe("ParticipantDetailPage", () => {
         await screen.findByRole("button", { name: "Add a note" }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("shows the person's Kit notifications in the timeline when Kit email is on", async () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true,
+    });
+    renderPage();
+    expect(
+      await screen.findByText("Match result · Your match"),
+    ).toBeInTheDocument();
+    expect(listPersonSends).toHaveBeenCalledWith("7", "3104");
+  });
+
+  it("asks nothing about Kit notifications when Kit email is off", async () => {
+    renderPage();
+    await screen.findByRole("heading", { name: "Alice Chen" });
+    expect(listPersonSends).not.toHaveBeenCalled();
+    expect(screen.queryByText("Notification")).not.toBeInTheDocument();
   });
 });

@@ -5,6 +5,7 @@ import {
   createEmailSend,
   listKitDrafts,
   listNotifiedStages,
+  listPersonSends,
   refreshEmailPreview,
   confirmEmailSend,
 } from "@/api/mentorshipEmailApi";
@@ -40,6 +41,23 @@ describe("mentorshipEmailApi", () => {
     expect(request.get).toHaveBeenCalledWith(
       "/mentorship/admin/email-sends/notified",
       { params: { roundId: 7 } },
+    );
+  });
+
+  it("lists one person's sends in a round", async () => {
+    const send = {
+      sendId: 14,
+      stage: "match_result",
+      subject: "Your match",
+      delivered: true,
+      reason: null,
+      at: "2026-10-12T16:00:00Z",
+    };
+    request.get.mockResolvedValue({ success: true, data: [send] });
+    await expect(listPersonSends(7, 3104)).resolves.toEqual([send]);
+    expect(request.get).toHaveBeenCalledWith(
+      "/mentorship/admin/email-sends/person",
+      { params: { roundId: 7, userId: 3104 } },
     );
   });
 
