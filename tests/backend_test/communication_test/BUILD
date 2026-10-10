@@ -209,6 +209,7 @@ py_test(
         "//backend/common:recruiting_enums",
         "//backend/communication",
         "//backend/entity:entities",
+        "//backend/mentorship",
         "//backend/ops",
         "//backend/recruiting",
         "//backend/repository:repositories",

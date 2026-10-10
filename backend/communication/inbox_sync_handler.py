@@ -15,7 +15,6 @@ INBOX_CONTEXT_TYPES = [
     ContextType.MENTORSHIP_INBOX,
     ContextType.RECRUITING_INBOX,
     ContextType.INQUIRIES_INBOX,
-    ContextType.ACTIVITY,
 ]
 
 

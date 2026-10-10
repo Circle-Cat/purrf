@@ -262,6 +262,7 @@ from backend.mentorship.matching_run_complete_service import (
 )
 from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
+from backend.mentorship.participant_email_notifier import ParticipantEmailNotifier
 from backend.mentorship.participant_email_service import (
     MentorshipParticipantEmailPolicy,
     ParticipantEmailService,
@@ -1099,11 +1100,26 @@ class AppDependencyBuilder:
         for context_type in (
             ContextType.RECRUITING_INBOX,
             ContextType.INQUIRIES_INBOX,
-            ContextType.ACTIVITY,
         ):
             self.email_context_registry.register(
                 context_type, self.inbox_sync_handler.alias_without_resync()
             )
+        # A person's round threads are read on their participant page; new
+        # mail there tells mentorship, not the Inbox.
+        self.participant_email_notifier = ParticipantEmailNotifier(
+            message_repository=self.email_message_repository,
+            users_repository=self.users_repository,
+        )
+        self.participant_email_sync_handler = InboxSyncHandler(
+            conversation_service=self.email_conversation_service,
+            thread_repository=self.email_thread_repository,
+            notifier=self.participant_email_notifier,
+            logger=self.logger,
+            context_types=[ContextType.ACTIVITY],
+        )
+        self.email_context_registry.register(
+            ContextType.ACTIVITY, self.participant_email_sync_handler
+        )
         self.person_email_service = PersonEmailService(
             conversation_service=self.email_conversation_service,
             thread_repository=self.email_thread_repository,
