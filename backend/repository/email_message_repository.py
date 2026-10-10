@@ -85,6 +85,20 @@ class EmailMessageRepository:
         )
         return existing, False
 
+    async def get(
+        self, session: AsyncSession, message_id: int
+    ) -> EmailMessageEntity | None:
+        """Load one message by primary key, or ``None`` if it does not exist.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            message_id (int): The message primary key.
+
+        Returns:
+            EmailMessageEntity | None: The message, if any.
+        """
+        return await session.get(EmailMessageEntity, message_id)
+
     async def list_gmail_message_ids_by_thread(
         self, session: AsyncSession, thread_id: int
     ) -> set[str]:
