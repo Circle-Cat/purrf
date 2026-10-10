@@ -59,6 +59,19 @@ export const API_ENDPOINTS = {
     `/mentorship/admin/rounds/${roundId}/participants/${userId}`,
   MENTORSHIP_ADMIN_PARTICIPANT_NOTES: (roundId, userId) =>
     `/mentorship/admin/rounds/${roundId}/participants/${userId}/notes`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAILS: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY: (roundId, userId, threadId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails/${threadId}/reply`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails/refresh`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT: (
+    roundId,
+    userId,
+    messageId,
+    index,
+  ) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails/messages/${messageId}/attachments/${index}`,
   MENTORSHIP_ADMIN_APPROVERS: "/mentorship/admin/approvals/approvers",
   MENTORSHIP_ADMIN_APPROVALS_MINE: "/mentorship/admin/approvals/mine",
   MENTORSHIP_ADMIN_APPROVAL_REASSIGN: (requestId) =>
