@@ -1237,6 +1237,9 @@ const ApplicationDetailPage = () => {
   // raiser-scoped read below so it survives a reload -- without it the page
   // offers "Request block" again and the send comes back as a duplicate.
   const [raisedBlockRequest, setRaisedBlockRequest] = useState(null);
+  const [raisedBlockRequestSettled, setRaisedBlockRequestSettled] =
+    useState(false);
+  const [withdrawnBlockRequestId, setWithdrawnBlockRequestId] = useState(null);
   const [blockReassignOpen, setBlockReassignOpen] = useState(false);
   const [blockReassigning, setBlockReassigning] = useState(false);
   const [blockWithdrawing, setBlockWithdrawing] = useState(false);
@@ -1350,17 +1353,21 @@ const ApplicationDetailPage = () => {
     // 403.
     if (applicantId == null || !canRequestBlock) return;
     let current = true;
+    setRaisedBlockRequestSettled(false);
     getRaisedBlockRequests()
       .then(({ data }) => {
         if (!current) return;
         setRaisedBlockRequest(
           (data ?? []).find((r) => r.targetUserId === applicantId) ?? null,
         );
+        setRaisedBlockRequestSettled(true);
       })
       // Swallowed, not toasted: this is a background read the operator never
       // asked for, and the page works without it -- the worst case is the
       // duplicate refusal that was the whole behaviour before it existed.
-      .catch(() => {});
+      .catch(() => {
+        if (current) setRaisedBlockRequestSettled(true);
+      });
     return () => {
       current = false;
     };
@@ -1793,6 +1800,7 @@ const ApplicationDetailPage = () => {
     setBlockWithdrawing(true);
     withdrawBlockRequest(raisedBlockRequest.id)
       .then(() => {
+        setWithdrawnBlockRequestId(raisedBlockRequest.id);
         setRaisedBlockRequest(null);
         toast.success("Block request withdrawn.");
       })
@@ -1935,6 +1943,18 @@ const ApplicationDetailPage = () => {
   // Only an owner gets the hint: a read.all viewer never had these controls.
   const operateHint =
     detail.isOwner && !canOperate ? ADVANCE_GRANT_HINT : undefined;
+  // Any block request waiting on the applicant, as the detail read it. The
+  // caller's own is shown with its controls instead; one they just withdrew
+  // is gone even though the detail still carries it.
+  // Held back until the caller's own requests are known, or it would flash
+  // their own as someone else's; a viewer who cannot raise never reads them.
+  const othersBlockRequest =
+    (!canRequestBlock || raisedBlockRequestSettled) &&
+    detail.pendingBlockRequest &&
+    detail.pendingBlockRequest.requestId !== raisedBlockRequest?.id &&
+    detail.pendingBlockRequest.requestId !== withdrawnBlockRequestId
+      ? detail.pendingBlockRequest
+      : null;
   // Why the block button is closed, in the order the backend refuses: no
   // standing to ask, then nothing left to ask for, then a question already
   // asked. Undefined when it is live, which is what leaves the title off.
@@ -1944,7 +1964,9 @@ const ApplicationDetailPage = () => {
       ? "This applicant is already blocked"
       : raisedBlockRequest
         ? "You already have an open request about this applicant"
-        : undefined;
+        : othersBlockRequest
+          ? "A block request about this applicant is already waiting on a decision"
+          : undefined;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -2064,13 +2086,22 @@ const ApplicationDetailPage = () => {
                       blockSubmitting ||
                       !canRequestBlock ||
                       detail.applicantIsBlocked ||
-                      Boolean(raisedBlockRequest)
+                      Boolean(raisedBlockRequest) ||
+                      Boolean(othersBlockRequest)
                     }
                     title={blockButtonHint}
                     onClick={handleOpenBlockRequest}
                   >
                     Request block
                   </Button>
+                  {!raisedBlockRequest && othersBlockRequest && (
+                    <span className="text-sm text-slate-600">
+                      {`Block requested — waiting on ${
+                        othersBlockRequest.reviewer?.name ||
+                        `ID ${othersBlockRequest.reviewer?.userId}`
+                      }`}
+                    </span>
+                  )}
                   {raisedBlockRequest && (
                     <span className="text-sm text-slate-600">
                       {`Block requested — sent to ${raisedBlockRequest.reviewerName}`}
