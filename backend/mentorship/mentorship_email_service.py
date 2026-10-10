@@ -399,8 +399,9 @@ class MentorshipEmailService:
     async def list_notified(
         self, session, round_id: int
     ) -> tuple[list[EmailNotifiedDto], list[int]]:
-        """Who Kit actually emailed in this round, per stage, and per stage the
-        latest send confirmed for them and still to go out; plus the ids of
+        """Who Kit actually emailed in this round, per stage, and who an admin
+        marked notified by hand; per stage the latest send confirmed for them
+        and still to go out; plus the ids of
         preparing sends whose worker went quiet and needs starting again."""
         # No background job follows a scheduled send; this read is what moves
         # it to sent or aborted once its time has come.
@@ -424,6 +425,9 @@ class MentorshipEmailService:
                 scheduled[user_id][stage] = EmailScheduledStageDto(
                     stage=stage, send_at=send_at
                 )
+        manual: dict[int, list[str]] = {}
+        for user_id, stage in await self.repo.list_manual_stages(session, round_id):
+            manual.setdefault(user_id, []).append(stage)
         if changed:
             await session.commit()
         notified = [
@@ -431,8 +435,9 @@ class MentorshipEmailService:
                 user_id=user_id,
                 stages=stages.get(user_id, []),
                 scheduled=list(scheduled.get(user_id, {}).values()),
+                manual=manual.get(user_id, []),
             )
-            for user_id in sorted(stages.keys() | scheduled.keys())
+            for user_id in sorted(stages.keys() | scheduled.keys() | manual.keys())
         ]
         return notified, [s.send_id for s in sends if self._resume_needed(s)]
 

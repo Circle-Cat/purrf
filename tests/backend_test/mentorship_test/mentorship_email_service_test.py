@@ -434,6 +434,7 @@ class MentorshipEmailServiceNotifiedTest(unittest.IsolatedAsyncioTestCase):
             return_value=[(1, "admission"), (1, "match_result"), (2, "admission")]
         )
         self.repo.list_scheduled_stages = AsyncMock(return_value=[])
+        self.repo.list_manual_stages = AsyncMock(return_value=[])
         self.kit = MagicMock()
         self.kit.get_broadcast_stats.return_value = {
             "status": "scheduled",
@@ -447,6 +448,25 @@ class MentorshipEmailServiceNotifiedTest(unittest.IsolatedAsyncioTestCase):
             sender_address="notification-test@circlecat.org",
             logger=MagicMock(),
             clock=lambda: NOW,
+        )
+
+    async def test_people_marked_by_hand_are_listed_with_their_stages(self):
+        self.repo.list_manual_stages = AsyncMock(
+            return_value=[(2, "midterm_reminder"), (4, "admission"), (4, "match_result")]
+        )
+        notified, _ = await self.service.list_notified(self.session, 1)
+        self.assertEqual(
+            [(n.user_id, n.stages, n.manual) for n in notified],
+            [
+                (1, ["admission", "match_result"], []),
+                (2, ["admission"], ["midterm_reminder"]),
+                (4, [], ["admission", "match_result"]),
+            ],
+        )
+        self.repo.list_manual_stages.assert_awaited_once_with(self.session, 1)
+        self.assertEqual(
+            notified[2].model_dump(by_alias=True)["manual"],
+            ["admission", "match_result"],
         )
 
     async def test_groups_sent_stages_by_person(self):

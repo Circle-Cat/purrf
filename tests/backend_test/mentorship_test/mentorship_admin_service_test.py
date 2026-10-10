@@ -1670,6 +1670,23 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.round_version, "v2")
         self.assertEqual(result.meetings, [])
 
+    def test_a_notified_note_carries_its_stage(self):
+        note = SimpleNamespace(
+            note_id=61,
+            tag=ParticipantNoteTag.NOTIFIED,
+            body="Sent on Teams.",
+            pair_id=None,
+            request_id=None,
+            author_user_id=12,
+            created_at=datetime(2026, 9, 3, 18, 0, tzinfo=timezone.utc),
+            notification_stage="match_result",
+        )
+        dumped = self.service._note_dto(note, {12: "Eve Ko"}).model_dump(
+            by_alias=True
+        )
+        self.assertEqual(dumped["tag"], "notified")
+        self.assertEqual(dumped["notificationStage"], "match_result")
+
 
 def _feedback_user(user_id, first_name, last_name="Doe", preferred_name=None):
     return MagicMock(

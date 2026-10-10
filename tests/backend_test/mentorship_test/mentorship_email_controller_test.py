@@ -136,6 +136,7 @@ class TestMentorshipEmailController(unittest.TestCase):
                                 ),
                             )
                         ],
+                        manual=["onboarding_reminder"],
                     )
                 ],
                 [1, 3],
@@ -152,6 +153,7 @@ class TestMentorshipEmailController(unittest.TestCase):
                     "scheduled": [
                         {"stage": "midterm_reminder", "sendAt": "2026-10-12T16:00:00Z"}
                     ],
+                    "manual": ["onboarding_reminder"],
                 }
             ],
         )

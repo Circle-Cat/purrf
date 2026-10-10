@@ -31,6 +31,8 @@ class ParticipantNoteDto(BaseDto):
     pair_id: int | None = None
     # Set when an approval wrote the note.
     request_id: int | None = None
+    # The notification a ``notified`` note records.
+    notification_stage: str | None = None
     author: ApprovalPersonDto
     created_at: datetime
 

@@ -66,6 +66,9 @@ class EmailNotifiedDto(BaseDto):
     # At most one per stage, the latest still to go out; a stage in both lists
     # shows as scheduled.
     scheduled: list[EmailScheduledStageDto]
+    # Stages an admin marked notified by hand: the notification went out
+    # some other way.
+    manual: list[str] = Field(default_factory=list)
 
 
 class EmailPersonSendDto(BaseDto):
