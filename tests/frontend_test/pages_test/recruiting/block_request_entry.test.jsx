@@ -630,3 +630,64 @@ describe("Request block — an open request survives a reload", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 });
+
+describe("Request block — someone else's request is waiting", () => {
+  const withPending = (requestId = 900) => ({
+    ...makeDetail(),
+    pendingBlockRequest: {
+      requestId,
+      reviewer: { userId: 88, name: "Sam Steward" },
+    },
+  });
+
+  it("shows someone else's request with only its reviewer", async () => {
+    api.getApplicationDetail.mockResolvedValue({ data: withPending() });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      await screen.findByText("Block requested — waiting on Sam Steward"),
+    ).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Request block" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute(
+      "title",
+      "A block request about this applicant is already waiting on a decision",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Withdraw" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the caller's own request as their own, not as someone else's", async () => {
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    api.getApplicationDetail.mockResolvedValue({ data: withPending(42) });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      await screen.findByText("Block requested — sent to Rita Reviewer"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/waiting on/)).not.toBeInTheDocument();
+  });
+
+  it("does not show a withdrawn own request as someone else's", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    api.getApplicationDetail.mockResolvedValue({ data: withPending(42) });
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Withdraw" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+  });
+});
