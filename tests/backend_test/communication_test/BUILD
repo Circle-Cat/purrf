@@ -334,3 +334,12 @@ py_test(
         "//backend/dto",
     ],
 )
+
+py_test(
+    name = "attachment_download_test",
+    srcs = ["attachment_download_test.py"],
+    deps = [
+        "//backend/communication",
+        "@pypi//fastapi",
+    ],
+)
