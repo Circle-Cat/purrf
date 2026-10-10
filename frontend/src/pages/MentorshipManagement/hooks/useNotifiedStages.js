@@ -3,17 +3,20 @@ import { listNotifiedStages } from "@/api/mentorshipEmailApi";
 
 const NONE = new Map();
 
-// One entry per stage. A stage sent before and scheduled again shows as
-// scheduled: the list shows only the latest, a person's timeline the rest.
+// Per stage, its sent entry first, then the send still to go out. A stage sent
+// before and scheduled again shows as both; a person's timeline has the rest.
 const entriesOf = (stages, scheduled) => {
+  const sent = new Set(stages ?? []);
   const scheduledAt = new Map(
     (scheduled ?? []).map(({ stage, sendAt }) => [stage, sendAt]),
   );
-  const order = [...new Set([...(stages ?? []), ...scheduledAt.keys()])];
-  return order.map((stage) => ({
-    stage,
-    scheduledAt: scheduledAt.get(stage) ?? null,
-  }));
+  const order = [...new Set([...sent, ...scheduledAt.keys()])];
+  return order.flatMap((stage) => [
+    ...(sent.has(stage) ? [{ stage, scheduledAt: null }] : []),
+    ...(scheduledAt.has(stage)
+      ? [{ stage, scheduledAt: scheduledAt.get(stage) }]
+      : []),
+  ]);
 };
 
 const byUser = (rows) =>
