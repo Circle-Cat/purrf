@@ -39,6 +39,7 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.users_entity import UsersEntity
+from backend.mentorship.end_pair_handler import EndPairHandler
 from backend.mentorship.exempt_matching_handler import (
     ExemptMatchingHandler,
     exemption_target,
@@ -237,6 +238,17 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 logger=logger,
             )
         )
+        self.approvals.register(
+            EndPairHandler(
+                participants_repository=participants,
+                pairs_repository=MentorshipPairsRepository(),
+                meeting_service=MagicMock(),
+                rounds_repository=rounds,
+                note_repository=self.notes,
+                users_repository=users,
+                logger=logger,
+            )
+        )
         eligibility = MatchingEligibilityService(
             participants_repository=participants,
             pairs_repository=MentorshipPairsRepository(),
@@ -282,6 +294,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 matching_storage=MagicMock(),
                 users_repository=users,
                 rounds_repository=rounds,
+                pairs_repository=MentorshipPairsRepository(),
                 logger=logger,
             ),
             note_repository=self.notes,

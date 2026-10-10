@@ -555,6 +555,18 @@ class TestAppDependencyBuilder(TestCase):
             builder.withdraw_participant_handler.meeting_service,
             mock_meeting_service_cls.return_value,
         )
+        self.assertIs(
+            builder.approval_service.handler_for("end_pair"),
+            builder.end_pair_handler,
+        )
+        self.assertIs(
+            builder.end_pair_handler.meeting_service,
+            mock_meeting_service_cls.return_value,
+        )
+        self.assertIs(
+            builder.mentorship_approval_service.pairs_repository,
+            mock_mentorship_pairs_repo_cls.return_value,
+        )
         for action, handler in (
             ("mark_no_show", builder.mark_no_show_handler),
             ("mark_red_flag", builder.mark_red_flag_handler),

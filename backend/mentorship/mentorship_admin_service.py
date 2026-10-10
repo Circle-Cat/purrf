@@ -658,7 +658,12 @@ class MentorshipAdminService:
             pending_requests=[
                 PendingRequestDto.model_validate(r)
                 for r in await self.mentorship_approval_service.pending_for_participant(
-                    session, round_id, user_id
+                    session,
+                    round_id,
+                    user_id,
+                    pair_ids=[p.pair_id for p in registration.pairs]
+                    if registration is not None
+                    else [],
                 )
             ],
             history=await self._history(session, round_entity, rows, exempted_rounds),

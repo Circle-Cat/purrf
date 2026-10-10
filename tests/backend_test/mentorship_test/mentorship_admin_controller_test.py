@@ -17,6 +17,7 @@ from backend.dto.mentorship_approval_dto import (
     ApprovalDecisionDto,
     ApprovalReassignDto,
     ApprovalRequestCreateDto,
+    EndPairRequestDto,
     ParticipantMarkRequestDto,
 )
 from backend.dto.participant_detail_dto import ParticipantNoteCreateDto
@@ -88,6 +89,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             "request_exemption",
             "request_withdrawal",
             "request_mark",
+            "request_end_pair",
             "reassign",
             "decide",
             "withdraw",
@@ -584,6 +586,36 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             await self.controller.request_mark(7, 21, body, caller)
         self.mock_approval_service.request_mark.assert_not_awaited()
 
+    async def test_requesting_to_end_a_pair_names_the_person_and_pair(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = EndPairRequestDto.model_validate(
+            {"pairId": 501, "reviewerId": 8, "reason": ""}
+        )
+
+        response = await self.controller.request_end_pair(7, 21, body, caller)
+
+        self.mock_approval_service.request_end_pair.assert_awaited_once_with(
+            self.mock_session,
+            round_id=7,
+            user_id=21,
+            pair_id=501,
+            actor_id=9,
+            reviewer_id=8,
+            reason="",
+        )
+        self.assertEqual(response["data"].request_id, 31)
+
+    async def test_requesting_to_end_a_pair_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = EndPairRequestDto.model_validate(
+            {"pairId": 501, "reviewerId": 8, "reason": ""}
+        )
+
+        with self.assertRaises(PermissionError):
+            await self.controller.request_end_pair(7, 21, body, caller)
+        self.mock_approval_service.request_end_pair.assert_not_awaited()
+
     async def test_the_approvers_leave_out_the_caller(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
 
@@ -693,6 +725,11 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             (
                 "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
                 "/mark-request",
+                "POST",
+            ),
+            (
+                "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
+                "/end-pair-request",
                 "POST",
             ),
             ("/mentorship/admin/approvals/approvers", "GET"),
