@@ -639,7 +639,7 @@ describe("ParticipantDetailPage", () => {
         within(kinds)
           .getAllByRole("option")
           .map((o) => o.textContent),
-      ).toEqual(["Mark as no show", "Raise a red flag"]);
+      ).toEqual(["Mark as no show", "Raise a red flag", "End this pair"]);
     });
 
     it("names the pair a waiting mark is about", async () => {

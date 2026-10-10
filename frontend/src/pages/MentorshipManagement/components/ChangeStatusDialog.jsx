@@ -13,6 +13,11 @@ const defaultPairId = (type, pairs) =>
     ? String(pairs[0].pairId)
     : "";
 
+// The pairs a type can be raised about; a type with no rule of its own takes
+// all of them.
+const choicesFor = (type, pairs, pendingRequests) =>
+  type?.pairChoices ? type.pairChoices(pairs, pendingRequests) : pairs;
+
 const pairLabel = (pair) =>
   `${userDisplayName(pair.partner)}${pair.partner?.isActive === false ? " (ended)" : ""}`;
 
@@ -23,7 +28,8 @@ const pairLabel = (pair) =>
  * come from the request types table; with only one, its name is shown
  * instead of a choice. Requests already waiting on this person are listed at
  * the top; another kind can still be asked for. A type about a pair asks
- * which one; a no show must name one.
+ * which one; a no show must name one. A type that ends a pair offers only the
+ * pairs it can end, and keeps that pair's partner off the reviewers.
  *
  * @param {object} props
  * @param {boolean} props.open Whether the dialog is showing.
@@ -49,7 +55,9 @@ const ChangeStatusDialog = ({
   onSent,
 }) => {
   const [typeKey, setTypeKey] = useState(types[0]?.key ?? "");
-  const [pairId, setPairId] = useState(() => defaultPairId(types[0], pairs));
+  const [pairId, setPairId] = useState(() =>
+    defaultPairId(types[0], choicesFor(types[0], pairs, pendingRequests)),
+  );
   const reviewers = useMentorshipApprovers(open);
   const { busy, act } = useApprovalAction(onSent);
   const type = types.find((t) => t.key === typeKey) ?? types[0];
@@ -57,17 +65,16 @@ const ChangeStatusDialog = ({
   const pairRule = type.pair ?? PAIR_RULE.NONE;
   // With no pair to pick and none required, the request is about no pair.
   const hasPairField = pairRule !== PAIR_RULE.NONE;
+  const choices = choicesFor(type, pairs, pendingRequests);
+  const chosen = choices.find((p) => String(p.pairId) === pairId) ?? null;
+  const partnerName = chosen ? userDisplayName(chosen.partner) : null;
   const asksPair =
-    hasPairField && !(pairRule === PAIR_RULE.OPTIONAL && pairs.length === 0);
+    hasPairField && !(pairRule === PAIR_RULE.OPTIONAL && choices.length === 0);
 
   const chooseType = (key) => {
     setTypeKey(key);
-    setPairId(
-      defaultPairId(
-        types.find((t) => t.key === key),
-        pairs,
-      ),
-    );
+    const next = types.find((t) => t.key === key);
+    setPairId(defaultPairId(next, choicesFor(next, pairs, pendingRequests)));
   };
 
   return (
@@ -79,8 +86,14 @@ const ChangeStatusDialog = ({
       reviewers={reviewers.approvers}
       reviewersLoading={reviewers.isLoading}
       reviewersError={reviewers.error}
-      excludeUserIds={[person.userId]}
-      reviewerHint={`${person.name} cannot review a request about themselves.`}
+      excludeUserIds={[
+        person.userId,
+        type.partnerMayNotReview ? chosen?.partner?.id : null,
+      ]}
+      reviewerHint={
+        type.reviewerHint?.(person.name) ??
+        `${person.name} cannot review a request about themselves.`
+      }
       askReason
       confirmLabel="Send for approval"
       submitting={busy}
@@ -146,7 +159,7 @@ const ChangeStatusDialog = ({
                 ? "Select a pair…"
                 : "Not about one pair"}
             </option>
-            {pairs.map((pair) => (
+            {choices.map((pair) => (
               <option key={pair.pairId} value={String(pair.pairId)}>
                 {pairLabel(pair)}
               </option>
@@ -155,7 +168,7 @@ const ChangeStatusDialog = ({
         </div>
       ) : null}
       <p className="text-sm text-muted-foreground">
-        {type.consequences(person.name)}
+        {type.consequences(person.name, { partnerName })}
       </p>
     </ApprovalRequestDialog>
   );

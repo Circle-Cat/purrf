@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
@@ -6,12 +6,14 @@ import ChangeStatusDialog from "@/pages/MentorshipManagement/components/ChangeSt
 import { statusRequestType } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
 import {
   getMentorshipApprovers,
+  requestParticipantEndPair,
   requestParticipantMark,
   requestParticipantWithdrawal,
 } from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getMentorshipApprovers: vi.fn(),
+  requestParticipantEndPair: vi.fn(),
   requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
 }));
@@ -43,9 +45,9 @@ const renderDialog = (props = {}) => {
   return { onOpenChange, onSent };
 };
 
-const pairWith = (pairId, firstName, isActive = true) => ({
+const pairWith = (pairId, firstName, isActive = true, id = pairId + 1000) => ({
   pairId,
-  partner: { firstName, lastName: "Lee", preferredName: null, isActive },
+  partner: { id, firstName, lastName: "Lee", preferredName: null, isActive },
 });
 
 const pickReviewerAndSend = async (user) => {
@@ -65,6 +67,7 @@ describe("ChangeStatusDialog", () => {
     getMentorshipApprovers.mockResolvedValue({ data: APPROVERS });
     requestParticipantWithdrawal.mockResolvedValue({ data: {} });
     requestParticipantMark.mockResolvedValue({ data: {} });
+    requestParticipantEndPair.mockResolvedValue({ data: {} });
   });
 
   it("names the only type instead of offering a choice, and says what it does", async () => {
@@ -75,7 +78,9 @@ describe("ChangeStatusDialog", () => {
       screen.queryByLabelText("What are you asking for"),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
-    expect(screen.getByText(/partners stay matched/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/partner left with no other pair becomes unmatched/),
+    ).toBeInTheDocument();
   });
 
   it("leaves the person out of the reviewers and sends with an optional reason", async () => {
@@ -279,5 +284,101 @@ describe("ChangeStatusDialog", () => {
       "mark_no_show",
     );
     expect(screen.getByLabelText("Which pair")).toHaveValue("80");
+  });
+
+  it("offers only active pairs to end, picks the only one, and sends it", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [statusRequestType("end_pair")],
+      pairs: [pairWith(80, "Ann"), pairWith(81, "Bo", false)],
+    });
+
+    expect(screen.getByLabelText("Which pair")).toHaveValue("80");
+    expect(
+      screen.queryByRole("option", { name: "Bo Lee (ended)" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/^The pair with Ann Lee ends/)).toBeInTheDocument();
+    await pickReviewerAndSend(user);
+
+    expect(requestParticipantEndPair).toHaveBeenCalledWith(7, 3104, {
+      reviewerId: 8,
+      reason: "",
+      pairId: 80,
+    });
+  });
+
+  it("leaves the partner of the chosen pair off the reviewers", async () => {
+    const user = userEvent.setup();
+    getMentorshipApprovers.mockResolvedValue({
+      data: [
+        ...APPROVERS,
+        { userId: 1080, name: "Ann Lee" },
+        { userId: 1081, name: "Bo Lee" },
+      ],
+    });
+    renderDialog({
+      types: [statusRequestType("end_pair")],
+      pairs: [pairWith(80, "Ann"), pairWith(81, "Bo")],
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Rae Kim" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText("Neither person in the pair can review it."),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Which pair"), "80");
+    const reviewers = within(screen.getByLabelText("Reviewer"));
+    expect(
+      reviewers.queryByRole("option", { name: "Ann Lee" }),
+    ).not.toBeInTheDocument();
+    expect(
+      reviewers.getByRole("option", { name: "Bo Lee" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not send a reviewer the pair now rules out", async () => {
+    const user = userEvent.setup();
+    getMentorshipApprovers.mockResolvedValue({
+      data: [...APPROVERS, { userId: 1081, name: "Bo Lee" }],
+    });
+    renderDialog({
+      types: [statusRequestType("end_pair")],
+      pairs: [pairWith(80, "Ann"), pairWith(81, "Bo")],
+    });
+    expect(screen.getByText(/^The pair you pick ends/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Which pair"), "80");
+    await waitFor(() =>
+      expect(
+        within(screen.getByLabelText("Reviewer")).getByRole("option", {
+          name: "Bo Lee",
+        }),
+      ).toBeInTheDocument(),
+    );
+    await user.selectOptions(screen.getByLabelText("Reviewer"), "1081");
+    expect(
+      screen.getByRole("button", { name: "Send for approval" }),
+    ).toBeEnabled();
+
+    await user.selectOptions(screen.getByLabelText("Which pair"), "81");
+
+    expect(
+      screen.getByRole("button", { name: "Send for approval" }),
+    ).toBeDisabled();
+  });
+
+  it("does not offer a pair already waiting to end", () => {
+    renderDialog({
+      types: [statusRequestType("end_pair")],
+      pairs: [pairWith(80, "Ann"), pairWith(81, "Bo")],
+      pendingRequests: [{ requestId: 61, action: "end_pair", pairId: 80 }],
+    });
+
+    expect(screen.getByLabelText("Which pair")).toHaveValue("81");
+    expect(
+      screen.queryByRole("option", { name: "Ann Lee" }),
+    ).not.toBeInTheDocument();
   });
 });

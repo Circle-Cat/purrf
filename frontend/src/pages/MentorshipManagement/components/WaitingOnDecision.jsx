@@ -60,11 +60,22 @@ const WaitingOnDecision = ({
   const open = dialog?.request;
   const rejecting = dialog?.kind === "reject";
   const typeOf = (request) => statusRequestType(request.action);
-  const aboutPair = (request) => {
+
+  const pairPartner = (request) => {
     const pair = pairs.find((p) => p.pairId === request.pairId);
-    return pair
-      ? ` — about the pair with ${userDisplayName(pair.partner)}`
-      : "";
+    if (pair)
+      return { id: pair.partner?.id, name: userDisplayName(pair.partner) };
+    const other = sameUser(request.pair?.mentor?.userId, personId)
+      ? request.pair?.mentee
+      : request.pair?.mentor;
+    return other
+      ? { id: other.userId, name: approvalPersonLabel(other) }
+      : null;
+  };
+
+  const aboutPair = (request) => {
+    const partner = pairPartner(request);
+    return partner?.name ? ` — about the pair with ${partner.name}` : "";
   };
 
   return (
@@ -146,7 +157,13 @@ const WaitingOnDecision = ({
         reviewers={reviewers.approvers}
         reviewersLoading={reviewers.isLoading}
         reviewersError={reviewers.error}
-        excludeUserIds={[open?.reviewer?.userId, personId]}
+        excludeUserIds={[
+          open?.reviewer?.userId,
+          personId,
+          open && typeOf(open)?.partnerMayNotReview
+            ? pairPartner(open)?.id
+            : null,
+        ]}
         submitting={busy}
         onConfirm={({ reviewerId }) =>
           act(
@@ -173,9 +190,12 @@ const WaitingOnDecision = ({
           rejecting
             ? "Your reason is shown to the person who asked."
             : `${
-                (open && typeOf(open)?.consequences(personName)) ||
+                (open &&
+                  typeOf(open)?.consequences(personName, {
+                    partnerName: pairPartner(open)?.name,
+                  })) ||
                 "It takes effect at once and cannot be undone."
-              }${open ? aboutPair(open) : ""}`
+              }${open && !typeOf(open)?.partnerMayNotReview ? aboutPair(open) : ""}`
         }
         submitting={busy}
         onConfirm={(comment) =>

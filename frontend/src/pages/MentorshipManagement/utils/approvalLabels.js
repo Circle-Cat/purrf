@@ -8,6 +8,7 @@ export const APPROVAL_ACTION = Object.freeze({
   WITHDRAW_PARTICIPANT: "withdraw_participant",
   MARK_NO_SHOW: "mark_no_show",
   MARK_RED_FLAG: "mark_red_flag",
+  END_PAIR: "end_pair",
 });
 
 const ACTION_LABELS = {
@@ -16,6 +17,7 @@ const ACTION_LABELS = {
   [APPROVAL_ACTION.WITHDRAW_PARTICIPANT]: "Withdrawal from round",
   [APPROVAL_ACTION.MARK_NO_SHOW]: "No show mark",
   [APPROVAL_ACTION.MARK_RED_FLAG]: "Red flag",
+  [APPROVAL_ACTION.END_PAIR]: "End pair",
 };
 
 // Requests about one person in one round, decided on their page.
@@ -37,14 +39,19 @@ export const approvalActionLabel = (action) =>
  * Where a reviewer decides a request: decisions are taken on the page of the
  * thing they are about. A publish request opens that round's matching
  * results; an exemption opens the round's Needs exemption list narrowed to
- * the person; a withdrawal or a mark opens the person's page for the round.
+ * the person; a withdrawal or a mark opens the person's page for the round;
+ * ending a pair opens the mentee's page.
  *
  * @param {{action: string, round: {roundId: number},
- *          person?: {userId: number}|null}} request
+ *          person?: {userId: number}|null,
+ *          pair?: {mentee: {userId: number}}|null}} request
  * @returns {{pathname: string, search: string}}
  */
 export const approvalReviewLink = (request) => {
   const roundId = request.round?.roundId;
+  if (request.action === APPROVAL_ACTION.END_PAIR) {
+    return participantLink(request.pair?.mentee?.userId, roundId);
+  }
   if (DECIDED_ON_PERSON_PAGE.has(request.action)) {
     return participantLink(request.person?.userId, roundId);
   }
@@ -73,6 +80,17 @@ export const approvalPersonLabel = (person) => {
   if (!person) return "";
   return person.name || `ID ${person.userId}`;
 };
+
+/**
+ * The two people in a pair a request is about, mentor first.
+ * @param {{mentor: {userId: number|string, name?: string|null},
+ *          mentee: {userId: number|string, name?: string|null}}|null|undefined} pair
+ * @returns {string}
+ */
+export const approvalPairLabel = (pair) =>
+  pair
+    ? `mentor ${approvalPersonLabel(pair.mentor)} and mentee ${approvalPersonLabel(pair.mentee)}`
+    : "";
 
 /**
  * Why someone needs a matching exemption, one line per problem. A problem

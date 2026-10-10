@@ -88,7 +88,9 @@ const ApprovalRequestDialog = ({
   const options = (reviewers ?? []).filter(
     (r) => !excluded.has(String(r.userId)),
   );
-  const ready = reviewerId !== "" && canConfirm;
+  // A reviewer picked earlier who has since been left out no longer counts.
+  const picked = options.some((r) => String(r.userId) === reviewerId);
+  const ready = picked && canConfirm;
   const empty = !reviewersLoading && options.length === 0;
 
   const submit = () => {
@@ -119,7 +121,7 @@ const ApprovalRequestDialog = ({
             <select
               id="approval-reviewer"
               className="w-full rounded-md border border-border p-2 text-sm"
-              value={reviewerId}
+              value={picked ? reviewerId : ""}
               onChange={(e) => setReviewerId(e.target.value)}
               disabled={reviewersLoading || submitting}
             >
