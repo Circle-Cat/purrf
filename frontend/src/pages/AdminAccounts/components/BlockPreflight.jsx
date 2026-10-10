@@ -14,8 +14,8 @@ import {
  * about irreversibility is not conditional on them: it is true regardless of
  * how many rows the sweep turns out to reach.
  *
- * @param {{preflight: {applicationCount: number, interviewTimes: string[]}|null}} props
- * @param {{applicationCount: number, interviewTimes: string[]}|null} props.preflight
+ * @param {{preflight: {applicationCount: number, interviewTimes: string[], mentorshipPairCount?: number, mentorshipMeetingCount?: number}|null}} props
+ * @param {{applicationCount: number, interviewTimes: string[], mentorshipPairCount?: number, mentorshipMeetingCount?: number}|null} props.preflight
  * @param {string} [props.timezone] Zone to render the interview times in.
  *   Defaults to the browser's. The recruiting page renders every other time
  *   from the viewer's profile zone, so it passes that in rather than letting
@@ -28,6 +28,8 @@ const BlockPreflight = ({ preflight, timezone }) => {
   const tz = resolveViewerTimezone(timezone);
   const applicationCount = preflight?.applicationCount ?? 0;
   const interviewTimes = preflight?.interviewTimes ?? [];
+  const pairCount = preflight?.mentorshipPairCount ?? 0;
+  const meetingCount = preflight?.mentorshipMeetingCount ?? 0;
   const dates = interviewTimes
     .map((iso) => formatDateTimeWithZone(iso, tz))
     .filter(Boolean)
@@ -42,7 +44,7 @@ const BlockPreflight = ({ preflight, timezone }) => {
       <ul className="space-y-1">
         <li>· Lock the person out of all of Purrf until unblocked</li>
         {preflight === null ? (
-          <li>· Still counting the applications and interviews this reaches</li>
+          <li>· Still counting the applications, interviews and mentorship pairs this reaches</li>
         ) : (
           <>
             {/* The sweep tags every application it touches but only rejects
@@ -60,13 +62,22 @@ const BlockPreflight = ({ preflight, timezone }) => {
                     interviewTimes.length === 1 ? "interview" : "interviews"
                   } — ${dates}`}
             </li>
+            <li>
+              {pairCount === 0
+                ? "· End no mentorship pairs — none in a round in progress"
+                : `· End ${pairCount} mentorship ${
+                    pairCount === 1 ? "pair" : "pairs"
+                  } in rounds in progress and cancel ${meetingCount} upcoming ${
+                    meetingCount === 1 ? "meeting" : "meetings"
+                  }; a partner left with no pair becomes unmatched`}
+            </li>
           </>
         )}
       </ul>
       <p>
         ⚠ Unblocking later restores access, but reinstates none of the above —
-        not the applications, not the interviews. Mentorship eligibility is gone
-        for good, because it is derived from an application that this action
+        not the applications, not the interviews, not the mentorship pairs.
+        Mentorship eligibility is gone for good, because it is derived from an application that this action
         rejects.
       </p>
     </div>
