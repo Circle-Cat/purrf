@@ -170,7 +170,14 @@ class NotificationMarkFlowTest(BaseRepositoryTestLib):
                     (n.tag, n.notification_stage, n.body, n.author_user_id)
                     for n in await self._notes_on(person)
                 ],
-                [(ParticipantNoteTag.NOTIFIED, "match_result", BODY, self.admin.user_id)],
+                [
+                    (
+                        ParticipantNoteTag.NOTIFIED,
+                        "match_result",
+                        BODY,
+                        self.admin.user_id,
+                    )
+                ],
             )
         self.assertEqual(await self._notes_on(self.bo), [])
         self.assertEqual(await self._notes_on(self.cy), [])

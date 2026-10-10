@@ -1681,9 +1681,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             created_at=datetime(2026, 9, 3, 18, 0, tzinfo=timezone.utc),
             notification_stage="match_result",
         )
-        dumped = self.service._note_dto(note, {12: "Eve Ko"}).model_dump(
-            by_alias=True
-        )
+        dumped = self.service._note_dto(note, {12: "Eve Ko"}).model_dump(by_alias=True)
         self.assertEqual(dumped["tag"], "notified")
         self.assertEqual(dumped["notificationStage"], "match_result")
 

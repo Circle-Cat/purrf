@@ -452,7 +452,11 @@ class MentorshipEmailServiceNotifiedTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_people_marked_by_hand_are_listed_with_their_stages(self):
         self.repo.list_manual_stages = AsyncMock(
-            return_value=[(2, "midterm_reminder"), (4, "admission"), (4, "match_result")]
+            return_value=[
+                (2, "midterm_reminder"),
+                (4, "admission"),
+                (4, "match_result"),
+            ]
         )
         notified, _ = await self.service.list_notified(self.session, 1)
         self.assertEqual(

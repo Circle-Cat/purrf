@@ -265,7 +265,9 @@ class TestMentorshipEmailController(unittest.TestCase):
         self.mark_service.mark = AsyncMock(
             return_value=NotificationMarkResultDto(
                 marked=[12],
-                skipped=[NotificationMarkSkipDto(user_id=11, reason="already_notified")],
+                skipped=[
+                    NotificationMarkSkipDto(user_id=11, reason="already_notified")
+                ],
             )
         )
         resp = self.client.post(MARK, json=MARK_BODY)
