@@ -59,6 +59,7 @@ import { startMatchingRun } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import MarkNotifiedDialog from "@/pages/MentorshipManagement/components/email/MarkNotifiedDialog";
 import SendNotificationDialog from "@/pages/MentorshipManagement/components/email/SendNotificationDialog";
 import {
   notificationStateLabel,
@@ -455,6 +456,27 @@ const ParticipantSearchCard = () => {
     userId: row.userId,
     name: userDisplayName(row),
   }));
+
+  const [markOpen, setMarkOpen] = useState(false);
+  // Marks are written only while the round runs, as for any note.
+  const committedInProgress = (rounds ?? []).some(
+    (r) => String(r.id) === committedRoundId && r.isInProgress,
+  );
+  const canMarkNotified = canNotify && committedInProgress;
+  const markPeople = [...picked.values()].map((row) => ({
+    userId: row.userId,
+    name: userDisplayName(row),
+    notifiedStages: (stagesByUser.get(row.userId) ?? [])
+      .filter((entry) => entry.scheduledAt == null)
+      .map((entry) => entry.stage),
+  }));
+
+  const onMarkedNotified = () => {
+    setSelection({ key: "", picked: NO_SELECTION });
+    reloadNotified();
+    // Those just marked no longer match a Not notified filter.
+    if (notificationFiltered) refetch();
+  };
 
   const onNotificationScheduled = (sendAtIso) => {
     setSelection({ key: "", picked: NO_SELECTION });
@@ -929,6 +951,16 @@ const ParticipantSearchCard = () => {
                 >
                   Send notification · {picked.size}
                 </Button>
+                {canMarkNotified && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setMarkOpen(true)}
+                  >
+                    Mark as notified · {picked.size}
+                  </Button>
+                )}
               </div>
             )}
           </>
@@ -942,6 +974,17 @@ const ParticipantSearchCard = () => {
           defaultStage={notRegistered ? "round_recruitment" : ""}
           onScheduled={onNotificationScheduled}
         />
+
+        {markOpen && (
+          <MarkNotifiedDialog
+            open={markOpen}
+            onOpenChange={setMarkOpen}
+            roundId={committedRoundId}
+            people={markPeople}
+            stageOptions={stagesForList(notRegistered)}
+            onMarked={onMarkedNotified}
+          />
+        )}
 
         <Dialog
           open={confirmOpen}

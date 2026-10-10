@@ -36,6 +36,7 @@ import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import {
   listNotifiedStages,
+  markNotified,
   listKitDrafts,
   createEmailSend,
   refreshEmailPreview,
@@ -2306,6 +2307,9 @@ describe("ParticipantSearchCard", () => {
     const sendButton = () =>
       screen.queryByRole("button", { name: /^Send notification · \d+$/ });
 
+    const markButton = () =>
+      screen.queryByRole("button", { name: /^Mark as notified · \d+$/ });
+
     beforeEach(() => {
       useFeatureFlags.mockReturnValue(KIT_FLAG);
       searchParticipants.mockResolvedValue(resultsOf([alice, cara]));
@@ -2574,6 +2578,67 @@ describe("ParticipantSearchCard", () => {
       expect(sendButton()).not.toBeInTheDocument();
       expect(listNotifiedStages).toHaveBeenCalledTimes(2);
       expect(cancelEmailSend).not.toHaveBeenCalled();
+    });
+
+    it("offers Mark as notified beside Send notification for the people picked", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      expect(markButton()).not.toBeInTheDocument();
+
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      expect(markButton()).toHaveTextContent("Mark as notified · 2");
+    });
+
+    it("does not offer Mark as notified in a round not in progress", async () => {
+      await renderCard({ url: "/?round=3" });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+
+      expect(sendButton()).toBeInTheDocument();
+      expect(markButton()).not.toBeInTheDocument();
+    });
+
+    it("marks the people picked and reads the notified stages again", async () => {
+      vi.spyOn(toast, "success").mockImplementation(() => {});
+      markNotified.mockResolvedValue({
+        marked: [12],
+        skipped: [{ userId: 11, reason: "already_notified" }],
+      });
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      await userEvent.click(markButton());
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Which notification"),
+        "admission",
+      );
+      expect(
+        within(dialog).getByText(
+          "1 of 2 already notified for this stage \u2014 they will be skipped",
+        ),
+      ).toBeInTheDocument();
+      await userEvent.type(
+        within(dialog).getByLabelText("How it was sent"),
+        "Sent on Teams",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Mark as notified \u00b7 1" }),
+      );
+
+      await waitFor(() =>
+        expect(markNotified).toHaveBeenCalledWith("7", {
+          userIds: [11, 12],
+          stage: "admission",
+          body: "Sent on Teams",
+        }),
+      );
+      await waitFor(() => expect(listNotifiedStages).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(markButton()).not.toBeInTheDocument());
     });
 
     const notificationFilter = () =>
