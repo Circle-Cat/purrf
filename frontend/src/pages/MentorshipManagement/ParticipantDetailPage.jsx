@@ -31,6 +31,7 @@ import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLa
 import { useParticipantDetail } from "@/pages/MentorshipManagement/hooks/useParticipantDetail";
 import PairSection from "@/pages/MentorshipManagement/components/PairSection";
 import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
+import { stagesForList } from "@/pages/MentorshipManagement/components/email/emailLabels";
 import { usePersonSends } from "@/pages/MentorshipManagement/hooks/usePersonSends";
 import ParticipantFeedback from "@/pages/MentorshipManagement/components/ParticipantFeedback";
 import ParticipationHistory from "@/pages/MentorshipManagement/components/ParticipationHistory";
@@ -39,6 +40,17 @@ import ChangeStatusDialog from "@/pages/MentorshipManagement/components/ChangeSt
 import WaitingOnDecision from "@/pages/MentorshipManagement/components/WaitingOnDecision";
 import { availableStatusRequestTypes } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+
+// What this person has already been notified of this round: Kit delivered
+// it, or someone marked it by hand.
+const notifiedStagesOf = (sends, notes) => [
+  ...new Set([
+    ...sends.filter((send) => send.delivered).map((send) => send.stage),
+    ...notes
+      .filter((note) => note.tag === "notified")
+      .map((note) => note.notificationStage),
+  ]),
+];
 
 /**
  * The round to open when the URL names none: the latest round this person
@@ -423,6 +435,10 @@ const ParticipantDetailPage = () => {
           pairs={pairs}
           canAdd={writable}
           onAdded={refetch}
+          canMarkNotified={kitEmailOn}
+          personName={name}
+          markStageOptions={stagesForList(!registration)}
+          notifiedStages={notifiedStagesOf(sends, detail.notes)}
         />
 
         <ParticipantFeedback feedback={detail.feedback} />

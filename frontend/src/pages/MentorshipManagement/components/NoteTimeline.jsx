@@ -18,6 +18,7 @@ import { userDisplayName } from "@/utils/userName";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
+import MarkNotifiedDialog from "@/pages/MentorshipManagement/components/email/MarkNotifiedDialog";
 
 // The backend refuses anything longer.
 const MAX_NOTE_LENGTH = 5000;
@@ -28,6 +29,11 @@ const TAG_LABELS = {
   no_show: "No show",
   red_flag: "Red flag",
 };
+
+const tagLabel = (note) =>
+  note.tag === "notified"
+    ? `Marked as notified: ${stageLabel(note.notificationStage)}`
+    : TAG_LABELS[note.tag];
 
 /**
  * Write a plain-text note on a person in a round. No tag to pick: tagged
@@ -106,9 +112,7 @@ const at = (iso) => formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
 const NoteEntry = ({ note, partner }) => (
   <li className="text-sm">
     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-      {TAG_LABELS[note.tag] && (
-        <Badge variant="secondary">{TAG_LABELS[note.tag]}</Badge>
-      )}
+      {tagLabel(note) && <Badge variant="secondary">{tagLabel(note)}</Badge>}
       {partner && <span>with {partner}</span>}
       <span>
         {note.author?.name ?? unresolvedPersonLabel(note.author?.userId)} ·{" "}
@@ -144,9 +148,12 @@ const SendEntry = ({ send }) => (
  *
  * @param {{notes: Object[], sends?: Object[], roundId: number|string,
  *          userId: number|string, canAdd: boolean, onAdded: () => void,
- *          pairs?: Object[]}} props
+ *          pairs?: Object[], canMarkNotified?: boolean, personName?: string,
+ *          markStageOptions?: Object[], notifiedStages?: string[]}} props
  *   pairs: the round's pairs, to name the partner of the pair a note is
- *   about.
+ *   about. canMarkNotified: offer Mark as notified beside Add a note, for
+ *   the person personName, among markStageOptions, with notifiedStages
+ *   already reached.
  */
 const NoteTimeline = ({
   notes,
@@ -156,8 +163,13 @@ const NoteTimeline = ({
   canAdd,
   onAdded,
   pairs = [],
+  canMarkNotified = false,
+  personName,
+  markStageOptions = [],
+  notifiedStages = [],
 }) => {
   const [adding, setAdding] = useState(false);
+  const [marking, setMarking] = useState(false);
   const partnerOf = new Map(
     pairs.map((pair) => [pair.pairId, userDisplayName(pair.partner)]),
   );
@@ -179,14 +191,20 @@ const NoteTimeline = ({
       <header className="mb-2 flex items-center gap-3">
         <h3 className="text-sm font-semibold">Timeline</h3>
         {canAdd && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            onClick={() => setAdding(true)}
-          >
-            Add a note
-          </Button>
+          <div className="ml-auto flex gap-2">
+            {canMarkNotified && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setMarking(true)}
+              >
+                Mark as notified
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+              Add a note
+            </Button>
+          </div>
         )}
       </header>
       {entries.length === 0 ? (
@@ -215,6 +233,16 @@ const NoteTimeline = ({
           roundId={roundId}
           userId={userId}
           onAdded={onAdded}
+        />
+      )}
+      {canAdd && canMarkNotified && marking && (
+        <MarkNotifiedDialog
+          open
+          onOpenChange={setMarking}
+          roundId={roundId}
+          people={[{ userId, name: personName, notifiedStages }]}
+          stageOptions={markStageOptions}
+          onMarked={onAdded}
         />
       )}
     </section>
