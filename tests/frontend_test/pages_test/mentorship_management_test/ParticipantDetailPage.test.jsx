@@ -11,6 +11,7 @@ import {
   getParticipantDetail,
   searchParticipants,
 } from "@/api/mentorshipApi";
+import { getRaisedBlockRequests } from "@/api/adminAccountsApi";
 import { listPersonSends } from "@/api/mentorshipEmailApi";
 import { useAuth } from "@/context/auth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
@@ -41,6 +42,9 @@ vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
   getBlockPreflight: vi.fn(),
   getUserAdmins: vi.fn(),
+  getRaisedBlockRequests: vi.fn(),
+  reassignBlockRequest: vi.fn(),
+  withdrawBlockRequest: vi.fn(),
 }));
 vi.mock("@/api/mentorshipEmailApi", () => ({ listPersonSends: vi.fn() }));
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
@@ -88,6 +92,7 @@ describe("ParticipantDetailPage", () => {
     });
     useFeatureFlags.mockReturnValue({});
     getParticipantDetail.mockResolvedValue({ data: detailOf() });
+    getRaisedBlockRequests.mockResolvedValue({ data: [] });
     listPersonSends.mockResolvedValue([
       {
         sendId: 14,
@@ -114,6 +119,22 @@ describe("ParticipantDetailPage", () => {
       within(heading.parentElement).getByText("Active"),
     ).toBeInTheDocument();
     expect(getParticipantDetail).toHaveBeenCalledWith("7", "3104");
+  });
+
+  it("shows the pending block request in the account state chips", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        pendingBlockRequest: {
+          requestId: 5,
+          reviewer: { userId: 77, name: "Uma Admin" },
+        },
+      }),
+    });
+    renderPage();
+    const heading = await screen.findByRole("heading", { name: "Alice Chen" });
+    expect(
+      within(heading.parentElement).getByText("Block requested"),
+    ).toBeInTheDocument();
   });
 
   it("shows this round's status, training and pair", async () => {
