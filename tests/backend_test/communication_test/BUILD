@@ -323,3 +323,14 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "person_email_service_test",
+    srcs = ["person_email_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/communication",
+        "//backend/dto",
+    ],
+)
