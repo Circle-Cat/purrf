@@ -13,10 +13,9 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { addParticipantNote } from "@/api/mentorshipApi";
-import { formatInTz } from "@/utils/dateTime";
 import { userDisplayName } from "@/utils/userName";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
-import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import { formatPacific } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
 import MarkNotifiedDialog from "@/pages/MentorshipManagement/components/email/MarkNotifiedDialog";
 
@@ -107,7 +106,7 @@ export const AddNoteDialog = ({
   );
 };
 
-const at = (iso) => formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
+const at = formatPacific;
 
 const NoteEntry = ({ note, partner }) => (
   <li className="text-sm">
