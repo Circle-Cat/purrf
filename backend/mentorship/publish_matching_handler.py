@@ -229,6 +229,14 @@ class PublishMatchingHandler(ApprovalHandler):
             ],
         )
         pair_of_mentee = {pair.mentee_id: pair.pair_id for pair in created}
+        new_pairs: dict[int, list[tuple[int, int]]] = {}
+        for pair in created:
+            new_pairs.setdefault(pair.mentor_id, []).append(
+                (pair.mentee_id, pair.pair_id)
+            )
+            new_pairs.setdefault(pair.mentee_id, []).append(
+                (pair.mentor_id, pair.pair_id)
+            )
 
         paired = {user_id for pair in pairs for user_id in pair}
         in_run = {int(mentee_id) for mentee_id in rows} | {
@@ -238,7 +246,7 @@ class PublishMatchingHandler(ApprovalHandler):
             )
         }
         registrations = await self._registrations(session, round_id)
-        names = await self._names(session, {request.raised_by, actor_id})
+        names = await self._names(session, {request.raised_by, actor_id, *paired})
         by = (
             f"Raised by {names.get(request.raised_by, f'User {request.raised_by}')}"
             f", reason: {request.reason or 'none given'}; approved by "
@@ -258,7 +266,26 @@ class PublishMatchingHandler(ApprovalHandler):
             before = participant.approval_status
             # Someone who left the round stays left; only a pairable status
             # moves, and only when it changes.
-            if before not in _PAIRABLE or before == to:
+            if before not in _PAIRABLE:
+                continue
+            if before == to:
+                # Already matched, and given someone new: the pair is still
+                # worth a line on their timeline.
+                for partner_id, pair_id in new_pairs.get(user_id, []):
+                    await self.note_repository.create(
+                        session,
+                        user_id=user_id,
+                        round_id=round_id,
+                        author_user_id=actor_id,
+                        body=(
+                            f"Paired with "
+                            f"{names.get(partner_id, f'User {partner_id}')} when "
+                            f"the matching result was published. {by}"
+                        ),
+                        tag=ParticipantNoteTag.STATUS_CHANGE,
+                        pair_id=pair_id,
+                        request_id=request.request_id,
+                    )
                 continue
             participant.approval_status = to
             await self.note_repository.create(
