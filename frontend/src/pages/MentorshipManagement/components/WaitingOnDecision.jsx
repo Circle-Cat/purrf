@@ -63,11 +63,14 @@ const WaitingOnDecision = ({
 
   const pairPartner = (request) => {
     const pair = pairs.find((p) => p.pairId === request.pairId);
-    if (pair) return { id: pair.partner?.id, name: userDisplayName(pair.partner) };
+    if (pair)
+      return { id: pair.partner?.id, name: userDisplayName(pair.partner) };
     const other = sameUser(request.pair?.mentor?.userId, personId)
       ? request.pair?.mentee
       : request.pair?.mentor;
-    return other ? { id: other.userId, name: approvalPersonLabel(other) } : null;
+    return other
+      ? { id: other.userId, name: approvalPersonLabel(other) }
+      : null;
   };
 
   const aboutPair = (request) => {
@@ -187,7 +190,8 @@ const WaitingOnDecision = ({
           rejecting
             ? "Your reason is shown to the person who asked."
             : `${
-                (open && typeOf(open)?.consequences(personName, {
+                (open &&
+                  typeOf(open)?.consequences(personName, {
                     partnerName: pairPartner(open)?.name,
                   })) ||
                 "It takes effect at once and cannot be undone."

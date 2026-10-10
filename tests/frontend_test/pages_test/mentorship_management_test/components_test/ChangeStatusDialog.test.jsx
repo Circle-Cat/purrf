@@ -78,7 +78,9 @@ describe("ChangeStatusDialog", () => {
       screen.queryByLabelText("What are you asking for"),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
-    expect(screen.getByText(/partner left with no other pair becomes unmatched/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/partner left with no other pair becomes unmatched/),
+    ).toBeInTheDocument();
   });
 
   it("leaves the person out of the reviewers and sends with an optional reason", async () => {
@@ -308,21 +310,33 @@ describe("ChangeStatusDialog", () => {
   it("leaves the partner of the chosen pair off the reviewers", async () => {
     const user = userEvent.setup();
     getMentorshipApprovers.mockResolvedValue({
-      data: [...APPROVERS, { userId: 1080, name: "Ann Lee" }, { userId: 1081, name: "Bo Lee" }],
+      data: [
+        ...APPROVERS,
+        { userId: 1080, name: "Ann Lee" },
+        { userId: 1081, name: "Bo Lee" },
+      ],
     });
     renderDialog({
       types: [statusRequestType("end_pair")],
       pairs: [pairWith(80, "Ann"), pairWith(81, "Bo")],
     });
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: "Rae Kim" })).toBeInTheDocument(),
+      expect(
+        screen.getByRole("option", { name: "Rae Kim" }),
+      ).toBeInTheDocument(),
     );
-    expect(screen.getByText("Neither person in the pair can review it.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Neither person in the pair can review it."),
+    ).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Which pair"), "80");
     const reviewers = within(screen.getByLabelText("Reviewer"));
-    expect(reviewers.queryByRole("option", { name: "Ann Lee" })).not.toBeInTheDocument();
-    expect(reviewers.getByRole("option", { name: "Bo Lee" })).toBeInTheDocument();
+    expect(
+      reviewers.queryByRole("option", { name: "Ann Lee" }),
+    ).not.toBeInTheDocument();
+    expect(
+      reviewers.getByRole("option", { name: "Bo Lee" }),
+    ).toBeInTheDocument();
   });
 
   it("does not send a reviewer the pair now rules out", async () => {
@@ -337,14 +351,18 @@ describe("ChangeStatusDialog", () => {
     await user.selectOptions(screen.getByLabelText("Which pair"), "80");
     await waitFor(() =>
       expect(
-        within(screen.getByLabelText("Reviewer")).getByRole("option", { name: "Bo Lee" }),
+        within(screen.getByLabelText("Reviewer")).getByRole("option", {
+          name: "Bo Lee",
+        }),
       ).toBeInTheDocument(),
     );
     await user.selectOptions(screen.getByLabelText("Reviewer"), "1081");
 
     await user.selectOptions(screen.getByLabelText("Which pair"), "81");
 
-    expect(screen.getByRole("button", { name: "Send for approval" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Send for approval" }),
+    ).toBeDisabled();
   });
 
   it("does not offer a pair already waiting to end", () => {
@@ -355,6 +373,8 @@ describe("ChangeStatusDialog", () => {
     });
 
     expect(screen.getByLabelText("Which pair")).toHaveValue("81");
-    expect(screen.queryByRole("option", { name: "Ann Lee" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Ann Lee" }),
+    ).not.toBeInTheDocument();
   });
 });

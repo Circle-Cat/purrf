@@ -28,7 +28,7 @@ const context = (overrides = {}) => ({
 const labels = (ctx) => availableStatusRequestTypes(ctx).map((t) => t.label);
 
 describe("statusRequestTypes", () => {
-  it("offers all three to a writer while someone paired is still in a round in progress", () => {
+  it("offers all four to a writer while someone paired is still in a round in progress", () => {
     expect(labels(context())).toEqual([
       "Withdraw from round",
       "Mark as no show",
@@ -145,7 +145,10 @@ describe("statusRequestTypes", () => {
     expect(
       labels(
         context({
-          registration: { approvalStatus: "withdrawn", pairs: [active(80, 23)] },
+          registration: {
+            approvalStatus: "withdrawn",
+            pairs: [active(80, 23)],
+          },
         }),
       ),
     ).not.toContain("End this pair");
@@ -156,9 +159,9 @@ describe("statusRequestTypes", () => {
     const pairs = [active(80, 23), active(81, 24), ended(82, 25)];
     const pendingRequests = [{ requestId: 61, action: "end_pair", pairId: 80 }];
 
-    expect(type.pairChoices(pairs, pendingRequests).map((p) => p.pairId)).toEqual(
-      [81],
-    );
+    expect(
+      type.pairChoices(pairs, pendingRequests).map((p) => p.pairId),
+    ).toEqual([81]);
     expect(
       labels(
         context({
