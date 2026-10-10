@@ -2380,7 +2380,7 @@ describe("ParticipantSearchCard", () => {
         ),
       );
       expect(cellOf(cara, "Notifications")).toHaveTextContent(
-        /^Match result · Scheduled 12-01 10:30 PT$/,
+        /^Match result · NotifiedMatch result · Scheduled 12-01 10:30 PT$/,
       );
     });
 

@@ -266,7 +266,7 @@ const NotificationsCell = ({ stages }) =>
       {stages.map(({ stage, scheduledAt }) =>
         scheduledAt ? (
           <Badge
-            key={stage}
+            key={`${stage}-scheduled`}
             variant="outline"
             className="border-dashed text-muted-foreground"
           >
@@ -274,7 +274,7 @@ const NotificationsCell = ({ stages }) =>
             {formatInTz(scheduledAt, MEETING_TIMEZONE, "MM-dd HH:mm")} PT
           </Badge>
         ) : (
-          <Badge key={stage} variant="outline">
+          <Badge key={`${stage}-notified`} variant="outline">
             {stageLabel(stage)} · {notificationStateLabel("notified")}
           </Badge>
         ),
