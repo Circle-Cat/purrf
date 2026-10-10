@@ -89,7 +89,8 @@ const readOneOf = (params, key, allowed) => {
  *   latest first; null while loading.
  * @param {{notificationsOn?: boolean}} [options] - With notificationsOn (the
  *   Kit email flag), the committed notification filter is sent on the
- *   Registered and Not registered lists.
+ *   Registered and Not registered lists. Without it, searching and paging
+ *   drop the filter from the URL.
  */
 export const useParticipantSearch = (
   rounds,
@@ -412,8 +413,8 @@ export const useParticipantSearch = (
       [PARAM.ROUND]: committedRoundId,
       [PARAM.ROLE]: committedRole,
       [PARAM.APPROVAL]: committedApproval,
-      [PARAM.NOTIFY_STAGE]: committedNotifyStage,
-      [PARAM.NOTIFY_STATE]: committedNotifyState,
+      [PARAM.NOTIFY_STAGE]: notificationsOn ? committedNotifyStage : "",
+      [PARAM.NOTIFY_STATE]: notificationsOn ? committedNotifyState : "",
       ...withSort(nextSortBy, nextOrder),
       [PARAM.OFFSET]: nextOffset || "",
       [PARAM.NOT_REGISTERED]: notRegistered ? "1" : "",
@@ -518,6 +519,7 @@ export const useParticipantSearch = (
       !inNotRegistered &&
       !inEligible;
     const notifyStage =
+      notificationsOn &&
       !inEligible &&
       !inNeedsExemption &&
       notification.state &&

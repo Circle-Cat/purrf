@@ -689,6 +689,30 @@ describe("useParticipantSearch", () => {
       expect(result.current.search.notificationFiltered).toBe(false);
     });
 
+    it("does not write the filter back when paging while notifications are off", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 100 }));
+      const { result } = renderSearch(
+        "/?round=7&notifyStage=admission&notifyState=notified",
+      );
+      await waitFor(() => expect(result.current.search.total).toBe(100));
+      act(() => result.current.search.nextPage());
+      await waitFor(() => expect(paramsOf(result).get("offset")).toBe("20"));
+      expect(paramsOf(result).has("notifyStage")).toBe(false);
+      expect(paramsOf(result).has("notifyState")).toBe(false);
+    });
+
+    it("does not write the filter back on search while notifications are off", async () => {
+      const { result } = renderSearch(
+        "/?round=7&notifyStage=admission&notifyState=notified",
+      );
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+      act(() => result.current.search.setQ("ali"));
+      act(() => result.current.search.submitSearch());
+      await waitFor(() => expect(paramsOf(result).get("q")).toBe("ali"));
+      expect(paramsOf(result).has("notifyStage")).toBe(false);
+      expect(paramsOf(result).has("notifyState")).toBe(false);
+    });
+
     it("sends it with the Not registered list", async () => {
       searchUnregistered.mockResolvedValue({ data: { rows: [], total: 0 } });
       renderSearch(
