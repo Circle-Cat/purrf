@@ -3,8 +3,8 @@
 A request is about one person in one round while the round is in progress
 and they are still in it. Approving it, in the approval's transaction, marks
 them withdrawn, ends every active pair they have in the round, cancels those
-pairs' meetings that have not started, and notes it all on them. Partners
-keep their status. Nothing undoes it.
+pairs' meetings that have not started, and notes it all on them. A partner
+left with no active pair goes from matched to un_matched. Nothing undoes it.
 """
 
 from datetime import datetime, timezone
@@ -20,6 +20,7 @@ from backend.common.mentorship_enums import (
 from backend.common.name_utils import user_display_name
 from backend.common.permissions import Permission
 from backend.mentorship.exempt_matching_handler import exemption_target
+from backend.mentorship.pair_endings import unmatch_if_unpaired
 from backend.mentorship.publish_matching_handler import MENTORSHIP_ROUND_SUBJECT
 from backend.mentorship.round_windows import is_in_progress
 
@@ -149,8 +150,15 @@ class WithdrawParticipantHandler(ApprovalHandler):
             else pair.mentor_id
             for pair in pairs
         }
+        unmatched = await unmatch_if_unpaired(
+            session,
+            participants_repository=self.participants_repository,
+            pairs_repository=self.pairs_repository,
+            round_id=round_id,
+            user_ids=partner_of.values(),
+        )
         names = await self._names(
-            session, {request.raised_by, actor_id, *partner_of.values()}
+            session, {user_id, request.raised_by, actor_id, *partner_of.values()}
         )
         ended = (
             ", ".join(
@@ -175,6 +183,29 @@ class WithdrawParticipantHandler(ApprovalHandler):
             tag=ParticipantNoteTag.STATUS_CHANGE,
             request_id=request.request_id,
         )
+        person = names.get(user_id, f"User {user_id}")
+        by = (
+            f"Raised by {names.get(request.raised_by, f'User {request.raised_by}')}"
+            f", reason: {request.reason or 'none given'}; approved by "
+            f"{names.get(actor_id, f'User {actor_id}')}."
+        )
+        for pair_id, partner_id in partner_of.items():
+            if partner_id not in unmatched:
+                continue
+            await self.note_repository.create(
+                session,
+                user_id=partner_id,
+                round_id=round_id,
+                author_user_id=actor_id,
+                body=(
+                    f"{ApprovalStatus.MATCHED.value} -> "
+                    f"{ApprovalStatus.UN_MATCHED.value}: their partner {person} "
+                    f"left this round. {by}"
+                ),
+                tag=ParticipantNoteTag.STATUS_CHANGE,
+                pair_id=pair_id,
+                request_id=request.request_id,
+            )
         self.logger.info(
             "[WithdrawParticipantHandler] round=%s user=%s pairs=%s meetings=%d by=%s",
             round_id,

@@ -293,6 +293,15 @@ py_test(
 )
 
 py_test(
+    name = "pair_endings_test",
+    srcs = ["pair_endings_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
     name = "withdraw_participant_flow_test",
     srcs = ["withdraw_participant_flow_test.py"],
     env_inherit = ["DATABASE_URL"],
