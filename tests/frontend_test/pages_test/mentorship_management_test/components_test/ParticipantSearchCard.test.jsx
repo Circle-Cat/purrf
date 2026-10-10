@@ -2347,7 +2347,7 @@ describe("ParticipantSearchCard", () => {
       const aliceCell = cellOf(screen.getByText("Alice Doe"), "Notifications");
       await waitFor(() =>
         expect(aliceCell).toHaveTextContent(
-          "New round invitationAdmission & onboarding",
+          "New round invitation · NotifiedAdmission & onboarding · Notified",
         ),
       );
       expect(cellOf(cara, "Notifications")).toHaveTextContent(/^—$/);
@@ -2376,7 +2376,7 @@ describe("ParticipantSearchCard", () => {
       const aliceCell = cellOf(screen.getByText("Alice Doe"), "Notifications");
       await waitFor(() =>
         expect(aliceCell).toHaveTextContent(
-          "Admission & onboardingMatch result · Scheduled 10-12 09:00 PT",
+          "Admission & onboarding · NotifiedMatch result · Scheduled 10-12 09:00 PT",
         ),
       );
       expect(cellOf(cara, "Notifications")).toHaveTextContent(
@@ -2484,7 +2484,7 @@ describe("ParticipantSearchCard", () => {
       const dana = await screen.findByText("Dana Wu");
       await waitFor(() =>
         expect(cellOf(dana, "Notifications")).toHaveTextContent(
-          "New round invitation",
+          /^New round invitation · Notified$/,
         ),
       );
 

@@ -19,6 +19,9 @@ export const NOTIFICATION_STATES = [
   { value: "notified", label: "Notified" },
 ];
 
+export const notificationStateLabel = (value) =>
+  NOTIFICATION_STATES.find((o) => o.value === value)?.label ?? value;
+
 // What can reach someone not registered for the round; the invitation is
 // only for them.
 const NOT_REGISTERED_STAGES = [

@@ -61,6 +61,7 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import SendNotificationDialog from "@/pages/MentorshipManagement/components/email/SendNotificationDialog";
 import {
+  notificationStateLabel,
   stageLabel,
   stagesForList,
 } from "@/pages/MentorshipManagement/components/email/emailLabels";
@@ -254,8 +255,8 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
 };
 
 /**
- * A person's notifications this round, one badge per stage: sent, or still to
- * go out with its Pacific send time.
+ * A person's notifications this round, one badge per stage: notified, or
+ * scheduled with its Pacific send time, in the Notification filter's words.
  *
  * @param {{ stages: Array<{stage: string, scheduledAt: string|null}>|undefined }} props
  */
@@ -269,12 +270,12 @@ const NotificationsCell = ({ stages }) =>
             variant="outline"
             className="border-dashed text-muted-foreground"
           >
-            {stageLabel(stage)} · Scheduled{" "}
+            {stageLabel(stage)} · {notificationStateLabel("scheduled")}{" "}
             {formatInTz(scheduledAt, MEETING_TIMEZONE, "MM-dd HH:mm")} PT
           </Badge>
         ) : (
           <Badge key={stage} variant="outline">
-            {stageLabel(stage)}
+            {stageLabel(stage)} · {notificationStateLabel("notified")}
           </Badge>
         ),
       )}
