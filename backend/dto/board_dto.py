@@ -13,6 +13,7 @@ from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
+from backend.dto.block_dto import PendingBlockRequestDto
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 
 # Fixed reject-reason list surfaced by the board's reject dialog. A reject
@@ -115,6 +116,9 @@ class ApplicationDetailDto(BaseDto):
     # needs the live flag: it decides whether raising a block request is still
     # something to offer, and BlockService.raise_request refuses one either way.
     applicant_is_blocked: bool = False
+    # A block request on the applicant waiting on a reviewer, whoever raised
+    # it and from wherever: only its reviewer, never its reason or raiser.
+    pending_block_request: PendingBlockRequestDto | None = None
     interview: InterviewDto | None = None
     # The CALLER's IANA zone from their profile, for rendering the interview's
     # UTC instants as local wall clock. Per-request, not per-meeting: no zone is

@@ -999,6 +999,15 @@ class TestAppDependencyBuilder(TestCase):
             builder.block_user_handler._interview_scheduling,
             builder.interview_scheduling_service,
         )
+        self.assertIs(
+            builder.block_service._mentorship, builder.mentorship_block_service
+        )
+        self.assertIs(
+            builder.block_user_handler._mentorship, builder.mentorship_block_service
+        )
+        self.assertIs(
+            builder.mentorship_block_service.meeting_service, builder.meeting_service
+        )
 
         # Inbox threads: one sweeping handler, the other contexts only sync.
         registry = builder.email_context_registry

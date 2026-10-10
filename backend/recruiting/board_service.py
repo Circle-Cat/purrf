@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.admin.block_service import pending_block_summary
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.board_dto import (
     ApplicationActivityDto,
@@ -158,6 +159,7 @@ class BoardService:
         application_access,
         interview_scheduling_service,
         mentorship_admission_service,
+        approval_service,
     ):
         """
         Args:
@@ -224,6 +226,8 @@ class BoardService:
                 what an admission means -- the onboarding training task, and
                 the admission email a mentor receives. A no-op for every
                 posting that is not a mentor/mentee activity.
+            approval_service (ApprovalService): Finds a block request waiting
+                on the applicant.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -246,6 +250,7 @@ class BoardService:
         self.application_access = application_access
         self.interview_scheduling_service = interview_scheduling_service
         self.mentorship_admission_service = mentorship_admission_service
+        self.approval_service = approval_service
 
     async def _visible_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -1120,6 +1125,12 @@ class BoardService:
             assignee_id=assignment.assignee_id if assignment is not None else None,
             # Free: `user` was already fetched above for the applicant's name.
             applicant_is_blocked=bool(user is not None and user.is_blocked),
+            pending_block_request=await pending_block_summary(
+                session,
+                approval_service=self.approval_service,
+                users_repository=self.users_repository,
+                user_id=application.user_id,
+            ),
             interview=interview_dto,
             viewer_timezone=viewer_timezone,
         )
