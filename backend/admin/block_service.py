@@ -21,8 +21,10 @@ from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.dto.block_dto import (
     BlockPreflightDto,
     BlockRequestDto,
+    PendingBlockRequestDto,
     ReviewerOptionDto,
 )
+from backend.dto.mentorship_approval_dto import ApprovalPersonDto
 from backend.notification_management.event_recorder import record_event
 
 # The approval action a block request is, and the kind of target it names.
@@ -173,6 +175,34 @@ async def apply_block_kernel(
         actor_id=actor_id,
         event_type=UserEvent.BLOCKED,
         details={"reason": reason},
+    )
+
+
+async def pending_block_summary(
+    session, *, approval_service, users_repository, user_id: int
+) -> PendingBlockRequestDto | None:
+    """The block request waiting on a reviewer for this person, if any, as
+    every page about them shows it: its id and its reviewer, nothing else.
+
+    Args:
+        session (AsyncSession): Active database async session.
+        approval_service (ApprovalService): Finds the pending request.
+        users_repository (UsersRepository): Names the reviewer.
+        user_id (int): The person.
+
+    Returns:
+        PendingBlockRequestDto | None: The request, or None when none waits.
+    """
+    row = await approval_service.get_pending_for_target(
+        session, BLOCK_USER, str(user_id)
+    )
+    if row is None:
+        return None
+    people = await users_repository.get_all_by_ids(session, [row.reviewer_id])
+    name = display_name_of(people[0]) if people else ""
+    return PendingBlockRequestDto(
+        request_id=row.request_id,
+        reviewer=ApprovalPersonDto(user_id=row.reviewer_id, name=name or None),
     )
 
 

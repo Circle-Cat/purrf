@@ -6,6 +6,7 @@ from pydantic import field_validator
 
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
+from backend.dto.mentorship_approval_dto import ApprovalPersonDto
 
 
 class BlockPreflightDto(BaseDto):
@@ -94,3 +95,12 @@ class BlockReassignDto(BaseRequestDto):
     """Hand a pending request to a different reviewer. Done by the raiser."""
 
     reviewer_id: int
+
+
+class PendingBlockRequestDto(BaseDto):
+    """A block request on someone waiting on a reviewer, as any page about
+    them shows it: that it waits, and on whom. The reason and who raised it are
+    left out -- an undecided accusation is not spread to other domains."""
+
+    request_id: int
+    reviewer: ApprovalPersonDto

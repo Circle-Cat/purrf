@@ -12,7 +12,6 @@ from backend.dto.participant_detail_dto import (
     ParticipantDetailDto,
     ParticipantNoteDto,
     ParticipationHistoryRowDto,
-    PendingBlockRequestDto,
     PendingRequestDto,
 )
 from backend.dto.participant_search_dto import (
@@ -39,7 +38,7 @@ from backend.dto.round_feedback_dto import (
     RoundFeedbackDto,
 )
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
-from backend.admin.block_service import BLOCK_USER
+from backend.admin.block_service import pending_block_summary
 from backend.common.exceptions import ConflictError, NotFoundError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
@@ -703,7 +702,12 @@ class MentorshipAdminService:
             exempted=round_id in exempted_rounds,
             feedback=await self._feedback_of(session, round_id, user_id),
             notes=await self._notes_of(session, round_id, user_id),
-            pending_block_request=await self._pending_block_request(session, user_id),
+            pending_block_request=await pending_block_summary(
+                session,
+                approval_service=self.approval_service,
+                users_repository=self.users_repository,
+                user_id=user_id,
+            ),
             pending_requests=[
                 PendingRequestDto.model_validate(r)
                 for r in await self.mentorship_approval_service.pending_for_participant(
@@ -826,23 +830,6 @@ class MentorshipAdminService:
             )
         }
         return self._participant_feedback(participant, user, partners)
-
-    async def _pending_block_request(
-        self, session: AsyncSession, user_id: int
-    ) -> PendingBlockRequestDto | None:
-        """The block request waiting on a reviewer for this person, if any."""
-        row = await self.approval_service.get_pending_for_target(
-            session, BLOCK_USER, str(user_id)
-        )
-        if row is None:
-            return None
-        names = await self._names(session, {row.reviewer_id})
-        return PendingBlockRequestDto(
-            request_id=row.request_id,
-            reviewer=ApprovalPersonDto(
-                user_id=row.reviewer_id, name=names.get(row.reviewer_id)
-            ),
-        )
 
     async def _history(
         self,

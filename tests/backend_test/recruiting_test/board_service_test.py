@@ -151,6 +151,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             MentorshipAdmissionService, instance=True
         )
         self.notification_repo = self._notification_repository_double()
+        self.approvals = MagicMock()
+        self.approvals.get_pending_for_target = AsyncMock(return_value=None)
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -171,6 +173,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.application_access,
             self.interview_svc,
             self.mentorship_admission_svc,
+            self.approvals,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -1332,6 +1335,51 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(result.applicant_is_blocked)
+
+    def _detail_fixture(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self._users_by_id({2: self._user(user_id=2), 3: self._user(user_id=3)})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+    async def test_get_application_detail_names_only_the_reviewer_of_a_pending_block(self):
+        self._detail_fixture()
+        self.approvals.get_pending_for_target = AsyncMock(
+            return_value=SimpleNamespace(
+                request_id=901,
+                reviewer_id=77,
+                raised_by=8,
+                reason="Harassed a mentee in a session",
+            )
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=77, first="Rita", last="Reviewer")]
+        )
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.approvals.get_pending_for_target.assert_awaited_once_with(
+            self.session, "block_user", "3"
+        )
+        dumped = result.model_dump(by_alias=True)["pendingBlockRequest"]
+        self.assertEqual(
+            dumped, {"requestId": 901, "reviewer": {"userId": 77, "name": "Rita Reviewer"}}
+        )
+        self.assertNotIn("Harassed", str(result.model_dump(by_alias=True)))
+
+    async def test_get_application_detail_has_no_pending_block_when_none_waits(self):
+        self._detail_fixture()
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertIsNone(result.pending_block_request)
 
     async def test_get_application_detail_raises_when_missing(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)

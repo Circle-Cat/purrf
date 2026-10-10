@@ -1210,6 +1210,7 @@ class AppDependencyBuilder:
             self.application_access,
             self.interview_scheduling_service,
             self.mentorship_admission_service,
+            self.approval_service,
         )
         self.board_controller = BoardController(
             self.board_service,
