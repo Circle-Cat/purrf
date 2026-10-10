@@ -300,12 +300,14 @@ describe("NoteTimeline", () => {
         onReply,
       });
       expect(
-        screen.queryByRole("button", { name: "Reply" }),
+        screen.queryByRole("button", { name: /^Reply/ }),
       ).not.toBeInTheDocument();
       unmount();
 
       renderTimeline({ emailThreads: [threadOf()], canReply: true, onReply });
-      await userEvent.click(screen.getByRole("button", { name: "Reply" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Reply to Checking in" }),
+      );
       expect(onReply).toHaveBeenCalledWith(threadOf());
     });
 

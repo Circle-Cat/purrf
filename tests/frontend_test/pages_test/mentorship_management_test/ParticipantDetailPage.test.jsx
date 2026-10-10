@@ -926,7 +926,7 @@ describe("ParticipantDetailPage", () => {
         screen.queryByRole("button", { name: "Send email" }),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Reply" }),
+        screen.queryByRole("button", { name: /^Reply/ }),
       ).not.toBeInTheDocument();
     });
 
@@ -935,7 +935,7 @@ describe("ParticipantDetailPage", () => {
       getParticipantEmails.mockResolvedValue({ data: conversationOf() });
       renderPage();
       expect(await screen.findByText("All good, thanks")).toBeInTheDocument();
-      for (const name of ["Send email", "Reply", "Refresh emails"]) {
+      for (const name of ["Send email", /^Reply/, "Refresh emails"]) {
         expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
       }
     });
@@ -954,7 +954,9 @@ describe("ParticipantDetailPage", () => {
       replyParticipantEmail.mockResolvedValue({ data: conversationOf() });
       renderPage();
 
-      await user.click(await screen.findByRole("button", { name: "Reply" }));
+      await user.click(
+        await screen.findByRole("button", { name: "Reply to Checking in" }),
+      );
       const dialog = await screen.findByRole("dialog", { name: "Reply" });
       expect(within(dialog).getByText("alice.alt@y.org")).toBeInTheDocument();
       expect(within(dialog).queryByText("alice@x.com")).not.toBeInTheDocument();
