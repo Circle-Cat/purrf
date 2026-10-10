@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from backend.dto.participant_detail_dto import (
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
     ExemptionFindingDto,
+    MarkCountsDto,
     ParticipantPairDto,
     ParticipantRowDto,
     ParticipantSearchDto,
@@ -363,6 +365,14 @@ class MentorshipAdminService:
             if filters.needs_exemption
             else {}
         )
+        marked = Counter(
+            (note.user_id, note.round_id, note.tag)
+            for note in await self.note_repository.list_tagged(
+                session,
+                sorted({row.user_id for row in rows}),
+                [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+            )
+        )
 
         participant_rows: list[ParticipantRowDto] = []
         for row in rows:
@@ -396,6 +406,14 @@ class MentorshipAdminService:
                         for f in findings.get(row.user_id, [])
                     ],
                     exemption_request=requests.get(row.user_id),
+                    marks=MarkCountsDto(
+                        no_show=marked[
+                            (row.user_id, row.round_id, ParticipantNoteTag.NO_SHOW)
+                        ],
+                        red_flag=marked[
+                            (row.user_id, row.round_id, ParticipantNoteTag.RED_FLAG)
+                        ],
+                    ),
                 )
             )
 

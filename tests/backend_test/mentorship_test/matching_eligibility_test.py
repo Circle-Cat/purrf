@@ -1,17 +1,20 @@
 """Who goes into the matching pool: the rules, one example each."""
 
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from backend.mentorship.matching_eligibility import (
     HISTORY_REASONS,
     Candidate,
     HistoryFinding,
     IneligibleReason,
+    Mark,
     PastPair,
     PastRound,
     history_findings,
     history_problems,
     ineligible_reasons,
+    mark_findings,
 )
 
 ME = 1
@@ -234,10 +237,15 @@ class ExemptionTest(unittest.TestCase):
             [IneligibleReason.MEETINGS_SHORT],
         )
 
-    def test_history_reasons_are_the_two_an_exemption_lifts(self):
+    def test_history_reasons_are_the_four_an_exemption_lifts(self):
         self.assertEqual(
             HISTORY_REASONS,
-            {IneligibleReason.QUIT_AFTER_MATCH, IneligibleReason.MEETINGS_SHORT},
+            {
+                IneligibleReason.QUIT_AFTER_MATCH,
+                IneligibleReason.MEETINGS_SHORT,
+                IneligibleReason.NO_SHOW,
+                IneligibleReason.RED_FLAG,
+            },
         )
 
 
@@ -264,6 +272,132 @@ class HistoryFindingsTest(unittest.TestCase):
         self.assertEqual(
             history_findings(ME, rounds),
             [HistoryFinding(IneligibleReason.QUIT_AFTER_MATCH, 20)],
+        )
+
+
+# Fixed instants: these tests compare times with each other, never with the
+# wall clock. Marks and exemptions are hours apart on purpose.
+T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+NO_SHOW = IneligibleReason.NO_SHOW
+RED_FLAG = IneligibleReason.RED_FLAG
+NOW_ROUND = 40
+
+
+def _at(hours):
+    return T0 + timedelta(hours=hours)
+
+
+def _mark(reason, round_id, hours):
+    return Mark(reason=reason, round_id=round_id, created_at=_at(hours))
+
+
+class MarkTest(unittest.TestCase):
+    """No show and red flag. Rounds are latest first: 30, 20, 10; this round
+    is 40. ME was paired in 30 and 10, and only registered in 20."""
+
+    def setUp(self):
+        self.rounds = [
+            _round(_pair(9, ME, 5), round_id=30),
+            _round(round_id=20),
+            _round(_pair(8, ME, 5), round_id=10),
+        ]
+
+    def _findings(self, marks, exempted_at=None):
+        return mark_findings(ME, NOW_ROUND, self.rounds, marks, exempted_at)
+
+    def test_a_no_show_in_the_latest_paired_round_counts(self):
+        self.assertEqual(
+            self._findings([_mark(NO_SHOW, 30, 1)]), [HistoryFinding(NO_SHOW, 30)]
+        )
+
+    def test_a_no_show_before_the_latest_paired_round_does_not_count(self):
+        self.assertEqual(self._findings([_mark(NO_SHOW, 10, 1)]), [])
+
+    def test_a_no_show_in_this_round_counts(self):
+        self.assertEqual(
+            self._findings([_mark(NO_SHOW, NOW_ROUND, 1)]),
+            [HistoryFinding(NO_SHOW, NOW_ROUND)],
+        )
+
+    def test_a_red_flag_counts_in_any_round_this_one_included(self):
+        self.assertEqual(
+            self._findings([_mark(RED_FLAG, 10, 1), _mark(RED_FLAG, NOW_ROUND, 2)]),
+            [HistoryFinding(RED_FLAG, 10), HistoryFinding(RED_FLAG, NOW_ROUND)],
+        )
+
+    def test_a_mark_from_a_round_not_before_this_one_is_ignored(self):
+        self.assertEqual(self._findings([_mark(RED_FLAG, 99, 1)]), [])
+
+    def test_only_marks_after_the_latest_exemption_count(self):
+        marks = [_mark(RED_FLAG, 10, 1), _mark(NO_SHOW, 30, 5)]
+
+        self.assertEqual(
+            self._findings(marks, exempted_at=_at(3)), [HistoryFinding(NO_SHOW, 30)]
+        )
+        self.assertEqual(self._findings(marks, exempted_at=_at(6)), [])
+
+    def test_a_mark_at_the_exemption_s_own_instant_is_lifted(self):
+        self.assertEqual(
+            self._findings([_mark(RED_FLAG, NOW_ROUND, 3)], exempted_at=_at(3)), []
+        )
+
+    def test_two_marks_of_one_kind_in_one_round_are_one_finding(self):
+        self.assertEqual(
+            self._findings([_mark(NO_SHOW, 30, 1), _mark(NO_SHOW, 30, 2)]),
+            [HistoryFinding(NO_SHOW, 30)],
+        )
+
+    def test_marks_add_to_the_reasons_once_each(self):
+        reasons = ineligible_reasons(
+            _candidate(training_done=False),
+            self.rounds,
+            round_id=NOW_ROUND,
+            marks=[
+                _mark(NO_SHOW, 30, 1),
+                _mark(NO_SHOW, NOW_ROUND, 2),
+                _mark(RED_FLAG, 10, 3),
+            ],
+        )
+
+        self.assertEqual(
+            reasons, [IneligibleReason.TRAINING_NOT_DONE, NO_SHOW, RED_FLAG]
+        )
+
+    def test_a_mark_after_this_round_s_exemption_still_counts(self):
+        # Exempted this round at hour 3 (lifting last round's shortfall),
+        # then flagged this round at hour 5: back to needing an exemption.
+        rounds = [_round(_pair(9, ME, 1), round_id=30)]
+
+        reasons = ineligible_reasons(
+            _candidate(exempt_this_round=True),
+            rounds,
+            frozenset({NOW_ROUND}),
+            round_id=NOW_ROUND,
+            marks=[_mark(RED_FLAG, NOW_ROUND, 5)],
+            exempted_at=_at(3),
+        )
+
+        self.assertEqual(reasons, [RED_FLAG])
+        self.assertTrue(set(reasons) <= HISTORY_REASONS)
+
+    def test_a_mark_before_this_round_s_exemption_is_lifted_with_the_rest(self):
+        rounds = [_round(_pair(9, ME, 1), round_id=30)]
+
+        reasons = ineligible_reasons(
+            _candidate(exempt_this_round=True),
+            rounds,
+            frozenset({NOW_ROUND}),
+            round_id=NOW_ROUND,
+            marks=[_mark(RED_FLAG, NOW_ROUND, 1), _mark(NO_SHOW, 30, 2)],
+            exempted_at=_at(3),
+        )
+
+        self.assertEqual(reasons, [])
+
+    def test_without_marks_the_reasons_are_as_before(self):
+        self.assertEqual(
+            ineligible_reasons(_candidate(), [_round(_pair(9, ME, 2))]),
+            [IneligibleReason.MEETINGS_SHORT],
         )
 
 

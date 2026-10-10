@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -5,6 +8,16 @@ from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.entity.mentorship_participant_note_entity import (
     MentorshipParticipantNoteEntity,
 )
+
+
+@dataclass(frozen=True)
+class TaggedNote:
+    """When one tagged note was written about whom, in which round."""
+
+    user_id: int
+    round_id: int
+    tag: ParticipantNoteTag
+    created_at: datetime
 
 
 class MentorshipParticipantNoteRepository:
@@ -116,3 +129,43 @@ class MentorshipParticipantNoteRepository:
         for user_id, round_id in result.all():
             found.setdefault(user_id, set()).add(round_id)
         return found
+
+    async def list_tagged(
+        self,
+        session: AsyncSession,
+        user_ids: list[int],
+        tags: list[ParticipantNoteTag],
+    ) -> list[TaggedNote]:
+        """Every note with one of these tags on any of these people, in one
+        query.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): The people.
+            tags (list[ParticipantNoteTag]): The tags.
+
+        Returns:
+            list[TaggedNote]: Oldest first.
+        """
+        if not user_ids or not tags:
+            return []
+        result = await session.execute(
+            select(
+                MentorshipParticipantNoteEntity.user_id,
+                MentorshipParticipantNoteEntity.round_id,
+                MentorshipParticipantNoteEntity.tag,
+                MentorshipParticipantNoteEntity.created_at,
+            )
+            .where(
+                MentorshipParticipantNoteEntity.user_id.in_(user_ids),
+                MentorshipParticipantNoteEntity.tag.in_(tags),
+            )
+            .order_by(
+                MentorshipParticipantNoteEntity.created_at,
+                MentorshipParticipantNoteEntity.note_id,
+            )
+        )
+        return [
+            TaggedNote(user_id, round_id, tag, created_at)
+            for user_id, round_id, tag, created_at in result.all()
+        ]

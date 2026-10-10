@@ -1,7 +1,7 @@
 """Reading a round and its history into the eligibility check."""
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,6 +15,7 @@ from backend.common.mentorship_enums import (
 )
 from backend.mentorship.matching_eligibility import HistoryFinding, IneligibleReason
 from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
+from backend.repository.mentorship_participant_note_repository import TaggedNote
 
 MENTOR_COURSE = TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
 MENTEE_COURSE = TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
@@ -60,6 +61,18 @@ def _pair(pair_id, round_id, mentor_id, mentee_id, *, active=True):
     )
 
 
+# Fixed instants, compared only with each other: an exemption at hour 0 and
+# marks hours either side of it.
+T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+EXEMPTION = ParticipantNoteTag.MATCHING_EXEMPTION
+NO_SHOW_TAG = ParticipantNoteTag.NO_SHOW
+RED_FLAG_TAG = ParticipantNoteTag.RED_FLAG
+
+
+def _note(user_id, round_id, tag, hours=0):
+    return TaggedNote(user_id, round_id, tag, T0 + timedelta(hours=hours))
+
+
 class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Round ids out of time order on purpose: 30 is the current round.
@@ -77,7 +90,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
             return_value=[]
         )
         self.notes_repo = MagicMock()
-        self.notes_repo.list_round_ids_by_tag = AsyncMock(return_value={})
+        self.notes_repo.list_tagged = AsyncMock(return_value=[])
         self.service = MatchingEligibilityService(
             participants_repository=self.participants_repo,
             pairs_repository=self.pairs_repo,
@@ -217,6 +230,76 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[1], [IneligibleReason.QUIT_AFTER_MATCH])
 
+    def _registered_and_trained(self, *user_ids):
+        self.participants_repo.list_round_registrations.return_value = [
+            _registration(u, ParticipantRole.MENTEE) for u in user_ids
+        ]
+        self.training_repo.get_training_by_user_ids_and_categories.return_value = [
+            _training(u, MENTEE_COURSE) for u in user_ids
+        ]
+
+    async def test_a_red_flag_this_round_needs_an_exemption(self):
+        self._registered_and_trained(1, 2)
+        self.notes_repo.list_tagged.return_value = [_note(1, 30, RED_FLAG_TAG, 2)]
+
+        result = await self.service.needs_exemption(self.session, 30)
+
+        self.assertEqual(result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 30)]})
+
+    async def test_a_mark_after_this_round_s_exemption_needs_another(self):
+        # Exempted this round at hour 0 for last round's shortfall, then
+        # flagged this round at hour 2.
+        self._registered_and_trained(1)
+        self._short_last_round(1)
+        self.notes_repo.list_tagged.return_value = [
+            _note(1, 30, EXEMPTION, 0),
+            _note(1, 30, RED_FLAG_TAG, 2),
+        ]
+
+        result = await self.service.needs_exemption(self.session, 30)
+
+        self.assertEqual(result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 30)]})
+
+    async def test_a_mark_before_this_round_s_exemption_is_lifted(self):
+        self._registered_and_trained(1)
+        self.notes_repo.list_tagged.return_value = [
+            _note(1, 30, RED_FLAG_TAG, -2),
+            _note(1, 30, EXEMPTION, 0),
+        ]
+
+        self.assertEqual(await self.service.eligible_user_ids(self.session, 30), {1})
+
+    async def test_an_exemption_in_a_later_round_does_not_lift_a_mark(self):
+        # Round 10 (December) comes after 30 (September).
+        self._registered_and_trained(1)
+        self.notes_repo.list_tagged.return_value = [
+            _note(1, 30, RED_FLAG_TAG, 0),
+            _note(1, 10, EXEMPTION, 2),
+        ]
+
+        result = await self.service.ineligible_by_user(self.session, 30)
+
+        self.assertEqual(result[1], [IneligibleReason.RED_FLAG])
+
+    async def test_a_no_show_counts_only_from_the_latest_paired_round_or_this_one(
+        self,
+    ):
+        # Round 5 (February) is before 20 (May); 1 had a full pair in both.
+        self.rounds.append(_round(5, 2))
+        self._registered_and_trained(1)
+        self.pairs_repo.list_pairs_with_meeting_counts.side_effect = [
+            [(_pair(51, 20, 7, 1), 5), (_pair(52, 5, 8, 1), 5)],
+            [],
+        ]
+        self.notes_repo.list_tagged.return_value = [
+            _note(1, 5, NO_SHOW_TAG, 1),
+            _note(1, 5, RED_FLAG_TAG, 2),
+        ]
+
+        result = await self.service.needs_exemption(self.session, 30)
+
+        self.assertEqual(result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 5)]})
+
     def _short_last_round(self, *user_ids):
         """Each of these mentees was two meetings into round 20's five. Asked
         for these people, the pairs come back; asked for their mentees'
@@ -256,12 +339,12 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
             _training(1, MENTEE_COURSE),
         ]
         self._short_last_round(1)
-        self.notes_repo.list_round_ids_by_tag.return_value = {1: {30}}
+        self.notes_repo.list_tagged.return_value = [_note(1, 30, EXEMPTION)]
 
         self.assertEqual(await self.service.eligible_user_ids(self.session, 30), {1})
         self.assertEqual(await self.service.needs_exemption(self.session, 30), {})
-        self.notes_repo.list_round_ids_by_tag.assert_awaited_with(
-            self.session, [1], ParticipantNoteTag.MATCHING_EXEMPTION
+        self.notes_repo.list_tagged.assert_awaited_with(
+            self.session, [1], [EXEMPTION, NO_SHOW_TAG, RED_FLAG_TAG]
         )
 
     async def test_an_exemption_in_another_round_is_passed_to_the_history_check(self):
@@ -274,7 +357,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
             _training(1, MENTEE_COURSE),
         ]
         self._short_last_round(1)
-        self.notes_repo.list_round_ids_by_tag.return_value = {1: {20}}
+        self.notes_repo.list_tagged.return_value = [_note(1, 20, EXEMPTION)]
 
         result = await self.service.ineligible_by_user(self.session, 30)
 

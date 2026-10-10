@@ -10,8 +10,9 @@ from unittest.mock import MagicMock
 
 from sqlalchemy import select
 
-from backend.approval.approval_service import ApprovalService
+from backend.approval.approval_service import APPROVAL_CHECKS_FAILED, ApprovalService
 from backend.common.approval_enums import ApprovalRequestStatus
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     ApprovalStatus,
     CommunicationMethod,
@@ -37,6 +38,7 @@ from backend.mentorship.matching_contract import (
     MenteeResult,
     PersonRecord,
 )
+from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
 from backend.mentorship.publish_matching_handler import PublishMatchingHandler
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
@@ -49,6 +51,7 @@ from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
+from backend.repository.training_repository import TrainingRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.users_repository import UsersRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -153,14 +156,23 @@ class PublishMatchingFlowTest(BaseRepositoryTestLib):
         )
 
         logger = MagicMock()
+        self.notes = MentorshipParticipantNoteRepository()
         handler = PublishMatchingHandler(
             matching_storage=self.storage,
             pairs_repository=MentorshipPairsRepository(),
             participants_repository=MentorshipRoundParticipantsRepository(),
-            note_repository=MentorshipParticipantNoteRepository(),
+            note_repository=self.notes,
             users_repository=UsersRepository(),
             rounds_repository=MentorshipRoundRepository(),
             logger=logger,
+            matching_eligibility_service=MatchingEligibilityService(
+                participants_repository=MentorshipRoundParticipantsRepository(),
+                pairs_repository=MentorshipPairsRepository(),
+                rounds_repository=MentorshipRoundRepository(),
+                training_repository=TrainingRepository(),
+                note_repository=self.notes,
+                logger=logger,
+            ),
         )
         self.service = ApprovalService(
             approval_request_repository=ApprovalRequestRepository(),
@@ -291,12 +303,34 @@ class PublishMatchingFlowTest(BaseRepositoryTestLib):
         self.assertEqual(request.payload, {"round_id": self.round.round_id})
 
     async def test_a_second_request_on_the_same_run_is_refused(self):
-        from backend.common.exceptions import ConflictError
-
         await self._raise()
 
         with self.assertRaises(ConflictError):
             await self._raise()
+
+    async def test_a_red_flag_raised_after_the_run_refuses_the_publish(self):
+        request = await self._raise()
+        await self.notes.create(
+            self.session,
+            user_id=self.mentee.user_id,
+            round_id=self.round.round_id,
+            author_user_id=self.reviewer.user_id,
+            body="Red flag raised.",
+            tag=ParticipantNoteTag.RED_FLAG,
+        )
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.decide(
+                self.session,
+                request_id=request.request_id,
+                actor_id=self.reviewer.user_id,
+                approve=True,
+                comment=None,
+            )
+
+        self.assertEqual(caught.exception.code, APPROVAL_CHECKS_FAILED)
+        self.assertIn("has a red flag in this round.", str(caught.exception))
+        self.assertIn("Ann", str(caught.exception))
 
     async def test_rejecting_writes_nothing_but_the_decision(self):
         request = await self._raise()

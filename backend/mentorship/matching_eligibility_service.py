@@ -6,6 +6,7 @@ people listed as eligible are exactly the people a run accepts.
 
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,10 +23,12 @@ from backend.mentorship.matching_eligibility import (
     Candidate,
     HistoryFinding,
     IneligibleReason,
+    Mark,
     PastPair,
     PastRound,
     history_findings,
     ineligible_reasons,
+    mark_findings,
 )
 
 _TAKING_PART = {
@@ -37,6 +40,11 @@ _TAKING_PART = {
 _ONBOARDING_BY_ROLE = {
     ParticipantRole.MENTOR: TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
     ParticipantRole.MENTEE: TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+}
+
+_MARK_REASONS = {
+    ParticipantNoteTag.NO_SHOW: IneligibleReason.NO_SHOW,
+    ParticipantNoteTag.RED_FLAG: IneligibleReason.RED_FLAG,
 }
 
 
@@ -72,7 +80,7 @@ class MatchingEligibilityService:
             pairs_repository: Pairs and their meeting counts.
             rounds_repository: The round and the ones before it.
             training_repository: Onboarding course status.
-            note_repository: The matching exemptions granted, as notes.
+            note_repository: The exemptions and marks granted, as notes.
             logger: Injected logger.
         """
         self.participants_repository = participants_repository
@@ -172,8 +180,8 @@ class MatchingEligibilityService:
             held[(pair.mentee_id, ParticipantRole.MENTEE)] += 1
 
         past_rounds = await self._past_rounds(session, rounds, current, user_ids)
-        exemptions = await self.note_repository.list_round_ids_by_tag(
-            session, user_ids, ParticipantNoteTag.MATCHING_EXEMPTION
+        exempted_rounds, exempted_at, marks = await self._exemptions_and_marks(
+            session, user_ids, {round_id} | {p.round_id for p in past_rounds}
         )
 
         result: dict[int, Assessment] = {}
@@ -192,14 +200,26 @@ class MatchingEligibilityService:
                 is_taking_part=participant.approval_status in _TAKING_PART,
                 training_done=(user.user_id, _ONBOARDING_BY_ROLE.get(role)) in done,
                 open_slots=cap - held[(user.user_id, role)],
-                exempt_this_round=round_id in exemptions.get(user.user_id, set()),
+                exempt_this_round=round_id in exempted_rounds.get(user.user_id, set()),
             )
-            exempted = frozenset(exemptions.get(user.user_id, set()))
+            exempted = frozenset(exempted_rounds.get(user.user_id, set()))
+            own_marks = marks.get(user.user_id, [])
+            at = exempted_at.get(user.user_id)
             result[user.user_id] = Assessment(
-                reasons=ineligible_reasons(candidate, past_rounds, exempted),
-                findings=[]
-                if candidate.exempt_this_round
-                else history_findings(user.user_id, past_rounds, exempted),
+                reasons=ineligible_reasons(
+                    candidate,
+                    past_rounds,
+                    exempted,
+                    round_id=round_id,
+                    marks=own_marks,
+                    exempted_at=at,
+                ),
+                findings=(
+                    []
+                    if candidate.exempt_this_round
+                    else history_findings(user.user_id, past_rounds, exempted)
+                )
+                + mark_findings(user.user_id, round_id, past_rounds, own_marks, at),
             )
         return result
 
@@ -215,6 +235,37 @@ class MatchingEligibilityService:
         """
         reasons = await self.ineligible_by_user(session, round_id)
         return {user_id for user_id, why in reasons.items() if not why}
+
+    async def _exemptions_and_marks(
+        self, session: AsyncSession, user_ids: list[int], counted_round_ids: set
+    ) -> tuple[dict[int, set[int]], dict[int, datetime], dict[int, list[Mark]]]:
+        """Each person's exemptions and marks, in one query.
+
+        Returns the rounds every exemption was granted in; when the latest
+        exemption in this round or an earlier one was written, since only
+        marks after it count; and every mark.
+        """
+        tagged = await self.note_repository.list_tagged(
+            session,
+            user_ids,
+            [ParticipantNoteTag.MATCHING_EXEMPTION, *_MARK_REASONS],
+        )
+        exempted_rounds: dict[int, set[int]] = {}
+        exempted_at: dict[int, datetime] = {}
+        marks: dict[int, list[Mark]] = {}
+        for note in tagged:
+            if note.tag == ParticipantNoteTag.MATCHING_EXEMPTION:
+                exempted_rounds.setdefault(note.user_id, set()).add(note.round_id)
+                latest = exempted_at.get(note.user_id)
+                if note.round_id in counted_round_ids and (
+                    latest is None or note.created_at > latest
+                ):
+                    exempted_at[note.user_id] = note.created_at
+            else:
+                marks.setdefault(note.user_id, []).append(
+                    Mark(_MARK_REASONS[note.tag], note.round_id, note.created_at)
+                )
+        return exempted_rounds, exempted_at, marks
 
     async def _past_rounds(
         self, session: AsyncSession, rounds: list, current, user_ids: list[int]

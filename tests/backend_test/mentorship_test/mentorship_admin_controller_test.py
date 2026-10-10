@@ -17,6 +17,7 @@ from backend.dto.mentorship_approval_dto import (
     ApprovalDecisionDto,
     ApprovalReassignDto,
     ApprovalRequestCreateDto,
+    ParticipantMarkRequestDto,
 )
 from backend.dto.participant_detail_dto import ParticipantNoteCreateDto
 from backend.dto.user_context_dto import UserContextDto
@@ -86,6 +87,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             "request_publish",
             "request_exemption",
             "request_withdrawal",
+            "request_mark",
             "reassign",
             "decide",
             "withdraw",
@@ -531,6 +533,57 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             )
         self.mock_approval_service.request_withdrawal.assert_not_awaited()
 
+    async def test_requesting_a_mark_names_the_person_tag_and_pair(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = ParticipantMarkRequestDto.model_validate({
+            "tag": "no_show",
+            "pairId": 501,
+            "reviewerId": 8,
+            "reason": "",
+        })
+
+        response = await self.controller.request_mark(7, 21, body, caller)
+
+        self.mock_approval_service.request_mark.assert_awaited_once_with(
+            self.mock_session,
+            round_id=7,
+            user_id=21,
+            tag="no_show",
+            pair_id=501,
+            actor_id=9,
+            reviewer_id=8,
+            reason="",
+        )
+        self.assertEqual(response["data"].request_id, 31)
+
+    def test_a_mark_body_takes_only_the_two_tags(self):
+        self.assertIsNone(
+            ParticipantMarkRequestDto.model_validate({
+                "tag": "red_flag",
+                "reviewerId": 8,
+                "reason": "",
+            }).pair_id
+        )
+        with self.assertRaises(ValidationError):
+            ParticipantMarkRequestDto.model_validate({
+                "tag": "matching_exemption",
+                "reviewerId": 8,
+                "reason": "",
+            })
+
+    async def test_requesting_a_mark_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = ParticipantMarkRequestDto.model_validate({
+            "tag": "red_flag",
+            "reviewerId": 8,
+            "reason": "",
+        })
+
+        with self.assertRaises(PermissionError):
+            await self.controller.request_mark(7, 21, body, caller)
+        self.mock_approval_service.request_mark.assert_not_awaited()
+
     async def test_the_approvers_leave_out_the_caller(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
 
@@ -635,6 +688,11 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             (
                 "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
                 "/withdraw-request",
+                "POST",
+            ),
+            (
+                "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
+                "/mark-request",
                 "POST",
             ),
             ("/mentorship/admin/approvals/approvers", "GET"),

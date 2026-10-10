@@ -3,14 +3,20 @@
 One person is checked against one round. A matching exemption, granted for a
 person in a round through an approval, lifts the history check in that round
 and clears everything before it: in later rounds only the round it was
-granted in and the rounds after count. No show and red flag arrive with the
-second phase of approvals; until then nobody carries them.
+granted in and the rounds after count.
+
+No show and red flag are marks given through an approval. They are timed,
+not counted by round: a mark counts only when it was approved after the
+person's latest exemption, so an exemption clears every mark before it and
+none after it, in the same round too.
 
 History is the person's, not a role's: being short of meetings as a mentee
 last round counts against registering as a mentor this round.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -22,9 +28,11 @@ class IneligibleReason(StrEnum):
     NOT_TAKING_PART = "not_taking_part"
     TRAINING_NOT_DONE = "training_not_done"
     NO_OPEN_SLOTS = "no_open_slots"
-    # The two below are history problems, the ones an exemption will lift.
+    # The four below are history problems, the ones an exemption will lift.
     QUIT_AFTER_MATCH = "quit_after_match"
     MEETINGS_SHORT = "meetings_short"
+    NO_SHOW = "no_show"
+    RED_FLAG = "red_flag"
 
 
 # The reasons an exemption lifts. Someone whose every reason is one of these
@@ -32,6 +40,8 @@ class IneligibleReason(StrEnum):
 HISTORY_REASONS = frozenset({
     IneligibleReason.QUIT_AFTER_MATCH,
     IneligibleReason.MEETINGS_SHORT,
+    IneligibleReason.NO_SHOW,
+    IneligibleReason.RED_FLAG,
 })
 
 
@@ -85,6 +95,16 @@ class HistoryFinding:
     round_id: int | None
     completed: int | None = None
     required: int | None = None
+
+
+@dataclass(frozen=True)
+class Mark:
+    """A no show or red flag given to the person, the round it was given in,
+    and when its approval was written."""
+
+    reason: IneligibleReason
+    round_id: int
+    created_at: datetime
 
 
 def history_findings(
@@ -178,18 +198,80 @@ def history_problems(
     ]
 
 
+def mark_findings(
+    user_id: int,
+    round_id: int | None,
+    past_rounds: list[PastRound],
+    marks: Iterable[Mark],
+    exempted_at: datetime | None = None,
+) -> list[HistoryFinding]:
+    """The person's marks that keep them out of matching in this round.
+
+    Only marks written after their latest exemption count. A no show counts
+    when it is from this round or from the latest earlier round in which they
+    had a pair; a red flag counts from this round or any earlier one. Marks
+    from any other round are not their history here. Several marks of one
+    kind in one round are one finding.
+
+    Args:
+        user_id (int): The person.
+        round_id (int | None): The round being matched.
+        past_rounds (list[PastRound]): Earlier rounds, latest first.
+        marks (Iterable[Mark]): Every mark the person carries.
+        exempted_at (datetime | None): When their latest exemption was
+            written, None if they never had one.
+
+    Returns:
+        list[HistoryFinding]: Oldest mark first, empty when none count.
+    """
+    latest_paired = next(
+        (
+            past.round_id
+            for past in past_rounds
+            if any(user_id in (p.mentor_id, p.mentee_id) for p in past.pairs)
+        ),
+        None,
+    )
+    counted = {
+        IneligibleReason.NO_SHOW: {round_id, latest_paired} - {None},
+        IneligibleReason.RED_FLAG: ({round_id} | {p.round_id for p in past_rounds})
+        - {None},
+    }
+    found: list[HistoryFinding] = []
+    for mark in sorted(marks, key=lambda m: m.created_at):
+        if exempted_at is not None and mark.created_at <= exempted_at:
+            continue
+        if mark.round_id not in counted.get(mark.reason, set()):
+            continue
+        finding = HistoryFinding(mark.reason, mark.round_id)
+        if finding not in found:
+            found.append(finding)
+    return found
+
+
 def ineligible_reasons(
     candidate: Candidate,
     past_rounds: list[PastRound],
     exempted_round_ids: frozenset[int] = frozenset(),
+    *,
+    round_id: int | None = None,
+    marks: Iterable[Mark] = (),
+    exempted_at: datetime | None = None,
 ) -> list[IneligibleReason]:
     """Every reason the candidate is not in the matching pool.
+
+    An exemption in this round lifts the history of earlier rounds; marks
+    are judged by time, so one written after that exemption still counts.
 
     Args:
         candidate (Candidate): The person and where they stand this round.
         past_rounds (list[PastRound]): Earlier rounds, latest first.
         exempted_round_ids (frozenset[int]): Earlier rounds an exemption was
             granted for them in.
+        round_id (int | None): The round being matched.
+        marks (Iterable[Mark]): Every mark the person carries.
+        exempted_at (datetime | None): When their latest exemption was
+            written.
 
     Returns:
         list[IneligibleReason]: Empty when the candidate is eligible.
@@ -209,4 +291,9 @@ def ineligible_reasons(
         reasons.extend(
             history_problems(candidate.user_id, past_rounds, exempted_round_ids)
         )
+    for finding in mark_findings(
+        candidate.user_id, round_id, past_rounds, marks, exempted_at
+    ):
+        if finding.reason not in reasons:
+            reasons.append(finding.reason)
     return reasons

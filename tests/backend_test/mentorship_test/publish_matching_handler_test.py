@@ -21,6 +21,8 @@ from backend.mentorship.matching_contract import (
     PersonRecord,
 )
 from backend.mentorship.matching_draft import DraftEntry
+from backend.mentorship.matching_eligibility import HistoryFinding, IneligibleReason
+from backend.mentorship.matching_eligibility_service import Assessment
 from backend.mentorship.publish_matching_handler import PublishMatchingHandler
 
 RUN = "r7-x-y"
@@ -163,6 +165,14 @@ class PublishMatchingHandlerTestBase(unittest.IsolatedAsyncioTestCase):
         self.rounds.get_by_round_id = AsyncMock(
             return_value=SimpleNamespace(name="Spring 2026")
         )
+        self.rounds.get_all_rounds = AsyncMock(
+            return_value=[
+                SimpleNamespace(round_id=ROUND, name="Spring 2026"),
+                SimpleNamespace(round_id=5, name="Fall 2025"),
+            ]
+        )
+        self.eligibility = MagicMock()
+        self.eligibility.assess = AsyncMock(return_value={})
         self.session = AsyncMock()
         self.handler = PublishMatchingHandler(
             matching_storage=self.storage,
@@ -172,6 +182,7 @@ class PublishMatchingHandlerTestBase(unittest.IsolatedAsyncioTestCase):
             users_repository=self.users,
             rounds_repository=self.rounds,
             logger=MagicMock(),
+            matching_eligibility_service=self.eligibility,
         )
 
     async def _insert_pairs(self, session, entities):
@@ -284,6 +295,63 @@ class TestProblemsAtApproval(PublishMatchingHandlerTestBase):
         self.people[13][0].is_active = False
 
         self.assertEqual(await self._problems(), [])
+
+    async def test_a_mark_since_the_run_refuses_naming_who_and_why(self):
+        self.eligibility.assess.return_value = {
+            21: Assessment(
+                reasons=[IneligibleReason.RED_FLAG],
+                findings=[HistoryFinding(IneligibleReason.RED_FLAG, ROUND)],
+            ),
+            11: Assessment(
+                reasons=[IneligibleReason.NO_SHOW],
+                findings=[HistoryFinding(IneligibleReason.NO_SHOW, 5)],
+            ),
+            # Unfinished onboarding does not stop a publish.
+            22: Assessment(reasons=[IneligibleReason.TRAINING_NOT_DONE], findings=[]),
+        }
+
+        problems = await self._problems()
+
+        self.assertEqual(
+            problems,
+            [
+                "Mia Ortiz was marked a no show in Fall 2025.",
+                "Ann Lee has a red flag in this round.",
+            ],
+        )
+        self.eligibility.assess.assert_awaited_once_with(self.session, ROUND)
+
+    async def test_only_people_in_the_new_pairs_are_checked(self):
+        # 13 is a mentor the result gives nobody; 14 and 31 are an existing
+        # pair; 23 is a mentee left unmatched. All carry a red flag.
+        self.existing = [_pair(600, 14, 31)]
+        flagged = Assessment(
+            reasons=[IneligibleReason.RED_FLAG],
+            findings=[HistoryFinding(IneligibleReason.RED_FLAG, ROUND)],
+        )
+        self.eligibility.assess.return_value = {
+            13: flagged,
+            14: flagged,
+            31: flagged,
+            23: flagged,
+        }
+
+        self.assertEqual(await self._problems(), [])
+
+    async def test_what_is_already_said_above_is_not_said_twice(self):
+        self.people[21][0].is_blocked = True
+        self.eligibility.assess.return_value = {
+            21: Assessment(reasons=[IneligibleReason.BLOCKED], findings=[]),
+        }
+
+        self.assertEqual(await self._problems(), ["Ann Lee is blocked."])
+
+    async def test_eligibility_is_not_read_once_the_run_is_refused(self):
+        self.storage.current_run_id.return_value = "r7-newer"
+
+        await self._problems()
+
+        self.eligibility.assess.assert_not_awaited()
 
     async def test_a_mentee_already_in_an_active_pair_is_refused(self):
         self.existing = [_pair(600, 13, 21)]

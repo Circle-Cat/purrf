@@ -50,6 +50,7 @@ class PendingRequestDto(BaseDto):
     action: str
     raised_by: ApprovalPersonDto
     reviewer: ApprovalPersonDto
+    pair_id: int | None = None
     reason: str | None = None
     created_at: datetime | None = None
 

@@ -15,6 +15,14 @@ class ApprovalRequestCreateDto(BaseRequestDto):
     reason: str
 
 
+class ParticipantMarkRequestDto(ApprovalRequestCreateDto):
+    """Body of a request to mark a person in a round: which mark, and the
+    pair it is about when there is one."""
+
+    tag: Literal["no_show", "red_flag"]
+    pair_id: int | None = None
+
+
 class ApprovalReassignDto(BaseRequestDto):
     """Body of handing a pending request to another reviewer."""
 

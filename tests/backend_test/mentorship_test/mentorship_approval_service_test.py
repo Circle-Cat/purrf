@@ -39,6 +39,14 @@ def _withdrawal(request_id=41):
     return row
 
 
+def _mark(action="mark_no_show", request_id=51, pair_id=501):
+    row = _request(action=action, request_id=request_id)
+    row.target_type = "round_participant"
+    row.target_id = "7:21"
+    row.payload = {"round_id": 7, "user_id": PERSON, "pair_id": pair_id}
+    return row
+
+
 def _user(user_id, first, last):
     return SimpleNamespace(
         user_id=user_id, first_name=first, last_name=last, preferred_name=None
@@ -115,7 +123,13 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         self.approvals.list_pending_for_reviewer.assert_awaited_once_with(
             self.session,
             REVIEWER,
-            ("publish_matching", "exempt_matching", "withdraw_participant"),
+            (
+                "publish_matching",
+                "exempt_matching",
+                "withdraw_participant",
+                "mark_no_show",
+                "mark_red_flag",
+            ),
         )
         self.assertEqual(
             result,
@@ -127,6 +141,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                     "round": {"round_id": 7, "name": "Spring 2026"},
                     "target_id": "r7-x-y",
                     "person": None,
+                    "pair_id": None,
                     "raised_by": {"user_id": RAISER, "name": "Ada Ng"},
                     "reviewer": {"user_id": REVIEWER, "name": "Rae Kim"},
                     "reason": "Reviewed every pair",
@@ -305,16 +320,115 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         self.approvals.reassign.assert_awaited_once()
 
     async def test_pending_requests_on_a_participant_are_described(self):
-        self.approvals.get_pending_for_target.return_value = _withdrawal()
+        waiting = {
+            "withdraw_participant": _withdrawal(),
+            "mark_no_show": _mark("mark_no_show", request_id=51, pair_id=501),
+            "mark_red_flag": _mark("mark_red_flag", request_id=52, pair_id=None),
+        }
+        self.approvals.get_pending_for_target.side_effect = (
+            lambda session, action, target: waiting.get(action)
+        )
 
         result = await self.service.pending_for_participant(self.session, 7, PERSON)
 
-        self.approvals.get_pending_for_target.assert_awaited_once_with(
-            self.session, "withdraw_participant", "7:21"
+        self.assertEqual(
+            [c.args[1:] for c in self.approvals.get_pending_for_target.await_args_list],
+            [
+                ("withdraw_participant", "7:21"),
+                ("mark_no_show", "7:21"),
+                ("mark_red_flag", "7:21"),
+            ],
         )
-        self.assertEqual([r["request_id"] for r in result], [41])
+        self.assertEqual([r["request_id"] for r in result], [41, 51, 52])
+        self.assertEqual([r["pair_id"] for r in result], [None, 501, None])
         self.assertEqual(result[0]["raised_by"]["user_id"], RAISER)
         self.assertEqual(result[0]["reviewer"]["user_id"], REVIEWER)
+
+    async def test_a_no_show_asks_about_the_person_and_the_pair(self):
+        self.approvals.raise_request.return_value = _mark()
+
+        await self.service.request_mark(
+            self.session,
+            round_id=7,
+            user_id=PERSON,
+            tag="no_show",
+            pair_id=501,
+            actor_id=RAISER,
+            reviewer_id=REVIEWER,
+            reason="",
+        )
+
+        self.approvals.raise_request.assert_awaited_once_with(
+            self.session,
+            action="mark_no_show",
+            raised_by=RAISER,
+            target_id="7:21",
+            payload={"round_id": 7, "user_id": PERSON, "pair_id": 501},
+            reason="",
+            reviewer_id=REVIEWER,
+        )
+
+    async def test_a_red_flag_without_a_pair_leaves_it_out_of_the_payload(self):
+        self.approvals.raise_request.return_value = _mark("mark_red_flag", 52, None)
+
+        await self.service.request_mark(
+            self.session,
+            round_id=7,
+            user_id=PERSON,
+            tag="red_flag",
+            pair_id=None,
+            actor_id=RAISER,
+            reviewer_id=REVIEWER,
+            reason="Rude to the mentee",
+        )
+
+        kwargs = self.approvals.raise_request.await_args.kwargs
+        self.assertEqual(kwargs["action"], "mark_red_flag")
+        self.assertEqual(kwargs["payload"], {"round_id": 7, "user_id": PERSON})
+
+    async def test_the_person_marked_cannot_be_named_reviewer(self):
+        for tag in ("no_show", "red_flag"):
+            with self.subTest(tag=tag):
+                with self.assertRaises(ValueError) as caught:
+                    await self.service.request_mark(
+                        self.session,
+                        round_id=7,
+                        user_id=PERSON,
+                        tag=tag,
+                        pair_id=501,
+                        actor_id=RAISER,
+                        reviewer_id=PERSON,
+                        reason="",
+                    )
+                self.assertEqual(
+                    str(caught.exception),
+                    "The person being marked cannot review a mark on themselves.",
+                )
+        self.approvals.raise_request.assert_not_awaited()
+
+    async def test_an_unknown_mark_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self.service.request_mark(
+                self.session,
+                round_id=7,
+                user_id=PERSON,
+                tag="status_change",
+                pair_id=None,
+                actor_id=RAISER,
+                reviewer_id=REVIEWER,
+                reason="",
+            )
+        self.approvals.raise_request.assert_not_awaited()
+
+    async def test_a_mark_cannot_be_handed_to_the_person_marked(self):
+        for action in ("mark_no_show", "mark_red_flag"):
+            with self.subTest(action=action):
+                self.approvals.get_request.return_value = _mark(action)
+                with self.assertRaises(ValueError):
+                    await self.service.reassign(
+                        self.session, request_id=51, actor_id=RAISER, reviewer_id=PERSON
+                    )
+        self.approvals.reassign.assert_not_awaited()
 
     async def test_no_pending_request_on_a_participant_is_an_empty_list(self):
         self.assertEqual(

@@ -90,6 +90,9 @@ MENTORSHIP_ADMIN_EXEMPTION_REQUEST = (
 MENTORSHIP_ADMIN_WITHDRAW_REQUEST = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/withdraw-request"
 )
+MENTORSHIP_ADMIN_MARK_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/mark-request"
+)
 MENTORSHIP_ADMIN_PARTICIPANT_DETAIL = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
 )
