@@ -9,9 +9,15 @@ import {
   getMeetingLog,
   getMentorshipApprovers,
   getParticipantDetail,
+  getParticipantEmails,
+  refreshParticipantEmails,
+  replyParticipantEmail,
   searchParticipants,
+  sendParticipantEmail,
 } from "@/api/mentorshipApi";
 import { getRaisedBlockRequests } from "@/api/adminAccountsApi";
+import { toast } from "sonner";
+import { conversationOf } from "../../components_test/email_test/email.helper";
 import { listPersonSends } from "@/api/mentorshipEmailApi";
 import { useAuth } from "@/context/auth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
@@ -37,6 +43,11 @@ vi.mock("@/api/mentorshipApi", () => ({
   withdrawMentorshipApproval: vi.fn(),
   requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
+  getParticipantEmails: vi.fn(),
+  sendParticipantEmail: vi.fn(),
+  replyParticipantEmail: vi.fn(),
+  refreshParticipantEmails: vi.fn(),
+  participantEmailAttachmentUrl: vi.fn(),
 }));
 vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
@@ -96,6 +107,12 @@ describe("ParticipantDetailPage", () => {
     useFeatureFlags.mockReturnValue({});
     getParticipantDetail.mockResolvedValue({ data: detailOf() });
     getRaisedBlockRequests.mockResolvedValue({ data: [] });
+
+    getParticipantEmails.mockResolvedValue({
+      data: conversationOf({ threads: [] }),
+    });
+    vi.spyOn(toast, "success").mockImplementation(() => {});
+    vi.spyOn(toast, "error").mockImplementation(() => {});
     listPersonSends.mockResolvedValue([
       {
         sendId: 14,
@@ -831,5 +848,179 @@ describe("ParticipantDetailPage", () => {
     expect(
       screen.queryByRole("button", { name: "Mark as notified" }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("email", () => {
+    it("offers Send email beside Block from Purrf and sends to the ticked addresses", async () => {
+      const user = userEvent.setup();
+      sendParticipantEmail.mockResolvedValue({ data: conversationOf() });
+      renderPage();
+
+      const button = await screen.findByRole("button", { name: "Send email" });
+      expect(
+        within(button.parentElement).getByRole("button", {
+          name: "Block from Purrf",
+        }),
+      ).toBeInTheDocument();
+      expect(getParticipantEmails).toHaveBeenCalledWith("7", "3104");
+      await user.click(button);
+
+      const dialog = await screen.findByRole("dialog", { name: "Send email" });
+      expect(
+        within(dialog).getByText("From: mentorship@circlecat.org"),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("checkbox", { name: /alice@x\.com/ }),
+      ).toBeChecked();
+      expect(
+        within(dialog).getByRole("checkbox", { name: /alice\.alt@y\.org/ }),
+      ).not.toBeChecked();
+      expect(
+        within(dialog).queryByRole("combobox", { name: /template/i }),
+      ).not.toBeInTheDocument();
+      await user.type(within(dialog).getByLabelText("Subject"), "Checking in");
+      await user.type(
+        within(dialog).getByRole("textbox", { name: "Message" }),
+        "How is it going?",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Send" }));
+
+      await waitFor(() =>
+        expect(sendParticipantEmail).toHaveBeenCalledWith("7", "3104", {
+          to: ["alice@x.com"],
+          subject: "Checking in",
+          body: "How is it going?",
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(screen.getByText("All good, thanks")).toBeInTheDocument();
+      expect(toast.success).toHaveBeenCalledWith("Email sent.");
+    });
+
+    it("can send after the round has ended", async () => {
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({
+          round: {
+            roundId: 7,
+            name: "Fall 2026",
+            requiredMeetings: 5,
+            inProgress: false,
+          },
+        }),
+      });
+      renderPage();
+      expect(
+        await screen.findByRole("button", { name: "Send email" }),
+      ).toBeEnabled();
+    });
+
+    it("offers no Send email when this environment cannot send", async () => {
+      getParticipantEmails.mockResolvedValue({
+        data: conversationOf({ canSend: false, senderAddress: null }),
+      });
+      renderPage();
+      expect(await screen.findByText("All good, thanks")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Send email" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Reply" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("lets a reader see the threads but not send, reply or refresh", async () => {
+      useAuth.mockReturnValue({ permissions: [READ], user: { userId: 9 } });
+      getParticipantEmails.mockResolvedValue({ data: conversationOf() });
+      renderPage();
+      expect(await screen.findByText("All good, thanks")).toBeInTheDocument();
+      for (const name of ["Send email", "Reply", "Refresh emails"]) {
+        expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+      }
+    });
+
+    it("replies to the thread's own address with the newest message seen", async () => {
+      const user = userEvent.setup();
+      // The thread's replyTo differs from the conversation's defaultTo, so a
+      // dialog showing defaultTo would fail this test.
+      getParticipantEmails.mockResolvedValue({
+        data: conversationOf({
+          threads: [
+            { ...conversationOf().threads[0], replyTo: "alice.alt@y.org" },
+          ],
+        }),
+      });
+      replyParticipantEmail.mockResolvedValue({ data: conversationOf() });
+      renderPage();
+
+      await user.click(await screen.findByRole("button", { name: "Reply" }));
+      const dialog = await screen.findByRole("dialog", { name: "Reply" });
+      expect(within(dialog).getByText("alice.alt@y.org")).toBeInTheDocument();
+      expect(within(dialog).queryByText("alice@x.com")).not.toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Subject")).toHaveValue(
+        "Re: Checking in",
+      );
+      await user.type(
+        within(dialog).getByRole("textbox", { name: "Message" }),
+        "Thanks",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Send" }));
+
+      await waitFor(() =>
+        expect(replyParticipantEmail).toHaveBeenCalledWith("7", "3104", 41, {
+          body: "Thanks",
+          lastSeenMessageId: 411,
+        }),
+      );
+    });
+
+    it("refreshes the emails and says how many messages came in", async () => {
+      const user = userEvent.setup();
+      refreshParticipantEmails.mockResolvedValue({
+        data: { conversation: conversationOf(), newReplies: 1 },
+      });
+      renderPage();
+
+      await user.click(
+        await screen.findByRole("button", { name: "Refresh emails" }),
+      );
+      expect(await screen.findByText("1 new message")).toBeInTheDocument();
+      expect(refreshParticipantEmails).toHaveBeenCalledWith("7", "3104");
+      expect(screen.getByText("All good, thanks")).toBeInTheDocument();
+    });
+
+    it("warns that a blocked person is still emailed", async () => {
+      const user = userEvent.setup();
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({
+          person: { ...detailOf().person, isBlocked: true },
+        }),
+      });
+      renderPage();
+      await user.click(
+        await screen.findByRole("button", { name: "Send email" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Send email" });
+      expect(
+        within(dialog).getByText(
+          "Alice Chen is blocked from Purrf. The email is still sent.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps Send email disabled when the person has no address", async () => {
+      getParticipantEmails.mockResolvedValue({
+        data: conversationOf({
+          threads: [],
+          defaultTo: null,
+          recipientOptions: [],
+        }),
+      });
+      renderPage();
+      const button = await screen.findByRole("button", { name: "Send email" });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", "No email address on file");
+    });
   });
 });
