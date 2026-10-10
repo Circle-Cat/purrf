@@ -23,6 +23,7 @@ class TestMentorshipParticipantNoteEntity(unittest.TestCase):
                 "body",
                 "author_user_id",
                 "request_id",
+                "notification_stage",
                 "created_at",
             },
         )
@@ -39,6 +40,11 @@ class TestMentorshipParticipantNoteEntity(unittest.TestCase):
         self.assertTrue(table.columns["pair_id"].nullable)
         self.assertFalse(table.columns["author_user_id"].nullable)
         self.assertFalse(table.columns["body"].nullable)
+
+    def test_notification_stage_is_an_optional_short_string(self):
+        column = MentorshipParticipantNoteEntity.__table__.columns["notification_stage"]
+        self.assertTrue(column.nullable)
+        self.assertEqual(column.type.length, 32)
 
 
 if __name__ == "__main__":
