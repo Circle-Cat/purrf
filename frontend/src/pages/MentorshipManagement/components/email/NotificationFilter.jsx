@@ -62,7 +62,9 @@ const NotificationFilter = ({ stages, stage, state, onChange }) => {
                 {NOTIFICATION_STATES.map((st) => (
                   <DropdownMenuItem
                     key={st.value}
-                    onSelect={() => onChange({ stage: s.value, state: st.value })}
+                    onSelect={() =>
+                      onChange({ stage: s.value, state: st.value })
+                    }
                   >
                     {st.label}
                   </DropdownMenuItem>
