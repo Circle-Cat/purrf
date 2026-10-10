@@ -126,6 +126,17 @@ describe("ComposeEmailDialog", () => {
     });
   });
 
+  it.each(["text", "rich"])(
+    "caps the subject at the backend limit (%s)",
+    (mode) => {
+      render(<ComposeEmailDialog {...props({ mode })} />);
+      expect(screen.getByLabelText("Subject")).toHaveAttribute(
+        "maxlength",
+        "990",
+      );
+    },
+  );
+
   it("shows Unknown and refuses to send a reply with no reply address", async () => {
     const p = props({ replyThread: threadOf({ replyTo: null }) });
     const user = userEvent.setup();

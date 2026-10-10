@@ -875,6 +875,10 @@ describe("ParticipantDetailPage", () => {
       expect(
         within(dialog).getByText("From: mentorship@circlecat.org"),
       ).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Subject")).toHaveAttribute(
+        "maxlength",
+        "990",
+      );
       expect(
         within(dialog).getByRole("checkbox", { name: /alice@x\.com/ }),
       ).toBeChecked();
