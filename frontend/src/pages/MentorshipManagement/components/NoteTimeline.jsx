@@ -231,6 +231,7 @@ const NoteTimeline = ({
   ].sort((a, b) => new Date(b.time) - new Date(a.time));
 
   const refreshEmails = async () => {
+    setRefreshed("");
     setRefreshing(true);
     try {
       const count = await onRefreshEmails();
@@ -267,7 +268,15 @@ const NoteTimeline = ({
           )}
         </div>
       </header>
-      {refreshed && <p className="mb-2 text-xs text-slate-500">{refreshed}</p>}
+      {onRefreshEmails && (
+        // Mounted before any result so screen readers announce the first one.
+        <p
+          role="status"
+          className={refreshed ? "mb-2 text-xs text-slate-500" : undefined}
+        >
+          {refreshed}
+        </p>
+      )}
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (

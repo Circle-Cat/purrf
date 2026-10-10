@@ -364,5 +364,23 @@ describe("NoteTimeline", () => {
       );
       expect(screen.queryByText(/new messages?$/i)).not.toBeInTheDocument();
     });
+
+    it("drops the last result when the next refresh fails", async () => {
+      const onRefreshEmails = vi
+        .fn()
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(null);
+      renderTimeline({ onRefreshEmails });
+      const refresh = screen.getByRole("button", { name: "Refresh emails" });
+      await userEvent.click(refresh);
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "1 new message",
+      );
+
+      await userEvent.click(refresh);
+      await waitFor(() => expect(onRefreshEmails).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(refresh).toBeEnabled());
+      expect(screen.queryByText("1 new message")).not.toBeInTheDocument();
+    });
   });
 });
