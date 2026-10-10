@@ -47,6 +47,47 @@ describe("useParticipantEmails", () => {
     error.mockRestore();
   });
 
+  it("says a load failed until a load for another person succeeds", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    getParticipantEmails.mockRejectedValueOnce(new Error("network"));
+    let finish;
+    getParticipantEmails.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const hook = renderHook(({ userId }) => useParticipantEmails("7", userId), {
+      initialProps: { userId: "3104" },
+    });
+    expect(hook.result.current.loadError).toBe(false);
+    await waitFor(() => expect(hook.result.current.loadError).toBe(true));
+
+    hook.rerender({ userId: "22" });
+    expect(hook.result.current.loadError).toBe(false);
+    await act(async () => {
+      finish({ data: conversationOf() });
+    });
+    expect(hook.result.current.loadError).toBe(false);
+    expect(hook.result.current.conversation).toEqual(conversationOf());
+    error.mockRestore();
+  });
+
+  it("clears a failed load once a refresh brings the conversation", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    getParticipantEmails.mockRejectedValueOnce(new Error("network"));
+    refreshParticipantEmails.mockResolvedValue({
+      data: { conversation: conversationOf(), newReplies: 0 },
+    });
+    const { result } = renderHook(() => useParticipantEmails("7", "3104"));
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.loadError).toBe(false);
+    error.mockRestore();
+  });
+
   it("sends a new email to the send endpoint", async () => {
     sendParticipantEmail.mockResolvedValue({ data: conversationOf() });
     const { result } = renderHook(() => useParticipantEmails("7", "3104"));

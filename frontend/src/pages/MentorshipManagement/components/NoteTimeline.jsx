@@ -179,7 +179,8 @@ const refreshedText = (count) =>
  *          emailThreads?: Object[], canReply?: boolean,
  *          onReply?: (thread: Object) => void,
  *          attachmentUrl?: (messageId: number, index: number) => string,
- *          onRefreshEmails?: () => Promise<number|null>}} props
+ *          onRefreshEmails?: () => Promise<number|null>,
+ *          emailLoadError?: boolean}} props
  *   pairs: the round's pairs, to name the partner of the pair a note is
  *   about. canMarkNotified: offer Mark as notified beside Add a note, for
  *   the person personName, among markStageOptions, with notifiedStages
@@ -204,6 +205,7 @@ const NoteTimeline = ({
   onReply,
   attachmentUrl,
   onRefreshEmails,
+  emailLoadError = false,
 }) => {
   const [adding, setAdding] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -276,6 +278,9 @@ const NoteTimeline = ({
         >
           {refreshed}
         </p>
+      )}
+      {emailLoadError && (
+        <p className="mb-2 text-xs text-red-700">Couldn't load emails.</p>
       )}
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing here yet.</p>

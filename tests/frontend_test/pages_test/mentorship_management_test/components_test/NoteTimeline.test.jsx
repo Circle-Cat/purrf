@@ -328,6 +328,17 @@ describe("NoteTimeline", () => {
       );
     });
 
+    it("says when the emails could not be loaded", () => {
+      const { unmount } = renderTimeline();
+      expect(
+        screen.queryByText("Couldn't load emails."),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      renderTimeline({ emailLoadError: true });
+      expect(screen.getByText("Couldn't load emails.")).toBeInTheDocument();
+    });
+
     it("has no Refresh emails without a way to refresh", () => {
       renderTimeline();
       expect(

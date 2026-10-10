@@ -22,8 +22,9 @@ const own = (conversation, key) => {
  * One person's email conversation in one round, and the calls that change it.
  *
  * Loads again whenever the round or person changes; with no round nothing is
- * fetched. A failed load is logged and leaves no conversation, so the rest of
- * the page still shows. `reload` and `submit` resolve to a conversation and
+ * fetched. A failed load is logged, leaves no conversation (so the rest of
+ * the page still shows) and sets `loadError` until the person changes or a
+ * load or refresh brings the conversation. `reload` and `submit` resolve to a conversation and
  * leave applying it to the caller (useComposeEmail does). `submit` sends a
  * reply when the payload names a thread and a new email otherwise. `refresh`
  * applies what it gets and resolves to how many new messages came in (every
@@ -33,7 +34,7 @@ const own = (conversation, key) => {
  *
  * @param {number|string|null} roundId
  * @param {number|string} userId
- * @returns {{conversation: object|null,
+ * @returns {{conversation: object|null, loadError: boolean,
  *   setConversation: (conversation: object) => void,
  *   reload: () => Promise<object>,
  *   submit: (payload: object) => Promise<object>,
@@ -41,6 +42,7 @@ const own = (conversation, key) => {
  */
 export const useParticipantEmails = (roundId, userId) => {
   const [conversation, setConversationRaw] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const key = `${roundId}|${userId}`;
   const keyRef = useRef(key);
   keyRef.current = key;
@@ -53,6 +55,7 @@ export const useParticipantEmails = (roundId, userId) => {
 
   useEffect(() => {
     setConversationRaw(null);
+    setLoadError(false);
     if (!roundId || !userId) return undefined;
     let cancelled = false;
     const asked = `${roundId}|${userId}`;
@@ -62,6 +65,7 @@ export const useParticipantEmails = (roundId, userId) => {
       })
       .catch((err) => {
         console.error("Failed to fetch the emails with this person", err);
+        if (!cancelled) setLoadError(true);
       });
     return () => {
       cancelled = true;
@@ -98,6 +102,7 @@ export const useParticipantEmails = (roundId, userId) => {
       const { data } = await refreshParticipantEmails(roundId, userId);
       if (keyRef.current !== asked) return null;
       setConversationRaw(own(data.conversation, asked));
+      setLoadError(false);
       return data.newReplies;
     } catch (err) {
       if (keyRef.current !== asked) return null;
@@ -106,5 +111,5 @@ export const useParticipantEmails = (roundId, userId) => {
     }
   }, [roundId, userId, key]);
 
-  return { conversation, setConversation, reload, submit, refresh };
+  return { conversation, loadError, setConversation, reload, submit, refresh };
 };

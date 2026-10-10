@@ -495,6 +495,7 @@ const ParticipantDetailPage = () => {
           markStageOptions={stagesForList(!registration)}
           notifiedStages={notifiedStagesOf(sends, detail.notes)}
           emailThreads={emails.conversation?.threads ?? []}
+          emailLoadError={emails.loadError}
           canReply={canEmail}
           onReply={emailCompose.openReply}
           attachmentUrl={(messageId, index) =>

@@ -983,6 +983,16 @@ describe("ParticipantDetailPage", () => {
       );
     });
 
+    it("says when the emails could not be loaded", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      getParticipantEmails.mockRejectedValue(new Error("network"));
+      renderPage();
+      expect(
+        await screen.findByText("Couldn't load emails."),
+      ).toBeInTheDocument();
+      error.mockRestore();
+    });
+
     it("closes the compose dialog on moving to another person", async () => {
       const user = userEvent.setup();
       renderPage();
