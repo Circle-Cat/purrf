@@ -58,6 +58,7 @@ const MarkNotifiedDialog = ({
     setBody("");
   };
   const changeOpen = (next) => {
+    if (saving) return;
     if (!next) reset();
     onOpenChange(next);
   };

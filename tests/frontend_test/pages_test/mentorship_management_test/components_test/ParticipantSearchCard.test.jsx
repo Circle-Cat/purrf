@@ -2643,6 +2643,40 @@ describe("ParticipantSearchCard", () => {
       await waitFor(() => expect(markButton()).not.toBeInTheDocument());
     });
 
+    it("counts a mark by hand as notified but not a send still scheduled", async () => {
+      listNotifiedStages.mockResolvedValue([
+        { userId: 11, stages: [], scheduled: [], manual: ["admission"] },
+        {
+          userId: 12,
+          stages: [],
+          scheduled: [{ stage: "admission", sendAt: "2030-10-20T16:00:00Z" }],
+          manual: [],
+        },
+      ]);
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      await userEvent.click(markButton());
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Which notification"),
+        "admission",
+      );
+
+      expect(
+        within(dialog).getByText(
+          "1 of 2 already notified for this stage \u2014 they will be skipped",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", {
+          name: "Mark as notified \u00b7 1",
+        }),
+      ).toBeInTheDocument();
+    });
+
     const notificationFilter = () =>
       screen.queryByRole("button", { name: "Notification filter" });
 
