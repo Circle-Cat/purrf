@@ -343,3 +343,12 @@ py_test(
         "@pypi//fastapi",
     ],
 )
+
+py_test(
+    name = "thread_alerts_test",
+    srcs = ["thread_alerts_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+    ],
+)
