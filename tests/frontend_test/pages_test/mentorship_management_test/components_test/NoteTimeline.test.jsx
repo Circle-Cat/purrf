@@ -111,6 +111,31 @@ describe("NoteTimeline", () => {
     );
   });
 
+  it("labels marks and names the partner of the pair a note is about", () => {
+    renderTimeline({
+      pairs: [
+        {
+          pairId: 80,
+          partner: { firstName: "Bob", lastName: "Smith", preferredName: null },
+        },
+      ],
+      notes: [
+        noteOf({ noteId: 3, tag: "red_flag", pairId: null, body: "Flag" }),
+        noteOf({
+          noteId: 2,
+          tag: "no_show",
+          pairId: 80,
+          body: "Missed both calls",
+        }),
+      ],
+    });
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Red flag");
+    expect(items[0]).not.toHaveTextContent("with");
+    expect(items[1]).toHaveTextContent("No show");
+    expect(items[1]).toHaveTextContent("with Bob Smith");
+  });
+
   it("on failure toasts the server's message and keeps the text", async () => {
     addParticipantNote.mockRejectedValue({
       response: { data: { message: "Mentorship round 7 is not in progress." } },

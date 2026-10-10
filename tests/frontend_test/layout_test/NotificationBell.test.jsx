@@ -487,6 +487,29 @@ describe("NotificationBell", () => {
 
   it.each([
     [
+      "mark_no_show",
+      "Ada Ng asked you to approve: mark Mia Ko as a no show in Spring 2026",
+    ],
+    [
+      "mark_red_flag",
+      "Ada Ng asked you to approve: raise a red flag on Mia Ko in Spring 2026",
+    ],
+  ])(
+    "names the person and round a %s request is about",
+    async (action, text) => {
+      await openWith(
+        approvalRow("mentorship.approval_requested", {
+          action,
+          personName: "Mia Ko",
+        }),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    [
       "approved",
       "Ada Ng approved your request: publish the matching result for Spring 2026",
     ],

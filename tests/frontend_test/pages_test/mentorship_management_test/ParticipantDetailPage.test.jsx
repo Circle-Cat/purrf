@@ -33,6 +33,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   decideMentorshipApproval: vi.fn(),
   reassignMentorshipApproval: vi.fn(),
   withdrawMentorshipApproval: vi.fn(),
+  requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
 }));
 vi.mock("@/api/adminAccountsApi", () => ({
@@ -278,6 +279,105 @@ describe("ParticipantDetailPage", () => {
     expect(await screen.findByText("Exempted")).toBeInTheDocument();
   });
 
+  it("shows the new problem and the exemption control after an earlier exemption", async () => {
+    useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        exempted: true,
+        registration: registrationOf({
+          approvalStatus: "signed_up",
+          pairs: [],
+          exemptionFindings: [
+            { reason: "red_flag", roundId: 7, roundName: "Fall 2026" },
+          ],
+        }),
+      }),
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText("Exempted earlier this round"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Red flag in this round")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Request exemption" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Exempted$/)).not.toBeInTheDocument();
+  });
+
+  it("does not call a person cleared when a mark came after their exemption", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        exempted: true,
+        notes: [
+          noteOf({
+            noteId: 2,
+            tag: "no_show",
+            pairId: 80,
+            createdAt: "2026-09-05T18:00:00Z",
+          }),
+          noteOf({
+            noteId: 1,
+            tag: "matching_exemption",
+            createdAt: "2026-09-03T18:00:00Z",
+          }),
+        ],
+      }),
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText("Exempted earlier this round"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Exempted$/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the plain Exempted when the only mark came before the exemption", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        exempted: true,
+        notes: [
+          noteOf({
+            noteId: 2,
+            tag: "matching_exemption",
+            createdAt: "2026-09-05T18:00:00Z",
+          }),
+          noteOf({
+            noteId: 1,
+            tag: "no_show",
+            pairId: 80,
+            createdAt: "2026-09-03T18:00:00Z",
+          }),
+        ],
+      }),
+    });
+    renderPage();
+
+    expect(await screen.findByText("Exempted")).toBeInTheDocument();
+  });
+
+  it("counts this round's marks in the header from the notes", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        notes: [
+          noteOf({ noteId: 3, tag: "no_show", pairId: 80 }),
+          noteOf({ noteId: 2, tag: "no_show", pairId: 80 }),
+          noteOf({ noteId: 1, tag: "red_flag" }),
+        ],
+      }),
+    });
+    renderPage();
+
+    const heading = await screen.findByRole("heading", { name: "Alice Chen" });
+    expect(
+      within(heading.parentElement).getByText("No show \u00d72"),
+    ).toBeInTheDocument();
+    expect(
+      within(heading.parentElement).getByText("Red flag"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("with Bob Smith")).toHaveLength(2);
+  });
+
   it("shows notes and the earlier rounds", async () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
@@ -400,15 +500,68 @@ describe("ParticipantDetailPage", () => {
     it.each([
       ["once they are withdrawn", { approvalStatus: "withdrawn" }],
       ["for a rejected registration", { approvalStatus: "rejected" }],
-    ])("is not offered %s", async (_label, overrides) => {
+    ])("offers only the marks %s", async (_label, overrides) => {
+      const user = userEvent.setup();
       getParticipantDetail.mockResolvedValue({
         data: detailOf({ registration: registrationOf(overrides) }),
       });
       renderPage();
-      await screen.findByRole("heading", { name: "Alice Chen" });
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change status / flag" }),
+      );
+
+      const dialog = await screen.findByRole("dialog");
       expect(
-        screen.queryByRole("button", { name: "Change status / flag" }),
+        within(dialog).getByRole("option", { name: "Mark as no show" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("option", { name: "Raise a red flag" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("option", { name: "Withdraw from round" }),
       ).not.toBeInTheDocument();
+    });
+
+    it("offers no no show to someone who had no pair", async () => {
+      const user = userEvent.setup();
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({ registration: registrationOf({ pairs: [] }) }),
+      });
+      renderPage();
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change status / flag" }),
+      );
+
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).queryByRole("option", { name: "Mark as no show" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("option", { name: "Raise a red flag" }),
+      ).toBeInTheDocument();
+    });
+
+    it("starts over on the first type each time it opens", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change status / flag" }),
+      );
+      await user.selectOptions(
+        screen.getByLabelText("What are you asking for"),
+        "mark_red_flag",
+      );
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await user.click(
+        screen.getByRole("button", { name: "Change status / flag" }),
+      );
+
+      expect(screen.getByLabelText("What are you asking for")).toHaveValue(
+        "withdraw_participant",
+      );
     });
 
     it("is not offered with matching off, to a reader, or after the round", async () => {
@@ -448,6 +601,7 @@ describe("ParticipantDetailPage", () => {
     });
 
     it("lists what waits on a decision below the round and stops offering that request", async () => {
+      const user = userEvent.setup();
       getParticipantDetail.mockResolvedValue({
         data: detailOf({ pendingRequests: [pendingWithdrawal] }),
       });
@@ -464,9 +618,36 @@ describe("ParticipantDetailPage", () => {
       expect(
         within(block).getByRole("button", { name: "Withdraw" }),
       ).toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole("button", { name: "Change status / flag" }),
+      );
+      const kinds = screen.getByLabelText("What are you asking for");
       expect(
-        screen.queryByRole("button", { name: "Change status / flag" }),
-      ).not.toBeInTheDocument();
+        within(kinds)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Mark as no show", "Raise a red flag"]);
+    });
+
+    it("names the pair a waiting mark is about", async () => {
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({
+          pendingRequests: [
+            { ...pendingWithdrawal, action: "mark_no_show", pairId: 80 },
+          ],
+        }),
+      });
+      renderPage();
+
+      const block = await screen.findByRole("region", {
+        name: "Waiting on a decision",
+      });
+      expect(
+        within(block).getByText(
+          "No show mark \u2014 raised by Dana Wu \u00b7 sent to Rae Kim \u2014 about the pair with Bob Smith",
+        ),
+      ).toBeInTheDocument();
     });
 
     it("has no Waiting on a decision block when nothing waits", async () => {

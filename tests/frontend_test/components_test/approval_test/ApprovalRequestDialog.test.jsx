@@ -55,6 +55,15 @@ describe("ApprovalRequestDialog", () => {
     expect(onConfirm).toHaveBeenCalledWith({ reviewerId: 12, reason: "" });
   });
 
+  it("keeps Send disabled while the caller says something is missing", async () => {
+    const user = userEvent.setup();
+    renderDialog({ canConfirm: false });
+
+    await user.selectOptions(screen.getByLabelText("Reviewer"), "8");
+
+    expect(screen.getByRole("button", { name: "Send request" })).toBeDisabled();
+  });
+
   it("offers no reason box unless asked to", () => {
     renderDialog();
 

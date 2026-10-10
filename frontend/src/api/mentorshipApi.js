@@ -398,6 +398,28 @@ export const requestParticipantWithdrawal = (
   );
 
 /**
+ * Ask a named reviewer to approve marking a person in a round in progress as
+ * a no show, or raising a red flag on them. Resolves to `data` = the new
+ * approval request; refused with 409 when the person may not carry the mark,
+ * the pair is not theirs, or the same mark already waits, and with 400 when
+ * the reviewer is the person themselves.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ * @param {{tag: "no_show"|"red_flag", pairId?: number|null, reviewerId: number, reason: string}} body
+ */
+export const requestParticipantMark = (
+  roundId,
+  userId,
+  { tag, pairId = null, reviewerId, reason },
+) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_MARK_REQUEST(roundId, userId), {
+    tag,
+    pairId,
+    reviewerId,
+    reason,
+  });
+
+/**
  * One person in one round, as the admin detail page shows it: who they are,
  * their registration and pairs, notes, this round's feedback, a pending
  * block request, and the rounds they took part in before this one.

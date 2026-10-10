@@ -1,4 +1,7 @@
-import { requestParticipantWithdrawal } from "@/api/mentorshipApi";
+import {
+  requestParticipantMark,
+  requestParticipantWithdrawal,
+} from "@/api/mentorshipApi";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
 import { APPROVAL_ACTION } from "@/pages/MentorshipManagement/utils/approvalLabels";
 
@@ -8,16 +11,28 @@ const STILL_IN_ROUND = new Set([
   MentorshipApprovalStatus.UN_MATCHED,
 ]);
 
+/** Whether a request type is about one of the person's pairs this round. */
+export const PAIR_RULE = Object.freeze({
+  NONE: "none",
+  REQUIRED: "required",
+  OPTIONAL: "optional",
+});
+
+const MARK_CONSEQUENCES =
+  "Recorded on their history. It keeps them out of matching until an exemption, including later in this round. It cannot be undone. They are not told.";
+
 /**
  * What the detail page's "Change status / flag" dialog can ask for, one entry
  * per kind of request. `isAvailable` says whether it can be asked for now;
- * `raise` sends it; `consequences` is what approving it does, shown before
- * sending and again to the reviewer.
+ * `pair` says whether it names one of the person's pairs this round; `raise`
+ * sends it; `consequences` is what approving it does, shown before sending
+ * and again to the reviewer.
  */
 export const STATUS_REQUEST_TYPES = Object.freeze([
   {
     key: APPROVAL_ACTION.WITHDRAW_PARTICIPANT,
     label: "Withdraw from round",
+    pair: PAIR_RULE.NONE,
     consequences: (name) =>
       `${name} leaves this round: every pair they have in it ends, and their meetings that have not started are cancelled. Their partners stay matched. This cannot be undone.`,
     isAvailable: ({ canWrite, round, registration }) =>
@@ -26,8 +41,38 @@ export const STATUS_REQUEST_TYPES = Object.freeze([
         round?.inProgress &&
         STILL_IN_ROUND.has(registration?.approvalStatus),
       ),
-    raise: (roundId, userId, body) =>
-      requestParticipantWithdrawal(roundId, userId, body),
+    raise: (roundId, userId, { reviewerId, reason }) =>
+      requestParticipantWithdrawal(roundId, userId, { reviewerId, reason }),
+  },
+  {
+    key: APPROVAL_ACTION.MARK_NO_SHOW,
+    label: "Mark as no show",
+    pair: PAIR_RULE.REQUIRED,
+    consequences: () => MARK_CONSEQUENCES,
+    isAvailable: ({ canWrite, round, registration }) =>
+      Boolean(canWrite && round?.inProgress && registration?.pairs?.length > 0),
+    raise: (roundId, userId, { reviewerId, reason, pairId }) =>
+      requestParticipantMark(roundId, userId, {
+        tag: "no_show",
+        pairId,
+        reviewerId,
+        reason,
+      }),
+  },
+  {
+    key: APPROVAL_ACTION.MARK_RED_FLAG,
+    label: "Raise a red flag",
+    pair: PAIR_RULE.OPTIONAL,
+    consequences: () => MARK_CONSEQUENCES,
+    isAvailable: ({ canWrite, round, registration }) =>
+      Boolean(canWrite && round?.inProgress && registration),
+    raise: (roundId, userId, { reviewerId, reason, pairId = null }) =>
+      requestParticipantMark(roundId, userId, {
+        tag: "red_flag",
+        pairId,
+        reviewerId,
+        reason,
+      }),
   },
 ]);
 

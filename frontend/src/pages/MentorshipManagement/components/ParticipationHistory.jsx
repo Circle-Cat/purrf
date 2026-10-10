@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { MentorshipParticipantRoleLabels } from "@/constants/MentorshipParticipantRoles";
 import { userDisplayName } from "@/utils/userName";
 import { useParticipantDetail } from "@/pages/MentorshipManagement/hooks/useParticipantDetail";
+import MarkBadges from "@/pages/MentorshipManagement/components/MarkBadges";
 import PairSection from "@/pages/MentorshipManagement/components/PairSection";
 import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import ParticipantFeedback from "@/pages/MentorshipManagement/components/ParticipantFeedback";
@@ -56,6 +57,7 @@ const HistoryRoundBody = ({ userId, subjectName, roundId }) => {
         userId={userId}
         canAdd={false}
         onAdded={NOOP}
+        pairs={registration?.pairs ?? []}
       />
       <ParticipantFeedback feedback={detail.feedback} />
     </div>
@@ -104,6 +106,10 @@ const ParticipationHistory = ({ userId, subjectName, history }) => {
                       Exempted
                     </Badge>
                   )}
+                  <MarkBadges
+                    noShow={row.marks?.noShow}
+                    redFlag={row.marks?.redFlag}
+                  />
                   {row.pairs.map((pair) => (
                     <span key={pair.pairId} className="text-xs text-slate-500">
                       {`${userDisplayName(pair.partner)} · ${pair.completedMeetingCount}/${row.requiredMeetings ?? "—"}`}
