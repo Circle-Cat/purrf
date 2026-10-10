@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import ComposeEmailDialog from "@/components/email/ComposeEmailDialog";
@@ -27,12 +33,18 @@ describe("ComposeEmailDialog", () => {
     const user = userEvent.setup();
     render(<ComposeEmailDialog {...p} />);
 
-    expect(screen.getByText("From: mentorship@circlecat.org")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /alice@x\.com/ })).toBeChecked();
+    expect(
+      screen.getByText("From: mentorship@circlecat.org"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /alice@x\.com/ }),
+    ).toBeChecked();
     expect(
       screen.getByRole("checkbox", { name: /alice\.alt@y\.org/ }),
     ).not.toBeChecked();
-    await user.click(screen.getByRole("checkbox", { name: /alice\.alt@y\.org/ }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /alice\.alt@y\.org/ }),
+    );
     await user.type(screen.getByLabelText("Subject"), "Checking in");
     await user.type(message(), "How is it going?");
     await user.click(sendButton());
@@ -48,7 +60,9 @@ describe("ComposeEmailDialog", () => {
 
   it("ticks the default address whatever its case", () => {
     render(<ComposeEmailDialog {...props({ defaultTo: "Alice@X.com" })} />);
-    expect(screen.getByRole("checkbox", { name: /alice@x\.com/ })).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /alice@x\.com/ }),
+    ).toBeChecked();
   });
 
   it("keeps Send disabled with no recipient ticked", async () => {

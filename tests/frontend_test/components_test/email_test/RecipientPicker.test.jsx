@@ -17,7 +17,9 @@ describe("RecipientPicker", () => {
     );
     expect(screen.getByRole("group", { name: "To" })).toBeInTheDocument();
     expect(
-      screen.getByRole("checkbox", { name: /^alice@x\.com\s*\(Primary contact\)$/ }),
+      screen.getByRole("checkbox", {
+        name: /^alice@x\.com\s*\(Primary contact\)$/,
+      }),
     ).toBeChecked();
     expect(
       screen.getByRole("checkbox", {

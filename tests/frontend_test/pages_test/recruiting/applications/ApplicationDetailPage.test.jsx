@@ -4013,9 +4013,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
 
     await user.click(screen.getByRole("button", { name: "Send email" }));
-    expect(
-      screen.getByRole("checkbox", { name: /cand@x\.com/ }),
-    ).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /cand@x\.com/ })).toBeChecked();
     expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
 
@@ -4782,9 +4780,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
       },
     });
     const user = await renderComposeOpen();
-    expect(
-      screen.getByRole("checkbox", { name: /cand@x\.com/ }),
-    ).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /cand@x\.com/ })).toBeChecked();
     expect(
       screen.getByRole("checkbox", { name: /ana@purrf\.example/ }),
     ).not.toBeChecked();

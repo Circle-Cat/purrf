@@ -142,7 +142,12 @@ const ComposeEmailDialog = ({
   // passes a new conversation (and a new loadTemplates function) on every
   // render, and neither may wipe the draft or fetch again.
   const latestRef = useRef(null);
-  latestRef.current = { recipientOptions, defaultTo, replyThread, loadTemplates };
+  latestRef.current = {
+    recipientOptions,
+    defaultTo,
+    replyThread,
+    loadTemplates,
+  };
   const replyThreadId = replyThread?.threadId ?? null;
   const replyTo = replyThread ? (replyThread.replyTo ?? defaultTo) : null;
 
@@ -384,8 +389,8 @@ const ComposeEmailDialog = ({
                   className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"
                 >
                   Not sent: this thread has new messages since you opened it.
-                  Read them below; your draft is kept. Send again to send it
-                  as is.
+                  Read them below; your draft is kept. Send again to send it as
+                  is.
                 </p>
                 <ul
                   aria-label="New messages"

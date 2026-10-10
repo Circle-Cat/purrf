@@ -92,7 +92,9 @@ describe("EmailThreadCard", () => {
     renderCard({
       attachmentUrl,
       thread: threadOf({
-        messages: [replyOf({ attachments: [{ name: "plan.pdf", size: 2048 }] })],
+        messages: [
+          replyOf({ attachments: [{ name: "plan.pdf", size: 2048 }] }),
+        ],
       }),
     });
     const link = screen.getByRole("link", { name: /plan\.pdf/ });

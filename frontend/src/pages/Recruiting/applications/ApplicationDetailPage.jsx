@@ -1103,8 +1103,7 @@ const ApplicationDetailPage = () => {
   const emailCompose = useComposeEmail({
     submit: (payload) =>
       sendApplicationEmail(applicationId, payload).then(({ data }) => data),
-    reload: () =>
-      getApplicationEmails(applicationId).then(({ data }) => data),
+    reload: () => getApplicationEmails(applicationId).then(({ data }) => data),
     onConversation: (data) =>
       setEmails(data ?? { threads: [], defaultTo: null }),
   });

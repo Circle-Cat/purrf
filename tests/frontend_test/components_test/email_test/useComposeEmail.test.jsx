@@ -27,7 +27,12 @@ const NEW_EMAIL = {
   body: "Hello",
   threadId: null,
 };
-const REPLY = { to: ["alice@x.com"], subject: "Re: Checking in", body: "Thanks", threadId: 41 };
+const REPLY = {
+  to: ["alice@x.com"],
+  subject: "Re: Checking in",
+  body: "Thanks",
+  threadId: 41,
+};
 
 describe("useComposeEmail", () => {
   beforeEach(() => {
@@ -85,7 +90,9 @@ describe("useComposeEmail", () => {
     expect(onConversation).toHaveBeenCalledWith(fresh);
     expect(toast.error).not.toHaveBeenCalled();
     expect(hook.result.current.dialogProps.open).toBe(true);
-    expect(hook.result.current.dialogProps.replyThread.messages).toHaveLength(3);
+    expect(hook.result.current.dialogProps.replyThread.messages).toHaveLength(
+      3,
+    );
     expect(
       hook.result.current.dialogProps.staleMessages.map((m) => m.messageId),
     ).toEqual([412]);
@@ -93,7 +100,10 @@ describe("useComposeEmail", () => {
     await act(async () => {
       await hook.result.current.dialogProps.onSend(REPLY);
     });
-    expect(submit).toHaveBeenLastCalledWith({ ...REPLY, lastSeenMessageId: 412 });
+    expect(submit).toHaveBeenLastCalledWith({
+      ...REPLY,
+      lastSeenMessageId: 412,
+    });
     expect(hook.result.current.dialogProps.staleMessages).toEqual([]);
   });
 
