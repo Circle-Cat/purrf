@@ -28,7 +28,7 @@ class RecruitingApplicationEmailPolicyTest(unittest.IsolatedAsyncioTestCase):
         )
         self.application = SimpleNamespace(application_id=7, user_id=40)
 
-    async def test_an_owner_writes_to_the_contact_first_and_any_other_address(self):
+    async def test_an_owner_writes_to_the_contact_in_its_stored_spelling(self):
         policy = await self.policy.resolve(
             self.session, self.application, may_send=True
         )
@@ -42,9 +42,9 @@ class RecruitingApplicationEmailPolicyTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(policy.can_send)
         self.assertEqual(
             [(o.address, o.label) for o in policy.recipient_options],
-            [("Sofia@X.com", "Primary contact"), ("sofia.old@y.com", "Alternative")],
+            [("sofia@x.com", "Primary contact"), ("sofia.old@y.com", "Alternative")],
         )
-        self.assertEqual(policy.default_to, "Sofia@X.com")
+        self.assertEqual(policy.default_to, "sofia@x.com")
         self.user_emails.get_contact_email.assert_awaited_once_with(self.session, 40)
 
     async def test_a_primary_that_is_not_the_contact_is_an_alternative(self):
@@ -60,9 +60,22 @@ class RecruitingApplicationEmailPolicyTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(policy.default_to, "sofia.old@y.com")
 
-    async def test_no_contact_address_offers_what_the_applicant_has_with_no_default(
+    async def test_an_unverified_contact_is_not_offered_and_the_first_verified_wins(
         self,
     ):
+        self.user_emails.get_contact_email.return_value = "unverified@z.com"
+
+        policy = await self.policy.resolve(
+            self.session, self.application, may_send=True
+        )
+
+        self.assertEqual(
+            [(o.address, o.label) for o in policy.recipient_options],
+            [("sofia@x.com", "Primary contact"), ("sofia.old@y.com", "Alternative")],
+        )
+        self.assertEqual(policy.default_to, "sofia@x.com")
+
+    async def test_no_contact_address_defaults_to_the_first_verified_address(self):
         self.user_emails.get_contact_email.return_value = None
 
         policy = await self.policy.resolve(
@@ -71,8 +84,18 @@ class RecruitingApplicationEmailPolicyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [(o.address, o.label) for o in policy.recipient_options],
-            [("sofia@x.com", "Alternative"), ("sofia.old@y.com", "Alternative")],
+            [("sofia@x.com", "Primary contact"), ("sofia.old@y.com", "Alternative")],
         )
+        self.assertEqual(policy.default_to, "sofia@x.com")
+
+    async def test_no_verified_address_means_no_options_and_no_default(self):
+        self.person_email.person_email_addresses.return_value = []
+
+        policy = await self.policy.resolve(
+            self.session, self.application, may_send=True
+        )
+
+        self.assertEqual(policy.recipient_options, ())
         self.assertIsNone(policy.default_to)
 
     async def test_a_reader_gets_no_compose_choices_and_no_lookups(self):

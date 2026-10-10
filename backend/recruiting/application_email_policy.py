@@ -4,6 +4,7 @@ from backend.common.communication_enums import ContextType
 from backend.communication.person_email_service import (
     BodyFormat,
     EmailPolicy,
+    choose_default,
     recipient_options,
 )
 
@@ -24,8 +25,9 @@ class RecruitingApplicationEmailPolicy:
     async def resolve(self, session, application, *, may_send: bool) -> EmailPolicy:
         """The policy for one application.
 
-        A sender may write to the applicant's addresses, the contact address
-        first and preselected; a reader gets no compose choices.
+        A sender may write to the applicant's verified addresses, the contact
+        address preselected when it is one of them, else the first; a reader
+        gets no compose choices.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -35,7 +37,7 @@ class RecruitingApplicationEmailPolicy:
         Returns:
             EmailPolicy: Rich HTML from the recruiting address.
         """
-        contact = None
+        default = None
         options = []
         if may_send:
             contact = await self._user_emails.get_contact_email(
@@ -44,7 +46,8 @@ class RecruitingApplicationEmailPolicy:
             addresses = await self._person_email.person_email_addresses(
                 session, application.user_id
             )
-            options = recipient_options([a.address for a in addresses], contact)
+            default = choose_default(addresses, contact)
+            options = recipient_options([a.address for a in addresses], default)
         return EmailPolicy(
             user_id=application.user_id,
             context_type=ContextType.APPLICATION,
@@ -53,5 +56,5 @@ class RecruitingApplicationEmailPolicy:
             may_send=may_send,
             body_format=BodyFormat.RICH,
             recipient_options=tuple(options),
-            default_to=contact,
+            default_to=default,
         )

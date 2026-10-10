@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
+from backend.communication.person_email_service import PersonAddress
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import (
     SEARCH_RESULT_LIMIT,
@@ -321,6 +322,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     async def test_send_application_email_sends_a_new_email_as_the_owner(self):
         self._setup_owned_application(application_id=7, user_id=5, owner=2)
         self.user_emails_repo.get_contact_email = AsyncMock(return_value="c@x.com")
+        self.email_svc.person_email_addresses.return_value = [
+            PersonAddress(address="c@x.com", is_primary=True)
+        ]
 
         result = await self.service.send_application_email(
             self.session, self._ctx(user_id=2), 7, self._email_dto(to=["c@x.com"])
@@ -587,6 +591,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     async def test_get_application_conversation_lets_an_advancing_owner_compose(self):
         self._setup_owned_application(user_id=5, owner=2)
         self.user_emails_repo.get_contact_email = AsyncMock(return_value="c@x.com")
+        self.email_svc.person_email_addresses.return_value = [
+            PersonAddress(address="c@x.com", is_primary=True)
+        ]
 
         result = await self.service.get_application_conversation(
             self.session,
