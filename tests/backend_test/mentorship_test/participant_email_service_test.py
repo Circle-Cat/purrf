@@ -99,20 +99,50 @@ class PolicyTest(_Fixture):
         self.assertIsNone(policy.sender_address)
         self.assertFalse(policy.can_send)
 
-    async def test_without_a_primary_address_nothing_is_preselected(self):
+    async def test_a_verified_primary_is_the_default(self):
         self.person_email.person_email_addresses.return_value = [
-            PersonAddress(address="old@y.com", is_primary=False)
+            PersonAddress(address="old@y.com", is_primary=False),
+            PersonAddress(address="ann@x.com", is_primary=True),
         ]
 
         policy = await self.policy.resolve(
             self.session, 8, 32, _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
         )
 
-        self.assertIsNone(policy.default_to)
+        self.assertEqual(policy.default_to, "ann@x.com")
         self.assertEqual(
             [(o.address, o.label) for o in policy.recipient_options],
-            [("old@y.com", "Alternative")],
+            [("ann@x.com", "Primary contact"), ("old@y.com", "Alternative")],
         )
+
+    async def test_an_unverified_primary_falls_back_to_the_first_verified_address(
+        self,
+    ):
+        self.person_email.person_email_addresses.return_value = [
+            PersonAddress(address="old@y.com", is_primary=False),
+            PersonAddress(address="other@z.com", is_primary=False),
+        ]
+
+        policy = await self.policy.resolve(
+            self.session, 8, 32, _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
+        )
+
+        self.assertEqual(policy.default_to, "old@y.com")
+        self.assertEqual(
+            [(o.address, o.label) for o in policy.recipient_options],
+            [("old@y.com", "Primary contact"), ("other@z.com", "Alternative")],
+        )
+
+    async def test_no_verified_address_means_no_default_and_no_options(self):
+        self.person_email.person_email_addresses.return_value = []
+
+        policy = await self.policy.resolve(
+            self.session, 8, 32, _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
+        )
+
+        self.assertIsNone(policy.default_to)
+        self.assertEqual(policy.recipient_options, ())
+        self.assertTrue(policy.can_send)
 
     async def test_an_unknown_round_or_person_is_not_found(self):
         self.rounds.get_by_round_id.return_value = None

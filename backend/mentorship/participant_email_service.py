@@ -6,6 +6,7 @@ from backend.common.permissions import Permission
 from backend.communication.person_email_service import (
     BodyFormat,
     EmailPolicy,
+    choose_default,
     recipient_options,
 )
 from backend.dto.email_dto import EmailRefreshDto
@@ -40,7 +41,8 @@ class MentorshipParticipantEmailPolicy:
 
         Returns:
             EmailPolicy: Plain text, from the mentorship alias, to the
-                person's addresses, the primary preselected.
+                person's verified addresses, the primary preselected when it is
+                one of them, else the first.
 
         Raises:
             NotFoundError: The round or the person does not exist.
@@ -51,6 +53,7 @@ class MentorshipParticipantEmailPolicy:
             raise NotFoundError(f"User {user_id} does not exist.")
         addresses = await self._person_email.person_email_addresses(session, user_id)
         primary = next((a.address for a in addresses if a.is_primary), None)
+        default = choose_default(addresses, primary)
         return EmailPolicy(
             user_id=user_id,
             context_type=ContextType.ACTIVITY,
@@ -59,9 +62,9 @@ class MentorshipParticipantEmailPolicy:
             may_send=viewer.has_permission(Permission.MENTORSHIP_ADMIN_WRITE),
             body_format=BodyFormat.TEXT,
             recipient_options=tuple(
-                recipient_options([a.address for a in addresses], primary)
+                recipient_options([a.address for a in addresses], default)
             ),
-            default_to=primary,
+            default_to=default,
         )
 
 
