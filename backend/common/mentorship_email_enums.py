@@ -19,6 +19,16 @@ class MentorshipEmailStage(StrEnum):
     FEEDBACK_INVITE = "feedback_invite"
 
 
+class MentorshipEmailNotificationState(StrEnum):
+    """Where one stage stands for one person, as the Participants filter asks
+    it. Not notified covers everyone Kit has neither sent nor is about to
+    send this stage to, including people it could not reach."""
+
+    NOT_NOTIFIED = "not_notified"
+    SCHEDULED = "scheduled"
+    NOTIFIED = "notified"
+
+
 class MentorshipEmailSendStatus(StrEnum):
     DRAFT = "draft"
     PREPARING = "preparing"

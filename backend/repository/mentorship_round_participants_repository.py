@@ -7,6 +7,7 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
+from backend.repository.user_id_condition import UserIdCondition
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
@@ -572,6 +573,7 @@ class MentorshipRoundParticipantsRepository:
         sort_by: str | None = None,
         order: str = "asc",
         only_user_ids: Collection[int] | None = None,
+        user_id_condition: UserIdCondition | None = None,
     ) -> tuple[list[ParticipantSearchRow], int]:
         """
         Run the admin participant search and return paginated results.
@@ -594,6 +596,8 @@ class MentorshipRoundParticipantsRepository:
                 `sort_by` resolves to a whitelisted column.
             only_user_ids (Collection[int] | None): When given, only these
                 people are listed; empty lists nobody.
+            user_id_condition (UserIdCondition | None): When given, keeps or
+                leaves out the people its query returns.
 
         Returns:
             tuple[list[ParticipantSearchRow], int]:
@@ -603,6 +607,10 @@ class MentorshipRoundParticipantsRepository:
         base_stmt = self._build_admin_search_stmt(filters)
         if only_user_ids is not None:
             base_stmt = base_stmt.where(UsersEntity.user_id.in_(sorted(only_user_ids)))
+        if user_id_condition is not None:
+            base_stmt = base_stmt.where(
+                user_id_condition.applied_to(UsersEntity.user_id)
+            )
 
         total = (
             await session.scalar(select(func.count()).select_from(base_stmt.subquery()))
@@ -669,6 +677,7 @@ class MentorshipRoundParticipantsRepository:
         limit: int,
         offset: int,
         order: str = "asc",
+        user_id_condition: UserIdCondition | None = None,
     ) -> tuple[list[PersonSearchRow], int]:
         """
         People admitted as a mentor or mentee who have not registered for a
@@ -687,6 +696,8 @@ class MentorshipRoundParticipantsRepository:
             limit (int): Maximum number of rows to return.
             offset (int): Number of rows to skip.
             order (str): "asc" (default) or "desc" by user ID.
+            user_id_condition (UserIdCondition | None): When given, keeps or
+                leaves out the people its query returns.
 
         Returns:
             tuple[list[PersonSearchRow], int]: The page of rows and the
@@ -712,6 +723,8 @@ class MentorshipRoundParticipantsRepository:
             UsersEntity.is_internal,
         ).where(self._admitted_as(roles), not_(registered))
         stmt = self._apply_person_filters(stmt, filters)
+        if user_id_condition is not None:
+            stmt = stmt.where(user_id_condition.applied_to(UsersEntity.user_id))
 
         total = (
             await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0

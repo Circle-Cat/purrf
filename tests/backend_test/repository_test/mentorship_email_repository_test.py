@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from backend.common.mentorship_email_enums import (
     MentorshipEmailRecipientResult as R,
@@ -392,6 +392,116 @@ class MentorshipEmailRepositoryTest(BaseRepositoryTestLib):
             sorted([scheduled.send_id, preparing.send_id]),
         )
         self.assertNotIn(draft.send_id, [s.send_id for s in got])
+
+    async def _ids(self, stage, **flags):
+        query = self.repo.notified_user_ids(self.round.round_id, stage, **flags)
+        rows = await self.session.execute(
+            select(UsersEntity.user_id)
+            .where(UsersEntity.user_id.in_(query))
+            .order_by(UsersEntity.user_id)
+        )
+        return list(rows.scalars())
+
+    async def test_notified_user_ids_by_state(self):
+        u3 = UsersEntity(
+            first_name="Cy",
+            last_name="Three",
+            timezone="UTC",
+            timezone_updated_at=NOW,
+            communication_channel=CommunicationMethod.EMAIL,
+            is_active=True,
+            updated_timestamp=NOW,
+        )
+        await self.insert_entities([u3])
+        both = [(self.u1.user_id, "ann@x.org"), (self.u2.user_id, "bob@x.org")]
+        sent = await self._send(recipients=both, stage="midterm_reminder")
+        sent.status = S.SENT
+        await self._handed(
+            sent, {self.u1.user_id: R.HANDED_TO_KIT, self.u2.user_id: R.UNSUBSCRIBED}
+        )
+        again = await self._send(
+            recipients=[(self.u1.user_id, "ann@x.org")], stage="midterm_reminder"
+        )
+        again.status = S.SCHEDULED
+        again.send_at = NOW + timedelta(days=1)
+        preparing = await self._send(
+            recipients=[(u3.user_id, "cy@x.org")], stage="midterm_reminder"
+        )
+        preparing.status = S.PREPARING
+        preparing.send_at = NOW + timedelta(hours=2)
+        for status in (S.FAILED, S.ABORTED, S.CANCELLED):
+            gone = await self._send(recipients=both, stage="midterm_reminder")
+            gone.status = status
+            gone.send_at = NOW
+            await self._handed(
+                gone,
+                {self.u1.user_id: R.HANDED_TO_KIT, self.u2.user_id: R.HANDED_TO_KIT},
+            )
+        other_stage = await self._send(recipients=both, stage="final_followup")
+        other_stage.status = S.SENT
+        await self._handed(
+            other_stage,
+            {self.u1.user_id: R.HANDED_TO_KIT, self.u2.user_id: R.HANDED_TO_KIT},
+        )
+        await self.session.flush()
+
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=True, scheduled=False),
+            [self.u1.user_id],
+        )
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=False, scheduled=True),
+            [self.u1.user_id, u3.user_id],
+        )
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=True, scheduled=True),
+            [self.u1.user_id, u3.user_id],
+        )
+        self.assertEqual(
+            await self._ids("final_followup", sent=True, scheduled=False),
+            [self.u1.user_id, self.u2.user_id],
+        )
+
+    async def test_notified_user_ids_stay_in_their_round(self):
+        other_round = MentorshipRoundEntity(
+            name="Spring 2027",
+            onboarding_deadline_at=datetime(2027, 3, 15, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([other_round])
+        elsewhere = await self.repo.create_send(
+            self.session,
+            round_id=other_round.round_id,
+            stage="midterm_reminder",
+            kit_draft_id=12,
+            kit_draft_subject="Sign up",
+            created_by=self.admin.user_id,
+            sender_address="notification-test@circlecat.org",
+            kit_tag_name="purrf · Spring 2027 · Mid-term reminder · 03-01",
+            kit_tag_id=8,
+            kit_broadcast_id=10,
+            recipients=[(self.u2.user_id, "bob@x.org")],
+        )
+        elsewhere.status = S.SENT
+        await self._handed(elsewhere, {self.u2.user_id: R.HANDED_TO_KIT})
+        await self.session.flush()
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=True, scheduled=True), []
+        )
+
+    def test_notified_user_ids_needs_a_state(self):
+        with self.assertRaises(ValueError):
+            self.repo.notified_user_ids(1, "admission", sent=False, scheduled=False)
+
+    async def test_list_sends_can_keep_one_stage(self):
+        mid = await self._send(stage="midterm_reminder")
+        mid.status = S.SCHEDULED
+        other = await self._send(stage="admission")
+        other.status = S.SCHEDULED
+        await self.session.flush()
+        got = await self.repo.list_sends(
+            self.session, self.round.round_id, [S.SCHEDULED], stage="midterm_reminder"
+        )
+        self.assertEqual([s.send_id for s in got], [mid.send_id])
 
 
 if __name__ == "__main__":

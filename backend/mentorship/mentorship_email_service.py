@@ -409,15 +409,7 @@ class MentorshipEmailService:
             round_id,
             [MentorshipEmailSendStatus.SCHEDULED, MentorshipEmailSendStatus.PREPARING],
         )
-        now = self.clock()
-        changed = False
-        for send in sends:
-            if (
-                send.status == MentorshipEmailSendStatus.SCHEDULED
-                and send.send_at is not None
-                and send.send_at <= now
-            ):
-                changed = await self._sync_one(send) or changed
+        changed = await self._catch_up(sends)
         stages: dict[int, list[str]] = {}
         scheduled: dict[int, dict[str, EmailScheduledStageDto]] = {}
         for user_id, stage in await self.repo.list_sent_stages(session, round_id):
@@ -494,6 +486,36 @@ class MentorshipEmailService:
             reason=reason,
             # A failed send never got a time from Kit; it failed when last updated.
             at=send.updated_at if send.status == S.FAILED else send.send_at,
+        )
+
+    async def _catch_up(self, sends) -> bool:
+        """Ask Kit about each scheduled send whose time has come; True when
+        any row changed. Nothing is asked of Kit when none is due."""
+        now = self.clock()
+        changed = False
+        for send in sends:
+            if (
+                send.status == MentorshipEmailSendStatus.SCHEDULED
+                and send.send_at is not None
+                and send.send_at <= now
+            ):
+                changed = await self._sync_one(send) or changed
+        return changed
+
+    async def notified_user_ids(
+        self, session, round_id: int, stage: str, *, sent: bool, scheduled: bool
+    ):
+        """The people this round's sends of one stage reached or are about to
+        reach, as a user_id query. That stage's scheduled sends whose time has
+        come are first caught up with Kit, so one just sent is not read as
+        still to go out."""
+        sends = await self.repo.list_sends(
+            session, round_id, [MentorshipEmailSendStatus.SCHEDULED], stage=stage
+        )
+        if await self._catch_up(sends):
+            await session.commit()
+        return self.repo.notified_user_ids(
+            round_id, stage, sent=sent, scheduled=scheduled
         )
 
     async def _sync_one(self, send) -> bool:

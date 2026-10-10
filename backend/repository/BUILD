@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//backend/common:approval_enums",
         "//backend/common:communication_enums",
+        "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:user_enums",
         "//backend/dto",
