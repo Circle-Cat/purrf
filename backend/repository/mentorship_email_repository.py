@@ -8,10 +8,14 @@ from backend.common.mentorship_email_enums import (
     MentorshipEmailRecipientResult,
     MentorshipEmailSendStatus,
 )
+from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.entity.mentorship_email_recipient_entity import (
     MentorshipEmailRecipientEntity,
 )
 from backend.entity.mentorship_email_send_entity import MentorshipEmailSendEntity
+from backend.entity.mentorship_participant_note_entity import (
+    MentorshipParticipantNoteEntity,
+)
 from backend.entity.users_entity import UsersEntity
 
 
@@ -147,6 +151,32 @@ class MentorshipEmailRepository:
             (user_id, stage) for user_id, stage in (await session.execute(stmt)).all()
         ]
 
+    async def list_manual_stages(
+        self, session: AsyncSession, round_id: int
+    ) -> list[tuple[int, str]]:
+        """(user_id, stage) pairs an admin marked notified by hand in this
+        round: the notification went out some other way."""
+        note = MentorshipParticipantNoteEntity
+        stmt = (
+            select(note.user_id, note.notification_stage)
+            .where(
+                note.round_id == round_id,
+                note.tag == ParticipantNoteTag.NOTIFIED,
+            )
+            .distinct()
+            .order_by(note.user_id, note.notification_stage)
+        )
+        return [tuple(row) for row in (await session.execute(stmt)).all()]
+
+    @staticmethod
+    def _marked_by_hand(round_id: int, stage: str) -> Select:
+        note = MentorshipParticipantNoteEntity
+        return select(note.user_id).where(
+            note.round_id == round_id,
+            note.tag == ParticipantNoteTag.NOTIFIED,
+            note.notification_stage == stage,
+        )
+
     async def list_scheduled_stages(
         self, session: AsyncSession, round_id: int
     ) -> list[tuple[int, str, datetime]]:
@@ -207,7 +237,8 @@ class MentorshipEmailRepository:
     ) -> Select:
         """A user_id query for the people this round's sends of one stage have
         reached (``sent``) or are about to reach (``scheduled``), by the same
-        rules as the notified list."""
+        rules as the notified list. Reached also covers someone an admin marked
+        notified by hand for this stage."""
         states = []
         if sent:
             states.append(and_(*self._sent_conditions()))
@@ -215,7 +246,7 @@ class MentorshipEmailRepository:
             states.append(and_(*self._scheduled_conditions()))
         if not states:
             raise ValueError("Ask for sent, scheduled or both.")
-        return (
+        by_kit = (
             select(MentorshipEmailRecipientEntity.user_id)
             .join(
                 MentorshipEmailSendEntity,
@@ -226,6 +257,14 @@ class MentorshipEmailRepository:
                 MentorshipEmailSendEntity.round_id == round_id,
                 MentorshipEmailSendEntity.stage == stage,
                 or_(*states),
+            )
+        )
+        if not sent:
+            return by_kit
+        return select(UsersEntity.user_id).where(
+            or_(
+                UsersEntity.user_id.in_(by_kit),
+                UsersEntity.user_id.in_(self._marked_by_hand(round_id, stage)),
             )
         )
 

@@ -7,7 +7,12 @@ from backend.common.mentorship_email_enums import (
     MentorshipEmailRecipientResult as R,
     MentorshipEmailSendStatus as S,
 )
-from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod, ParticipantNoteTag
+from backend.entity.approval_request_entity import ApprovalRequestEntity  # noqa: F401
+from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity  # noqa: F401
+from backend.entity.mentorship_participant_note_entity import (
+    MentorshipParticipantNoteEntity,
+)
 from backend.entity.mentorship_email_send_entity import MentorshipEmailSendEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.users_entity import UsersEntity
@@ -491,6 +496,72 @@ class MentorshipEmailRepositoryTest(BaseRepositoryTestLib):
     def test_notified_user_ids_needs_a_state(self):
         with self.assertRaises(ValueError):
             self.repo.notified_user_ids(1, "admission", sent=False, scheduled=False)
+
+    async def _note(self, user, stage, *, tag=ParticipantNoteTag.NOTIFIED, round_=None):
+        await self.insert_entities([
+            MentorshipParticipantNoteEntity(
+                user_id=user.user_id,
+                round_id=(round_ or self.round).round_id,
+                author_user_id=self.admin.user_id,
+                body="Sent on Teams.",
+                tag=tag,
+                notification_stage=stage,
+            )
+        ])
+
+    async def _other_round(self):
+        other = MentorshipRoundEntity(
+            name="Spring 2027",
+            onboarding_deadline_at=datetime(2027, 3, 15, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([other])
+        return other
+
+    async def test_manual_stages_are_the_notified_notes_of_this_round(self):
+        other = await self._other_round()
+        await self._note(self.u2, "match_result")
+        await self._note(self.u1, "admission")
+        await self._note(self.u1, "match_result")
+        await self._note(self.u1, "match_result")
+        await self._note(self.u2, None, tag=ParticipantNoteTag.STATUS_CHANGE)
+        await self._note(self.u2, "midterm_reminder", round_=other)
+
+        self.assertEqual(
+            await self.repo.list_manual_stages(self.session, self.round.round_id),
+            [
+                (self.u1.user_id, "admission"),
+                (self.u1.user_id, "match_result"),
+                (self.u2.user_id, "match_result"),
+            ],
+        )
+
+    async def test_notified_user_ids_count_people_marked_by_hand(self):
+        other = await self._other_round()
+        sent = await self._send(
+            recipients=[(self.u1.user_id, "ann@x.org")], stage="midterm_reminder"
+        )
+        sent.status = S.SENT
+        await self._handed(sent, {self.u1.user_id: R.HANDED_TO_KIT})
+        await self.session.flush()
+        await self._note(self.u2, "midterm_reminder")
+        await self._note(self.admin, "final_followup")
+        await self._note(self.admin, "midterm_reminder", round_=other)
+
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=True, scheduled=False),
+            [self.u1.user_id, self.u2.user_id],
+        )
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=True, scheduled=True),
+            [self.u1.user_id, self.u2.user_id],
+        )
+        self.assertEqual(
+            await self._ids("midterm_reminder", sent=False, scheduled=True), []
+        )
+        self.assertEqual(
+            await self._ids("final_followup", sent=True, scheduled=False),
+            [self.admin.user_id],
+        )
 
     async def test_list_sends_can_keep_one_stage(self):
         mid = await self._send(stage="midterm_reminder")
