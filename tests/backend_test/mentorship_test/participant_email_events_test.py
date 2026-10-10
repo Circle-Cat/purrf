@@ -12,6 +12,7 @@ from backend.repository.user_permissions_repository import UserPermissionsReposi
 
 _DETAILS = {
     "roundId": 8,
+    "roundName": "Fall <2026>",
     "userId": 32,
     "personName": "Ann <Lee>",
     "threadId": 70,
@@ -101,7 +102,9 @@ class RenderTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(subject, "New email reply from a mentorship participant")
         self.assertIn(
-            "Ann &lt;Lee&gt; replied to “Your round &amp; dates” (ann@x.com).", body
+            "Ann &lt;Lee&gt; replied to “Your round &amp; dates” (ann@x.com)"
+            " in Fall &lt;2026&gt;.",
+            body,
         )
         self.assertIn("Mentorship Management", body)
         self.assertIn("Participants", body)
@@ -115,7 +118,7 @@ class RenderTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(
             "Your email to Ann &lt;Lee&gt; (ann@x.com) about “Your round &amp; dates”"
-            " was not delivered.",
+            " in Fall &lt;2026&gt; was not delivered.",
             body,
         )
 
@@ -123,6 +126,17 @@ class RenderTest(unittest.IsolatedAsyncioTestCase):
         _, body = await render_registry.render(Mock(), _received(personName=""))
 
         self.assertIn("A participant replied", body)
+
+    async def test_a_missing_round_still_renders(self):
+        _, received = await render_registry.render(
+            Mock(), _received(roundName=None)
+        )
+        _, bounced = await render_registry.render(Mock(), _bounced(roundName=""))
+
+        self.assertIn("(ann@x.com).", received)
+        self.assertIn("was not delivered.", bounced)
+        self.assertNotIn(" in .", received)
+        self.assertNotIn("None", received)
 
 
 if __name__ == "__main__":

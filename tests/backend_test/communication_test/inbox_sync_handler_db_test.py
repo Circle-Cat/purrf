@@ -45,6 +45,7 @@ from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
 from backend.repository.job_repository import JobRepository
+from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.users_repository import UsersRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -118,7 +119,9 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
                 conversation_service=conversation,
                 thread_repository=self.threads,
                 notifier=ParticipantEmailNotifier(
-                    message_repository=messages, users_repository=UsersRepository()
+                    message_repository=messages,
+                    users_repository=UsersRepository(),
+                    round_repository=MentorshipRoundRepository(),
                 ),
                 logger=Mock(),
                 context_types=[ContextType.ACTIVITY],
@@ -386,6 +389,7 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
             received[0].details,
             {
                 "roundId": 8,
+                "roundName": None,
                 "userId": person.user_id,
                 "personName": "Bo Chen",
                 "threadId": thread_id,

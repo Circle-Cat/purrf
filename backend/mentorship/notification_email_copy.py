@@ -579,8 +579,17 @@ def _participant_page(who: str | None, action: str) -> str:
     )
 
 
+def _in_round(round_name: str | None) -> str:
+    """`` in <round>`` for the sentence, or nothing when the round is unknown."""
+    name = (round_name or "").strip()
+    return f" in {html.escape(name)}" if name else ""
+
+
 def participant_email_received(
-    person_name: str | None, subject: str | None, sender: str | None
+    person_name: str | None,
+    subject: str | None,
+    sender: str | None,
+    round_name: str | None = None,
 ) -> tuple[str, str]:
     """Tell staff that a participant replied and the thread needs an answer.
 
@@ -588,6 +597,7 @@ def participant_email_received(
         person_name (str | None): The participant's display name.
         subject (str | None): The thread's subject.
         sender (str | None): The From of the reply.
+        round_name (str | None): The round the thread belongs to.
 
     Returns:
         tuple[str, str]: The subject line and HTML body.
@@ -596,14 +606,17 @@ def participant_email_received(
     return (
         "New email reply from a mentorship participant",
         f"<p>{who or 'A participant'} replied to \u201c{html.escape(subject or '')}\u201d "
-        f"({html.escape(sender or '')}).</p>"
+        f"({html.escape(sender or '')}){_in_round(round_name)}.</p>"
         + _participant_page(who, "read and reply")
         + _FOOTER,
     )
 
 
 def participant_email_bounced(
-    person_name: str | None, subject: str | None, bounced_to: str | None
+    person_name: str | None,
+    subject: str | None,
+    bounced_to: str | None,
+    round_name: str | None = None,
 ) -> tuple[str, str]:
     """Tell the sender that their email to a participant did not arrive.
 
@@ -611,6 +624,7 @@ def participant_email_bounced(
         person_name (str | None): The participant's display name.
         subject (str | None): The subject of the email that bounced.
         bounced_to (str | None): The addresses the bounce names.
+        round_name (str | None): The round the thread belongs to.
 
     Returns:
         tuple[str, str]: The subject line and HTML body.
@@ -619,7 +633,8 @@ def participant_email_bounced(
     return (
         "Your email to a mentorship participant was not delivered",
         f"<p>Your email to {who or 'a participant'} ({html.escape(bounced_to or '')}) "
-        f"about \u201c{html.escape(subject or '')}\u201d was not delivered.</p>"
+        f"about \u201c{html.escape(subject or '')}\u201d{_in_round(round_name)} "
+        "was not delivered.</p>"
         + _participant_page(who, "see the thread")
         + _FOOTER,
     )

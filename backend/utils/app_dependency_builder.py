@@ -1109,6 +1109,7 @@ class AppDependencyBuilder:
         self.participant_email_notifier = ParticipantEmailNotifier(
             message_repository=self.email_message_repository,
             users_repository=self.users_repository,
+            round_repository=self.mentorship_round_repository,
         )
         self.participant_email_sync_handler = InboxSyncHandler(
             conversation_service=self.email_conversation_service,

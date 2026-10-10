@@ -321,7 +321,10 @@ async def _render_participant_email_received(session: AsyncSession, event: Event
     del session
     details = event.details
     return copy.participant_email_received(
-        details.get("personName"), details.get("subject"), details.get("from")
+        details.get("personName"),
+        details.get("subject"),
+        details.get("from"),
+        details.get("roundName"),
     )
 
 
@@ -331,5 +334,8 @@ async def _render_participant_email_bounced(session: AsyncSession, event: EventE
     del session
     details = event.details
     return copy.participant_email_bounced(
-        details.get("personName"), details.get("subject"), details.get("bouncedTo")
+        details.get("personName"),
+        details.get("subject"),
+        details.get("bouncedTo"),
+        details.get("roundName"),
     )

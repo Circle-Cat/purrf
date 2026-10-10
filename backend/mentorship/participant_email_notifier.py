@@ -9,14 +9,16 @@ from backend.notification_management.event_recorder import record_event
 
 
 class ParticipantEmailNotifier:
-    def __init__(self, message_repository, users_repository):
+    def __init__(self, message_repository, users_repository, round_repository):
         """
         Args:
             message_repository (EmailMessageRepository): Reads the whole thread.
             users_repository (UsersRepository): Names the person.
+            round_repository (MentorshipRoundRepository): Names the round.
         """
         self._messages = message_repository
         self._users = users_repository
+        self._rounds = round_repository
 
     async def after_sync(self, session, thread, new_messages):
         """Record what new mail on a round thread calls for. Does not commit.
@@ -45,8 +47,10 @@ class ParticipantEmailNotifier:
         if not alerts.bounces and alerts.needs_reply_from is None:
             return False
         person = await self._users.get_user_by_user_id(session, thread.user_id)
+        round_ = await self._rounds.get_by_round_id(session, thread.context_id)
         about = {
             "roundId": thread.context_id,
+            "roundName": round_.name if round_ is not None else None,
             "userId": thread.user_id,
             "personName": display_name_of(person),
             "threadId": thread.thread_id,

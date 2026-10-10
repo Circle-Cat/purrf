@@ -56,8 +56,14 @@ class ParticipantEmailNotifierTest(unittest.IsolatedAsyncioTestCase):
                 first_name="Ann", last_name="Lee", preferred_name=None
             )
         )
+        self.rounds = Mock()
+        self.rounds.get_by_round_id = AsyncMock(
+            return_value=SimpleNamespace(name="Fall 2026")
+        )
         self.notifier = ParticipantEmailNotifier(
-            message_repository=self.messages, users_repository=self.users
+            message_repository=self.messages,
+            users_repository=self.users,
+            round_repository=self.rounds,
         )
         self.session = Mock()
         self.thread = SimpleNamespace(
@@ -93,6 +99,7 @@ class ParticipantEmailNotifierTest(unittest.IsolatedAsyncioTestCase):
             event_type=MentorshipEvent.EMAIL_RECEIVED,
             details={
                 "roundId": 8,
+                "roundName": "Fall 2026",
                 "userId": 32,
                 "personName": "Ann Lee",
                 "threadId": 70,
@@ -129,6 +136,7 @@ class ParticipantEmailNotifierTest(unittest.IsolatedAsyncioTestCase):
             event_type=MentorshipEvent.EMAIL_BOUNCED,
             details={
                 "roundId": 8,
+                "roundName": "Fall 2026",
                 "userId": 32,
                 "personName": "Ann Lee",
                 "threadId": 70,
@@ -174,6 +182,14 @@ class ParticipantEmailNotifierTest(unittest.IsolatedAsyncioTestCase):
         await self._after_sync([_out(0, sent_by=900)], [_in(5)])
 
         self.assertEqual("", self.record.await_args.kwargs["details"]["personName"])
+
+    async def test_a_missing_round_gives_no_round_name(self):
+        self.rounds.get_by_round_id = AsyncMock(return_value=None)
+
+        await self._after_sync([_out(0, sent_by=900)], [_in(5)])
+
+        self.assertIsNone(self.record.await_args.kwargs["details"]["roundName"])
+        self.rounds.get_by_round_id.assert_awaited_once_with(self.session, 8)
 
     async def test_a_preferred_name_is_the_person_name(self):
         self.users.get_user_by_user_id = AsyncMock(
