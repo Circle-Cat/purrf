@@ -13,6 +13,7 @@ import {
   approvalActionLabel,
   approvalPersonLabel,
 } from "@/pages/MentorshipManagement/utils/approvalLabels";
+import { userDisplayName } from "@/utils/userName";
 import { statusRequestType } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
 
 const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
@@ -27,6 +28,8 @@ const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
  *
  * @param {object} props
  * @param {Object[]} props.requests The pending requests, from the detail API.
+ * @param {Object[]} [props.pairs] The person's pairs this round, to name the
+ *   pair a request is about.
  * @param {number} props.personId Who they are about, never their reviewer.
  * @param {string} props.personName Their name.
  * @param {number|string|null} props.viewerId The viewer.
@@ -37,6 +40,7 @@ const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
  */
 const WaitingOnDecision = ({
   requests,
+  pairs = [],
   personId,
   personName,
   viewerId,
@@ -56,6 +60,12 @@ const WaitingOnDecision = ({
   const open = dialog?.request;
   const rejecting = dialog?.kind === "reject";
   const typeOf = (request) => statusRequestType(request.action);
+  const aboutPair = (request) => {
+    const pair = pairs.find((p) => p.pairId === request.pairId);
+    return pair
+      ? ` — about the pair with ${userDisplayName(pair.partner)}`
+      : "";
+  };
 
   return (
     <section aria-label="Waiting on a decision" className="space-y-2">
@@ -74,6 +84,7 @@ const WaitingOnDecision = ({
                 {approvalActionLabel(request.action)} — raised by{" "}
                 {approvalPersonLabel(request.raisedBy)} · sent to{" "}
                 {approvalPersonLabel(request.reviewer)}
+                {aboutPair(request)}
               </span>
               {actionsOn && isReviewer ? (
                 <>
@@ -161,8 +172,10 @@ const WaitingOnDecision = ({
         description={
           rejecting
             ? "Your reason is shown to the person who asked."
-            : (open && typeOf(open)?.consequences(personName)) ||
-              "It takes effect at once and cannot be undone."
+            : `${
+                (open && typeOf(open)?.consequences(personName)) ||
+                "It takes effect at once and cannot be undone."
+              }${open ? aboutPair(open) : ""}`
         }
         submitting={busy}
         onConfirm={(comment) =>

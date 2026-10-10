@@ -73,6 +73,13 @@ describe("ParticipationHistory", () => {
     expect(within(row).getByText("Exempted")).toBeInTheDocument();
   });
 
+  it("shows the marks of each earlier round on its row", () => {
+    renderHistory([{ ...SPRING, marks: { noShow: 1, redFlag: 0 } }]);
+    const row = screen.getByRole("button", { name: /Spring 2026/ });
+    expect(within(row).getByText("No show")).toBeInTheDocument();
+    expect(within(row).queryByText(/Red flag/)).not.toBeInTheDocument();
+  });
+
   it("loads nothing until a row is opened, then that round, read-only", async () => {
     renderHistory();
     expect(getParticipantDetail).not.toHaveBeenCalled();

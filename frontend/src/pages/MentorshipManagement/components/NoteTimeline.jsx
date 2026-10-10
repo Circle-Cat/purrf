@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { addParticipantNote } from "@/api/mentorshipApi";
 import { formatInTz } from "@/utils/dateTime";
+import { userDisplayName } from "@/utils/userName";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
@@ -23,6 +24,8 @@ const MAX_NOTE_LENGTH = 5000;
 const TAG_LABELS = {
   status_change: "Status change",
   matching_exemption: "Exemption",
+  no_show: "No show",
+  red_flag: "Red flag",
 };
 
 /**
@@ -103,10 +106,22 @@ export const AddNoteDialog = ({
  * says so.
  *
  * @param {{notes: Object[], roundId: number|string, userId: number|string,
- *          canAdd: boolean, onAdded: () => void}} props
+ *          canAdd: boolean, onAdded: () => void, pairs?: Object[]}} props
+ *   pairs: the round's pairs, to name the partner of the pair a note is
+ *   about.
  */
-const NoteTimeline = ({ notes, roundId, userId, canAdd, onAdded }) => {
+const NoteTimeline = ({
+  notes,
+  roundId,
+  userId,
+  canAdd,
+  onAdded,
+  pairs = [],
+}) => {
   const [adding, setAdding] = useState(false);
+  const partnerOf = new Map(
+    pairs.map((pair) => [pair.pairId, userDisplayName(pair.partner)]),
+  );
   return (
     <section>
       <header className="mb-2 flex items-center gap-3">
@@ -131,6 +146,9 @@ const NoteTimeline = ({ notes, roundId, userId, canAdd, onAdded }) => {
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 {TAG_LABELS[note.tag] && (
                   <Badge variant="secondary">{TAG_LABELS[note.tag]}</Badge>
+                )}
+                {note.pairId != null && partnerOf.get(note.pairId) && (
+                  <span>with {partnerOf.get(note.pairId)}</span>
                 )}
                 <span>
                   {note.author?.name ??

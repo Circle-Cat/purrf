@@ -15,6 +15,8 @@ describe("approvalLabels", () => {
     expect(approvalActionLabel("withdraw_participant")).toBe(
       "Withdrawal from round",
     );
+    expect(approvalActionLabel("mark_no_show")).toBe("No show mark");
+    expect(approvalActionLabel("mark_red_flag")).toBe("Red flag");
     expect(approvalActionLabel("job_review")).toBe("Approval");
   });
 
@@ -56,6 +58,38 @@ describe("approvalLabels", () => {
       needsExemption: "1",
       id: "21",
     });
+  });
+
+  it("reviews a mark on the person's page for the round", () => {
+    for (const action of ["mark_no_show", "mark_red_flag"]) {
+      expect(
+        approvalReviewLink({
+          action,
+          round: { roundId: 7 },
+          person: { userId: 3104 },
+        }),
+      ).toEqual({
+        pathname: "/mentorship-management/participants/3104",
+        search: "?round=7",
+      });
+    }
+  });
+
+  it("says where a mark was given, this round by name of its own", () => {
+    expect(
+      exemptionWhyLines(
+        [
+          { reason: "no_show", roundId: 3, roundName: "Spring 2026" },
+          { reason: "red_flag", roundId: 7, roundName: "Fall 2026" },
+          { reason: "red_flag", roundId: 2, roundName: null },
+        ],
+        "7",
+      ),
+    ).toEqual([
+      "No show in Spring 2026",
+      "Red flag in this round",
+      "Red flag in an earlier round",
+    ]);
   });
 
   it("says why someone needs an exemption, one line per problem", () => {

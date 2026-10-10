@@ -34,6 +34,14 @@ const approvalAsk = (details) => {
     const person = details?.personName?.trim() || "someone";
     return `withdraw ${person} from ${round || "their round"}`;
   }
+  if (details?.action === "mark_no_show") {
+    const person = details?.personName?.trim() || "someone";
+    return `mark ${person} as a no show${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "mark_red_flag") {
+    const person = details?.personName?.trim() || "someone";
+    return `raise a red flag on ${person}${round ? ` in ${round}` : ""}`;
+  }
   if (details?.action === "publish_matching") {
     return `publish the matching result${round ? ` for ${round}` : ""}`;
   }

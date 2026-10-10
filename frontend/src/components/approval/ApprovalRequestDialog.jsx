@@ -46,6 +46,8 @@ import { Textarea } from "@/components/ui/textarea";
  * @param {import("react").ReactNode} [props.children] Shown above the picker.
  * @param {({reviewerId: number, reason: string}) => void} props.onConfirm
  *   Called with the chosen reviewer and the trimmed reason ("" when none).
+ * @param {boolean} [props.canConfirm] False while something the caller asks
+ *   for above the picker is still missing; Send stays disabled.
  * @param {boolean} [props.submitting] Disables the controls while in flight.
  * @returns {JSX.Element}
  */
@@ -67,6 +69,7 @@ const ApprovalRequestDialog = ({
   emptyContent = null,
   children = null,
   onConfirm,
+  canConfirm = true,
   submitting = false,
 }) => {
   const [reviewerId, setReviewerId] = useState("");
@@ -85,7 +88,7 @@ const ApprovalRequestDialog = ({
   const options = (reviewers ?? []).filter(
     (r) => !excluded.has(String(r.userId)),
   );
-  const ready = reviewerId !== "";
+  const ready = reviewerId !== "" && canConfirm;
   const empty = !reviewersLoading && options.length === 0;
 
   const submit = () => {

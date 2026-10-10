@@ -3,14 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
 import ChangeStatusDialog from "@/pages/MentorshipManagement/components/ChangeStatusDialog";
-import { STATUS_REQUEST_TYPES } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
+import { statusRequestType } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
 import {
   getMentorshipApprovers,
+  requestParticipantMark,
   requestParticipantWithdrawal,
 } from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getMentorshipApprovers: vi.fn(),
+  requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
 }));
 
@@ -31,13 +33,27 @@ const renderDialog = (props = {}) => {
       onOpenChange={onOpenChange}
       person={{ userId: 3104, name: "Mia Ko" }}
       roundId={7}
-      types={STATUS_REQUEST_TYPES}
+      types={[statusRequestType("withdraw_participant")]}
+      pairs={[]}
       pendingRequests={[]}
       onSent={onSent}
       {...props}
     />,
   );
   return { onOpenChange, onSent };
+};
+
+const pairWith = (pairId, firstName, isActive = true) => ({
+  pairId,
+  partner: { firstName, lastName: "Lee", preferredName: null, isActive },
+});
+
+const pickReviewerAndSend = async (user) => {
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "Rae Kim" })).toBeInTheDocument(),
+  );
+  await user.selectOptions(screen.getByLabelText("Reviewer"), "8");
+  await user.click(screen.getByRole("button", { name: "Send for approval" }));
 };
 
 describe("ChangeStatusDialog", () => {
@@ -48,6 +64,7 @@ describe("ChangeStatusDialog", () => {
     vi.spyOn(toast, "error").mockImplementation(() => {});
     getMentorshipApprovers.mockResolvedValue({ data: APPROVERS });
     requestParticipantWithdrawal.mockResolvedValue({ data: {} });
+    requestParticipantMark.mockResolvedValue({ data: {} });
   });
 
   it("names the only type instead of offering a choice, and says what it does", async () => {
@@ -131,7 +148,7 @@ describe("ChangeStatusDialog", () => {
       isAvailable: () => true,
       raise: vi.fn(() => Promise.resolve({ data: {} })),
     };
-    renderDialog({ types: [...STATUS_REQUEST_TYPES, flag] });
+    renderDialog({ types: [statusRequestType("withdraw_participant"), flag] });
 
     const select = screen.getByLabelText("What are you asking for");
     await user.selectOptions(select, "flag_participant");
@@ -139,5 +156,128 @@ describe("ChangeStatusDialog", () => {
     expect(
       screen.getByText("A red flag goes on their record."),
     ).toBeInTheDocument();
+  });
+
+  it("picks the only pair for a no show by itself and sends it", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [statusRequestType("mark_no_show")],
+      pairs: [pairWith(80, "Ann")],
+    });
+
+    expect(screen.getByLabelText("Which pair")).toHaveValue("80");
+    expect(
+      screen.getByText(/It cannot be undone. They are not told./),
+    ).toBeInTheDocument();
+    await pickReviewerAndSend(user);
+
+    await waitFor(() =>
+      expect(requestParticipantMark).toHaveBeenCalledWith(7, 3104, {
+        tag: "no_show",
+        pairId: 80,
+        reviewerId: 8,
+        reason: "",
+      }),
+    );
+  });
+
+  it("makes a mentor with two pairs pick one, and marks the ended one", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [statusRequestType("mark_no_show")],
+      pairs: [pairWith(80, "Ann"), pairWith(81, "Eve", false)],
+    });
+
+    const which = screen.getByLabelText("Which pair");
+    expect(which).toHaveValue("");
+    expect(
+      screen.getByRole("option", { name: "Eve Lee (ended)" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Rae Kim" }),
+      ).toBeInTheDocument(),
+    );
+    await user.selectOptions(screen.getByLabelText("Reviewer"), "8");
+    expect(
+      screen.getByRole("button", { name: "Send for approval" }),
+    ).toBeDisabled();
+
+    await user.selectOptions(which, "81");
+    await user.click(screen.getByRole("button", { name: "Send for approval" }));
+
+    await waitFor(() =>
+      expect(requestParticipantMark).toHaveBeenCalledWith(
+        7,
+        3104,
+        expect.objectContaining({ tag: "no_show", pairId: 81 }),
+      ),
+    );
+  });
+
+  it("sends a red flag about no one pair unless one is picked", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [statusRequestType("mark_red_flag")],
+      pairs: [pairWith(80, "Ann")],
+    });
+
+    expect(screen.getByLabelText("Which pair")).toHaveValue("");
+    expect(
+      screen.getByRole("option", { name: "Not about one pair" }),
+    ).toBeInTheDocument();
+    await pickReviewerAndSend(user);
+
+    await waitFor(() =>
+      expect(requestParticipantMark).toHaveBeenCalledWith(7, 3104, {
+        tag: "red_flag",
+        pairId: null,
+        reviewerId: 8,
+        reason: "",
+      }),
+    );
+  });
+
+  it("hides the pair choice for a red flag on someone with no pairs", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [statusRequestType("mark_red_flag")],
+      pairs: [],
+    });
+
+    expect(screen.queryByLabelText("Which pair")).not.toBeInTheDocument();
+    await pickReviewerAndSend(user);
+
+    await waitFor(() =>
+      expect(requestParticipantMark).toHaveBeenCalledWith(7, 3104, {
+        tag: "red_flag",
+        pairId: null,
+        reviewerId: 8,
+        reason: "",
+      }),
+    );
+  });
+
+  it("asks no pair for a withdrawal", () => {
+    renderDialog({ pairs: [pairWith(80, "Ann")] });
+    expect(screen.queryByLabelText("Which pair")).not.toBeInTheDocument();
+  });
+
+  it("picks the pair again when the type changes", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [
+        statusRequestType("mark_red_flag"),
+        statusRequestType("mark_no_show"),
+      ],
+      pairs: [pairWith(80, "Ann")],
+    });
+
+    expect(screen.getByLabelText("Which pair")).toHaveValue("");
+    await user.selectOptions(
+      screen.getByLabelText("What are you asking for"),
+      "mark_no_show",
+    );
+    expect(screen.getByLabelText("Which pair")).toHaveValue("80");
   });
 });
