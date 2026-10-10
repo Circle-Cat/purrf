@@ -63,6 +63,10 @@ def html_to_text(body: str) -> str:
 def text_to_html(text: str) -> str:
     """Escape plain text into an HTML body, one ``<br>`` per line break.
 
+    The body sits in a ``pre-wrap`` div so typed indentation and runs of
+    spaces survive; the lines are joined by ``<br>`` alone, so a newline
+    still reads back as one newline.
+
     Args:
         text (str): What the sender typed.
 
@@ -70,4 +74,5 @@ def text_to_html(text: str) -> str:
         str: HTML that shows exactly that text; nothing in it is markup.
     """
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    return "<br>".join(html.escape(line) for line in lines)
+    inner = "<br>".join(html.escape(line) for line in lines)
+    return f'<div style="white-space:pre-wrap">{inner}</div>'

@@ -356,7 +356,10 @@ class SendNewTest(_Fixture):
         message = await self._send_new()
 
         kwargs = self.conversation.send.call_args.kwargs
-        self.assertEqual(kwargs["body"], "Hi Ann,<br>&lt;b&gt;see&lt;/b&gt; you")
+        self.assertEqual(
+            kwargs["body"],
+            '<div style="white-space:pre-wrap">Hi Ann,<br>&lt;b&gt;see&lt;/b&gt; you</div>',
+        )
         self.assertEqual(kwargs["body_text"], "Hi Ann,\n<b>see</b> you")
         self.assertEqual(
             (kwargs["user_id"], kwargs["context_type"], kwargs["context_id"]),
@@ -455,7 +458,10 @@ class ReplyTest(_Fixture):
         self.assertEqual(kwargs["to"], ["ann@x.com"])
         self.assertEqual(kwargs["subject"], "Re: Your round")
         self.assertEqual(kwargs["thread_id"], 70)
-        self.assertEqual(kwargs["body"], "Thanks!<br>Bo")
+        self.assertEqual(
+            kwargs["body"],
+            '<div style="white-space:pre-wrap">Thanks!<br>Bo</div>',
+        )
         self.assertEqual(kwargs["body_text"], "Thanks!\nBo")
         self.assertEqual(kwargs["sender_address"], _ALIAS)
         self.assertEqual(
