@@ -147,6 +147,15 @@ def _resolve_recipients(policy: EmailPolicy, to) -> list[str]:
     return resolved
 
 
+def _owns(policy: EmailPolicy, thread) -> bool:
+    """The thread exists and is the policy's person, context type and context."""
+    return thread is not None and (
+        thread.user_id,
+        thread.context_type,
+        thread.context_id,
+    ) == (policy.user_id, policy.context_type, policy.context_id)
+
+
 class PersonEmailService:
     def __init__(
         self,
@@ -372,11 +381,7 @@ class PersonEmailService:
 
     async def _owned_thread(self, session, policy: EmailPolicy, thread_id):
         thread = await self._threads.get(session, thread_id)
-        if thread is None or (
-            thread.user_id,
-            thread.context_type,
-            thread.context_id,
-        ) != (policy.user_id, policy.context_type, policy.context_id):
+        if not _owns(policy, thread):
             raise NotFoundError(f"Email thread {thread_id} not found")
         return thread
 
@@ -426,12 +431,13 @@ class PersonEmailService:
             ValueError: ``attachment not found`` for a bad index or entry.
         """
         message = await self._messages.get(session, message_id)
-        try:
-            if message is None:
-                raise NotFoundError
-            await self._owned_thread(session, policy, message.thread_id)
-        except NotFoundError:
-            raise NotFoundError(f"Email message {message_id} not found") from None
+        thread = (
+            None
+            if message is None
+            else await self._threads.get(session, message.thread_id)
+        )
+        if not _owns(policy, thread):
+            raise NotFoundError(f"Email message {message_id} not found")
         return await self.download_attachment(message, index)
 
     async def download_attachment(self, message, index: int) -> tuple[bytes, str]:
