@@ -106,7 +106,6 @@ class TestEmailThreadRepository(BaseRepositoryTestLib):
             await self.repo.list_open_by_context_types(self.session, []), []
         )
 
-
     async def _person(self):
         user = UsersEntity(
             first_name="Bo",

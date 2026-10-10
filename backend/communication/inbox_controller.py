@@ -34,6 +34,7 @@ PEOPLE_GATE: list[Permission] = [
     SERVICE_PERMISSION[s] for s in (InboxService.MENTORSHIP, InboxService.RECRUITING)
 ]
 
+
 class InboxController:
     """FastAPI routes for the Inbox.
 

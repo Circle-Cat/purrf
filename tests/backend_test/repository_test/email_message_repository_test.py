@@ -227,7 +227,6 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
         self.assertEqual(message.inbound_kind, InboundKind.HUMAN)
         self.assertIsNotNone(message.created_at)
 
-
     async def test_get_reads_one_message_by_id(self):
         await self._add_message(self.thread, "gm-get-1")
         stored = await self.session.scalar(

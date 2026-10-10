@@ -190,7 +190,9 @@ class PersonEmailService:
         """The address the conversation service sends as when none is named."""
         return self._conversation.sender_address
 
-    async def person_email_addresses(self, session, user_id: int) -> list[PersonAddress]:
+    async def person_email_addresses(
+        self, session, user_id: int
+    ) -> list[PersonAddress]:
         """Every address on the person's account, the primary first. No labels.
 
         Pending addresses are included: they are on the account the way the
@@ -416,7 +418,9 @@ class PersonEmailService:
     async def _inbound_ids(self, session, threads) -> set[int]:
         ids = set()
         for thread in threads:
-            for message in await self._messages.list_by_thread(session, thread.thread_id):
+            for message in await self._messages.list_by_thread(
+                session, thread.thread_id
+            ):
                 if message.direction == EmailDirection.INBOUND:
                     ids.add(message.message_id)
         return ids

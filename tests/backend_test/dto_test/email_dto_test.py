@@ -107,14 +107,12 @@ class EmailConversationDtoTest(unittest.TestCase):
 
 class EmailSendRequestDtoTest(unittest.TestCase):
     def test_a_reply_may_leave_to_empty_and_names_the_last_seen_message(self):
-        dto = EmailSendRequestDto.model_validate(
-            {
-                "subject": "Re: Hi",
-                "body": "<p>x</p>",
-                "threadId": 4,
-                "lastSeenMessageId": 12,
-            }
-        )
+        dto = EmailSendRequestDto.model_validate({
+            "subject": "Re: Hi",
+            "body": "<p>x</p>",
+            "threadId": 4,
+            "lastSeenMessageId": 12,
+        })
 
         self.assertEqual((dto.to, dto.thread_id, dto.last_seen_message_id), ([], 4, 12))
 

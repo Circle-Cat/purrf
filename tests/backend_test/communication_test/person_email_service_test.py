@@ -180,7 +180,9 @@ class PersonEmailAddressesTest(_Fixture):
         self.user_emails.list_by_user_id.assert_awaited_once_with(self.session, 32)
 
     async def test_no_addresses_is_an_empty_list(self):
-        self.assertEqual(await self.service.person_email_addresses(self.session, 32), [])
+        self.assertEqual(
+            await self.service.person_email_addresses(self.session, 32), []
+        )
 
 
 class RecipientOptionsTest(unittest.TestCase):
@@ -497,7 +499,10 @@ class RefreshTest(_Fixture):
 
         self.assertEqual(new_inbound, 2)
         self.assertEqual(
-            [c.args[1].thread_id for c in self.handler.sync_tracked_thread.await_args_list],
+            [
+                c.args[1].thread_id
+                for c in self.handler.sync_tracked_thread.await_args_list
+            ],
             [70, 74],
         )
         self.registry.get.assert_called_with(ContextType.ACTIVITY)
@@ -543,7 +548,9 @@ class AttachmentTest(_Fixture):
         }
 
     async def test_downloads_by_position_from_gmail(self):
-        content, name = await self.service.read_attachment(self.session, _policy(), 2, 0)
+        content, name = await self.service.read_attachment(
+            self.session, _policy(), 2, 0
+        )
 
         self.assertEqual((content, name), (b"BYTES", "cv.pdf"))
         self.gmail.get_attachment.assert_called_once_with("gm-2", "att-a")
@@ -562,7 +569,9 @@ class AttachmentTest(_Fixture):
         for index in (-1, 2, 1):
             with self.subTest(index=index):
                 with self.assertRaisesRegex(ValueError, "attachment not found"):
-                    await self.service.read_attachment(self.session, _policy(), 2, index)
+                    await self.service.read_attachment(
+                        self.session, _policy(), 2, index
+                    )
 
         self.gmail.get_attachment.assert_not_called()
 

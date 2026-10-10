@@ -43,7 +43,9 @@ class ReplyContactTest(unittest.TestCase):
         self.assertEqual(reply_contact(ordered), "bo@y.com")
 
     def test_without_human_mail_our_first_recipient(self):
-        self.assertEqual(reply_contact([_out("Pat <Pat@Ext.com>, x@y.com")]), "pat@ext.com")
+        self.assertEqual(
+            reply_contact([_out("Pat <Pat@Ext.com>, x@y.com")]), "pat@ext.com"
+        )
 
     def test_nobody(self):
         self.assertIsNone(reply_contact([]))
