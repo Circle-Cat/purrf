@@ -471,3 +471,17 @@ py_test(
         "//backend/mentorship",
     ],
 )
+
+py_test(
+    name = "participant_email_events_test",
+    srcs = ["participant_email_events_test.py"],
+    deps = [
+        "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//backend/repository:repositories",
+    ],
+)

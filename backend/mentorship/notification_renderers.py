@@ -313,3 +313,23 @@ async def _render_email_send_prepared(session: AsyncSession, event: EventEntity)
             for person in details.get("notHanded") or []
         ],
     )
+
+
+@register_render(MentorshipEvent.EMAIL_RECEIVED)
+async def _render_participant_email_received(session: AsyncSession, event: EventEntity):
+    """What staff are told when a participant's reply needs an answer."""
+    del session
+    details = event.details
+    return copy.participant_email_received(
+        details.get("personName"), details.get("subject"), details.get("from")
+    )
+
+
+@register_render(MentorshipEvent.EMAIL_BOUNCED)
+async def _render_participant_email_bounced(session: AsyncSession, event: EventEntity):
+    """What the sender is told when their email to a participant bounced."""
+    del session
+    details = event.details
+    return copy.participant_email_bounced(
+        details.get("personName"), details.get("subject"), details.get("bouncedTo")
+    )

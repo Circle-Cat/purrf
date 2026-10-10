@@ -562,3 +562,64 @@ def email_send_failed(
         f"<ul>{''.join(_send_facts(round_name, stage, subject))}</ul>"
         f"<p>Why: {html.escape(reason)}</p>" + details + outcome + _FOOTER,
     )
+
+
+def _participant(person_name: str | None) -> str | None:
+    """The escaped name, or None when it resolved to nothing."""
+    name = (person_name or "").strip()
+    return html.escape(name) if name else None
+
+
+def _participant_page(who: str | None, action: str) -> str:
+    """Say in words where the participant's page is; the backend has no URL."""
+    page = f"{who}\u2019s page" if who else "their page"
+    return (
+        f"<p>Open {page} under Participants in Mentorship Management in Purrf "
+        f"to {action}.</p>"
+    )
+
+
+def participant_email_received(
+    person_name: str | None, subject: str | None, sender: str | None
+) -> tuple[str, str]:
+    """Tell staff that a participant replied and the thread needs an answer.
+
+    Args:
+        person_name (str | None): The participant's display name.
+        subject (str | None): The thread's subject.
+        sender (str | None): The From of the reply.
+
+    Returns:
+        tuple[str, str]: The subject line and HTML body.
+    """
+    who = _participant(person_name)
+    return (
+        "New email reply from a mentorship participant",
+        f"<p>{who or 'A participant'} replied to \u201c{html.escape(subject or '')}\u201d "
+        f"({html.escape(sender or '')}).</p>"
+        + _participant_page(who, "read and reply")
+        + _FOOTER,
+    )
+
+
+def participant_email_bounced(
+    person_name: str | None, subject: str | None, bounced_to: str | None
+) -> tuple[str, str]:
+    """Tell the sender that their email to a participant did not arrive.
+
+    Args:
+        person_name (str | None): The participant's display name.
+        subject (str | None): The subject of the email that bounced.
+        bounced_to (str | None): The addresses the bounce names.
+
+    Returns:
+        tuple[str, str]: The subject line and HTML body.
+    """
+    who = _participant(person_name)
+    return (
+        "Your email to a mentorship participant was not delivered",
+        f"<p>Your email to {who or 'a participant'} ({html.escape(bounced_to or '')}) "
+        f"about \u201c{html.escape(subject or '')}\u201d was not delivered.</p>"
+        + _participant_page(who, "see the thread")
+        + _FOOTER,
+    )
