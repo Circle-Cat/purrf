@@ -474,5 +474,98 @@ class ReplyIntoTest(_Fixture):
         self.assertEqual((kwargs["body"], kwargs["body_text"]), ("<p>x</p>", None))
 
 
+class RefreshTest(_Fixture):
+    def setUp(self):
+        super().setUp()
+        self.threads = {70: _thread(70), 74: _thread(74), 71: _thread(71, user_id=33)}
+        self.messages = {70: [_out(1, 0)], 74: [_in(2, 0, thread_id=74)], 71: []}
+        self.handler = Mock()
+        self.handler.sync_tracked_thread = AsyncMock(side_effect=self._sync)
+        self.registry.get = Mock(return_value=self.handler)
+
+    async def _sync(self, session, thread):
+        if thread.thread_id == 70:
+            self.messages[70] += [
+                _in(10, 5),
+                _out(11, 6),
+                _in(12, 7, sender="mailer-daemon@x.com"),
+            ]
+        return 0
+
+    async def test_each_thread_of_the_person_syncs_through_its_domain_handler(self):
+        new_inbound = await self.service.refresh(self.session, _policy())
+
+        self.assertEqual(new_inbound, 2)
+        self.assertEqual(
+            [c.args[1].thread_id for c in self.handler.sync_tracked_thread.await_args_list],
+            [70, 74],
+        )
+        self.registry.get.assert_called_with(ContextType.ACTIVITY)
+        self.session.commit.assert_not_called()
+
+    async def test_nothing_new_is_zero(self):
+        self.handler.sync_tracked_thread = AsyncMock(return_value=0)
+
+        self.assertEqual(await self.service.refresh(self.session, _policy()), 0)
+
+    async def test_a_context_with_no_handler_is_refused(self):
+        self.registry.get = Mock(return_value=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.refresh(self.session, _policy())
+
+
+class AttachmentTest(_Fixture):
+    def setUp(self):
+        super().setUp()
+        self.threads = {70: _thread(70), 71: _thread(71, user_id=33)}
+        self.messages = {
+            70: [
+                _in(
+                    2,
+                    0,
+                    attachments=[
+                        {"name": "cv.pdf", "size": 3, "gmailAttachmentId": "att-a"},
+                        {"attachment_id": "a1", "filename": "old.pdf"},
+                    ],
+                )
+            ],
+            71: [
+                _in(
+                    3,
+                    0,
+                    attachments=[
+                        {"name": "x.pdf", "size": 1, "gmailAttachmentId": "att-x"}
+                    ],
+                    thread_id=71,
+                )
+            ],
+        }
+
+    async def test_downloads_by_position_from_gmail(self):
+        content, name = await self.service.read_attachment(self.session, _policy(), 2, 0)
+
+        self.assertEqual((content, name), (b"BYTES", "cv.pdf"))
+        self.gmail.get_attachment.assert_called_once_with("gm-2", "att-a")
+
+    async def test_a_message_of_another_person_is_not_found(self):
+        for message_id in (3, 404):
+            with self.subTest(message_id=message_id):
+                with self.assertRaises(NotFoundError):
+                    await self.service.read_attachment(
+                        self.session, _policy(), message_id, 0
+                    )
+
+        self.gmail.get_attachment.assert_not_called()
+
+    async def test_a_bad_index_or_a_legacy_entry_is_refused_without_calling_gmail(self):
+        for index in (-1, 2, 1):
+            with self.subTest(index=index):
+                with self.assertRaisesRegex(ValueError, "attachment not found"):
+                    await self.service.read_attachment(self.session, _policy(), 2, index)
+
+        self.gmail.get_attachment.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

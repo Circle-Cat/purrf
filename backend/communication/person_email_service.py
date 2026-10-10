@@ -6,10 +6,11 @@ it goes out as, and the addresses that may be written to. Write methods do not
 commit; the domain records its own events and commits.
 """
 
+import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
-from backend.common.communication_enums import ContextType
+from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.exceptions import ConflictError, NotFoundError
 from backend.common.html_text import text_to_html
 from backend.common.name_utils import display_name_of
@@ -378,6 +379,89 @@ class PersonEmailService:
         ) != (policy.user_id, policy.context_type, policy.context_id):
             raise NotFoundError(f"Email thread {thread_id} not found")
         return thread
+
+    async def refresh(self, session, policy: EmailPolicy) -> int:
+        """Pull the person's threads in this context from Gmail. Does not commit.
+
+        Each thread goes through the handler registered for its context, so
+        mail found here has the same consequences as mail a Gmail push brings.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            policy (EmailPolicy): Whose threads.
+
+        Returns:
+            int: Inbound messages this refresh stored.
+
+        Raises:
+            ValueError: A thread's context has no registered handler.
+            RateLimitedError / RuntimeError: From Gmail.
+        """
+        threads = await self._threads.list_by_person_context(
+            session, policy.user_id, policy.context_type, policy.context_id
+        )
+        before = await self._inbound_ids(session, threads)
+        for thread in threads:
+            handler = self._registry.get(thread.context_type)
+            if handler is None:
+                raise ValueError(f"No email handler for {thread.context_type!r}")
+            await handler.sync_tracked_thread(session, thread)
+        return len(await self._inbound_ids(session, threads) - before)
+
+    async def _inbound_ids(self, session, threads) -> set[int]:
+        ids = set()
+        for thread in threads:
+            for message in await self._messages.list_by_thread(session, thread.thread_id):
+                if message.direction == EmailDirection.INBOUND:
+                    ids.add(message.message_id)
+        return ids
+
+    async def read_attachment(
+        self, session, policy: EmailPolicy, message_id: int, index: int
+    ) -> tuple[bytes, str]:
+        """One attachment of a message in one of the policy's threads.
+
+        Raises:
+            NotFoundError: The message is missing or not in the policy's threads.
+            ValueError: ``attachment not found`` for a bad index or entry.
+        """
+        message = await self._messages.get(session, message_id)
+        try:
+            if message is None:
+                raise NotFoundError
+            await self._owned_thread(session, policy, message.thread_id)
+        except NotFoundError:
+            raise NotFoundError(f"Email message {message_id} not found") from None
+        return await self.download_attachment(message, index)
+
+    async def download_attachment(self, message, index: int) -> tuple[bytes, str]:
+        """Fetch one stored attachment of ``message`` from Gmail.
+
+        Args:
+            message (EmailMessageEntity): A message the caller may read.
+            index (int): Position in ``message.attachments``.
+
+        Returns:
+            tuple[bytes, str]: The content and the file name.
+
+        Raises:
+            ValueError: ``attachment not found`` for an index out of range or
+                an entry without a Gmail attachment id.
+        """
+        attachments = message.attachments or []
+        if not 0 <= index < len(attachments):
+            raise ValueError("attachment not found")
+        entry = attachments[index]
+        gmail_attachment_id = (
+            entry.get("gmailAttachmentId") if isinstance(entry, dict) else None
+        )
+        if not gmail_attachment_id:
+            raise ValueError("attachment not found")
+        content = await asyncio.to_thread(
+            self._gmail.get_attachment, message.gmail_message_id, gmail_attachment_id
+        )
+        return content, entry.get("name") or entry.get("filename") or "attachment"
+
     async def _send(
         self,
         session,
