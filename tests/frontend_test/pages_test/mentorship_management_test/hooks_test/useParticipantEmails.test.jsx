@@ -125,4 +125,116 @@ describe("useParticipantEmails", () => {
     expect(count).toBeNull();
     expect(toast.error).toHaveBeenCalledWith("Gmail is down");
   });
+
+  describe("when the person changes mid-flight", () => {
+    const deferred = () => {
+      let resolve;
+      let reject;
+      const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+    const forB = conversationOf({ defaultTo: "bob@y.org" });
+    const forA = conversationOf({ defaultTo: "alice@x.com" });
+
+    const showB = async () => {
+      getParticipantEmails.mockImplementation((_r, u) =>
+        Promise.resolve({ data: u === "B" ? forB : forA }),
+      );
+      const hook = renderHook(({ u }) => useParticipantEmails("7", u), {
+        initialProps: { u: "A" },
+      });
+      await waitFor(() => expect(hook.result.current.conversation).toBe(forA));
+      return hook;
+    };
+    const moveToB = async (hook) => {
+      hook.rerender({ u: "B" });
+      await waitFor(() => expect(hook.result.current.conversation).toBe(forB));
+    };
+
+    it("ignores a late submit result for the previous person", async () => {
+      const late = deferred();
+      sendParticipantEmail.mockReturnValue(late.promise);
+      const hook = await showB();
+      let pending;
+      act(() => {
+        pending = hook.result.current.submit({
+          to: ["a"],
+          subject: "s",
+          body: "b",
+          threadId: null,
+        });
+      });
+      await moveToB(hook);
+      late.resolve({ data: conversationOf({ defaultTo: "late@x.com" }) });
+      const returned = await pending;
+      act(() => hook.result.current.setConversation(returned));
+      expect(hook.result.current.conversation).toBe(forB);
+    });
+
+    it("ignores a late reload result for the previous person", async () => {
+      const hook = await showB();
+      const late = deferred();
+      getParticipantEmails.mockReturnValueOnce(late.promise);
+      let pending;
+      act(() => {
+        pending = hook.result.current.reload();
+      });
+      await moveToB(hook);
+      late.resolve({ data: conversationOf({ defaultTo: "late@x.com" }) });
+      const returned = await pending;
+      act(() => hook.result.current.setConversation(returned));
+      expect(hook.result.current.conversation).toBe(forB);
+    });
+
+    it("returns null for a late refresh without changing state or toasting", async () => {
+      const late = deferred();
+      refreshParticipantEmails.mockReturnValue(late.promise);
+      const hook = await showB();
+      let pending;
+      act(() => {
+        pending = hook.result.current.refresh();
+      });
+      await moveToB(hook);
+      late.resolve({
+        data: { conversation: conversationOf({ defaultTo: "late@x.com" }), newReplies: 3 },
+      });
+      expect(await pending).toBeNull();
+      expect(hook.result.current.conversation).toBe(forB);
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it("does not toast a late refresh failure for the previous person", async () => {
+      const late = deferred();
+      refreshParticipantEmails.mockReturnValue(late.promise);
+      const hook = await showB();
+      let pending;
+      act(() => {
+        pending = hook.result.current.refresh();
+      });
+      await moveToB(hook);
+      late.reject(new Error("Gmail is down"));
+      expect(await pending).toBeNull();
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it("still applies a result for the person on screen", async () => {
+      const next = conversationOf({ defaultTo: "new@x.com" });
+      sendParticipantEmail.mockResolvedValue({ data: next });
+      const hook = await showB();
+      let returned;
+      await act(async () => {
+        returned = await hook.result.current.submit({
+          to: ["a"],
+          subject: "s",
+          body: "b",
+          threadId: null,
+        });
+      });
+      act(() => hook.result.current.setConversation(returned));
+      expect(hook.result.current.conversation).toBe(next);
+    });
+  });
 });

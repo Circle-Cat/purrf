@@ -7,6 +7,17 @@ import {
   sendParticipantEmail,
 } from "@/api/mentorshipApi";
 
+// Which (round, person) each conversation object was fetched for, so a late
+// result for someone no longer shown is not applied to the page.
+const owner = new WeakMap();
+
+const own = (conversation, key) => {
+  if (conversation && typeof conversation === "object") {
+    owner.set(conversation, key);
+  }
+  return conversation;
+};
+
 /**
  * One person's email conversation in one round, and the calls that change it.
  *
@@ -18,6 +29,7 @@ import {
  * applies what it gets and resolves to how many new messages came in (every
  * inbound message counts, bounces and auto-replies included), or null when it
  * failed (after a toast) or the page moved to someone else meanwhile.
+ * `setConversation` ignores a conversation fetched for someone no longer shown.
  *
  * @param {number|string|null} roundId
  * @param {number|string} userId
@@ -28,18 +40,25 @@ import {
  *   refresh: () => Promise<number|null>}}
  */
 export const useParticipantEmails = (roundId, userId) => {
-  const [conversation, setConversation] = useState(null);
+  const [conversation, setConversationRaw] = useState(null);
   const key = `${roundId}|${userId}`;
   const keyRef = useRef(key);
   keyRef.current = key;
 
+  const setConversation = useCallback((next) => {
+    const from = next && typeof next === "object" ? owner.get(next) : undefined;
+    if (from !== undefined && from !== keyRef.current) return;
+    setConversationRaw(next);
+  }, []);
+
   useEffect(() => {
-    setConversation(null);
+    setConversationRaw(null);
     if (!roundId || !userId) return undefined;
     let cancelled = false;
+    const asked = `${roundId}|${userId}`;
     getParticipantEmails(roundId, userId)
       .then(({ data }) => {
-        if (!cancelled) setConversation(data ?? null);
+        if (!cancelled) setConversationRaw(own(data ?? null, asked));
       })
       .catch((err) => {
         console.error("Failed to fetch the emails with this person", err);
@@ -50,7 +69,10 @@ export const useParticipantEmails = (roundId, userId) => {
   }, [roundId, userId]);
 
   const reload = useCallback(
-    () => getParticipantEmails(roundId, userId).then(({ data }) => data),
+    () =>
+      getParticipantEmails(roundId, userId).then(({ data }) =>
+        own(data, `${roundId}|${userId}`),
+      ),
     [roundId, userId],
   );
 
@@ -66,7 +88,7 @@ export const useParticipantEmails = (roundId, userId) => {
             subject: payload.subject,
             body: payload.body,
           })
-      ).then(({ data }) => data),
+      ).then(({ data }) => own(data, `${roundId}|${userId}`)),
     [roundId, userId],
   );
 
@@ -75,9 +97,10 @@ export const useParticipantEmails = (roundId, userId) => {
     try {
       const { data } = await refreshParticipantEmails(roundId, userId);
       if (keyRef.current !== asked) return null;
-      setConversation(data.conversation);
+      setConversationRaw(own(data.conversation, asked));
       return data.newReplies;
     } catch (err) {
+      if (keyRef.current !== asked) return null;
       toast.error(err.message);
       return null;
     }
