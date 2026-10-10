@@ -12,3 +12,25 @@ export const STAGE_OPTIONS = [
 
 export const stageLabel = (value) =>
   STAGE_OPTIONS.find((o) => o.value === value)?.label ?? value;
+
+export const NOTIFICATION_STATES = [
+  { value: "not_notified", label: "Not notified" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "notified", label: "Notified" },
+];
+
+// What can reach someone not registered for the round; the invitation is
+// only for them.
+const NOT_REGISTERED_STAGES = [
+  "round_recruitment",
+  "admission",
+  "onboarding_reminder",
+];
+
+/** The stages the Participants filter offers for one list. */
+export const stagesForList = (notRegistered) =>
+  STAGE_OPTIONS.filter((o) =>
+    notRegistered
+      ? NOT_REGISTERED_STAGES.includes(o.value)
+      : o.value !== "round_recruitment",
+  );
