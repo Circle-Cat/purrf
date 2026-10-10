@@ -51,6 +51,8 @@ export const API_ENDPOINTS = {
     `/mentorship/admin/rounds/${roundId}/participants/${userId}/withdraw-request`,
   MENTORSHIP_ADMIN_MARK_REQUEST: (roundId, userId) =>
     `/mentorship/admin/rounds/${roundId}/participants/${userId}/mark-request`,
+  MENTORSHIP_ADMIN_END_PAIR_REQUEST: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/end-pair-request`,
   MENTORSHIP_ADMIN_PARTICIPANT_DETAIL: (roundId, userId) =>
     `/mentorship/admin/rounds/${roundId}/participants/${userId}`,
   MENTORSHIP_ADMIN_PARTICIPANT_NOTES: (roundId, userId) =>

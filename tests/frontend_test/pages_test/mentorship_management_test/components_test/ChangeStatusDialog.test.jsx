@@ -75,7 +75,7 @@ describe("ChangeStatusDialog", () => {
       screen.queryByLabelText("What are you asking for"),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/cannot be undone/)).toBeInTheDocument();
-    expect(screen.getByText(/partners stay matched/)).toBeInTheDocument();
+    expect(screen.getByText(/partner left with no other pair becomes unmatched/)).toBeInTheDocument();
   });
 
   it("leaves the person out of the reviewers and sends with an optional reason", async () => {
