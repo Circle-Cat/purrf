@@ -68,6 +68,18 @@ class EmailNotifiedDto(BaseDto):
     scheduled: list[EmailScheduledStageDto]
 
 
+class EmailPersonSendDto(BaseDto):
+    """One send to one person that has played out: Kit sent it to them, or it
+    did not reach them, with why."""
+
+    send_id: int
+    stage: str
+    subject: str
+    delivered: bool
+    reason: str | None
+    at: datetime
+
+
 class EmailPreviewDto(BaseDto):
     send: EmailSendDto
     subject: str

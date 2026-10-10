@@ -580,5 +580,155 @@ class MentorshipEmailServiceNotifiedTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.logger.warning.call_args.args[1], 5)
 
 
+def _recipient(result, failure_reason=None):
+    return MagicMock(result=result, failure_reason=failure_reason)
+
+
+class MentorshipEmailServicePersonSendsTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.session = AsyncMock()
+        self.repo = MagicMock()
+        self.repo.list_person_sends = AsyncMock(return_value=[])
+        self.kit = MagicMock()
+        self.service = MentorshipEmailService(
+            mentorship_email_repository=self.repo,
+            user_emails_repository=MagicMock(),
+            mentorship_round_repository=MagicMock(),
+            kit_client=self.kit,
+            sender_address="notification-test@circlecat.org",
+            logger=MagicMock(),
+            clock=lambda: NOW,
+        )
+
+    def _rows(self, *rows):
+        self.repo.list_person_sends = AsyncMock(return_value=list(rows))
+
+    async def test_reads_only_this_persons_settled_and_scheduled_sends(self):
+        await self.service.list_person_sends(self.session, 1, 42)
+        args = self.repo.list_person_sends.await_args.args
+        self.assertEqual(args[1:3], (1, 42))
+        self.assertEqual(
+            set(args[3]),
+            {
+                MentorshipEmailSendStatus.SCHEDULED,
+                MentorshipEmailSendStatus.SENT,
+                MentorshipEmailSendStatus.ABORTED,
+                MentorshipEmailSendStatus.FAILED,
+            },
+        )
+
+    async def test_each_outcome_newest_first(self):
+        sent = _send_row(
+            send_id=11,
+            stage="admission",
+            kit_draft_subject="Welcome aboard",
+            status=MentorshipEmailSendStatus.SENT,
+            send_at=NOW - timedelta(days=9),
+        )
+        unsubscribed = _send_row(
+            send_id=12,
+            stage="match_result",
+            kit_draft_subject="Your match",
+            status=MentorshipEmailSendStatus.SENT,
+            send_at=NOW - timedelta(days=6),
+        )
+        aborted = _send_row(
+            send_id=13,
+            stage="midterm_reminder",
+            kit_draft_subject="Halfway there",
+            status=MentorshipEmailSendStatus.ABORTED,
+            send_at=NOW - timedelta(days=3),
+        )
+        failed = _send_row(
+            send_id=14,
+            stage="final_followup",
+            kit_draft_subject="Wrapping up",
+            status=MentorshipEmailSendStatus.FAILED,
+            failure_code="draft_gone",
+            send_at=NOW + timedelta(days=4),
+            updated_at=NOW - timedelta(hours=2),
+        )
+        self._rows(
+            (sent, _recipient(R.HANDED_TO_KIT)),
+            (unsubscribed, _recipient(R.UNSUBSCRIBED)),
+            (aborted, _recipient(R.HANDED_TO_KIT)),
+            (failed, _recipient(R.PENDING)),
+        )
+
+        got = await self.service.list_person_sends(self.session, 1, 42)
+
+        self.assertEqual(
+            [(s.send_id, s.stage, s.subject, s.delivered, s.at) for s in got],
+            [
+                (14, "final_followup", "Wrapping up", False, NOW - timedelta(hours=2)),
+                (
+                    13,
+                    "midterm_reminder",
+                    "Halfway there",
+                    False,
+                    NOW - timedelta(days=3),
+                ),
+                (12, "match_result", "Your match", False, NOW - timedelta(days=6)),
+                (11, "admission", "Welcome aboard", True, NOW - timedelta(days=9)),
+            ],
+        )
+        reasons = {s.send_id: s.reason for s in got}
+        self.assertIsNone(reasons[11])
+        self.assertEqual(reasons[12], "Not handed to Kit: unsubscribed")
+        self.assertIn("Kit refused", reasons[13])
+        self.assertIn("deleted in Kit", reasons[14])
+        self.kit.get_broadcast_stats.assert_not_called()
+        self.session.commit.assert_not_awaited()
+
+    async def test_own_reason_wins_over_the_sends(self):
+        aborted = _send_row(
+            status=MentorshipEmailSendStatus.ABORTED, send_at=NOW - timedelta(days=1)
+        )
+        self._rows((aborted, _recipient(R.IMPORT_FAILED, "no_email")))
+        (got,) = await self.service.list_person_sends(self.session, 1, 42)
+        self.assertEqual(got.reason, "Not handed to Kit: no email address")
+        self.assertFalse(got.delivered)
+
+    async def test_scheduled_due_is_caught_up_with_kit_first(self):
+        due = _send_row(
+            send_id=21,
+            status=MentorshipEmailSendStatus.SCHEDULED,
+            kit_broadcast_id=901,
+            send_at=NOW - timedelta(minutes=5),
+        )
+        later = _send_row(
+            send_id=22,
+            status=MentorshipEmailSendStatus.SCHEDULED,
+            kit_broadcast_id=902,
+            send_at=NOW + timedelta(hours=1),
+        )
+        self._rows(
+            (due, _recipient(R.HANDED_TO_KIT)), (later, _recipient(R.HANDED_TO_KIT))
+        )
+        self.kit.get_broadcast_stats.return_value = {"status": "completed"}
+
+        got = await self.service.list_person_sends(self.session, 1, 42)
+
+        self.kit.get_broadcast_stats.assert_called_once_with(901)
+        self.assertEqual([(s.send_id, s.delivered) for s in got], [(21, True)])
+        self.session.commit.assert_awaited_once()
+
+    async def test_kit_still_sending_or_down_leaves_it_out(self):
+        due = _send_row(
+            status=MentorshipEmailSendStatus.SCHEDULED,
+            send_at=NOW - timedelta(minutes=5),
+        )
+        self._rows((due, _recipient(R.HANDED_TO_KIT)))
+        for answer in ({"status": "scheduled"}, KitApiError(503, "down")):
+            self.kit.get_broadcast_stats.side_effect = (
+                answer if isinstance(answer, Exception) else None
+            )
+            self.kit.get_broadcast_stats.return_value = answer
+            self.assertEqual(
+                await self.service.list_person_sends(self.session, 1, 42), []
+            )
+        self.session.commit.assert_not_awaited()
+
+
 if __name__ == "__main__":
     unittest.main()

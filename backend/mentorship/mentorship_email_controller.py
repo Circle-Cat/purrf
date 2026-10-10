@@ -8,6 +8,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_EMAIL_SEND_PREVIEW,
     MENTORSHIP_ADMIN_EMAIL_SENDS,
     MENTORSHIP_ADMIN_EMAIL_SENDS_NOTIFIED,
+    MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON,
     MENTORSHIP_ADMIN_KIT_DRAFTS,
 )
 from backend.common.fast_api_response_wrapper import api_response
@@ -39,6 +40,7 @@ class MentorshipEmailController:
         routes = [
             (MENTORSHIP_ADMIN_KIT_DRAFTS, "GET", READ, self.list_drafts),
             (MENTORSHIP_ADMIN_EMAIL_SENDS_NOTIFIED, "GET", READ, self.list_notified),
+            (MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON, "GET", READ, self.list_person_sends),
             (MENTORSHIP_ADMIN_EMAIL_SENDS, "POST", WRITE, self.create_send),
             (MENTORSHIP_ADMIN_EMAIL_SEND_PREVIEW, "POST", WRITE, self.refresh_preview),
             (MENTORSHIP_ADMIN_EMAIL_SEND_CONFIRM, "POST", WRITE, self.confirm),
@@ -80,6 +82,18 @@ class MentorshipEmailController:
         for send_id in resume_ids:
             background_tasks.add_task(self.prepare_service.run, send_id)
         return api_response(message="Notified people retrieved.", data=data)
+
+    async def list_person_sends(
+        self,
+        current_user: UserContextDto,
+        round_id: int = Query(alias="roundId"),
+        user_id: int = Query(alias="userId"),
+    ):
+        if (off := self._disabled(current_user)) is not None:
+            return off
+        async with self.database.session() as session:
+            data = await self.service.list_person_sends(session, round_id, user_id)
+        return api_response(message="Sends to this person retrieved.", data=data)
 
     async def create_send(self, body: EmailSendCreateDto, current_user: UserContextDto):
         if (off := self._disabled(current_user)) is not None:

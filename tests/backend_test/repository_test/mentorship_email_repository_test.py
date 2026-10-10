@@ -346,6 +346,37 @@ class MentorshipEmailRepositoryTest(BaseRepositoryTestLib):
             [],
         )
 
+    async def test_person_sends_pair_each_send_with_that_persons_row(self):
+        both = [(self.u1.user_id, "ann@x.org"), (self.u2.user_id, "bob@x.org")]
+        sent = await self._send(recipients=both, stage="admission")
+        sent.status = S.SENT
+        await self._handed(
+            sent, {self.u1.user_id: R.HANDED_TO_KIT, self.u2.user_id: R.BOUNCED}
+        )
+        failed = await self._send(
+            recipients=[(self.u2.user_id, "bob@x.org")], stage="final_followup"
+        )
+        failed.status = S.FAILED
+        cancelled = await self._send(recipients=both, stage="midterm_reminder")
+        cancelled.status = S.CANCELLED
+        only_u1 = await self._send(
+            recipients=[(self.u1.user_id, "ann@x.org")], stage="feedback_invite"
+        )
+        only_u1.status = S.SENT
+        await self.session.flush()
+
+        got = await self.repo.list_person_sends(
+            self.session, self.round.round_id, self.u2.user_id, [S.SENT, S.FAILED]
+        )
+
+        self.assertEqual(
+            [(send.send_id, row.user_id, row.result) for send, row in got],
+            [
+                (sent.send_id, self.u2.user_id, R.BOUNCED),
+                (failed.send_id, self.u2.user_id, R.PENDING),
+            ],
+        )
+
     async def test_list_sends_filters_by_round_and_status(self):
         draft = await self._send()
         scheduled = await self._send()
