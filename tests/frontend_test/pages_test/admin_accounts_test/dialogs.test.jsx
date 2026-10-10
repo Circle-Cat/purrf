@@ -7,9 +7,16 @@ import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
 
 const holder = (userId) => ({ userId, name: `Holder ${userId}` });
 
-const preflight = (applicationCount = 2, interviewTimes = []) => ({
+const preflight = (
+  applicationCount = 2,
+  interviewTimes = [],
+  mentorshipPairCount = 0,
+  mentorshipMeetingCount = 0,
+) => ({
   applicationCount,
   interviewTimes,
+  mentorshipPairCount,
+  mentorshipMeetingCount,
 });
 
 const account = {
@@ -338,10 +345,54 @@ describe("BlockPreflight", () => {
     render(<BlockPreflight preflight={null} />);
 
     expect(
-      screen.getByText(/Still counting the applications and interviews/),
+      screen.getByText(
+        "· Still counting the applications, interviews and mentorship pairs this reaches",
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Mentorship eligibility is gone for good/),
+      screen.getByText(
+        "⚠ Unblocking later restores access, but reinstates none of the above — not the applications, not the interviews, not the mentorship pairs. Mentorship eligibility is gone for good, because it is derived from an application that this action rejects.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says which mentorship pairs end and how many meetings go", () => {
+    render(<BlockPreflight preflight={preflight(0, [], 2, 3)} />);
+
+    expect(
+      screen.getByText(
+        "· End 2 mentorship pairs in rounds in progress and cancel 3 upcoming meetings; a partner left with no pair becomes unmatched",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the singular for one pair and one meeting", () => {
+    render(<BlockPreflight preflight={preflight(0, [], 1, 1)} />);
+
+    expect(
+      screen.getByText(
+        "· End 1 mentorship pair in rounds in progress and cancel 1 upcoming meeting; a partner left with no pair becomes unmatched",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when no pair is in a round in progress", () => {
+    render(<BlockPreflight preflight={preflight(0, [])} />);
+
+    expect(
+      screen.getByText(
+        "· End no mentorship pairs — none in a round in progress",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("warns that unblocking does not bring the pairs back", () => {
+    render(<BlockPreflight preflight={preflight(0, [])} />);
+
+    expect(
+      screen.getByText(
+        "⚠ Unblocking later restores access, but reinstates none of the above — not the applications, not the interviews, not the mentorship pairs. Mentorship eligibility is gone for good, because it is derived from an application that this action rejects.",
+      ),
     ).toBeInTheDocument();
   });
 });
