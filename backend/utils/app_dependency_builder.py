@@ -181,6 +181,7 @@ from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
+from backend.communication.person_email_service import PersonEmailService
 from backend.communication.email_context_registry import EmailContextRegistry
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_controller import InboxController
@@ -1104,6 +1105,15 @@ class AppDependencyBuilder:
             self.email_context_registry.register(
                 context_type, self.inbox_sync_handler.alias_without_resync()
             )
+        self.person_email_service = PersonEmailService(
+            conversation_service=self.email_conversation_service,
+            thread_repository=self.email_thread_repository,
+            message_repository=self.email_message_repository,
+            users_repository=self.users_repository,
+            user_emails_repository=self.user_emails_repository,
+            context_registry=self.email_context_registry,
+            gmail_client=self.gmail_client,
+        )
         # Optional: an environment whose mailbox has no watch yet boots
         # normally and the daily job reports it as skipped.
         gmail_watch_topic = os.getenv(GMAIL_WATCH_TOPIC) or None
@@ -1170,9 +1180,8 @@ class AppDependencyBuilder:
             round_repository=self.mentorship_round_repository,
             event_repository=self.event_repository,
             thread_service_resolver=self.thread_service_resolver,
-            conversation_service=self.email_conversation_service,
             aliases=self.inbox_aliases,
-            gmail_client=self.gmail_client,
+            person_email_service=self.person_email_service,
             round_participants_repository=self.mentorship_round_participants_repo,
             rounds_service=self.rounds_service,
         )

@@ -170,6 +170,12 @@ class ReplyTest(_WriteFixture):
         self.record_event.assert_not_awaited()
         self.assertEqual(detail.latest_message_id, self.next_message_id)
 
+    async def test_reply_is_sent_as_rich_html_with_no_text_copy(self):
+        await self.service.reply(self.session, _viewer(*_ALL), 1, "<p>hi</p>", 13)
+
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertIsNone(kwargs["body_text"])
+
     async def test_reply_keeps_an_existing_re_prefix(self):
         self._thread_of(1).subject = "RE: Question"
 

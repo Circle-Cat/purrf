@@ -719,7 +719,13 @@ class TestAppDependencyBuilder(TestCase):
         inbox = builder.inbox_thread_service
         self.assertIs(builder.inbox_controller.inbox_thread_service, inbox)
         self.assertIs(inbox._applications, builder.application_repository)
-        self.assertIs(inbox._gmail, builder.gmail_client)
+        self.assertIs(inbox._person_email, builder.person_email_service)
+        person_email = builder.person_email_service
+        self.assertIs(person_email._gmail, builder.gmail_client)
+        self.assertIs(person_email._conversation, builder.email_conversation_service)
+        self.assertIs(person_email._registry, builder.email_context_registry)
+        self.assertIs(person_email._threads, builder.email_thread_repository)
+        self.assertIs(person_email._messages, builder.email_message_repository)
         self.assertIs(inbox._participants, builder.mentorship_round_participants_repo)
         self.assertIs(inbox._rounds_service, builder.rounds_service)
         self.assertIs(inbox._rounds, builder.mentorship_round_repository)

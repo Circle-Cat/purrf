@@ -10,6 +10,7 @@ from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_service import InboxThreadService
 from backend.communication.inbox_state import is_archived
+from backend.communication.person_email_service import PersonEmailService
 from backend.communication.thread_service import ThreadServiceResolver
 from backend.dto.inbox_dto import InboxQueryDto
 from backend.dto.user_context_dto import UserContextDto
@@ -185,11 +186,18 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
             round_repository=self.round_repo,
             event_repository=self.event_repo,
             thread_service_resolver=ThreadServiceResolver(job_repository=self.job_repo),
-            conversation_service=self.conversation,
             aliases=InboxAliases(
                 mentorship=_MENTORSHIP_ALIAS, recruiting=_RECRUITING_ALIAS
             ),
-            gmail_client=self.gmail,
+            person_email_service=PersonEmailService(
+                conversation_service=self.conversation,
+                thread_repository=self.thread_repo,
+                message_repository=self.message_repo,
+                users_repository=self.user_repo,
+                user_emails_repository=self.email_repo,
+                context_registry=Mock(),
+                gmail_client=self.gmail,
+            ),
             round_participants_repository=self.participant_repo,
             rounds_service=self.rounds_service,
         )

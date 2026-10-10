@@ -73,9 +73,8 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         round_repository,
         event_repository,
         thread_service_resolver,
-        conversation_service,
         aliases,
-        gmail_client,
+        person_email_service,
         round_participants_repository,
         rounds_service,
     ):
@@ -90,9 +89,9 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             round_repository (MentorshipRoundRepository): Names and finds rounds.
             event_repository (EventRepository): Finds the last move.
             thread_service_resolver (ThreadServiceResolver): A thread's service.
-            conversation_service (EmailConversationService): Sends replies.
             aliases (InboxAliases): The reply address of each service.
-            gmail_client (GmailClient): Downloads attachments.
+            person_email_service (PersonEmailService): Sends replies and
+                downloads attachments.
             round_participants_repository (MentorshipRoundParticipantsRepository):
                 Tells whether a person registered for a round.
             rounds_service (RoundsService): Names the current round.
@@ -105,9 +104,8 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         self._rounds = round_repository
         self._events = event_repository
         self._resolver = thread_service_resolver
-        self._conversation = conversation_service
         self._aliases = aliases
-        self._gmail = gmail_client
+        self._person_email = person_email_service
         self._participants = round_participants_repository
         self._rounds_service = rounds_service
 

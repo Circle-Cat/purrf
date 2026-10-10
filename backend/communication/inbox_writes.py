@@ -9,12 +9,11 @@ before anything is written.
 from datetime import datetime, timezone
 
 from backend.common.communication_enums import INBOX_CONTEXT, ContextType, InboxService
-from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.communication.inbox_access import visible_services
-from backend.communication.email_replies import reply_contact, reply_subject
 from backend.communication.inbox_rows import can_assign, facts_of
 from backend.communication.inbox_state import is_human_inbound, needs_reply
+from backend.communication.person_email_service import BodyFormat
 from backend.notification_management.event_recorder import record_event
 
 
@@ -40,31 +39,17 @@ class InboxThreadWrites:
             ConflictError: ``THREAD_CHANGED`` when a newer message arrived.
         """
         thread, service = await self._load_visible(session, user, thread_id)
-        messages = await self._messages.list_by_thread(session, thread_id)
-        if messages and messages[-1].message_id != last_seen_message_id:
-            raise ConflictError(
-                "This thread has new messages. Read them before sending.",
-                code="THREAD_CHANGED",
-            )
         alias = self._aliases.alias_of(service)
         if alias is None:
             raise ValueError("This environment has no alias for this inbox")
-        contact = reply_contact(messages)
-        if contact is None:
-            raise ValueError("This thread has nobody to reply to")
-        subject = reply_subject(thread.subject)
-
-        await self._conversation.send(
+        await self._person_email.reply_into(
             session,
-            user_id=thread.user_id,
-            context_type=thread.context_type,
-            context_id=thread.context_id,
-            to=[contact],
-            subject=subject,
+            thread,
             body=body,
-            sender_user_id=user.user_id,
-            thread_id=thread_id,
+            body_format=BodyFormat.RICH,
+            last_seen_message_id=last_seen_message_id,
             sender_address=alias,
+            sender_user_id=user.user_id,
         )
         await session.commit()
         return await self.get_thread(session, user, thread_id)
