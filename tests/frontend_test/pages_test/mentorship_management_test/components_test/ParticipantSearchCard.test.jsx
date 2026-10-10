@@ -62,6 +62,7 @@ vi.mock("@/api/mentorshipApi", () => ({
 
 vi.mock("@/api/mentorshipEmailApi", () => ({
   listNotifiedStages: vi.fn(),
+  markNotified: vi.fn(),
   listKitDrafts: vi.fn(),
   createEmailSend: vi.fn(),
   refreshEmailPreview: vi.fn(),
@@ -2382,6 +2383,29 @@ describe("ParticipantSearchCard", () => {
       expect(cellOf(cara, "Notifications")).toHaveTextContent(
         /^Match result · NotifiedMatch result · Scheduled 12-01 10:30 PT$/,
       );
+    });
+
+    it("shows a stage marked by hand as Notified manually, and Kit's own as Notified", async () => {
+      listNotifiedStages.mockResolvedValue([
+        {
+          userId: 11,
+          stages: ["admission"],
+          scheduled: [],
+          manual: ["admission", "onboarding_reminder"],
+        },
+      ]);
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      const row = (await screen.findByText("Alice Doe")).closest("tr");
+
+      expect(
+        await within(row).findByText("Onboarding reminder · Notified manually"),
+      ).toBeInTheDocument();
+      expect(
+        within(row).getByText("Admission & onboarding · Notified"),
+      ).toBeInTheDocument();
+      expect(
+        within(row).queryByText("Admission & onboarding · Notified manually"),
+      ).not.toBeInTheDocument();
     });
 
     it("shows no Notifications column and asks nothing with the flag off", async () => {

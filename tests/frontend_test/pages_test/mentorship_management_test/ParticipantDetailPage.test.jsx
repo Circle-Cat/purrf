@@ -42,7 +42,10 @@ vi.mock("@/api/adminAccountsApi", () => ({
   getBlockPreflight: vi.fn(),
   getUserAdmins: vi.fn(),
 }));
-vi.mock("@/api/mentorshipEmailApi", () => ({ listPersonSends: vi.fn() }));
+vi.mock("@/api/mentorshipEmailApi", () => ({
+  listPersonSends: vi.fn(),
+  markNotified: vi.fn(),
+}));
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 

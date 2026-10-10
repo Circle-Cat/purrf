@@ -7,6 +7,7 @@ import * as api from "@/api/mentorshipEmailApi";
 
 vi.mock("@/api/mentorshipEmailApi", () => ({
   listKitDrafts: vi.fn(),
+  markNotified: vi.fn(),
   createEmailSend: vi.fn(),
   refreshEmailPreview: vi.fn(),
   confirmEmailSend: vi.fn(),

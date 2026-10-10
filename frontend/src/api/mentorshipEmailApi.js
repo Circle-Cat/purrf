@@ -62,6 +62,24 @@ export const listPersonSends = async (roundId, userId) =>
     })
   ).data;
 
+/**
+ * Records that a notification reached people some other way -- Teams,
+ * Google Chat, a call. People already notified of the stage, or not offered
+ * it, are skipped and listed with why.
+ *
+ * @param {number|string} roundId - The mentorship round's id.
+ * @param {{userIds: number[], stage: string, body: string}} body - Who, which
+ *   notification, and how it was sent.
+ * @returns {Promise<{marked: number[], skipped: Array<{userId: number, reason: string}>}>}
+ */
+export const markNotified = async (roundId, body) =>
+  (
+    await request.post(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_NOTIFICATIONS_MARK(roundId),
+      body,
+    )
+  ).data;
+
 const action = async (sendId, name, body) =>
   (
     await request.post(
