@@ -77,7 +77,9 @@ describe("EmailConversation", () => {
     renderConversation({ onCompose, onReply });
     await userEvent.click(screen.getByRole("button", { name: "Send email" }));
     expect(onCompose).toHaveBeenCalledTimes(1);
-    await userEvent.click(screen.getAllByRole("button", { name: /^Reply to / })[0]);
+    await userEvent.click(
+      screen.getAllByRole("button", { name: /^Reply to / })[0],
+    );
     expect(onReply).toHaveBeenCalledWith(threadOf());
   });
 });

@@ -233,7 +233,12 @@ describe("useComposeEmail", () => {
     const onConversation = vi.fn();
     const hook = renderHook(
       ({ contextKey }) =>
-        useComposeEmail({ submit, reload: vi.fn(), onConversation, contextKey }),
+        useComposeEmail({
+          submit,
+          reload: vi.fn(),
+          onConversation,
+          contextKey,
+        }),
       { initialProps: { contextKey: "A" } },
     );
     act(() => hook.result.current.openCompose());
