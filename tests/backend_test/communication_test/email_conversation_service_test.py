@@ -252,7 +252,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     # ---- list_conversation --------------------------------------------
 
     async def test_list_conversation_assembles_threads_with_messages(self):
-        self.thread_repo.list_by_context.return_value = [
+        self.thread_repo.list_by_person_context.return_value = [
             SimpleNamespace(
                 thread_id=10,
                 subject="Hi",
@@ -278,7 +278,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             ),
         ]
         threads = await self.service.list_conversation(
-            self.session, ContextType.APPLICATION, 7
+            self.session, ContextType.APPLICATION, 7, user_id=5
         )
         self.assertEqual(len(threads), 1)
         self.assertEqual(threads[0].thread_id, 10)
@@ -316,10 +316,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     async def _list_one(self, messages, archived_at=None):
         row = self._thread_row(10, "2026-07-01T00:00:00Z")
         row.archived_at = archived_at
-        self.thread_repo.list_by_context.return_value = [row]
+        self.thread_repo.list_by_person_context.return_value = [row]
         self.message_repo.list_by_thread.return_value = messages
         threads = await self.service.list_conversation(
-            self.session, ContextType.APPLICATION, 7
+            self.session, ContextType.APPLICATION, 7, user_id=5
         )
         return threads[0]
 
@@ -408,7 +408,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(thread.needs_reply)
 
     async def test_list_conversation_orders_messages_newest_first(self):
-        self.thread_repo.list_by_context.return_value = [
+        self.thread_repo.list_by_person_context.return_value = [
             self._thread_row(10, "2026-07-01T00:00:00Z")
         ]
         # The repository hands them over oldest first — that order is what the
@@ -420,7 +420,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         ]
 
         threads = await self.service.list_conversation(
-            self.session, ContextType.APPLICATION, 7
+            self.session, ContextType.APPLICATION, 7, user_id=5
         )
 
         self.assertEqual([m.message_id for m in threads[0].messages], [3, 2, 1])
@@ -429,7 +429,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # Thread 10 started first but 20 has the newer reply, so 20 goes on top —
         # ordering by the thread's own created_at would have pinned 10 there
         # forever, however recently it was replied to.
-        self.thread_repo.list_by_context.return_value = [
+        self.thread_repo.list_by_person_context.return_value = [
             self._thread_row(10, "2026-07-01T00:00:00Z"),
             self._thread_row(20, "2026-07-02T00:00:00Z"),
         ]
@@ -448,7 +448,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         )
 
         threads = await self.service.list_conversation(
-            self.session, ContextType.APPLICATION, 7
+            self.session, ContextType.APPLICATION, 7, user_id=5
         )
 
         self.assertEqual([t.thread_id for t in threads], [20, 10])
@@ -456,7 +456,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     async def test_list_conversation_prefers_the_gmail_timestamp_for_ordering(self):
         # created_at is our insert time; a synced message's real send time is
         # the Gmail one, and a backfilled thread can have the two disagree.
-        self.thread_repo.list_by_context.return_value = [
+        self.thread_repo.list_by_person_context.return_value = [
             self._thread_row(10, "2026-07-01T00:00:00Z"),
             self._thread_row(20, "2026-07-02T00:00:00Z"),
         ]
@@ -473,13 +473,13 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         )
 
         threads = await self.service.list_conversation(
-            self.session, ContextType.APPLICATION, 7
+            self.session, ContextType.APPLICATION, 7, user_id=5
         )
 
         self.assertEqual([t.thread_id for t in threads], [10, 20])
 
     async def test_list_conversation_sorts_an_empty_thread_by_its_own_timestamp(self):
-        self.thread_repo.list_by_context.return_value = [
+        self.thread_repo.list_by_person_context.return_value = [
             self._thread_row(10, "2026-07-01T00:00:00Z"),
             self._thread_row(20, "2026-07-10T00:00:00Z"),
         ]
@@ -489,7 +489,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         )
 
         threads = await self.service.list_conversation(
-            self.session, ContextType.APPLICATION, 7
+            self.session, ContextType.APPLICATION, 7, user_id=5
         )
 
         self.assertEqual([t.thread_id for t in threads], [20, 10])
@@ -823,8 +823,15 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.thread_repo.list_by_person_context.assert_awaited_once_with(
             self.session, 5, ContextType.ACTIVITY, 8
         )
-        self.thread_repo.list_by_context.assert_not_awaited()
         self.assertEqual([t.thread_id for t in threads], [10])
+
+    async def test_list_conversation_requires_a_person(self):
+        with self.assertRaises(TypeError):
+            await self.service.list_conversation(
+                self.session, ContextType.ACTIVITY, 8
+            )
+
+        self.thread_repo.list_by_person_context.assert_not_awaited()
 
     async def test_list_conversation_reports_where_a_reply_goes(self):
         thread = await self._list_one([
