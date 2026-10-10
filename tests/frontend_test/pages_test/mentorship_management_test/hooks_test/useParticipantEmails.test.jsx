@@ -199,7 +199,10 @@ describe("useParticipantEmails", () => {
       });
       await moveToB(hook);
       late.resolve({
-        data: { conversation: conversationOf({ defaultTo: "late@x.com" }), newReplies: 3 },
+        data: {
+          conversation: conversationOf({ defaultTo: "late@x.com" }),
+          newReplies: 3,
+        },
       });
       expect(await pending).toBeNull();
       expect(hook.result.current.conversation).toBe(forB);
