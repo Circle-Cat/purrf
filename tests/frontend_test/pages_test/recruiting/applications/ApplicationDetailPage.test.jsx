@@ -4013,7 +4013,9 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
 
     await user.click(screen.getByRole("button", { name: "Send email" }));
-    expect(screen.getByLabelText("To")).toHaveValue("cand@x.com");
+    expect(
+      screen.getByRole("checkbox", { name: /cand@x\.com/ }),
+    ).toBeChecked();
     expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
 
@@ -4544,10 +4546,15 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.queryByText(/1 placeholders/i)).not.toBeInTheDocument();
   });
 
-  it("keeps Send disabled while the recipient or subject is empty, body text notwithstanding", async () => {
-    // A candidate with no contact email: the composer opens with To empty.
+  it("keeps Send disabled while no recipient is ticked or the subject is empty, body text notwithstanding", async () => {
+    // A candidate with no contact email: nothing is ticked when the composer
+    // opens, and the Purrf address has to be ticked by hand.
     api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: null },
+      data: {
+        threads: [],
+        defaultTo: null,
+        recipientOptions: [{ address: "cand@x.com", label: "Alternative" }],
+      },
     });
     const user = await renderComposeOpen();
     setEditorHtml("<p>Ready to go</p>");
@@ -4559,7 +4566,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.type(screen.getByLabelText(/subject/i), "Hi");
     expect(send).toBeDisabled();
 
-    await user.type(screen.getByLabelText("To"), "cand@x.com");
+    await user.click(screen.getByRole("checkbox", { name: /cand@x\.com/ }));
     expect(send).toBeEnabled();
 
     await user.clear(screen.getByLabelText(/subject/i));

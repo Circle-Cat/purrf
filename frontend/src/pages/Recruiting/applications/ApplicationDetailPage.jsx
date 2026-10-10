@@ -47,7 +47,8 @@ import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
-import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
+import ComposeEmailDialog from "@/components/email/ComposeEmailDialog";
+import { recipientOptionsOf } from "@/components/email/emailThreads";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 import {
@@ -72,6 +73,7 @@ import {
   postComment,
   getApplicationEmails,
   sendApplicationEmail,
+  getApplicationEmailTemplates,
   resumeUrl,
   scheduleInterview,
   updateInterview,
@@ -2199,9 +2201,16 @@ const ApplicationDetailPage = () => {
                   <ComposeEmailDialog
                     open={composeOpen}
                     onOpenChange={setComposeOpen}
-                    applicationId={applicationId}
+                    mode="rich"
+                    recipientOptions={recipientOptionsOf(emails)}
                     defaultTo={emails.defaultTo}
+                    senderAddress={emails.senderAddress}
                     replyThread={replyThread}
+                    loadTemplates={() =>
+                      getApplicationEmailTemplates(applicationId).then(
+                        (res) => res?.data,
+                      )
+                    }
                     onSend={handleSendEmail}
                     sending={sendingEmail}
                   />
