@@ -256,8 +256,9 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
 };
 
 /**
- * A person's notifications this round, one badge per stage: notified (by Kit, or by hand as "Notified manually"), or
- * scheduled with its Pacific send time, in the Notification filter's words.
+ * A person's notifications this round, one badge per stage: notified (by Kit,
+ * or by hand as "Notified manually"), or scheduled with its Pacific send
+ * time, in the Notification filter's words.
  *
  * @param {{ stages: Array<{stage: string, scheduledAt: string|null, manual?: boolean}>|undefined }} props
  */
@@ -315,7 +316,9 @@ const NotificationsCell = ({ stages }) =>
  * people there (across pages, dropped the same way) and send them a
  * notification from a Kit draft. Those two lists can also be filtered by a
  * notification stage and whether it is not notified, scheduled or notified;
- * after scheduling, a list so filtered is searched again.
+ * after scheduling, a list so filtered is searched again. While the round is
+ * in progress, writers can also mark the people picked as notified by hand,
+ * for a notification sent outside Purrf.
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();

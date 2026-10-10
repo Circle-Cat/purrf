@@ -135,6 +135,21 @@ describe("MarkNotifiedDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("ignores Escape while saving, keeping the dialog open and the note", async () => {
+    markNotified.mockReturnValue(new Promise(() => {}));
+    const { onOpenChange } = renderDialog({ people: [bo] });
+    await choose("match_result");
+    await write("Called her");
+    await userEvent.click(markButton());
+    await waitFor(() => expect(markNotified).toHaveBeenCalledTimes(1));
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("How it was sent")).toHaveValue("Called her");
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
   it("on failure toasts the server's message and keeps the note", async () => {
     markNotified.mockRejectedValue({
       response: {

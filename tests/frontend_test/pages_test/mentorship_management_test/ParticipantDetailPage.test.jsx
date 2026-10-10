@@ -747,6 +747,37 @@ describe("ParticipantDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not call a stage notified when Kit's send to them did not go out", async () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true,
+    });
+    listPersonSends.mockResolvedValue([
+      {
+        sendId: 15,
+        stage: "admission",
+        subject: "Welcome",
+        delivered: false,
+        reason: "bounced",
+        at: "2026-10-12T16:00:00Z",
+      },
+    ]);
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Mark as notified" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    expect(
+      within(dialog).getByRole("option", { name: "Admission & onboarding" }),
+    ).toBeEnabled();
+    expect(
+      within(dialog).queryByRole("option", {
+        name: "Admission & onboarding (already notified)",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers someone not registered only what reaches them", async () => {
     useFeatureFlags.mockReturnValue({
       [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true,
