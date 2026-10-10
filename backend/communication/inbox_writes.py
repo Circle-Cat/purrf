@@ -12,17 +12,10 @@ from backend.common.communication_enums import INBOX_CONTEXT, ContextType, Inbox
 from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.communication.inbox_access import visible_services
-from backend.communication.inbox_rows import can_assign, facts_of, reply_contact
+from backend.communication.email_replies import reply_contact, reply_subject
+from backend.communication.inbox_rows import can_assign, facts_of
 from backend.communication.inbox_state import is_human_inbound, needs_reply
 from backend.notification_management.event_recorder import record_event
-
-
-def reply_subject(subject: str | None) -> str:
-    """``Re: <subject>``, unless the subject already says so."""
-    subject = (subject or "").strip()
-    if subject.lower().startswith("re:"):
-        return subject
-    return f"Re: {subject}".strip()
 
 
 class InboxThreadWrites:

@@ -29,7 +29,7 @@ def address_of(raw: str | None) -> str | None:
     return parseaddr(raw)[1].strip().lower() or None
 
 
-def _first_address(raw: str | None) -> str | None:
+def first_address(raw: str | None) -> str | None:
     if not raw:
         return None
     for _, address in getaddresses([raw]):
@@ -53,22 +53,7 @@ def _contact_of(ordered) -> str | None:
             return address
     for m in ordered:
         if m.direction == EmailDirection.OUTBOUND:
-            return _first_address(m.to_addresses)
-    return None
-
-
-def reply_contact(ordered) -> str | None:
-    """Who a reply goes to: the newest human sender, else our first recipient.
-
-    Args:
-        ordered (list[EmailMessageEntity]): Messages, oldest first.
-    """
-    for m in reversed(ordered):
-        if is_human_inbound(m) and (address := address_of(m.from_address)):
-            return address
-    for m in ordered:
-        if m.direction == EmailDirection.OUTBOUND:
-            return _first_address(m.to_addresses)
+            return first_address(m.to_addresses)
     return None
 
 

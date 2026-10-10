@@ -306,3 +306,20 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "email_replies_test",
+    srcs = ["email_replies_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "thread_recipients_test",
+    srcs = ["thread_recipients_test.py"],
+    deps = [
+        "//backend/communication",
+        "//backend/repository:repositories",
+    ],
+)
