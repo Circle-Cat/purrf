@@ -233,6 +233,8 @@ py_library(
     name = "leave_balance_service",
     srcs = ["leave_balance_service.py"],
     deps = [
+        ":leave_participants",
+        "//backend/common:name_utils",
         "//backend/dto",
         "//backend/repository:repositories",
         "@pypi//sqlalchemy",

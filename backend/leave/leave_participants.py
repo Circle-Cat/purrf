@@ -18,6 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.constants import INTERNAL_GOOGLE_ACCOUNT_DOMAIN
 
 
+def ldap_from_addresses(addresses) -> str | None:
+    """The Azure ldap an account carries, or None if it carries none..."""
+    for address in sorted(addresses):
+        if address.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
+            return address.split("@")[0]
+    return None
+
+
 @dataclass(frozen=True)
 class ResolvedParticipants:
     """Who the engine can pay, and who it cannot, with the reason.
