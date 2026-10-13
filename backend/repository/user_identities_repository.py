@@ -2,7 +2,7 @@ from datetime import datetime
 
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -136,6 +136,34 @@ class UserIdentitiesRepository:
             )
         )
         return result.scalars().one_or_none()
+
+    async def delete_swappable_on_other_users(
+        self, session: AsyncSession, email_claim: str, user_id: int
+    ) -> None:
+        """
+        Drop migration-backfilled (``manual|``) identities on *other* accounts
+        whose email_claim is `email_claim`.
+
+        Called when `user_id` confirms the address. Such a placeholder is what
+        :meth:`find_swappable_by_email` routes a login into; once the address
+        belongs to another account, swapping into the placeholder's owner
+        would try to record an address that is no longer theirs.
+
+        Flushes but does not commit; the caller owns the transaction boundary.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            email_claim (str): Lowercased address being confirmed.
+            user_id (int): The account confirming it, whose rows are kept.
+        """
+        await session.execute(
+            delete(UserIdentitiesEntity).where(
+                func.lower(UserIdentitiesEntity.email_claim) == email_claim.lower(),
+                UserIdentitiesEntity.subject_identifier.like("manual|%"),
+                UserIdentitiesEntity.user_id != user_id,
+            )
+        )
+        await session.flush()
 
     async def upsert_identity(
         self, session: AsyncSession, entity: UserIdentitiesEntity
