@@ -77,6 +77,16 @@ class AllowedMentorsTest(unittest.TestCase):
 
         self.assertEqual(allowed_mentors(result), {None, "11"})
 
+    def test_a_mutual_choice_keeps_its_mentor(self):
+        result = MenteeResult(
+            mentor_id="10",
+            match_type="mutual_yes",
+            recommendation_reason="Both asked",
+            candidates=[Candidate(mentor_id="11", score=70)],
+        )
+
+        self.assertEqual(allowed_mentors(result), {"10"})
+
     def test_the_matcher_s_choice_means_mentor_and_reason_both(self):
         result = _scored("10", 80, reason="Matched on skills")
 
