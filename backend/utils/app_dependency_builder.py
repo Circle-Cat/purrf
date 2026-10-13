@@ -1275,6 +1275,7 @@ class AppDependencyBuilder:
             self.users_repository,
             self.user_emails_repository,
             self.user_identities_repository,
+            self.user_permissions_repository,
             self.approval_service,
             logger=self.logger,
         )
@@ -1295,6 +1296,7 @@ class AppDependencyBuilder:
             self.application_interview_repository,
             self.interview_scheduling_service,
             self.mentorship_block_service,
+            self.user_permissions_repository,
         )
         self.approval_service.register(self.block_user_handler)
         self.block_service = BlockService(

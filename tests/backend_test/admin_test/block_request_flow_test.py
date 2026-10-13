@@ -84,7 +84,13 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
         mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
         approvals.register(
             BlockUserHandler(
-                users, applications, submissions, interviews, scheduling, mentorship
+                users,
+                applications,
+                submissions,
+                interviews,
+                scheduling,
+                mentorship,
+                perms,
             )
         )
         self.service = BlockService(
