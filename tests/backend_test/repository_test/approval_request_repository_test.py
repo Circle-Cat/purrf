@@ -2,10 +2,12 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
 from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.mentorship_enums import CommunicationMethod
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
@@ -82,6 +84,26 @@ class TestApprovalRequestRepository(BaseRepositoryTestLib):
         fetched = await self.repo.get(self.session, row.request_id, for_update=True)
 
         self.assertEqual(fetched.request_id, row.request_id)
+
+    async def test_get_for_update_rereads_a_row_already_in_the_session(self):
+        row = await self._create()
+        await self.repo.get(self.session, row.request_id)
+        # A Core update on the table stands in for another transaction's
+        # commit: it changes the row without touching the identity map.
+        table = ApprovalRequestEntity.__table__
+        await self.session.execute(
+            update(table)
+            .where(table.c.request_id == row.request_id)
+            .values(
+                reviewer_id=self.other_reviewer.user_id,
+                status=ApprovalRequestStatus.REJECTED,
+            )
+        )
+
+        locked = await self.repo.get(self.session, row.request_id, for_update=True)
+
+        self.assertEqual(locked.reviewer_id, self.other_reviewer.user_id)
+        self.assertIs(locked.status, ApprovalRequestStatus.REJECTED)
 
     async def test_get_missing_request_is_none(self):
         self.assertIsNone(await self.repo.get(self.session, 9_999_999))
