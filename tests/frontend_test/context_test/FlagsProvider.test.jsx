@@ -14,9 +14,10 @@ vi.mock("@/context/auth", () => ({
 }));
 
 /** Reads flags out of FlagsContext on each render and stores into a ref. */
-function FlagTracker({ flagsRef }) {
-  const { flags } = useContext(FlagsContext);
+function FlagTracker({ flagsRef, readyRef }) {
+  const { flags, ready } = useContext(FlagsContext);
   flagsRef.current = flags;
+  if (readyRef) readyRef.current = ready;
   return null;
 }
 
@@ -42,6 +43,17 @@ describe("FlagsProvider", () => {
       </FlagsProvider>,
     );
     expect(flagsRef.current).toEqual({});
+  });
+
+  it("is not ready before LaunchDarkly has answered", () => {
+    const flagsRef = { current: null };
+    const readyRef = { current: null };
+    render(
+      <FlagsProvider>
+        <FlagTracker flagsRef={flagsRef} readyRef={readyRef} />
+      </FlagsProvider>,
+    );
+    expect(readyRef.current).toBe(false);
   });
 });
 
@@ -72,17 +84,18 @@ describe("LDIdentifier", () => {
    */
   function renderLDIdentifier(ldClientValue) {
     const flagsRef = { current: {} };
+    const readyRef = { current: null };
     const utils = render(
       <LDReactContext.Provider
         value={{ ldClient: ldClientValue, flags: {}, flagKeyMap: {} }}
       >
         <FlagsProvider>
-          <FlagTracker flagsRef={flagsRef} />
+          <FlagTracker flagsRef={flagsRef} readyRef={readyRef} />
           <LDIdentifier />
         </FlagsProvider>
       </LDReactContext.Provider>,
     );
-    return { ...utils, flagsRef };
+    return { ...utils, flagsRef, readyRef };
   }
 
   it("does nothing when ldClient is undefined", () => {
@@ -129,6 +142,43 @@ describe("LDIdentifier", () => {
     });
 
     expect(flagsRef.current).toEqual({ "manual-submit-meeting": true });
+  });
+
+  it("is ready once identify resolves", async () => {
+    let resolveIdentify;
+    mockLDClient.identify.mockReturnValue(
+      new Promise((resolve) => {
+        resolveIdentify = resolve;
+      }),
+    );
+    let readyRef;
+    await act(async () => {
+      ({ readyRef } = renderLDIdentifier(mockLDClient));
+    });
+    expect(readyRef.current).toBe(false);
+
+    await act(async () => resolveIdentify());
+
+    expect(readyRef.current).toBe(true);
+  });
+
+  it("is ready with no flags when identify fails, and logs the failure", async () => {
+    // Without settling on failure every flag-gated page would wait forever.
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const failure = new Error("LaunchDarkly unreachable");
+    mockLDClient.identify.mockRejectedValue(failure);
+
+    let flagsRef, readyRef;
+    await act(async () => {
+      ({ flagsRef, readyRef } = renderLDIdentifier(mockLDClient));
+    });
+
+    expect(readyRef.current).toBe(true);
+    expect(flagsRef.current).toEqual({});
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), failure);
+    consoleError.mockRestore();
   });
 
   it("subscribes to LD change events after identify", async () => {

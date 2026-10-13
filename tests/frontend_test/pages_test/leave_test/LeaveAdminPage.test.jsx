@@ -6,6 +6,7 @@ import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import * as api from "@/api/leaveApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { FlagsContext } from "@/context/flags";
 
 vi.mock("@/api/leaveApi");
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
@@ -45,6 +46,25 @@ describe("LeaveAdminPage", () => {
     api.getLeaveHolidays.mockResolvedValue(
       envelope({ year: 2026, totalDays: 0, segments: [] }),
     );
+  });
+
+  it("does not send somebody away while flags are still loading", () => {
+    useFeatureFlags.mockReturnValue({});
+
+    render(
+      <FlagsContext.Provider
+        value={{ flags: {}, setFlags: () => {}, ready: false }}
+      >
+        <MemoryRouter initialEntries={["/leave/admin"]}>
+          <Routes>
+            <Route path="/leave/admin" element={<LeaveAdminPage />} />
+            <Route path="/dashboard/me" element={<p>Personal dashboard</p>} />
+          </Routes>
+        </MemoryRouter>
+      </FlagsContext.Provider>,
+    );
+
+    expect(screen.queryByText("Personal dashboard")).not.toBeInTheDocument();
   });
 
   it("sends somebody away when the feature is switched off", () => {
