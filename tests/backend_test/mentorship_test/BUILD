@@ -460,3 +460,55 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "participant_email_notifier_test",
+    srcs = ["participant_email_notifier_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "participant_email_events_test",
+    srcs = ["participant_email_events_test.py"],
+    deps = [
+        "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "participant_email_service_test",
+    srcs = ["participant_email_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/common:permissions",
+        "//backend/communication",
+        "//backend/dto",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "participant_email_routes_test",
+    srcs = ["participant_email_routes_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)

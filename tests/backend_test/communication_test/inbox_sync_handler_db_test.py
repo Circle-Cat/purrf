@@ -11,7 +11,7 @@ from backend.common.communication_enums import (
 )
 from backend.common.exceptions import RateLimitedError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
-from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod, MentorshipEvent
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
@@ -25,7 +25,10 @@ from backend.communication.gmail_sync_service import GmailSyncService, PushOutco
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_notifier import InboxNotifier
 from backend.communication.inbox_router import InboxRouter
-from backend.communication.inbox_sync_handler import InboxSyncHandler
+from backend.communication.inbox_sync_handler import (
+    INBOX_CONTEXT_TYPES,
+    InboxSyncHandler,
+)
 from backend.communication.thread_service import ThreadServiceResolver
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.email_message_entity import EmailMessageEntity
@@ -35,12 +38,15 @@ from backend.entity.job_entity import JobEntity
 from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.ops.ops_alert_service import OpsAlertService
+from backend.mentorship.participant_email_notifier import ParticipantEmailNotifier
 from backend.recruiting import recipient_resolvers as _recruiting  # noqa: F401
 from backend.recruiting.email_sync_service import EmailSyncService
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
 from backend.repository.job_repository import JobRepository
+from backend.repository.mentorship_round_repository import MentorshipRoundRepository
+from backend.repository.users_repository import UsersRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -102,11 +108,25 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
                 ),
             ),
             logger=Mock(),
+            context_types=INBOX_CONTEXT_TYPES,
         )
         registry = EmailContextRegistry()
         registry.register(ContextType.MENTORSHIP_INBOX, handler)
-        # As the app builder wires them: what an assigned thread is synced by.
-        registry.register(ContextType.ACTIVITY, handler.alias_without_resync())
+        # As the app builder wires it: a person's round thread tells mentorship.
+        registry.register(
+            ContextType.ACTIVITY,
+            InboxSyncHandler(
+                conversation_service=conversation,
+                thread_repository=self.threads,
+                notifier=ParticipantEmailNotifier(
+                    message_repository=messages,
+                    users_repository=UsersRepository(),
+                    round_repository=MentorshipRoundRepository(),
+                ),
+                logger=Mock(),
+                context_types=[ContextType.ACTIVITY],
+            ),
+        )
         registry.register(
             ContextType.APPLICATION,
             EmailSyncService(
@@ -330,7 +350,7 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
         self.assertEqual(list(notified), [owner.user_id])
         self.assertEqual(len(await self._needs_reply_events(thread_id)), 1)
 
-    async def test_an_inbox_thread_assigned_to_a_round_syncs_through_the_alias(self):
+    async def test_an_inbox_thread_assigned_to_a_round_tells_mentorship(self):
         self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
         person = await self._person()
         thread = await self._assign(person.user_id, ContextType.ACTIVITY, 8)
@@ -353,9 +373,30 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
         self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
 
         self.assertEqual(await self._stored_ids(thread_id), ["m1", "m2"])
-        events = await self._needs_reply_events(thread_id)
-        self.assertEqual(len(events), 2)
-        self.assertEqual({e.details["service"] for e in events}, {"mentorship"})
+        # Only the first mail, while the thread was still in the Inbox.
+        self.assertEqual(len(await self._needs_reply_events(thread_id)), 1)
+        received = (
+            await self.session.scalars(
+                select(EventEntity).where(
+                    EventEntity.subject_type == INBOX_SUBJECT_TYPE,
+                    EventEntity.subject_id == thread_id,
+                    EventEntity.event_type == MentorshipEvent.EMAIL_RECEIVED,
+                )
+            )
+        ).all()
+        self.assertEqual(len(received), 1)
+        self.assertEqual(
+            received[0].details,
+            {
+                "roundId": 8,
+                "roundName": None,
+                "userId": person.user_id,
+                "personName": "Bo Chen",
+                "threadId": thread_id,
+                "subject": "A question",
+                "from": "Asker <asker@ext.com>",
+            },
+        )
 
     async def test_resync_sweeps_inbox_threads_and_skips_application_ones(self):
         inbox = await self.threads.create(

@@ -110,6 +110,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             matching_draft_service=self.mock_matching_draft_service,
             mentorship_approval_service=self.mock_approval_service,
             launchdarkly_service=self.mock_launchdarkly_service,
+            participant_email_service=MagicMock(),
             database=self.mock_database,
         )
 
@@ -888,6 +889,7 @@ class TestParticipantDetailGates(unittest.TestCase):
             matching_draft_service=MagicMock(),
             mentorship_approval_service=MagicMock(),
             launchdarkly_service=MagicMock(),
+            participant_email_service=MagicMock(),
             database=database,
         )
         app = FastAPI()
