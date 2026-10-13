@@ -60,7 +60,10 @@ class DeliveryService:
 
         now = datetime.now(timezone.utc)
         if now - notification.created_at > EXPIRY:
-            await self._settle(session, notification_id, NotificationStatus.EXPIRED)
+            await self.notification_repository.expire_unclaimed(
+                session, notification_id, stale_before=now - CLAIM_TIMEOUT
+            )
+            await session.commit()
             return DeliveryOutcome.ACKED
 
         if not await self._claim(session, notification_id, now):
