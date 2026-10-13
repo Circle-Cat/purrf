@@ -14,6 +14,7 @@ from backend.dto.email_dto import EmailSendRequestDto
 from backend.dto.interview_dto import InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT,
     RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
 )
 from backend.common.permissions import Permission
@@ -475,6 +476,32 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         # "Plain authenticated": login required, but NO permission gate (unlike
         # the PATCH decision routes). authenticate() with no permissions arg
         # leaves the wrapper closure's `permissions` cell as None.
+        self.assertIsNone(self._endpoint_permissions(route.endpoint))
+
+    async def test_get_application_email_attachment_downloads(self):
+        self.board_service.get_application_email_attachment = AsyncMock(
+            return_value=(b"%PDF", 'cv "1".pdf')
+        )
+
+        response = await self.controller.get_application_email_attachment(
+            self.ctx, application_id=10, message_id=31, index=0
+        )
+
+        self.board_service.get_application_email_attachment.assert_awaited_once_with(
+            self.session, self.ctx, 10, 31, 0
+        )
+        self.assertEqual(response.body, b"%PDF")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertTrue(
+            response.headers["content-disposition"].startswith("attachment;")
+        )
+
+    def test_email_attachment_route_is_login_gated_like_the_tab(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path[RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT]
+
+        self.assertIn("GET", route.methods)
         self.assertIsNone(self._endpoint_permissions(route.endpoint))
 
 

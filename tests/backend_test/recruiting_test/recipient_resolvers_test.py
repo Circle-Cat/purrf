@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
 
 from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.mentorship_enums import CommunicationMethod
@@ -766,6 +767,38 @@ class RegistrationCoverageTest(unittest.TestCase):
                 continue
             with self.subTest(event_type=event_type):
                 self.assertIn(subject_type, {"application", "job"})
+
+
+class SharedThreadRuleTest(unittest.IsolatedAsyncioTestCase):
+    """Both email resolvers ask the rule every domain shares."""
+
+    async def test_email_received_uses_the_shared_rule_with_the_owners_behind_it(self):
+        session = Mock()
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED, "application", 7, details={"threadId": 31}
+        )
+        with patch(
+            "backend.recruiting.recipient_resolvers.thread_senders_else",
+            new_callable=AsyncMock,
+            return_value={4},
+        ) as shared:
+            self.assertEqual(await resolve_recipients(session, event), {4})
+
+        self.assertEqual(shared.await_args.args[:2], (session, 31))
+
+    async def test_email_bounced_uses_the_shared_senders(self):
+        session = Mock()
+        event = _event(
+            RecruitingEvent.EMAIL_BOUNCED, "application", 7, details={"threadId": 31}
+        )
+        with patch(
+            "backend.recruiting.recipient_resolvers.thread_senders",
+            new_callable=AsyncMock,
+            return_value={5},
+        ) as shared:
+            self.assertEqual(await resolve_recipients(session, event), {5})
+
+        shared.assert_awaited_once_with(session, 31)
 
 
 if __name__ == "__main__":

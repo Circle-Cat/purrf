@@ -182,8 +182,8 @@ class EmailConversationService:
             message.sent_by_user_id = sender_user_id
         return message
 
-    async def list_conversation(self, session, context_type, context_id, user_id=None):
-        """Read the stored conversation for one context, or one person in it.
+    async def list_conversation(self, session, context_type, context_id, user_id):
+        """Read the stored conversation one person has in one context.
 
         Pure DB read (no Gmail call): opening a conversation never triggers a
         sync — that is done explicitly via ``sync_context`` (Gmail push /
@@ -193,20 +193,15 @@ class EmailConversationService:
             session (AsyncSession): The active DB session.
             context_type (str): A ``ContextType`` value.
             context_id (int | None): The scenario entity id.
-            user_id (int | None): Only the threads with this person.
+            user_id (int): Whose threads to read.
 
         Returns:
             list[EmailThreadDto]: Newest first — threads by their most recent
                 message, and the messages inside each thread newest first too.
         """
-        if user_id is None:
-            threads = await self._thread_repo.list_by_context(
-                session, context_type, context_id
-            )
-        else:
-            threads = await self._thread_repo.list_by_person_context(
-                session, user_id, context_type, context_id
-            )
+        threads = await self._thread_repo.list_by_person_context(
+            session, user_id, context_type, context_id
+        )
         conversation = []
         for thread in threads:
             messages = await self._message_repo.list_by_thread(
