@@ -3,16 +3,19 @@ import { listNotifiedStages } from "@/api/mentorshipEmailApi";
 
 const NONE = new Map();
 
-// Per stage, its sent entry first, then the send still to go out. A stage sent
+// Per stage, its sent entry first (Kit's own wins over a mark by hand), then
+// a stage only marked by hand, then the send still to go out. A stage sent
 // before and scheduled again shows as both; a person's timeline has the rest.
-const entriesOf = (stages, scheduled) => {
+const entriesOf = (stages, scheduled, manual) => {
   const sent = new Set(stages ?? []);
+  const byHand = new Set((manual ?? []).filter((stage) => !sent.has(stage)));
   const scheduledAt = new Map(
     (scheduled ?? []).map(({ stage, sendAt }) => [stage, sendAt]),
   );
-  const order = [...new Set([...sent, ...scheduledAt.keys()])];
+  const order = [...new Set([...sent, ...byHand, ...scheduledAt.keys()])];
   return order.flatMap((stage) => [
     ...(sent.has(stage) ? [{ stage, scheduledAt: null }] : []),
+    ...(byHand.has(stage) ? [{ stage, scheduledAt: null, manual: true }] : []),
     ...(scheduledAt.has(stage)
       ? [{ stage, scheduledAt: scheduledAt.get(stage) }]
       : []),
@@ -21,25 +24,26 @@ const entriesOf = (stages, scheduled) => {
 
 const byUser = (rows) =>
   new Map(
-    (rows ?? []).map(({ userId, stages, scheduled }) => [
+    (rows ?? []).map(({ userId, stages, scheduled, manual }) => [
       userId,
-      entriesOf(stages, scheduled),
+      entriesOf(stages, scheduled, manual),
     ]),
   );
 
 /**
- * Loads, for each person in a round, the notification stages Kit sent them
- * and the ones confirmed and still to go out, again whenever the round
- * changes. With no round nothing is fetched and the map is empty. `reload`
- * fetches it again in place. A failed load is logged and leaves the map as it
- * was.
+ * Loads, for each person in a round, the notification stages Kit sent them,
+ * the ones marked notified by hand, and the ones confirmed and still to go
+ * out, again whenever the round changes. With no round nothing is fetched and
+ * the map is empty. `reload` fetches it again in place. A failed load is
+ * logged and leaves the map as it was.
  *
  * @param {number|string|null} roundId - The mentorship round's id.
  * @returns {{
- *   stagesByUser: Map<number, Array<{stage: string, scheduledAt: string|null}>>,
+ *   stagesByUser: Map<number, Array<{stage: string, scheduledAt: string|null, manual?: boolean}>>,
  *   reload: () => Promise<void>,
  * }} `scheduledAt` is the send time (ISO) while it is still to go out, null
- *   once sent.
+ *   once sent. `manual` is true for a stage marked notified by hand and not
+ *   sent by Kit.
  */
 export const useNotifiedStages = (roundId) => {
   const [stagesByUser, setStagesByUser] = useState(NONE);

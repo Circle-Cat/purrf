@@ -59,6 +59,7 @@ import { startMatchingRun } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import MarkNotifiedDialog from "@/pages/MentorshipManagement/components/email/MarkNotifiedDialog";
 import SendNotificationDialog from "@/pages/MentorshipManagement/components/email/SendNotificationDialog";
 import {
   notificationStateLabel,
@@ -255,15 +256,16 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
 };
 
 /**
- * A person's notifications this round, one badge per stage: notified, or
- * scheduled with its Pacific send time, in the Notification filter's words.
+ * A person's notifications this round, one badge per stage: notified (by Kit,
+ * or by hand as "Notified manually"), or scheduled with its Pacific send
+ * time, in the Notification filter's words.
  *
- * @param {{ stages: Array<{stage: string, scheduledAt: string|null}>|undefined }} props
+ * @param {{ stages: Array<{stage: string, scheduledAt: string|null, manual?: boolean}>|undefined }} props
  */
 const NotificationsCell = ({ stages }) =>
   stages?.length ? (
     <div className="flex flex-wrap gap-1">
-      {stages.map(({ stage, scheduledAt }) =>
+      {stages.map(({ stage, scheduledAt, manual }) =>
         scheduledAt ? (
           <Badge
             key={`${stage}-scheduled`}
@@ -275,7 +277,8 @@ const NotificationsCell = ({ stages }) =>
           </Badge>
         ) : (
           <Badge key={`${stage}-notified`} variant="outline">
-            {stageLabel(stage)} · {notificationStateLabel("notified")}
+            {stageLabel(stage)} ·{" "}
+            {manual ? "Notified manually" : notificationStateLabel("notified")}
           </Badge>
         ),
       )}
@@ -313,7 +316,9 @@ const NotificationsCell = ({ stages }) =>
  * people there (across pages, dropped the same way) and send them a
  * notification from a Kit draft. Those two lists can also be filtered by a
  * notification stage and whether it is not notified, scheduled or notified;
- * after scheduling, a list so filtered is searched again.
+ * after scheduling, a list so filtered is searched again. While the round is
+ * in progress, writers can also mark the people picked as notified by hand,
+ * for a notification sent outside Purrf.
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();
@@ -454,6 +459,27 @@ const ParticipantSearchCard = () => {
     userId: row.userId,
     name: userDisplayName(row),
   }));
+
+  const [markOpen, setMarkOpen] = useState(false);
+  // Marks are written only while the round runs, as for any note.
+  const committedInProgress = (rounds ?? []).some(
+    (r) => String(r.id) === committedRoundId && r.isInProgress,
+  );
+  const canMarkNotified = canNotify && committedInProgress;
+  const markPeople = [...picked.values()].map((row) => ({
+    userId: row.userId,
+    name: userDisplayName(row),
+    notifiedStages: (stagesByUser.get(row.userId) ?? [])
+      .filter((entry) => entry.scheduledAt == null)
+      .map((entry) => entry.stage),
+  }));
+
+  const onMarkedNotified = () => {
+    setSelection({ key: "", picked: NO_SELECTION });
+    reloadNotified();
+    // Those just marked no longer match a Not notified filter.
+    if (notificationFiltered) refetch();
+  };
 
   const onNotificationScheduled = (sendAtIso) => {
     setSelection({ key: "", picked: NO_SELECTION });
@@ -928,6 +954,16 @@ const ParticipantSearchCard = () => {
                 >
                   Send notification · {picked.size}
                 </Button>
+                {canMarkNotified && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setMarkOpen(true)}
+                  >
+                    Mark as notified · {picked.size}
+                  </Button>
+                )}
               </div>
             )}
           </>
@@ -941,6 +977,17 @@ const ParticipantSearchCard = () => {
           defaultStage={notRegistered ? "round_recruitment" : ""}
           onScheduled={onNotificationScheduled}
         />
+
+        {markOpen && (
+          <MarkNotifiedDialog
+            open={markOpen}
+            onOpenChange={setMarkOpen}
+            roundId={committedRoundId}
+            people={markPeople}
+            stageOptions={stagesForList(notRegistered)}
+            onMarked={onMarkedNotified}
+          />
+        )}
 
         <Dialog
           open={confirmOpen}

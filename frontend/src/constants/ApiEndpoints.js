@@ -32,6 +32,8 @@ export const API_ENDPOINTS = {
   MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON: "/mentorship/admin/email-sends/person",
   MENTORSHIP_ADMIN_EMAIL_SEND_ACTION: (sendId, action) =>
     `/mentorship/admin/email-sends/${sendId}/${action}`,
+  MENTORSHIP_ADMIN_NOTIFICATIONS_MARK: (roundId) =>
+    `/mentorship/admin/rounds/${roundId}/notifications/mark`,
   MENTORSHIP_ADMIN_MATCH_RUNS: "/mentorship/admin/match-runs",
   MENTORSHIP_ADMIN_MATCH_RUN: (roundId) =>
     `/mentorship/admin/match-runs/${roundId}`,
