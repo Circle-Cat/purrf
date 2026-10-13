@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 import TrainingTrial from "@/pages/TrainingTrial";
 import { MESSAGE_TYPES } from "@/training/scormBridge";
+import { watchCourseBridge } from "./courseFrame.helper";
 
 vi.mock("@/api/trainingApi", () => ({
   startTrial: vi.fn(),
@@ -132,6 +133,8 @@ const postFromContent = (data) =>
   );
 
 describe("TrainingTrial", () => {
+  let bridge;
+
   beforeEach(() => {
     vi.clearAllMocks();
     startTrial.mockResolvedValue(TRIAL);
@@ -150,9 +153,12 @@ describe("TrainingTrial", () => {
     useAuth.mockReturnValue({
       user: { userId: 7, email: "admin@example.com" },
     });
+
+    bridge = watchCourseBridge();
   });
 
   afterEach(() => {
+    bridge.restore();
     vi.unstubAllGlobals();
   });
 
@@ -162,7 +168,7 @@ describe("TrainingTrial", () => {
     await waitFor(() => expect(startTrial).toHaveBeenCalledWith("5"));
     await waitFor(() => expect(openTrialSession).toHaveBeenCalledWith(42));
 
-    const frame = await screen.findByTitle(/course/i);
+    const frame = await bridge.findCourseFrame();
     expect(frame.src).toContain(
       "https://test-training-content.purrf.io/p/tok/__player.html",
     );
@@ -170,7 +176,7 @@ describe("TrainingTrial", () => {
 
   it("lists a received CMI write with its field, value, and time", async () => {
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
@@ -188,7 +194,7 @@ describe("TrainingTrial", () => {
       data: { status: "done", courseVerified: true },
     });
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.FINISH,
@@ -213,7 +219,7 @@ describe("TrainingTrial", () => {
       .mockResolvedValueOnce({ data: { status: "done" } })
       .mockResolvedValue({ data: { status: "done", courseVerified: true } });
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
@@ -237,7 +243,7 @@ describe("TrainingTrial", () => {
     // verifier re-running a replaced package was already DONE on their row.
     saveProgress.mockResolvedValue({ data: { status: "done" } });
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.FINISH,
@@ -267,7 +273,7 @@ describe("TrainingTrial", () => {
 
   it("does not claim completion while the server still says in progress", async () => {
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
@@ -289,7 +295,7 @@ describe("TrainingTrial", () => {
     // The page has no second opinion. The server folds in rules it cannot
     // see: DONE is absorbing, and the stamp needs a grant.
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
@@ -303,7 +309,7 @@ describe("TrainingTrial", () => {
 
   it("keeps a message from an untrusted origin out of both the panel and the save", async () => {
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(
       new MessageEvent("message", {
@@ -369,7 +375,7 @@ describe("TrainingTrial", () => {
     // 08-29 failure go undetected, so a healthy package now says so too,
     // through the same PackageHealthBox the upload dialog uses.
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     expect(
       await screen.findByText(/completes on its own reporting/i),
@@ -378,7 +384,7 @@ describe("TrainingTrial", () => {
 
   it("reads the package settings for the course being trialled", async () => {
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     expect(readCompletionConfig).toHaveBeenCalledWith("5");
   });
@@ -387,7 +393,7 @@ describe("TrainingTrial", () => {
     // Course content is uploaded by third parties and runs on that origin,
     // so a malformed commit needs no bug of ours to arrive.
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({ type: MESSAGE_TYPES.COMMIT });
 
@@ -440,7 +446,7 @@ describe("TrainingTrial", () => {
       Object.assign(new Error("refused"), { response: { status: 409 } }),
     );
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
@@ -501,7 +507,7 @@ describe("TrainingTrial", () => {
 
   it("shows suspend_data as a size only, never a limit", async () => {
     renderTrial();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
@@ -543,7 +549,7 @@ describe("TrainingTrial", () => {
 
   it("says nothing about the live package once the course has none", async () => {
     renderTrial({ liveState: "no_package", packageVersion: null });
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     expect(screen.queryByText(/Learners still see/)).not.toBeInTheDocument();
   });
@@ -558,7 +564,7 @@ describe("TrainingTrial", () => {
 
   it("does not offer to publish while nothing is staged", async () => {
     renderTrial({ verified: true, staged: null });
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     expect(
       screen.queryByRole("button", { name: "Publish package" }),
