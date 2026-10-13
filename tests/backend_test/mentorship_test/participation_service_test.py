@@ -7,7 +7,10 @@ from backend.mentorship.participation_service import ParticipationService
 from backend.common.exceptions import ConflictError
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
-from backend.dto.feedback_create_dto import FeedbackCreateDto
+from backend.dto.feedback_create_dto import (
+    FeedbackCreateDto,
+    PartnerFeedbackCreateDto,
+)
 from backend.dto.feedback_dto import FeedbackDto
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
@@ -1089,6 +1092,70 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_round_repo.get_by_round_id.assert_awaited_once_with(
             self.mock_session, 1
         )
+
+    def _partner(self, user_id, status=PairStatus.ACTIVE):
+        return (
+            MagicMock(spec=MentorshipPairsEntity, status=status),
+            UsersEntity(user_id=user_id, first_name="P", last_name=str(user_id)),
+        )
+
+    async def _submit_partner_feedback(self, *partner_ids):
+        participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        participant.participant_role = ParticipantRole.MENTEE
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            participant
+        )
+        return await self.participation_service.upsert_program_feedback(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=1,
+            feedback_data=FeedbackCreateDto(
+                program_rating=4,
+                partner_feedback=[
+                    PartnerFeedbackCreateDto(partner_id=pid, rating=5)
+                    for pid in partner_ids
+                ],
+            ),
+        )
+
+    async def test_feedback_on_partners_from_the_round_is_saved(self):
+        """Partners of ended pairs count too: the form lists every pair."""
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            self._partner(456),
+            self._partner(457, status=PairStatus.INACTIVE),
+        ]
+
+        result = await self._submit_partner_feedback(456, 457)
+
+        self.assertEqual([p.partner_id for p in result.partner_feedback], [456, 457])
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
+            session=self.mock_session, user_id=self.user_context.user_id, round_id=1
+        )
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_feedback_on_someone_not_a_partner_is_refused(self):
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            self._partner(456)
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError, "^User 789 is not your partner in this round.$"
+        ):
+            await self._submit_partner_feedback(456, 789)
+
+        self._assert_nothing_written()
+
+    async def test_feedback_on_one_partner_twice_is_refused(self):
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            self._partner(456)
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError, "^Feedback on partner 456 is given more than once.$"
+        ):
+            await self._submit_partner_feedback(456, 456)
+
+        self._assert_nothing_written()
 
     async def test_upsert_program_feedback_raises_when_no_participant(self):
         """Raises ValueError and logs error when participant record does not exist."""
