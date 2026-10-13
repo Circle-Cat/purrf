@@ -415,6 +415,37 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
         self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
 
+    async def test_in_window_excludes_rows_whose_attendance_an_admin_set(self):
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        admin_set = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="admin-set",
+            absent_user_id=pair.mentee_id,
+            attendance_set_by_admin_at=base + timedelta(hours=2),
+        )
+        keeper = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="keep-aaaa",
+        )
+        await self.insert_entities([admin_set, keeper])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base - timedelta(hours=7),
+            starts_before=base + timedelta(hours=3),
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
+
     async def test_in_window_boundaries_are_inclusive(self):
         """A meeting whose end lands exactly on ends_after, and one whose start
         lands exactly on starts_before, both stay in -- the window is closed on

@@ -1239,6 +1239,24 @@ class MentorshipAdminService:
             late_user_ids.append(mentee_id)
         meeting.late_user_ids = late_user_ids
 
+    @staticmethod
+    def _attendance_outcome(meeting: MentorshipMeetingEntity) -> tuple:
+        """
+        The attendance result of a meeting row, as the admin editor sees it.
+
+        NULL flags and a NULL late list read the same as False and empty --
+        the editor cannot tell them apart, so turning one into the other is
+        not a change the admin made.
+        """
+        return (
+            bool(meeting.is_completed),
+            meeting.absent_user_id,
+            sorted(meeting.late_user_ids or []),
+            bool(meeting.has_unknown_absent),
+            bool(meeting.has_unknown_late),
+            bool(meeting.has_insufficient_duration),
+        )
+
     async def apply_v2_meeting_batch(
         self,
         session: AsyncSession,
@@ -1251,7 +1269,9 @@ class MentorshipAdminService:
         Locks the pair row for the duration of the transaction, applies all
         deletes then all updates against the current DB state (not the
         client's snapshot), recalculates completed_count, and returns the
-        pair's latest meeting log.
+        pair's latest meeting log. A row whose attendance result changes is
+        stamped with ``attendance_set_by_admin_at`` so the Meet attendance
+        sweep stops re-deriving it.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -1333,8 +1353,10 @@ class MentorshipAdminService:
             await self.mentorship_meeting_repository.delete_meetings(
                 session, pair_id, list(delete_ids)
             )
+        edited_at = datetime.now(timezone.utc)
         for item in batch.updates:
             meeting = by_id[item.meeting_id]
+            before = self._attendance_outcome(meeting)
             if item.is_completed is not None:
                 meeting.is_completed = item.is_completed
             if item.note is not None:
@@ -1343,6 +1365,8 @@ class MentorshipAdminService:
                 )
             if item.is_completed is not None or item.note is not None:
                 self._validate_no_absent_if_completed(meeting)
+            if self._attendance_outcome(meeting) != before:
+                meeting.attendance_set_by_admin_at = edited_at
 
         # Assigned directly rather than left for the ORM to refresh -- same
         # rationale as MeetingService.upsert_meetings: the UPDATE issued here

@@ -1666,6 +1666,91 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_session.commit.assert_awaited_once()
         self.assertEqual(result.round_version, "v2")
 
+    async def test_apply_batch_marks_rows_whose_attendance_the_admin_changed(self):
+        """Any change to an attendance result stamps the row so the Meet
+        attendance sweep stops overwriting it."""
+        pair = _make_pair(mentor_id=10, mentee_id=20)
+        absent = _make_meeting(
+            meeting_id="absent",
+            is_completed=False,
+            late_user_ids=[],
+            has_unknown_absent=False,
+            has_unknown_late=False,
+            has_insufficient_duration=False,
+        )
+        completed = _make_meeting(meeting_id="completed", is_completed=False)
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
+            [absent, completed],
+            [absent, completed],
+        ]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
+        before = datetime.now(timezone.utc)
+
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session,
+            1,
+            V2MeetingBatchUpdateDto(
+                updates=[
+                    V2MeetingUpdateItemDto(
+                        meeting_id="absent", note=[MeetingNoteTag.MENTEE_ABSENT]
+                    ),
+                    V2MeetingUpdateItemDto(meeting_id="completed", is_completed=True),
+                ]
+            ),
+        )
+
+        self.assertEqual(absent.absent_user_id, 20)
+        for meeting in (absent, completed):
+            self.assertIsNotNone(meeting.attendance_set_by_admin_at)
+            self.assertGreaterEqual(meeting.attendance_set_by_admin_at, before)
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_apply_batch_leaves_rows_unmarked_when_nothing_changes(self):
+        """A null-field item, a resubmit of the sweep's own result, and an
+        empty note on a never-synced row change no attendance result, so the
+        sweep keeps owning those rows."""
+        pair = _make_pair(mentor_id=10, mentee_id=20)
+        untouched = _make_meeting(meeting_id="untouched", is_completed=False)
+        resubmitted = _make_meeting(
+            meeting_id="resubmitted",
+            is_completed=False,
+            absent_user_id=20,
+            late_user_ids=[10],
+            has_unknown_absent=False,
+            has_unknown_late=False,
+            has_insufficient_duration=False,
+        )
+        never_synced = _make_meeting(meeting_id="never-synced", is_completed=False)
+        rows = [untouched, resubmitted, never_synced]
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [rows, rows]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 0
+
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session,
+            1,
+            V2MeetingBatchUpdateDto(
+                updates=[
+                    V2MeetingUpdateItemDto(meeting_id="untouched"),
+                    V2MeetingUpdateItemDto(
+                        meeting_id="resubmitted",
+                        is_completed=False,
+                        note=[
+                            MeetingNoteTag.MENTEE_ABSENT,
+                            MeetingNoteTag.MENTOR_LATE,
+                        ],
+                    ),
+                    V2MeetingUpdateItemDto(
+                        meeting_id="never-synced", is_completed=False, note=[]
+                    ),
+                ]
+            ),
+        )
+
+        for meeting in rows:
+            self.assertIsNone(meeting.attendance_set_by_admin_at, meeting.meeting_id)
+
     async def test_apply_batch_rejects_unknown_meeting_id(self):
         """A meeting_id not present among this pair's rows is a client error."""
         pair = _make_pair()

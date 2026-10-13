@@ -172,7 +172,8 @@ class MentorshipMeetingRepository:
 
         Returns:
             list[MentorshipMeetingEntity]: Rows with ``source='google'``,
-                ``is_completed=False``, a non-null ``google_meeting_code``, and
+                ``is_completed=False``, a non-null ``google_meeting_code``, no
+                ``attendance_set_by_admin_at``, and
                 a slot inside both the sweep bounds and the round window,
                 ordered like every other read here (``start_datetime``
                 ascending, then ``created_datetime``, then ``meeting_id``).
@@ -192,6 +193,9 @@ class MentorshipMeetingRepository:
                 # Do not "correct" this back to `.is_(False)`.
                 MentorshipMeetingEntity.is_completed == False,  # noqa: E712
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
+                # An admin's attendance correction is final; re-analysing the
+                # row would overwrite it with whatever Meet recorded.
+                MentorshipMeetingEntity.attendance_set_by_admin_at.is_(None),
                 MentorshipMeetingEntity.end_datetime >= ends_after,
                 MentorshipMeetingEntity.start_datetime <= starts_before,
                 MentorshipMeetingEntity.start_datetime >= round_window_start,
