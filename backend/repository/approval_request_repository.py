@@ -82,7 +82,9 @@ class ApprovalRequestRepository:
             ApprovalRequestEntity.request_id == request_id
         )
         if for_update:
-            stmt = stmt.with_for_update()
+            # Refresh a row an earlier read left in the identity map, or the
+            # checks made under the lock would run against stale values.
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         result = await session.execute(stmt)
         return result.scalars().one_or_none()
 

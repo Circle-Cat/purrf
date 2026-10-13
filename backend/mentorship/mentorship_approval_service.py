@@ -38,12 +38,14 @@ _MARK_ACTIONS = {
     ParticipantNoteTag.RED_FLAG: MARK_RED_FLAG,
 }
 
+_OWN_EXEMPTION = "The person being exempted cannot review their own exemption."
 _OWN_WITHDRAWAL = "The person being withdrawn cannot review their own withdrawal."
 _OWN_MARK = "The person being marked cannot review a mark on themselves."
 _IN_PAIR = "Neither person in the pair can review a request to end it."
 
 # The requests whose subject may not be their reviewer, with the refusal.
 _SUBJECT_MAY_NOT_REVIEW = {
+    EXEMPT_MATCHING: _OWN_EXEMPTION,
     WITHDRAW_PARTICIPANT: _OWN_WITHDRAWAL,
     MARK_NO_SHOW: _OWN_MARK,
     MARK_RED_FLAG: _OWN_MARK,
@@ -166,17 +168,20 @@ class MentorshipApprovalService:
             round_id (int): The round.
             user_id (int): The person.
             actor_id (int): Who is asking.
-            reviewer_id (int): Who should decide.
+            reviewer_id (int): Who should decide; not the person.
             reason (str): Why.
 
         Returns:
             dict: The new request.
 
         Raises:
-            ValueError: The reviewer or reason is refused.
+            ValueError: The reviewer is the person, or the reviewer or reason
+                is refused.
             ConflictError: The round is not in progress, the person does not
                 need an exemption, or one is already waiting for approval.
         """
+        if reviewer_id == user_id:
+            raise ValueError(_OWN_EXEMPTION)
         row = await self.approval_service.raise_request(
             session,
             action=EXEMPT_MATCHING,
@@ -402,8 +407,8 @@ class MentorshipApprovalService:
 
         Raises:
             ValueError: Not a mentorship request, a refused reviewer, or the
-                person a withdrawal or mark is about, or either person in a pair
-                being ended.
+                person an exemption, withdrawal or mark is about, or either
+                person in a pair being ended.
             PermissionError: The caller did not raise it.
             ConflictError: It is no longer pending.
         """
