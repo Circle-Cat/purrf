@@ -278,6 +278,118 @@ describe("BoardPage", () => {
     );
   });
 
+  describe("a response for the job switched away from", () => {
+    const deferred = () => {
+      let resolve;
+      const promise = new Promise((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+    const card = (id, name, stage) => ({
+      id,
+      applicantName: name,
+      applicantEmail: `${id}@example.com`,
+      stage,
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+    const boardOfB = {
+      data: {
+        stages: {
+          board_review: {
+            items: [card(201, "Bea Board", "board_review")],
+            total: 1,
+            has_more: false,
+          },
+        },
+      },
+    };
+    const switchToB = async (user) => {
+      await user.click(screen.getByRole("combobox", { name: "Job" }));
+      await user.click(await screen.findByText("Mentor"));
+    };
+
+    it("drops a Load more page that arrives after the switch", async () => {
+      const user = userEvent.setup();
+      const pageOfA = deferred();
+      const boardB = deferred();
+      api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+      api.getJobBoard.mockImplementation((jobId) =>
+        jobId === 1
+          ? Promise.resolve({
+              data: {
+                stages: {
+                  rejected: {
+                    items: [card(101, "Ann Early", "rejected")],
+                    total: 2,
+                    has_more: true,
+                  },
+                },
+              },
+            })
+          : boardB.promise,
+      );
+      api.getJobBoardStagePage.mockImplementation(() => pageOfA.promise);
+
+      renderPage();
+      const rejectedLane = await screen.findByTestId("lane-rejected");
+      await user.click(within(rejectedLane).getByText("Load more"));
+      await switchToB(user);
+      await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(2));
+
+      // Job A's page lands while job B's board is still loading.
+      await act(async () => {
+        pageOfA.resolve({
+          data: {
+            items: [card(102, "Andy Late", "rejected")],
+            total: 2,
+            has_more: false,
+          },
+        });
+      });
+      await act(async () => {
+        boardB.resolve(boardOfB);
+      });
+
+      expect(await screen.findByText("Bea Board")).toBeInTheDocument();
+      expect(screen.queryByText("Andy Late")).not.toBeInTheDocument();
+      expect(screen.queryByText("Ann Early")).not.toBeInTheDocument();
+    });
+
+    it("keeps the board of the job now selected when the old one arrives last", async () => {
+      const user = userEvent.setup();
+      const boardA = deferred();
+      api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+      api.getJobBoard.mockImplementation((jobId) =>
+        jobId === 1 ? boardA.promise : Promise.resolve(boardOfB),
+      );
+
+      renderPage();
+      await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+      await switchToB(user);
+      expect(await screen.findByText("Bea Board")).toBeInTheDocument();
+
+      await act(async () => {
+        boardA.resolve({
+          data: {
+            stages: {
+              board_review: {
+                items: [card(101, "Ann Stale", "board_review")],
+                total: 1,
+                has_more: false,
+              },
+            },
+          },
+        });
+      });
+
+      expect(screen.getByText("Bea Board")).toBeInTheDocument();
+      expect(screen.queryByText("Ann Stale")).not.toBeInTheDocument();
+    });
+  });
+
   // Which lanes exist, and why an activity posting has no Offer lane.
   it("explains how the lanes read", async () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
