@@ -69,7 +69,7 @@ class ProfileCommandService:
         # Update other fields (no restriction)
         users.first_name = latest_users_data.first_name
         users.last_name = latest_users_data.last_name
-        users.communication_method = latest_users_data.communication_method
+        users.communication_channel = latest_users_data.communication_method
         users.preferred_name = latest_users_data.preferred_name
         users.linkedin_link = latest_users_data.linkedin_link
         users.updated_timestamp = datetime.now(timezone.utc)
