@@ -729,6 +729,9 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(inbox._participants, builder.mentorship_round_participants_repo)
         self.assertIs(inbox._rounds_service, builder.rounds_service)
         self.assertIs(inbox._rounds, builder.mentorship_round_repository)
+        self.assertIs(
+            builder.board_service.person_email_service, builder.person_email_service
+        )
 
         # Assert that the builder's internal attributes are the created mock instances
         mock_google_client_instance.create_chat_client.assert_called_once()

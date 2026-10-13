@@ -148,6 +148,7 @@ py_test(
         "//backend/common:communication_enums",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
+        "//backend/communication",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/mentorship",
@@ -170,6 +171,7 @@ py_test(
     name = "board_controller_test",
     srcs = ["board_controller_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/dto",
@@ -316,5 +318,16 @@ py_test(
         "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "application_email_policy_test",
+    srcs = ["application_email_policy_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+        "//backend/dto",
+        "//backend/recruiting",
     ],
 )
