@@ -37,6 +37,10 @@ _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _INVALID_STATE_MESSAGE = "Verification session expired. Please request a new code."
 _SET_PRIMARY_STATE_FLOW = "set_primary"
 _PASSWORDLESS_SUB_PREFIX = "email|"
+_EMAIL_IN_USE_MESSAGE = (
+    "This email is already in use by another account. If it's "
+    "yours, sign in with a code sent to that address instead."
+)
 
 
 def _is_session_address(
@@ -192,10 +196,7 @@ class EmailManagementService:
         if await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
-            raise ConflictError(
-                "This email is already in use by another account. If it's "
-                "yours, sign in with a code sent to that address instead."
-            )
+            raise ConflictError(_EMAIL_IN_USE_MESSAGE)
 
         self._auth0.start_passwordless(normalized)
 
@@ -244,6 +245,13 @@ class EmailManagementService:
             # CSRF guard: the state must belong to the caller's session.
             raise ValueError(_INVALID_STATE_MESSAGE)
         target_email = claims["email"]
+        # Re-checked here because another account may have confirmed the
+        # address since initiate; the insert would then hit the global
+        # unique index.
+        if await self._user_emails.exists_on_other_user(
+            session, target_email, current_user_id
+        ):
+            raise ConflictError(_EMAIL_IN_USE_MESSAGE)
 
         id_token_claims = self._auth0.exchange_otp(target_email, otp)
         if not id_token_claims.get("email_verified"):
@@ -548,10 +556,16 @@ class EmailManagementService:
 
         Any *other* account holding the address unconfirmed is released first:
         such a row is nobody's proof, ``uq_user_emails_email`` is global, and
-        the caller has just proved the mailbox. The release shares this
-        session, so it and the write land in one transaction.
+        the caller has just proved the mailbox. A never-logged-in backfilled
+        account's ``manual|`` identity claiming the address goes too: login
+        routing would otherwise keep swapping into that account and inserting
+        the address it no longer holds. The releases share this session, so
+        they and the write land in one transaction.
         """
         await self._user_emails.delete_unconfirmed_on_other_users(
+            session, email, user_id
+        )
+        await self._user_identities.delete_swappable_on_other_users(
             session, email, user_id
         )
         existing = await self._user_emails.get_by_user_and_email(
