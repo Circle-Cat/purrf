@@ -147,6 +147,61 @@ class PublishOnCommitTest(BaseRepositoryTestLib):
         self.assertNotIn("pending_notification_ids", self.session.info)
         self.publisher.publish.assert_not_called()
 
+    async def _record(self, event_type, recipient_id):
+        """Record one event for one recipient; returns its notification id."""
+
+        @recipient_registry.register_recipients(event_type, subject_type="application")
+        async def resolver(session, event):
+            return [recipient_id]
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=7,
+            actor_id=self.actor.user_id,
+            event_type=event_type,
+        )
+        return notifications[0].notification_id
+
+    def _published_ids(self):
+        return [
+            json.loads(call.args[1])["notification_id"]
+            for call in self.publisher.publish.call_args_list
+        ]
+
+    async def test_a_released_savepoint_waits_for_the_outer_commit(self):
+        """A delivery that ran before the outer commit would find no row."""
+        self.actor = _make_user()
+        recipient = _make_user()
+        await self.insert_entities([self.actor, recipient])
+
+        async with self.session.begin_nested():
+            notification_id = await self._record("demo.nested", recipient.user_id)
+        self.publisher.publish.assert_not_called()
+
+        await self.session.commit()
+        self.assertEqual(self._published_ids(), [notification_id])
+
+    async def test_a_failed_savepoint_drops_only_its_own_notifications(self):
+        """One thread failing in a sync round must not cost the others."""
+        self.actor = _make_user()
+        recipient = _make_user()
+        await self.insert_entities([self.actor, recipient])
+
+        async with self.session.begin_nested():
+            before = await self._record("demo.before", recipient.user_id)
+        with self.assertRaises(RuntimeError):
+            async with self.session.begin_nested():
+                await self._record("demo.failed", recipient.user_id)
+                async with self.session.begin_nested():
+                    await self._record("demo.failed_inner", recipient.user_id)
+                raise RuntimeError("thread sync failed")
+        async with self.session.begin_nested():
+            after = await self._record("demo.after", recipient.user_id)
+
+        await self.session.commit()
+        self.assertCountEqual(self._published_ids(), [before, after])
+
     async def test_a_publish_failure_does_not_break_the_request(self):
         """The row stays pending and the ride-along sweep picks it up later."""
         self.publisher.publish.side_effect = RuntimeError("pubsub down")
