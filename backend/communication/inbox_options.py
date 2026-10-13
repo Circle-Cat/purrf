@@ -23,7 +23,10 @@ class InboxThreadOptions:
     async def download_attachment(
         self, session, user, thread_id, message_id, attachment_index
     ):
-        """Fetch one attachment of one message of a visible thread.
+        """Fetch one attachment of one message of a thread in the viewer's Inbox.
+
+        A thread assigned out of the Inbox is not found here; the page it was
+        assigned to serves its attachments under that page's own read rule.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -36,10 +39,11 @@ class InboxThreadOptions:
             tuple[bytes, str]: The content and the file name.
 
         Raises:
-            ValueError: Thread not found or not visible; or the message is not
+            ValueError: Thread not found, not visible or no longer in the
+                Inbox; or the message is not
                 in the thread or has no attachment at that index.
         """
-        await self._load_visible(session, user, thread_id, inbox_only=False)
+        await self._load_visible(session, user, thread_id)
         messages = await self._messages.list_by_thread(session, thread_id)
         message = next((m for m in messages if m.message_id == message_id), None)
         if message is None:

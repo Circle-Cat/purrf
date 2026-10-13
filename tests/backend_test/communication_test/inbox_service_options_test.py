@@ -83,15 +83,16 @@ class DownloadTest(_OptionsFixture):
         self.assertEqual((content, name), (b"BYTES", "b.png"))
         self.gmail.get_attachment.assert_called_once_with("gm-10", "att-b")
 
-    async def test_an_assigned_thread_still_serves_its_attachments(self):
+    async def test_an_assigned_thread_is_not_found(self):
+        """Its attachments are served by the page it was assigned to, which
+        checks who may read that person's mail; seeing the service's Inbox
+        is not enough."""
         viewer = _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
 
-        content, name = await self.service.download_attachment(
-            self.session, viewer, 5, 50, 0
-        )
+        with self.assertRaisesRegex(ValueError, "thread 5 not found"):
+            await self.service.download_attachment(self.session, viewer, 5, 50, 0)
 
-        self.assertEqual((content, name), (b"BYTES", "id.pdf"))
-        self.gmail.get_attachment.assert_called_once_with("gm-50", "att-i")
+        self.gmail.get_attachment.assert_not_called()
 
     async def test_an_assigned_thread_of_a_hidden_service_is_not_found(self):
         viewer = _viewer(Permission.INQUIRIES_MANAGE)
