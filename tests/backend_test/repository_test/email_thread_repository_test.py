@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from backend.common.communication_enums import ContextType
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.entity.email_message_entity import EmailMessageEntity
 from backend.entity.email_thread_entity import EmailThreadEntity  # noqa: F401
 from backend.entity.users_entity import UsersEntity  # noqa: F401
@@ -104,6 +105,45 @@ class TestEmailThreadRepository(BaseRepositoryTestLib):
         self.assertEqual(
             await self.repo.list_open_by_context_types(self.session, []), []
         )
+
+    async def _person(self):
+        user = UsersEntity(
+            first_name="Bo",
+            last_name="Chen",
+            timezone="UTC",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            is_active=True,
+        )
+        await self.insert_entities([user])
+        return user
+
+    async def test_person_context_reads_only_that_person_in_that_context(self):
+        ann, bo = await self._person(), await self._person()
+        wanted = []
+        for key, user, context, context_id in (
+            ("mine-1", ann, ContextType.ACTIVITY, 8),
+            ("other-person", bo, ContextType.ACTIVITY, 8),
+            ("other-round", ann, ContextType.ACTIVITY, 9),
+            ("other-context", ann, ContextType.APPLICATION, 8),
+            ("mine-2", ann, ContextType.ACTIVITY, 8),
+        ):
+            thread = await self.repo.create(
+                self.session,
+                user_id=user.user_id,
+                gmail_thread_id=f"person-{key}",
+                subject=key,
+                context_type=context,
+                context_id=context_id,
+            )
+            if key.startswith("mine"):
+                wanted.append(thread.thread_id)
+
+        found = await self.repo.list_by_person_context(
+            self.session, ann.user_id, ContextType.ACTIVITY, 8
+        )
+
+        self.assertEqual([t.thread_id for t in found], wanted)
 
 
 if __name__ == "__main__":

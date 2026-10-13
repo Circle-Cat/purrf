@@ -1,6 +1,5 @@
 import unittest
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 from backend.common.communication_enums import ContextType, InboxService
@@ -63,9 +62,8 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             thread_service_resolver=ThreadServiceResolver(
                 job_repository=JobRepository()
             ),
-            conversation_service=SimpleNamespace(),
             aliases=InboxAliases(mentorship="mentorship-db@example.com"),
-            gmail_client=Mock(),
+            person_email_service=Mock(),
             round_participants_repository=MentorshipRoundParticipantsRepository(),
             rounds_service=Mock(),
         )
