@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TrainingCourse from "@/pages/TrainingCourse";
 import { MESSAGE_TYPES } from "@/training/scormBridge";
+import { watchCourseBridge } from "./courseFrame.helper";
 
 vi.mock("@/api/trainingApi", () => ({
   openSession: vi.fn(),
@@ -48,6 +49,8 @@ const SESSION = {
 };
 
 describe("TrainingCourse", () => {
+  let bridge;
+
   beforeEach(() => {
     vi.clearAllMocks();
     openSession.mockResolvedValue(SESSION);
@@ -59,16 +62,19 @@ describe("TrainingCourse", () => {
     // so it is observed here at the fetch seam instead of through the
     // trainingApi mock.
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+
+    bridge = watchCourseBridge();
   });
 
   afterEach(() => {
+    bridge.restore();
     vi.unstubAllGlobals();
   });
 
   it("points the player frame at the content origin, not at our own", async () => {
     renderCourse();
 
-    const frame = await screen.findByTitle(/course/i);
+    const frame = await bridge.findCourseFrame();
     expect(frame.src).toContain(
       "https://test-training-content.purrf.io/p/tok/__player.html",
     );
@@ -76,7 +82,7 @@ describe("TrainingCourse", () => {
 
   it("saves a commit that came from the content origin", async () => {
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(
       new MessageEvent("message", {
@@ -95,7 +101,7 @@ describe("TrainingCourse", () => {
 
   it("ignores a commit forged by any other page", async () => {
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(
       new MessageEvent("message", {
@@ -116,7 +122,7 @@ describe("TrainingCourse", () => {
     // only this page knows.
     saveProgress.mockRejectedValue(new Error("boom"));
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(
       new MessageEvent("message", {
@@ -147,7 +153,7 @@ describe("TrainingCourse", () => {
       }),
     );
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     postCommit({});
 
@@ -164,7 +170,7 @@ describe("TrainingCourse", () => {
       .spyOn(console, "error")
       .mockImplementation(() => {});
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(
       new MessageEvent("message", {
@@ -187,7 +193,7 @@ describe("TrainingCourse", () => {
       .spyOn(console, "error")
       .mockImplementation(() => {});
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(
       new MessageEvent("message", {
@@ -218,7 +224,7 @@ describe("TrainingCourse", () => {
     };
     openSession.mockResolvedValue({ data: { ...SESSION.data, progress } });
     renderCourse();
-    const frame = await screen.findByTitle(/course/i);
+    const frame = await bridge.findCourseFrame();
     const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
 
     window.dispatchEvent(
@@ -245,7 +251,7 @@ describe("TrainingCourse", () => {
 
   it("ignores a READY forged by any other page", async () => {
     renderCourse();
-    const frame = await screen.findByTitle(/course/i);
+    const frame = await bridge.findCourseFrame();
     const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
 
     window.dispatchEvent(
@@ -263,7 +269,7 @@ describe("TrainingCourse", () => {
     // SESSION carries `progress: null` -- what the API sends for an
     // assignment nobody has opened.
     renderCourse();
-    const frame = await screen.findByTitle(/course/i);
+    const frame = await bridge.findCourseFrame();
     const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
 
     window.dispatchEvent(
@@ -280,7 +286,7 @@ describe("TrainingCourse", () => {
 
   it("saves what it last received when the page goes away, over a keepalive fetch rather than axios", async () => {
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
     postCommit({ "cmi.suspend_data": "blob" });
     // A generous timeout on this first stage, not the assertion, is what
     // needs raising: under the full suite's parallel load the default 1000ms
@@ -315,7 +321,7 @@ describe("TrainingCourse", () => {
 
   it("does not save on page hide when nothing new arrived", async () => {
     renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
 
     window.dispatchEvent(new Event("pagehide"));
 
@@ -325,7 +331,7 @@ describe("TrainingCourse", () => {
 
   it("stops listening for page hide when it goes away", async () => {
     const { unmount } = renderCourse();
-    await screen.findByTitle(/course/i);
+    await bridge.findCourseFrame();
     postCommit({ "cmi.suspend_data": "blob" });
     await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
       timeout: 3000,

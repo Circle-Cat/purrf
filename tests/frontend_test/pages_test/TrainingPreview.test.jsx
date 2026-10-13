@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TrainingPreview from "@/pages/TrainingPreview";
 import { MESSAGE_TYPES } from "@/training/scormBridge";
+import { watchCourseBridge } from "./courseFrame.helper";
 
 vi.mock("@/api/trainingApi", () => ({
   startTrial: vi.fn(),
@@ -80,6 +81,8 @@ const renderPreview = (overrides = {}) => {
 };
 
 describe("TrainingPreview", () => {
+  let bridge;
+
   beforeEach(() => {
     vi.clearAllMocks();
     openPreviewSession.mockResolvedValue(SESSION);
@@ -88,6 +91,12 @@ describe("TrainingPreview", () => {
     useAuth.mockReturnValue({
       user: { userId: 7, email: "admin@example.com" },
     });
+
+    bridge = watchCourseBridge();
+  });
+
+  afterEach(() => {
+    bridge.restore();
   });
 
   it("says nothing is recorded", async () => {
@@ -123,7 +132,7 @@ describe("TrainingPreview", () => {
 
   it("renders no verdict bar and no CMI panel", async () => {
     renderPreview();
-    await screen.findByTitle("Course");
+    await bridge.findCourseFrame();
     expect(screen.queryByTestId("trial-verdict")).toBeNull();
     expect(screen.queryByTestId("trial-writes")).toBeNull();
   });
@@ -138,7 +147,7 @@ describe("TrainingPreview", () => {
 
   it("records nothing the course reports", async () => {
     renderPreview();
-    await screen.findByTitle("Course");
+    await bridge.findCourseFrame();
 
     postFromContent({
       type: MESSAGE_TYPES.COMMIT,
