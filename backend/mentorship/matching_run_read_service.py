@@ -19,19 +19,18 @@ from backend.mentorship.matching_draft import (
 from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
 
 
-def _needs_attention(item) -> tuple:
-    """Sort key placing the rows an admin has to act on at the top.
+def _review_order(item) -> tuple:
+    """Sort key: mutual choices first, then by descending score, then nobody.
 
-    The three outcomes rank before the score does, because a mutual choice
-    carries no score at all: reading its absence as zero would sort the pairs
-    needing least review in among the weakest ones. A mutual choice an admin
-    has changed is no longer one.
+    A mutual choice carries no score at all, so it ranks on its own rather
+    than being read as zero. Its mentor cannot be changed, so a draft entry
+    for it only rewords the reason and it stays a mutual choice.
     """
     mentee_id, row = item
     if row.mentor_id is None:
-        return (0, 0, mentee_id)
-    if row.result.match_type == "mutual_yes" and not row.edited:
         return (2, 0, mentee_id)
+    if row.result.match_type == "mutual_yes" and row.mentor_id == row.result.mentor_id:
+        return (0, 0, mentee_id)
     return (1, -(row.score or 0), mentee_id)
 
 
@@ -398,10 +397,8 @@ class MatchingRunReadService:
             for mentee_id, row in rows.items()
             if matched is None or (row.mentor_id is not None) is matched
         ]
-        # Ordered by how much of a person's attention the row needs: nobody
-        # found, then the scored ones, then the mutual choices that need none.
         # Ties break on mentee id so the same run always pages the same way.
-        selected.sort(key=_needs_attention)
+        selected.sort(key=_review_order)
         items = selected[offset : offset + limit]
 
         mentees = self.matching_storage.read_people(

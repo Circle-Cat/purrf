@@ -81,7 +81,12 @@ def _score_of(result, mentor_id: str | None) -> int | None:
 
 
 def allowed_mentors(result) -> set[str | None]:
-    """Who a mentee may be given: nobody, the matcher's choice, a candidate."""
+    """Who a mentee may be given: nobody, the matcher's choice, a candidate.
+
+    A mutual choice keeps its mentor; only its reason can be edited.
+    """
+    if result.match_type == "mutual_yes":
+        return {result.mentor_id}
     return {None, result.mentor_id, *(c.mentor_id for c in result.candidates)}
 
 

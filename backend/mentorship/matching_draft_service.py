@@ -110,7 +110,8 @@ class MatchingDraftService:
 
         A change that leaves a mentee exactly as the matcher had them removes
         that mentee from the draft. A mentee may only be given one of her
-        candidates, the matcher's choice, or nobody.
+        candidates, the matcher's choice, or nobody; a mutual choice keeps its
+        mentor and only its reason can change.
 
         Args:
             round_id (int): Round whose run is edited.
@@ -141,6 +142,14 @@ class MatchingDraftService:
             result = results.get(change.mentee_id)
             if result is None:
                 raise ValueError(f"Mentee {change.mentee_id} is not in this run.")
+            if (
+                result.match_type == "mutual_yes"
+                and change.mentor_id != result.mentor_id
+            ):
+                raise ValueError(
+                    f"Mentee {change.mentee_id} chose her mentor and was chosen "
+                    "back; only the reason can be changed."
+                )
             if change.mentor_id not in allowed_mentors(result):
                 raise ValueError(
                     f"Mentor {change.mentor_id} is not a candidate for mentee "
