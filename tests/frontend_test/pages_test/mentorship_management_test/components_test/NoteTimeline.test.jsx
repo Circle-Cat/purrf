@@ -4,9 +4,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
 import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import { addParticipantNote } from "@/api/mentorshipApi";
+import { stagesForList } from "@/pages/MentorshipManagement/components/email/emailLabels";
 import { noteOf } from "../participantDetail.helper";
 
 vi.mock("@/api/mentorshipApi", () => ({ addParticipantNote: vi.fn() }));
+vi.mock("@/api/mentorshipEmailApi", () => ({ markNotified: vi.fn() }));
 
 const renderTimeline = (props = {}) =>
   render(
@@ -24,6 +26,65 @@ describe("NoteTimeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(toast, "error").mockImplementation(() => {});
+  });
+
+  it("labels a note that marked someone notified with its stage", () => {
+    renderTimeline({
+      notes: [
+        noteOf({
+          noteId: 6,
+          tag: "notified",
+          notificationStage: "match_result",
+          body: "Sent on Teams",
+        }),
+      ],
+    });
+    expect(
+      screen.getByText("Marked as notified: Match result"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Sent on Teams")).toBeInTheDocument();
+  });
+
+  it("offers Mark as notified only where it may and the timeline can be added to", () => {
+    const { unmount } = renderTimeline({
+      canMarkNotified: false,
+      personName: "Alice Chen",
+      markStageOptions: stagesForList(false),
+    });
+    expect(
+      screen.queryByRole("button", { name: "Mark as notified" }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    renderTimeline({
+      canAdd: false,
+      canMarkNotified: true,
+      personName: "Alice Chen",
+      markStageOptions: stagesForList(false),
+    });
+    expect(
+      screen.queryByRole("button", { name: "Mark as notified" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens Mark as notified for the person, with the stages already reached", async () => {
+    renderTimeline({
+      canMarkNotified: true,
+      personName: "Alice Chen",
+      markStageOptions: stagesForList(false),
+      notifiedStages: ["match_result"],
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mark as notified" }),
+    );
+
+    expect(
+      await screen.findByText("Mark as notified — Alice Chen"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Match result (already notified)" }),
+    ).toBeDisabled();
   });
 
   it("says so when there are no notes", () => {

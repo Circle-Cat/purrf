@@ -5,6 +5,7 @@ import { listPersonSends } from "@/api/mentorshipEmailApi";
 
 vi.mock("@/api/mentorshipEmailApi", () => ({
   listPersonSends: vi.fn(),
+  markNotified: vi.fn(),
 }));
 
 const sendOf = (sendId, stage) => ({

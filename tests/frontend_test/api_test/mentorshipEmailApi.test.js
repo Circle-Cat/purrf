@@ -6,6 +6,7 @@ import {
   listKitDrafts,
   listNotifiedStages,
   listPersonSends,
+  markNotified,
   refreshEmailPreview,
   confirmEmailSend,
 } from "@/api/mentorshipEmailApi";
@@ -58,6 +59,24 @@ describe("mentorshipEmailApi", () => {
     expect(request.get).toHaveBeenCalledWith(
       "/mentorship/admin/email-sends/person",
       { params: { roundId: 7, userId: 3104 } },
+    );
+  });
+
+  it("marks people notified in a round", async () => {
+    request.post.mockResolvedValue({
+      success: true,
+      data: { marked: [11], skipped: [] },
+    });
+    await expect(
+      markNotified(7, {
+        userIds: [11],
+        stage: "admission",
+        body: "Sent on Teams",
+      }),
+    ).resolves.toEqual({ marked: [11], skipped: [] });
+    expect(request.post).toHaveBeenCalledWith(
+      "/mentorship/admin/rounds/7/notifications/mark",
+      { userIds: [11], stage: "admission", body: "Sent on Teams" },
     );
   });
 
