@@ -11,6 +11,7 @@ py_library(
         "//backend/common:environment_constants",
         "//backend/common:exceptions",
         "//backend/common:fast_api_response_wrapper",
+        "//backend/common:html_text",
         "//backend/common:inbox_enums",
         "//backend/common:name_utils",
         "//backend/common:permissions",

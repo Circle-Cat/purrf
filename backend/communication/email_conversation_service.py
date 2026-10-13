@@ -24,6 +24,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from backend.common.communication_enums import EmailDirection
+from backend.communication.email_replies import reply_contact
 from backend.communication.inbound_kind import classify_inbound
 from backend.communication.inbox_rows import facts_of
 from backend.dto.email_dto import EmailMessageDto, EmailThreadDto, OpenBounceDto
@@ -89,6 +90,7 @@ class EmailConversationService:
         sender_user_id,
         thread_id=None,
         sender_address=None,
+        body_text=None,
     ):
         """Send a message (new thread or reply) and persist it on Gmail success.
 
@@ -105,6 +107,8 @@ class EmailConversationService:
                 starts a new thread.
             sender_address (str | None): Send as this address instead of the
                 service's own; it is also stored as the message's From.
+            body_text (str | None): The plain text the sender typed, stored as
+                is; None for an HTML-only body.
 
         Returns:
             EmailMessageEntity: The persisted outbound message; the row a
@@ -168,6 +172,7 @@ class EmailConversationService:
             to_addresses=", ".join(to),
             subject=subject,
             body_html=body,
+            body_text=body_text,
             rfc822_message_id=sent["rfc822_message_id"],
             sent_by_user_id=sender_user_id,
         )
@@ -177,8 +182,8 @@ class EmailConversationService:
             message.sent_by_user_id = sender_user_id
         return message
 
-    async def list_conversation(self, session, context_type, context_id):
-        """Read the stored conversation for one (context_type, context_id).
+    async def list_conversation(self, session, context_type, context_id, user_id=None):
+        """Read the stored conversation for one context, or one person in it.
 
         Pure DB read (no Gmail call): opening a conversation never triggers a
         sync — that is done explicitly via ``sync_context`` (Gmail push /
@@ -188,14 +193,20 @@ class EmailConversationService:
             session (AsyncSession): The active DB session.
             context_type (str): A ``ContextType`` value.
             context_id (int | None): The scenario entity id.
+            user_id (int | None): Only the threads with this person.
 
         Returns:
             list[EmailThreadDto]: Newest first — threads by their most recent
                 message, and the messages inside each thread newest first too.
         """
-        threads = await self._thread_repo.list_by_context(
-            session, context_type, context_id
-        )
+        if user_id is None:
+            threads = await self._thread_repo.list_by_context(
+                session, context_type, context_id
+            )
+        else:
+            threads = await self._thread_repo.list_by_person_context(
+                session, user_id, context_type, context_id
+            )
         conversation = []
         for thread in threads:
             messages = await self._message_repo.list_by_thread(
@@ -223,6 +234,7 @@ class EmailConversationService:
                         else None
                     ),
                     reply_alias=self._sender_address,
+                    reply_to=reply_contact(facts.ordered),
                 )
             )
         conversation.sort(key=_latest_activity, reverse=True)

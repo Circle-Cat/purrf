@@ -782,6 +782,58 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     async def test_sender_address_exposes_company_sender(self):
         self.assertEqual(self.service.sender_address, SENDER)
 
+    async def test_send_stores_the_plain_text_it_was_given(self):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g1",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r1@mail>",
+        }
+        self.thread_repo.create.return_value = SimpleNamespace(
+            thread_id=10, gmail_thread_id="gt1"
+        )
+
+        await self.service.send(
+            self.session,
+            user_id=5,
+            context_type=ContextType.ACTIVITY,
+            context_id=8,
+            to=["ann@x.com"],
+            subject="Hi",
+            body="Hi<br>\nthere",
+            sender_user_id=3,
+            body_text="Hi\nthere",
+        )
+
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["body_html"], "Hi<br>\nthere")
+        self.assertEqual(mkw["body_text"], "Hi\nthere")
+
+    async def test_list_conversation_for_a_person_reads_only_their_threads(self):
+        self.thread_repo.list_by_person_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z")
+        ]
+        self.message_repo.list_by_thread.return_value = [
+            self._msg(1, "2026-07-01T00:01:00Z")
+        ]
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.ACTIVITY, 8, user_id=5
+        )
+
+        self.thread_repo.list_by_person_context.assert_awaited_once_with(
+            self.session, 5, ContextType.ACTIVITY, 8
+        )
+        self.thread_repo.list_by_context.assert_not_awaited()
+        self.assertEqual([t.thread_id for t in threads], [10])
+
+    async def test_list_conversation_reports_where_a_reply_goes(self):
+        thread = await self._list_one([
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-01T00:05:00Z"),
+        ])
+
+        self.assertEqual(thread.reply_to, "cand@example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

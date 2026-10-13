@@ -273,6 +273,7 @@ py_test(
     deps = [
         ":base_repository_test_lib",
         "//backend/common:communication_enums",
+        "//backend/common:mentorship_enums",
         "//backend/entity:entities",
         "//backend/repository:repositories",
     ],

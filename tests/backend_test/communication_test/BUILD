@@ -306,3 +306,40 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "email_replies_test",
+    srcs = ["email_replies_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "thread_recipients_test",
+    srcs = ["thread_recipients_test.py"],
+    deps = [
+        "//backend/communication",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "person_email_service_test",
+    srcs = ["person_email_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/communication",
+        "//backend/dto",
+    ],
+)
+
+py_test(
+    name = "attachment_download_test",
+    srcs = ["attachment_download_test.py"],
+    deps = [
+        "//backend/communication",
+        "@pypi//fastapi",
+    ],
+)

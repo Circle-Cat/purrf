@@ -1,6 +1,5 @@
 """Inbox reads that are not about one thread's content: attachments, Assign choices, people."""
 
-import asyncio
 import re
 
 from backend.common.communication_enums import InboxService
@@ -43,16 +42,9 @@ class InboxThreadOptions:
         await self._load_visible(session, user, thread_id, inbox_only=False)
         messages = await self._messages.list_by_thread(session, thread_id)
         message = next((m for m in messages if m.message_id == message_id), None)
-        attachments = (message.attachments or []) if message else []
-        if message is None or not 0 <= attachment_index < len(attachments):
+        if message is None:
             raise ValueError("attachment not found")
-        entry = attachments[attachment_index]
-        content = await asyncio.to_thread(
-            self._gmail.get_attachment,
-            message.gmail_message_id,
-            entry["gmailAttachmentId"],
-        )
-        return content, entry.get("name") or "attachment"
+        return await self._person_email.download_attachment(message, attachment_index)
 
     async def assign_options(self, session, user, thread_id, person_id):
         """What a thread could be assigned to for one person.

@@ -108,6 +108,39 @@ class EmailThreadRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_person_context(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        context_type: str,
+        context_id: int | None,
+    ) -> list[EmailThreadEntity]:
+        """Every thread with one person in one context, oldest first.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            user_id (int): The person the threads are with.
+            context_type (str): A ``ContextType`` value.
+            context_id (int | None): The scenario entity id.
+
+        Returns:
+            list[EmailThreadEntity]: Ordered by ``created_at`` ascending, with
+                ``thread_id`` as a stable tiebreaker.
+        """
+        result = await session.execute(
+            select(EmailThreadEntity)
+            .where(
+                EmailThreadEntity.user_id == user_id,
+                EmailThreadEntity.context_type == context_type,
+                EmailThreadEntity.context_id == context_id,
+            )
+            .order_by(
+                EmailThreadEntity.created_at.asc(),
+                EmailThreadEntity.thread_id.asc(),
+            )
+        )
+        return list(result.scalars().all())
+
     async def list_by_context_types(
         self, session: AsyncSession, context_types: list[str]
     ) -> list[EmailThreadEntity]:

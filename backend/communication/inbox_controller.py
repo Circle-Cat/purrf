@@ -1,8 +1,6 @@
 """HTTP routes of the Inbox: one list over every service's mail threads."""
 
-from urllib.parse import quote
-
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query
 
 from backend.common.api_endpoints import (
     INBOX_ATTACHMENT_ENDPOINT,
@@ -20,6 +18,7 @@ from backend.common.api_endpoints import (
 from backend.common.communication_enums import InboxService
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
+from backend.communication.attachment_download import attachment_response
 from backend.communication.inbox_access import INBOX_GATE, SERVICE_PERMISSION
 from backend.dto.inbox_dto import (
     InboxAssignRequestDto,
@@ -34,32 +33,6 @@ from backend.utils.permission_decorators import authenticate
 PEOPLE_GATE: list[Permission] = [
     SERVICE_PERMISSION[s] for s in (InboxService.MENTORSHIP, InboxService.RECRUITING)
 ]
-
-_UNSAFE_IN_NAME = frozenset('/\\"')
-
-
-def _attachment_disposition(name: str) -> str:
-    """A ``Content-Disposition`` that downloads ``name`` and cannot name a path.
-
-    Path separators, quotes and control characters are dropped, as are
-    leading dots and spaces. The quoted ``filename`` is an ASCII stand-in;
-    ``filename*`` (RFC 5987) carries the real name.
-
-    Args:
-        name (str): The file name as the sender wrote it.
-
-    Returns:
-        str: The header value.
-    """
-    cleaned = "".join(
-        c for c in name if c not in _UNSAFE_IN_NAME and ord(c) >= 32 and ord(c) != 127
-    ).lstrip(". ")
-    cleaned = cleaned or "attachment"
-    ascii_name = "".join(c if c.isascii() else "_" for c in cleaned)
-    return (
-        f'attachment; filename="{ascii_name}"; '
-        f"filename*=UTF-8''{quote(cleaned, safe='')}"
-    )
 
 
 class InboxController:
@@ -240,11 +213,4 @@ class InboxController:
             content, name = await self.inbox_thread_service.download_attachment(
                 session, current_user, thread_id, message_id, attachment_id
             )
-        return Response(
-            content=content,
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": _attachment_disposition(name),
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
+        return attachment_response(content, name)

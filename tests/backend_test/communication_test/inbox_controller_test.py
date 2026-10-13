@@ -12,10 +12,7 @@ from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_access import INBOX_GATE
-from backend.communication.inbox_controller import (
-    InboxController,
-    _attachment_disposition,
-)
+from backend.communication.inbox_controller import InboxController
 from backend.communication.inbox_service import InboxThreadService
 from backend.dto.inbox_dto import (
     AssignOptionsDto,
@@ -442,33 +439,6 @@ class InboxControllerTest(unittest.TestCase):
         response = self.client.get("/inbox/threads/31/messages/77/attachments/9")
 
         self.assertEqual(response.status_code, 400)
-
-
-class AttachmentDispositionTest(unittest.TestCase):
-    def test_quotes_slashes_and_non_ascii(self):
-        self.assertEqual(
-            _attachment_disposition('../\u7b80\u5386 "v2".pdf'),
-            'attachment; filename="__ v2.pdf"; '
-            "filename*=UTF-8''%E7%AE%80%E5%8E%86%20v2.pdf",
-        )
-
-    def test_backslashes_and_control_characters(self):
-        self.assertEqual(
-            _attachment_disposition("C:\\tmp\\a\r\nb\x00.txt"),
-            "attachment; filename=\"C:tmpab.txt\"; filename*=UTF-8''C%3Atmpab.txt",
-        )
-
-    def test_plain_name_is_unchanged(self):
-        self.assertEqual(
-            _attachment_disposition("resume.pdf"),
-            "attachment; filename=\"resume.pdf\"; filename*=UTF-8''resume.pdf",
-        )
-
-    def test_name_left_empty_falls_back(self):
-        self.assertEqual(
-            _attachment_disposition('/"\\'),
-            "attachment; filename=\"attachment\"; filename*=UTF-8''attachment",
-        )
 
 
 if __name__ == "__main__":
