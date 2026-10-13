@@ -381,14 +381,15 @@ const ExpandableRow = ({ summary, detail, open, onToggle, columns }) => (
 
 /**
  * One mentee's pair: who they got, how, the score and the reason. A row
- * changed in the draft, saved or not, says "Edited" instead of how.
+ * changed in the draft, saved or not, also says "Edited". A mutual choice
+ * keeps its mentor, so only a pair the matcher scored can move to another.
  */
 const MatchRow = ({ item, draft, open, onToggle }) => {
   const { mentee } = item;
   const { mentor, score, edited } = shownPair(item, draft);
   let how = "No match";
-  if (edited) how = "Edited";
-  else if (mentor) how = MATCH_TYPE_LABEL[item.matchType] ?? item.matchType;
+  if (mentor)
+    how = MATCH_TYPE_LABEL[item.matchType] ?? MATCH_TYPE_LABEL.hungarian;
   return (
     <ExpandableRow
       open={open}
@@ -409,11 +410,10 @@ const MatchRow = ({ item, draft, open, onToggle }) => {
               <span className="text-muted-foreground">No mentor</span>
             )}
           </span>
-          <Badge
-            variant={edited ? "default" : mentor ? "secondary" : "outline"}
-          >
-            {how}
-          </Badge>
+          <span className="flex flex-wrap gap-1">
+            <Badge variant={mentor ? "secondary" : "outline"}>{how}</Badge>
+            {edited ? <Badge>Edited</Badge> : null}
+          </span>
           <span className="tabular-nums">{scoreLabel(score)}</span>
           <span className="truncate text-muted-foreground">
             {shownRow(item, draft.changes).recommendationReason}

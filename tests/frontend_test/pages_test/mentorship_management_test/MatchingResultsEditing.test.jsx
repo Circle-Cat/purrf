@@ -110,13 +110,29 @@ const eve = {
   mentee: { userId: 202, name: "Eve Zhou" },
   mentor: { userId: 102, name: "Dan Ma" },
   score: 0.62,
-  matchType: "mutual_yes",
+  matchType: "hungarian",
   recommendationReason: "Moved by hand.",
   edited: true,
   matcherMentor: { userId: 104, name: "Fay Qi" },
   matcherReason: "You both asked for each other.",
   diagnosticReason: "",
   candidates: [{ userId: 102, name: "Dan Ma", score: 0.62 }],
+  menteeProfile: null,
+  mentorProfile: null,
+};
+
+// Chose each other, so the mentor is fixed.
+const ivy = {
+  mentee: { userId: 204, name: "Ivy Sun" },
+  mentor: { userId: 103, name: null },
+  score: null,
+  matchType: "mutual_yes",
+  recommendationReason: "You both asked for each other.",
+  edited: false,
+  matcherMentor: { userId: 103, name: null },
+  matcherReason: "You both asked for each other.",
+  diagnosticReason: "",
+  candidates: [{ userId: 102, name: "Dan Ma", score: 0.7 }],
   menteeProfile: null,
   mentorProfile: null,
 };
@@ -476,7 +492,7 @@ describe("MatchingResultsPage editing", () => {
       expect(screen.getByText("Unsaved changes.")).toBeInTheDocument();
       // The summary line follows the unsaved choice.
       expect(row.getByText("Edited")).toBeInTheDocument();
-      expect(row.queryByText("Scored")).toBeNull();
+      expect(row.getByText("Scored")).toBeInTheDocument();
       expect(row.getByText("0.91")).toBeInTheDocument();
       expect(row.getByText("Dan Ma")).toBeInTheDocument();
 
@@ -500,6 +516,7 @@ describe("MatchingResultsPage editing", () => {
       const row = within(rowOf("Cara Wang"));
       expect(row.queryByText("A matched mentee needs a reason.")).toBeNull();
       expect(row.getByText("Edited")).toBeInTheDocument();
+      expect(row.getByText("No match")).toBeInTheDocument();
       expect(row.getByText("No mentor")).toBeInTheDocument();
       expect(row.getByText("—")).toBeInTheDocument();
     });
@@ -541,6 +558,26 @@ describe("MatchingResultsPage editing", () => {
       ).toBeNull();
       // Back to the saved row, so nothing is left to save.
       expect(screen.queryByText("Unsaved changes.")).toBeNull();
+    });
+
+    it("keeps a mutual choice's mentor and lets only its reason change", async () => {
+      getMatchingResults.mockResolvedValue(resultsPage([ivy, cara]));
+      await editRow("Ivy Sun");
+      const row = within(rowOf("Ivy Sun"));
+
+      expect(row.queryByRole("combobox", { name: "Mentor" })).toBeNull();
+      expect(
+        row.getByText(
+          "ID 103 — they chose each other, so only the reason can be changed.",
+        ),
+      ).toBeInTheDocument();
+
+      typeReason("Ivy Sun", "Reworded.");
+
+      expect(reasonBox("Ivy Sun")).toHaveValue("Reworded.");
+      expect(row.getByText("Both asked")).toBeInTheDocument();
+      expect(row.getByText("Edited")).toBeInTheDocument();
+      expect(screen.getByText("Unsaved changes.")).toBeInTheDocument();
     });
 
     it("reverts a saved edit as an unsaved change", async () => {
@@ -782,7 +819,7 @@ describe("MatchingResultsPage editing", () => {
 
       const row = within(rowOf("Eve Zhou"));
       expect(row.getByText("Edited")).toBeInTheDocument();
-      expect(row.queryByText("Both asked")).toBeNull();
+      expect(row.getByText("Scored")).toBeInTheDocument();
       expect(row.getByText("0.62")).toBeInTheDocument();
       expect(
         within(rowOf("Cara Wang")).getByText("Scored"),
