@@ -43,6 +43,12 @@ class MatchingDraftServiceTest(unittest.IsolatedAsyncioTestCase):
                 candidates=[Candidate(mentor_id="11", score=70)],
             ),
             "2": MenteeResult(candidates=[Candidate(mentor_id="12", score=40)]),
+            "3": MenteeResult(
+                mentor_id="13",
+                match_type="mutual_yes",
+                recommendation_reason="Both asked",
+                candidates=[Candidate(mentor_id="11", score=70)],
+            ),
         }
         self.storage.take_edit_lock.return_value = True
         self.storage.edit_lock.return_value = ("9", 1800)
@@ -121,6 +127,18 @@ class MatchingDraftServiceTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ValueError):
                     self.service.save_changes(7, 9, [change])
         self.storage.write_draft.assert_not_called()
+
+    def test_a_mutual_choice_keeps_its_mentor_but_takes_a_new_reason(self):
+        for change in (_change("3", "11", "Both asked"), _change("3", None)):
+            with self.subTest(change=change):
+                with self.assertRaises(ValueError):
+                    self.service.save_changes(7, 9, [change])
+        self.storage.write_draft.assert_not_called()
+
+        self.service.save_changes(7, 9, [_change("3", "13", "Reworded")])
+
+        entries, _ = self.storage.write_draft.call_args.args[1:]
+        self.assertEqual(entries["3"].recommendation_reason, "Reworded")
 
     def test_saving_without_the_lock_is_refused(self):
         for held in (None, ("5", 900)):

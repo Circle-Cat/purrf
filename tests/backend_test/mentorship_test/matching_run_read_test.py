@@ -422,38 +422,39 @@ class MatchingRunResultsTest(MatchingRunOverviewTest):
 
         self.assertIsNone(page["items"][0]["mentor"])
 
-    async def test_the_unplaced_come_first_and_the_rest_by_descending_score(self):
+    async def test_mutual_choices_come_first_then_by_descending_score(self):
+        # A mutual choice carries no score -- the contract leaves it out because
+        # the sentinel the matcher uses internally is not one -- so it is ranked
+        # on its own rather than read as zero.
         self._succeeded(
             results={
                 "1": _result(mentor_id="10", score=40),
                 "2": _result(),
                 "3": _result(mentor_id="11", score=90),
+                "4": _result(mentor_id="12", match_type="mutual_yes"),
             }
         )
 
         page = await self.service.read_results(self.session, 7)
 
         self.assertEqual(
-            [item["mentee"]["user_id"] for item in page["items"]], ["2", "3", "1"]
+            [item["mentee"]["user_id"] for item in page["items"]],
+            ["4", "3", "1", "2"],
         )
 
-    async def test_a_mutual_choice_sorts_below_the_scored_rather_than_at_zero(self):
-        # A mutual choice carries no score -- the contract leaves it out because
-        # the sentinel the matcher uses internally is not one. Reading that
-        # absence as zero would file the pairs needing least review among the
-        # weakest, which is the opposite of what the order is for.
+    async def test_a_mutual_choice_with_a_new_reason_stays_at_the_top(self):
         self._succeeded(
             results={
-                "1": _result(mentor_id="10", score=20),
+                "1": _result(mentor_id="10", score=90),
                 "2": _result(mentor_id="11", match_type="mutual_yes"),
-                "3": _result(),
             }
         )
+        self.storage.read_draft.return_value = {"2": _draft("11", "Reworded")}
 
         page = await self.service.read_results(self.session, 7)
 
         self.assertEqual(
-            [item["mentee"]["user_id"] for item in page["items"]], ["3", "1", "2"]
+            [item["mentee"]["user_id"] for item in page["items"]], ["2", "1"]
         )
 
     async def test_a_page_is_the_slice_asked_for_and_the_total_is_everybody(self):
@@ -562,7 +563,7 @@ class MatchingRunResultsTest(MatchingRunOverviewTest):
 
         self.assertEqual(
             [call.args for call in self.storage.read_people.call_args_list],
-            [("r7-x-y", "mentee", ["2", "1"]), ("r7-x-y", "mentor", ["10"])],
+            [("r7-x-y", "mentee", ["1", "2"]), ("r7-x-y", "mentor", ["10"])],
         )
         # Partners are named in the same single query as the rest of the page.
         self.users.get_all_by_ids.assert_awaited_once()
