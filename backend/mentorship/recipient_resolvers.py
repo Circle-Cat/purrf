@@ -10,8 +10,11 @@ it once at startup for that side effect.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.inbox_enums import INBOX_SUBJECT_TYPE
 from backend.common.mentorship_email_enums import MENTORSHIP_EMAIL_SEND_SUBJECT_TYPE
 from backend.common.mentorship_enums import MentorshipEvent
+from backend.common.permissions import Permission
+from backend.communication.thread_recipients import thread_senders, thread_senders_else
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import register_recipients
 from backend.repository.application_repository import ApplicationRepository
@@ -19,11 +22,13 @@ from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
 from backend.repository.mentorship_email_repository import MentorshipEmailRepository
+from backend.repository.user_permissions_repository import UserPermissionsRepository
 
 # Stateless, so these module-level instances serve every resolver.
 _application_repository = ApplicationRepository()
 _approval_request_repository = ApprovalRequestRepository()
 _mentorship_email_repository = MentorshipEmailRepository()
+_user_permissions_repository = UserPermissionsRepository()
 
 
 @register_recipients(MentorshipEvent.MENTOR_ADMITTED, subject_type="application")
@@ -173,3 +178,45 @@ async def _send_creator(session: AsyncSession, event: EventEntity) -> set[int]:
     """
     send = await _mentorship_email_repository.get_send(session, event.subject_id)
     return set() if send is None else {send.created_by}
+
+
+@register_recipients(MentorshipEvent.EMAIL_RECEIVED, subject_type=INBOX_SUBJECT_TYPE)
+async def _participant_email_senders_else_writers(
+    session: AsyncSession, event: EventEntity
+) -> set[int]:
+    """Whoever wrote into the thread through Purrf, else every mentorship writer.
+
+    A thread assigned from the Inbox before anyone answered has no one
+    waiting on the reply, so everyone who may answer it is told.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; its subject is the email thread.
+
+    Returns:
+        set[int]: The senders, or the active MENTORSHIP_ADMIN_WRITE holders.
+    """
+
+    async def writers():
+        holders = await _user_permissions_repository.get_active_users_with_permission(
+            session, Permission.MENTORSHIP_ADMIN_WRITE
+        )
+        return [user.user_id for user in holders]
+
+    return await thread_senders_else(session, event.subject_id, writers)
+
+
+@register_recipients(MentorshipEvent.EMAIL_BOUNCED, subject_type=INBOX_SUBJECT_TYPE)
+async def _participant_email_senders(
+    session: AsyncSession, event: EventEntity
+) -> set[int]:
+    """Whoever wrote into the thread through Purrf; nobody when no one did.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; its subject is the email thread.
+
+    Returns:
+        set[int]: The senders.
+    """
+    return await thread_senders(session, event.subject_id)

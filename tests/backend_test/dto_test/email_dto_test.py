@@ -8,6 +8,8 @@ from backend.dto.email_dto import (
     EmailRecipientOptionDto,
     EmailSendRequestDto,
     EmailThreadDto,
+    TextEmailReplyRequestDto,
+    TextEmailSendRequestDto,
 )
 
 _NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
@@ -115,6 +117,37 @@ class EmailSendRequestDtoTest(unittest.TestCase):
         })
 
         self.assertEqual((dto.to, dto.thread_id, dto.last_seen_message_id), ([], 4, 12))
+
+
+class TextEmailRequestDtoTest(unittest.TestCase):
+    def test_send_needs_a_recipient_a_subject_and_a_body_within_limits(self):
+        ok = TextEmailSendRequestDto.model_validate({
+            "to": ["ann@x.com"],
+            "subject": " Hi ",
+            "body": "x" * 10_000,
+        })
+        self.assertEqual(ok.subject, "Hi")
+
+        for bad in (
+            {"to": [], "subject": "Hi", "body": "x"},
+            {"to": ["a@x.com"], "subject": "  ", "body": "x"},
+            {"to": ["a@x.com"], "subject": "Hi", "body": "x" * 10_001},
+            {"to": ["a@x.com"], "subject": "x" * 991, "body": "x"},
+            {"to": ["a@x.com"], "subject": "Hi", "body": "x", "cc": ["b@x.com"]},
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    TextEmailSendRequestDto.model_validate(bad)
+
+    def test_reply_names_the_last_message_seen(self):
+        dto = TextEmailReplyRequestDto.model_validate({
+            "body": "Thanks",
+            "lastSeenMessageId": 12,
+        })
+        self.assertEqual(dto.last_seen_message_id, 12)
+
+        with self.assertRaises(ValueError):
+            TextEmailReplyRequestDto.model_validate({"body": "Thanks"})
 
 
 if __name__ == "__main__":

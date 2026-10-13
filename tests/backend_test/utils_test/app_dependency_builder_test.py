@@ -2,6 +2,7 @@ from unittest import TestCase, main
 from unittest.mock import patch, MagicMock, ANY
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 from backend.common.communication_enums import ContextType
+from backend.communication.inbox_sync_handler import INBOX_CONTEXT_TYPES
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
@@ -604,6 +605,7 @@ class TestAppDependencyBuilder(TestCase):
             matching_draft_service=builder.matching_draft_service,
             mentorship_approval_service=builder.mentorship_approval_service,
             launchdarkly_service=builder.launchdarkly_service,
+            participant_email_service=builder.participant_email_service,
             database=mock_database_cls.return_value,
         )
         # One approval service, holding the publish handler, is what locks
@@ -1030,21 +1032,35 @@ class TestAppDependencyBuilder(TestCase):
             builder.mentorship_block_service.meeting_service, builder.meeting_service
         )
 
-        # Inbox threads: one sweeping handler, the other contexts only sync.
+        # Inbox threads: one sweeping handler, the other Inbox contexts only sync.
         registry = builder.email_context_registry
         self.assertIs(
             registry.get(ContextType.MENTORSHIP_INBOX), builder.inbox_sync_handler
         )
         self.assertIs(registry.get(ContextType.APPLICATION), builder.email_sync_service)
-        for context_type in (
-            ContextType.RECRUITING_INBOX,
-            ContextType.INQUIRIES_INBOX,
-            ContextType.ACTIVITY,
-        ):
+        for context_type in (ContextType.RECRUITING_INBOX, ContextType.INQUIRIES_INBOX):
             alias = registry.get(context_type)
             self.assertIs(alias._handler, builder.inbox_sync_handler)
         self.assertIs(builder.inbox_sync_handler._notifier, builder.inbox_notifier)
         self.assertIs(builder.inbox_notifier._services, builder.thread_service_resolver)
+        # A person's round threads tell mentorship, not the Inbox.
+        self.assertNotIn(ContextType.ACTIVITY, INBOX_CONTEXT_TYPES)
+        self.assertIsNot(registry.get(ContextType.ACTIVITY), builder.inbox_sync_handler)
+        self.assertIs(
+            registry.get(ContextType.ACTIVITY), builder.participant_email_sync_handler
+        )
+        self.assertIs(
+            builder.participant_email_sync_handler._notifier,
+            builder.participant_email_notifier,
+        )
+        self.assertEqual(
+            builder.participant_email_sync_handler._context_types,
+            [ContextType.ACTIVITY],
+        )
+        self.assertIs(
+            builder.participant_email_service._person_email,
+            builder.person_email_service,
+        )
 
 
 if __name__ == "__main__":
