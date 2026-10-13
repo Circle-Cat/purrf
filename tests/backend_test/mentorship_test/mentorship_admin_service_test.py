@@ -188,6 +188,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_email_service.notified_user_ids = AsyncMock(
             return_value=self.notified_query
         )
+        self.mock_meeting_service = MagicMock()
+        self.mock_meeting_service.cancel_calendar_events = AsyncMock()
 
         self.service = MentorshipAdminService(
             users_repository=self.mock_users_repo,
@@ -204,6 +206,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             note_repository=self.mock_notes,
             approval_service=MagicMock(),
             mentorship_email_service=self.mock_email_service,
+            meeting_service=self.mock_meeting_service,
         )
 
     async def test_each_row_counts_the_marks_in_its_own_round(self):
@@ -1486,6 +1489,78 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["manual-1"])
             )
         self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+        self.mock_meeting_service.cancel_calendar_events.assert_not_awaited()
+
+    async def test_apply_batch_cancels_upcoming_google_event_before_deleting_row(
+        self,
+    ):
+        """Deleting an upcoming Google meeting cancels its calendar event first,
+        so attendees are not left with an invite to a meeting Purrf forgot."""
+        later = datetime.now(timezone.utc) + timedelta(days=3)
+        upcoming = _make_meeting(
+            meeting_id="up-1",
+            start_datetime=later.isoformat(),
+            end_datetime=(later + timedelta(hours=1)).isoformat(),
+        )
+        past = _make_meeting(meeting_id="past-1")
+        self.mock_pairs_repo.get_pair_by_id.return_value = _make_pair()
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
+            [upcoming, past],
+            [past],
+        ]
+        manager = MagicMock()
+        manager.attach_mock(self.mock_meeting_service.cancel_calendar_events, "cancel")
+        manager.attach_mock(self.mock_meeting_repo.delete_meetings, "delete")
+        manager.attach_mock(self.mock_session.commit, "commit")
+
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["up-1"])
+        )
+
+        self.assertEqual(
+            [c[0] for c in manager.mock_calls], ["cancel", "delete", "commit"]
+        )
+        self.mock_meeting_service.cancel_calendar_events.assert_awaited_once_with([
+            "up-1"
+        ])
+
+    async def test_apply_batch_deletes_past_google_meeting_without_calendar(self):
+        """A meeting that already started is history: its row goes, its event
+        stays, so nobody is mailed a cancellation for it."""
+        past = _make_meeting(meeting_id="past-1")
+        self.mock_pairs_repo.get_pair_by_id.return_value = _make_pair()
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[past], []]
+
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["past-1"])
+        )
+
+        self.mock_meeting_service.cancel_calendar_events.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_awaited_once_with(
+            self.mock_session, 1, ["past-1"]
+        )
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_apply_batch_changes_nothing_when_calendar_cancel_fails(self):
+        later = datetime.now(timezone.utc) + timedelta(days=3)
+        upcoming = _make_meeting(
+            meeting_id="up-1",
+            start_datetime=later.isoformat(),
+            end_datetime=(later + timedelta(hours=1)).isoformat(),
+        )
+        self.mock_pairs_repo.get_pair_by_id.return_value = _make_pair()
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [upcoming]
+        self.mock_meeting_service.cancel_calendar_events.side_effect = ConflictError(
+            "calendar refused", code="calendar_cancel_failed"
+        )
+
+        with self.assertRaises(ConflictError):
+            await self.service.apply_v2_meeting_batch(
+                self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["up-1"])
+            )
+
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+        self.mock_session.commit.assert_not_awaited()
 
     async def test_apply_batch_manual_row_conflicts_even_when_pair_also_has_google_rows(
         self,
@@ -1730,6 +1805,7 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
             note_repository=MagicMock(),
             approval_service=MagicMock(),
             mentorship_email_service=MagicMock(),
+            meeting_service=MagicMock(),
         )
 
     async def test_maps_sent_and_unsent_rows_and_names_partners(self):

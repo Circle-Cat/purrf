@@ -308,6 +308,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             note_repository=self.notes,
             approval_service=self.approvals,
             mentorship_email_service=MagicMock(),
+            meeting_service=MagicMock(),
         )
 
     async def _detail(self, round_=None, user=None):
