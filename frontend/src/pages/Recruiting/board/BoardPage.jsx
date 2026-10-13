@@ -20,6 +20,7 @@ import {
 import { humanize, stageLabel } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /** Offer is always inserted between an employment job's configured pipeline
  * stages and the terminal lanes — never something a job opts into (see
@@ -74,6 +75,12 @@ const BoardPage = () => {
    * leaves `has_more` true and the offset unchanged, so without this the hunt
    * would re-issue the identical request every remaining round. */
   const focusPageFailures = useRef(new Set());
+  /** Every board load takes a request id; a response, or a later page of a
+   * lane, is applied only while the board it belongs to is still current. A
+   * switch to another job would otherwise let the old job's late response
+   * overwrite the new board, or append to a board that was just cleared. */
+  const { begin, isCurrent } = useRequestGuard();
+  const boardRequest = useRef(0);
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -126,19 +133,27 @@ const BoardPage = () => {
   }, [setSearchParams]);
 
   /** Fetch (or re-fetch, via Retry) the selected job's board, grouped by stage. */
-  const loadBoard = useCallback(async (jobId) => {
-    setBoardError(false);
-    setBoard(null);
-    focusRounds.current = 0;
-    focusPageFailures.current.clear();
-    try {
-      const { data } = await getJobBoard(jobId);
-      setBoard(data?.stages ?? {});
-    } catch (e) {
-      setBoardError(true);
-      toast.error(e.message);
-    }
-  }, []);
+  const loadBoard = useCallback(
+    async (jobId) => {
+      const request = begin();
+      boardRequest.current = request;
+      setBoardError(false);
+      setBoard(null);
+      setLoadingMore(new Set());
+      focusRounds.current = 0;
+      focusPageFailures.current.clear();
+      try {
+        const { data } = await getJobBoard(jobId);
+        if (!isCurrent(request)) return;
+        setBoard(data?.stages ?? {});
+      } catch (e) {
+        if (!isCurrent(request)) return;
+        setBoardError(true);
+        toast.error(e.message);
+      }
+    },
+    [begin, isCurrent],
+  );
 
   // Wait for the owned-jobs list before fetching a board. `selectedJobId` is
   // readable from the URL on the first render, when `jobs` is still null, so
@@ -160,6 +175,7 @@ const BoardPage = () => {
   const loadMore = useCallback(
     async (stage, { silent = false } = {}) => {
       if (loadingMore.has(stage)) return;
+      const request = boardRequest.current;
       setLoadingMore((prev) => new Set(prev).add(stage));
       const lane = board[stage];
       try {
@@ -168,6 +184,7 @@ const BoardPage = () => {
           limit: 20,
           offset: lane.items.length,
         });
+        if (!isCurrent(request)) return;
         if (silent) focusPageFailures.current.delete(stage);
         setBoard((prev) => {
           const seen = new Set(prev[stage].items.map((c) => c.id));
@@ -181,6 +198,7 @@ const BoardPage = () => {
           };
         });
       } catch (e) {
+        if (!isCurrent(request)) return;
         // A background focus hunt stays quiet on failure: relocating a card
         // is a convenience the owner didn't ask for, so its failure is as
         // silent as not finding the card at all.
@@ -190,14 +208,16 @@ const BoardPage = () => {
           toast.error(e.message);
         }
       } finally {
-        setLoadingMore((prev) => {
-          const next = new Set(prev);
-          next.delete(stage);
-          return next;
-        });
+        if (isCurrent(request)) {
+          setLoadingMore((prev) => {
+            const next = new Set(prev);
+            next.delete(stage);
+            return next;
+          });
+        }
       }
     },
-    [board, selectedJobId, loadingMore],
+    [board, selectedJobId, loadingMore, isCurrent],
   );
 
   /** Bring the `?focus=` applicant to the owner: scroll their card into view
