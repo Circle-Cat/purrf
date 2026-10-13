@@ -505,6 +505,52 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
         self.session.commit.assert_awaited_once()
 
+    async def test_verify_releases_a_backfill_placeholder_held_by_another_account(
+        self,
+    ):
+        """A never-logged-in backfilled account keeps a ``manual|`` identity
+        whose claim is the address. Left in place after the caller confirms
+        it, every login with the address would swap into that account and
+        collide with the caller's confirmed row, so it goes in the same
+        transaction.
+        """
+        order = []
+        self.user_identities.delete_swappable_on_other_users.side_effect = (
+            lambda *a, **k: order.append("release")
+        )
+        self.session.commit.side_effect = lambda: order.append("commit")
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.user_identities.delete_swappable_on_other_users.assert_awaited_once_with(
+            self.session, _TARGET_EMAIL, _USER_ID
+        )
+        self.assertEqual(order, ["release", "commit"])
+
+    async def test_verify_conflict_when_confirmed_elsewhere_after_initiate(self):
+        """The address can be confirmed on another account between initiate
+        and verify; verify must refuse as initiate does instead of letting the
+        insert hit the global unique index."""
+        self.user_emails.exists_on_other_user.return_value = True
+        with self.assertRaises(ConflictError) as ctx:
+            await self.service.verify(
+                self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "This email is already in use by another account. If it's "
+            "yours, sign in with a code sent to that address instead.",
+        )
+        self.user_emails.exists_on_other_user.assert_awaited_once_with(
+            self.session, _TARGET_EMAIL, _USER_ID
+        )
+        self.auth0.exchange_otp.assert_not_called()
+        self.user_emails.upsert_email.assert_not_called()
+        self.user_identities.delete_swappable_on_other_users.assert_not_called()
+        self.session.commit.assert_not_called()
+
     async def test_verify_promotes_existing_unconfirmed_row_without_new_identity(self):
         existing_email = UserEmailsEntity(
             user_id=_USER_ID, email=_TARGET_EMAIL, otp_confirmed=False, is_primary=False

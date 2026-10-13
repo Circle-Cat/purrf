@@ -256,6 +256,54 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
             {r.subject_identifier for r in remaining}, {"google-oauth2|keep"}
         )
 
+    # delete_swappable_on_other_users — releases a backfill placeholder whose
+    # address another account has just confirmed
+    async def test_delete_swappable_on_other_users_removes_only_others_manual_rows(
+        self,
+    ):
+        other_user = _make_user()
+        third_user = _make_user()
+        await self.insert_entities([other_user, third_user])
+        others_manual = UserIdentitiesEntity(
+            user_id=other_user.user_id,
+            subject_identifier=f"manual|{other_user.user_id}",
+            email_claim="Shared@Example.com",
+        )
+        others_real = UserIdentitiesEntity(
+            user_id=third_user.user_id,
+            subject_identifier="google-oauth2|shared",
+            email_claim="shared@example.com",
+        )
+        others_unrelated_manual = UserIdentitiesEntity(
+            user_id=third_user.user_id,
+            subject_identifier=f"manual|{third_user.user_id}",
+            email_claim="someone-else@example.com",
+        )
+        own_manual = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier=f"manual|{self.user.user_id}",
+            email_claim="shared@example.com",
+        )
+        await self.insert_entities([
+            others_manual,
+            others_real,
+            others_unrelated_manual,
+            own_manual,
+        ])
+
+        await self.repo.delete_swappable_on_other_users(
+            self.session, email_claim="shared@example.com", user_id=self.user.user_id
+        )
+
+        self.assertIsNone(
+            await self.repo.get_by_id(self.session, others_manual.identity_id)
+        )
+        for kept in (others_real, others_unrelated_manual, own_manual):
+            self.assertIsNotNone(
+                await self.repo.get_by_id(self.session, kept.identity_id),
+                kept.subject_identifier,
+            )
+
     # get_google_subs_by_user_ids — backs Meet attendance's local UID->email cache
     async def test_get_google_subs_by_user_ids_returns_only_google(self):
         other_user = _make_user()
