@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import DOMPurify from "dompurify";
-import { getApplicationEmailTemplates } from "@/api/recruitingApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -18,35 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const splitAddresses = (value) =>
-  value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-/**
- * Markup a candidate email body may carry. Deliberately narrow: the composer
- * authors rich text, and what leaves here has to survive Gmail's own
- * sanitizing anyway, so anything structural (tables, images, styles) or
- * active (script, iframe, event handlers) is dropped rather than sent.
- */
-const EMAIL_ALLOWED_TAGS = [
-  "p",
-  "br",
-  "b",
-  "strong",
-  "i",
-  "em",
-  "u",
-  "ul",
-  "ol",
-  "li",
-  "a",
-];
-
-/** Attributes kept on the allowed tags — enough for a working hyperlink. */
-const EMAIL_ALLOWED_ATTR = ["href", "target", "rel"];
+import { sanitizeEmailHtml } from "@/utils/emailHtml";
+import {
+  defaultRecipients,
+  replySubject,
+} from "@/components/email/emailThreads";
+import RecipientPicker from "@/components/email/RecipientPicker";
+import { EmailMessage } from "@/components/email/EmailThreadCard";
 
 /**
  * The value the template Select is permanently held at. Radix documents "" as
@@ -59,13 +36,6 @@ const EMAIL_ALLOWED_ATTR = ["href", "target", "rel"];
  * applied is reported as adjacent text instead.
  */
 const TEMPLATE_PICKER_VALUE = "";
-
-/** Sanitize composer HTML down to the tags Gmail bodies are allowed to carry. */
-const sanitizeEmailHtml = (html) =>
-  DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: EMAIL_ALLOWED_TAGS,
-    ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
-  });
 
 /**
  * Matches the free-text `[UPPERCASE]` markers templates leave for the sender
@@ -89,30 +59,63 @@ const highlightBrackets = (html) =>
 /** How many `[UPPERCASE]` markers the sender has not replaced yet. */
 const countUnfilledBrackets = (text) => (text.match(BRACKET_RE) ?? []).length;
 
+const NO_OPTIONS = [];
+const NO_MESSAGES = [];
+const asIs = (iso) => iso;
+
 /**
- * Compose (or reply to) a candidate email. Recipients are comma-separated
- * text so the recruiter can add or drop addresses; the body is sent as HTML.
+ * Compose an email, or reply in a thread.
+ *
+ * A new email goes to the addresses ticked from `recipientOptions`; nothing
+ * can be typed, and `defaultTo` starts ticked. A reply goes to the thread's
+ * `replyTo`, shown but fixed, under the thread's `Re:` subject; a thread with
+ * no `replyTo` shows "Unknown" and cannot be sent.
+ *
+ * `mode` "rich" is the recruiting composer: an HTML editor, preset templates
+ * and a signature from `loadTemplates`, and a warning before sending
+ * `[UPPERCASE]` markers left unfilled. `mode` "text" is a plain textarea
+ * capped at `maxBodyLength`, sent as typed.
+ *
+ * The form resets when the dialog opens or turns to another thread, and only
+ * then: a conversation reloaded while it is open (after a reply was refused
+ * because the thread changed) keeps the draft, and `staleMessages` shows what
+ * arrived since the sender opened the thread.
  *
  * @param {{open: boolean, onOpenChange: (open: boolean) => void,
- *          applicationId: number|string,
- *          defaultTo: string|null,
- *          replyThread: {threadId: number, subject: string}|null,
+ *          mode?: "rich"|"text",
+ *          recipientOptions?: {address: string, label: string|null}[],
+ *          defaultTo?: string|null, senderAddress?: string|null,
+ *          replyThread?: {threadId: number, subject: string|null,
+ *                         replyTo?: string|null}|null,
+ *          loadTemplates?: () => Promise<{templates: object[],
+ *                                         signatureHtml: string}|undefined>,
+ *          maxBodyLength?: number, notice?: string,
+ *          staleMessages?: object[],
+ *          formatTime?: (iso: string) => string,
  *          onSend: (payload: {to: string[], subject: string, body: string,
- *                             threadId: number|null})
- *                  => Promise<unknown>,
+ *                             threadId: number|null}) => Promise<unknown>,
  *          sending: boolean}} props
  */
 const ComposeEmailDialog = ({
   open,
   onOpenChange,
-  applicationId,
-  defaultTo,
-  replyThread,
+  mode = "rich",
+  recipientOptions = NO_OPTIONS,
+  defaultTo = null,
+  senderAddress = null,
+  replyThread = null,
+  loadTemplates,
+  maxBodyLength,
+  notice,
+  staleMessages = NO_MESSAGES,
+  formatTime = asIs,
   onSend,
   sending,
 }) => {
-  const [to, setTo] = useState("");
+  const rich = mode === "rich";
+  const [to, setTo] = useState([]);
   const [subject, setSubject] = useState("");
+  const [text, setText] = useState("");
   const editorRef = useRef(null);
   // Whether the editor holds any text, tracked in state so the Send button
   // can react to it — an uncontrolled contenteditable gives us no other
@@ -136,6 +139,19 @@ const ComposeEmailDialog = ({
   // not the sender's draft: picking a template over it must not ask to
   // overwrite, and Send must not treat a lone signature as a written message.
   const prefilledRef = useRef("");
+  // Read when the form resets or templates load, never watched: a parent
+  // passes a new conversation (and a new loadTemplates function) on every
+  // render, and neither may wipe the draft or fetch again.
+  const latestRef = useRef(null);
+  latestRef.current = {
+    recipientOptions,
+    defaultTo,
+    replyThread,
+    loadTemplates,
+  };
+  const replyThreadId = replyThread?.threadId ?? null;
+  // No fallback: the backend refuses a reply to a thread with no reply address.
+  const replyTo = replyThread?.replyTo ?? null;
 
   /** Whether the body still holds nothing but the signature we put there. */
   const isUntouchedPrefill = () =>
@@ -144,33 +160,37 @@ const ComposeEmailDialog = ({
 
   useEffect(() => {
     if (!open) return;
-    setTo(defaultTo ?? "");
-    const base = replyThread?.subject ?? "";
-    setSubject(
-      replyThread ? (base.startsWith("Re:") ? base : `Re: ${base}`) : "",
-    );
-    // The body is uncontrolled on purpose: re-rendering a contenteditable
-    // from state on every keystroke resets the caret. We write into it
-    // imperatively (dialog open, and later a template) and read innerHTML
-    // back on send.
+    const {
+      recipientOptions: options,
+      defaultTo: preferred,
+      replyThread: thread,
+    } = latestRef.current;
+    setTo(defaultRecipients(options, preferred));
+    setSubject(thread ? replySubject(thread.subject) : "");
+    setText("");
+    // The rich body is uncontrolled on purpose: re-rendering a
+    // contenteditable from state on every keystroke resets the caret. We
+    // write into it imperatively (dialog open, and later a template) and read
+    // innerHTML back on send.
     if (editorRef.current) editorRef.current.innerHTML = "";
     prefilledRef.current = "";
     setHasText(false);
     setPendingTemplate(null);
     setAppliedTemplateLabel("");
     setUnfilledCount(0);
-  }, [open, defaultTo, replyThread]);
+  }, [open, replyThreadId]);
 
   useEffect(() => {
-    if (!open) return;
-    getApplicationEmailTemplates(applicationId).then(
+    const load = latestRef.current.loadTemplates;
+    if (!open || !rich || !load) return;
+    load().then(
       (res) => {
-        setTemplates(res?.data?.templates ?? []);
+        setTemplates(res?.templates ?? []);
         // Prefill the signature so a message written from scratch — or any
         // reply, which never applies a template — still goes out signed. The
         // fetch is async, so only prefill a body the sender has not started
         // writing in; otherwise a slow response would wipe their draft.
-        const signature = res?.data?.signatureHtml ?? "";
+        const signature = res?.signatureHtml ?? "";
         if (!signature || !editorRef.current) return;
         if (editorRef.current.textContent?.trim()) return;
         // Highlighted like a template body: with no name on record the backend
@@ -182,7 +202,7 @@ const ComposeEmailDialog = ({
       },
       () => setTemplates([]),
     );
-  }, [open, applicationId]);
+  }, [open, rich]);
 
   /** Write a template into the composer. Reply keeps its `Re:` subject (B4). */
   const applyTemplate = (template) => {
@@ -216,11 +236,12 @@ const ComposeEmailDialog = ({
    */
   const doSend = () => {
     if (sending) return;
-    const recipients = splitAddresses(to);
     onSend({
-      to: recipients,
+      to: replyThread ? [replyTo] : to,
       subject: subject.trim(),
-      body: sanitizeEmailHtml(editorRef.current?.innerHTML ?? ""),
+      body: rich
+        ? sanitizeEmailHtml(editorRef.current?.innerHTML ?? "")
+        : text.trim(),
       threadId: replyThread?.threadId ?? null,
     }).then(
       () => {
@@ -231,25 +252,34 @@ const ComposeEmailDialog = ({
     );
   };
 
+  const bodyReady = rich
+    ? hasText
+    : text.trim() !== "" &&
+      (maxBodyLength == null || text.length <= maxBodyLength);
+
   /**
    * Everything `handleSubmit` requires. It is the Send button's `disabled`
    * condition too: handleSubmit returns silently — no toast, no field error —
    * so anything it rejects has to read as a disabled button rather than a dead
-   * click. A candidate with no contact email (`defaultTo: null`) is the real
-   * case: a template fills the body and subject and leaves To empty.
+   * click. A new email with no address ticked, or a reply to a thread with
+   * no reply address, are the real cases.
    */
   const canSend =
-    splitAddresses(to).length > 0 && Boolean(subject.trim()) && hasText;
+    (replyThread != null ? replyTo != null : to.length > 0) &&
+    Boolean(subject.trim()) &&
+    bodyReady;
 
   const handleSubmit = () => {
     if (sending) return;
     if (!canSend) return;
-    const remaining = countUnfilledBrackets(
-      editorRef.current?.textContent ?? "",
-    );
-    if (remaining > 0) {
-      setUnfilledCount(remaining);
-      return;
+    if (rich) {
+      const remaining = countUnfilledBrackets(
+        editorRef.current?.textContent ?? "",
+      );
+      if (remaining > 0) {
+        setUnfilledCount(remaining);
+        return;
+      }
     }
     doSend();
   };
@@ -262,65 +292,123 @@ const ComposeEmailDialog = ({
             <DialogTitle>{replyThread ? "Reply" : "Send email"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="email-to">To</Label>
-              <Input
-                id="email-to"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                placeholder="candidate@example.com"
+            {notice ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
+                {notice}
+              </p>
+            ) : null}
+            {senderAddress ? (
+              <p className="text-xs text-muted-foreground">
+                {`From: ${senderAddress}`}
+              </p>
+            ) : null}
+            {replyThread ? (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">To</p>
+                <p className="break-all text-sm">{replyTo ?? "Unknown"}</p>
+              </div>
+            ) : (
+              <RecipientPicker
+                options={recipientOptions}
+                selected={to}
+                onChange={setTo}
               />
-            </div>
+            )}
             <div className="space-y-1">
               <Label htmlFor="email-subject">Subject</Label>
               <Input
                 id="email-subject"
                 value={subject}
+                readOnly={Boolean(replyThread)}
                 onChange={(e) => setSubject(e.target.value)}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="email-template">Template</Label>
-              <Select
-                value={TEMPLATE_PICKER_VALUE}
-                onValueChange={handleTemplatePick}
-              >
-                <SelectTrigger id="email-template" aria-label="Template">
-                  <SelectValue placeholder="Start from a template (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {appliedTemplateLabel ? (
-                <p className="text-xs text-muted-foreground">
-                  {`Applied: ${appliedTemplateLabel}`}
-                </p>
-              ) : null}
-            </div>
+            {rich && (
+              <div className="space-y-1">
+                <Label htmlFor="email-template">Template</Label>
+                <Select
+                  value={TEMPLATE_PICKER_VALUE}
+                  onValueChange={handleTemplatePick}
+                >
+                  <SelectTrigger id="email-template" aria-label="Template">
+                    <SelectValue placeholder="Start from a template (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (
+                      <SelectItem key={t.key} value={t.key}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {appliedTemplateLabel ? (
+                  <p className="text-xs text-muted-foreground">
+                    {`Applied: ${appliedTemplateLabel}`}
+                  </p>
+                ) : null}
+              </div>
+            )}
             <div className="space-y-1">
               <Label htmlFor="email-body">Message</Label>
-              {/* [&_p] is load-bearing: Tailwind's preflight zeroes p margins,
-                  so without it an applied template collapses into a single
-                  block here even though the mail goes out correctly spaced. */}
-              <div
-                id="email-body"
-                ref={editorRef}
-                role="textbox"
-                aria-label="Message"
-                aria-multiline="true"
-                contentEditable
-                suppressContentEditableWarning
-                onInput={() =>
-                  setHasText(Boolean(editorRef.current?.textContent?.trim()))
-                }
-                className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
-              />
+              {rich ? (
+                // [&_p] is load-bearing: Tailwind's preflight zeroes p
+                // margins, so without it an applied template collapses into a
+                // single block here even though the mail goes out correctly
+                // spaced.
+                <div
+                  id="email-body"
+                  ref={editorRef}
+                  role="textbox"
+                  aria-label="Message"
+                  aria-multiline="true"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={() =>
+                    setHasText(Boolean(editorRef.current?.textContent?.trim()))
+                  }
+                  className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
+                />
+              ) : (
+                <>
+                  <Textarea
+                    id="email-body"
+                    value={text}
+                    maxLength={maxBodyLength}
+                    rows={8}
+                    onChange={(e) => setText(e.target.value)}
+                  />
+                  {maxBodyLength != null && (
+                    <p className="text-right text-xs text-muted-foreground">
+                      {`${text.length} / ${maxBodyLength}`}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
+            {staleMessages.length > 0 && (
+              <div className="space-y-2">
+                <p
+                  role="status"
+                  className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"
+                >
+                  Not sent: this thread has new messages since you opened it.
+                  Read them below; your draft is kept. Send again to send it as
+                  is.
+                </p>
+                <ul
+                  aria-label="New messages"
+                  className="max-h-60 space-y-2 overflow-y-auto"
+                >
+                  {staleMessages.map((m) => (
+                    <EmailMessage
+                      key={m.messageId}
+                      message={m}
+                      formatTime={formatTime}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button

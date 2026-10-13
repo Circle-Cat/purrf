@@ -39,6 +39,7 @@ import {
   getApplicationEmails,
   sendApplicationEmail,
   getApplicationEmailTemplates,
+  applicationEmailAttachmentUrl,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -48,6 +49,7 @@ vi.mock("@/utils/request", () => ({
     put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
+    defaults: { baseURL: "/api" },
   },
 }));
 
@@ -109,6 +111,12 @@ describe("recruitingApi", () => {
     await getApplicationEmailTemplates(10);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/10/email-templates",
+    );
+  });
+
+  it("applicationEmailAttachmentUrl points at the attachment download endpoint", () => {
+    expect(applicationEmailAttachmentUrl(10, 55, 2)).toBe(
+      "/api/recruiting/applications/10/emails/messages/55/attachments/2",
     );
   });
 
@@ -320,7 +328,6 @@ describe("recruitingApi", () => {
 
   it("resumeUrl returns correctly formatted URL", () => {
     const url = resumeUrl(7);
-    // In test (dev-mode), baseURL is "/api", so full URL should be exact
     expect(url).toBe("/api/recruiting/applications/7/resume");
   });
 
