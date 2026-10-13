@@ -8,9 +8,9 @@ from backend.common.logger import get_logger
 
 logger = get_logger()
 
-# The pair of listener functions currently registered with SQLAlchemy, kept
+# The listener functions currently registered with SQLAlchemy, kept
 # so a repeat call to install_publish_listener() can remove them before
-# adding a new pair instead of stacking a second pair on top of the first.
+# adding new ones instead of stacking a second set on top of the first.
 # Without this, calling it twice (e.g. an accidental double import at
 # startup, or a test suite that installs a fresh publisher per test) would
 # leave two listeners on the same Session class: the first one to run on any
@@ -19,6 +19,9 @@ logger = get_logger()
 # nothing -- so the *original* publisher would keep winning forever, and a
 # newer one passed to a later install call would never be used.
 _active_listeners: tuple | None = None
+
+# session.info key: open SAVEPOINT -> how many ids were queued when it began.
+_SAVEPOINT_MARKS = "pending_notification_savepoint_marks"
 
 
 def _log_publish_failure(notification_id, topic_path: str, future) -> None:
@@ -67,9 +70,16 @@ def install_publish_listener(publisher, topic_path: str) -> None:
     delivery route will republish it. Raising here would fail a request
     whose business change already succeeded.
 
+    Only the outermost transaction counts. SQLAlchemy also fires
+    ``after_commit`` when a SAVEPOINT is released and ``after_rollback`` when
+    one rolls back, so a released savepoint would publish before its rows are
+    committed (the delivery would find no row and ack it), and a failed one
+    would drop every id queued so far. A rolled-back savepoint instead drops
+    only the ids queued inside it.
+
     Calling this more than once (e.g. accidental repeated startup wiring)
     replaces the previously installed listeners rather than stacking a
-    second pair alongside them, so a notification is never published twice
+    second set alongside them, so a notification is never published twice
     and a later publisher/topic never loses out to a stale earlier one.
 
     Args:
@@ -78,11 +88,15 @@ def install_publish_listener(publisher, topic_path: str) -> None:
     """
     global _active_listeners
     if _active_listeners is not None:
-        previous_publish, previous_discard = _active_listeners
+        previous_publish, previous_discard, previous_mark = _active_listeners
         sqlalchemy_event.remove(Session, "after_commit", previous_publish)
-        sqlalchemy_event.remove(Session, "after_rollback", previous_discard)
+        sqlalchemy_event.remove(Session, "after_soft_rollback", previous_discard)
+        sqlalchemy_event.remove(Session, "after_transaction_create", previous_mark)
 
     def _publish(session: Session) -> None:
+        if session.in_nested_transaction():
+            return
+        session.info.pop(_SAVEPOINT_MARKS, None)
         notification_ids = session.info.pop("pending_notification_ids", [])
         for notification_id in notification_ids:
             payload = json.dumps({"notification_id": notification_id}).encode()
@@ -98,9 +112,21 @@ def install_publish_listener(publisher, topic_path: str) -> None:
                     notification_id,
                 )
 
-    def _discard(session: Session) -> None:
-        session.info.pop("pending_notification_ids", None)
+    def _mark(session: Session, transaction) -> None:
+        if transaction.nested:
+            queued = len(session.info.get("pending_notification_ids", []))
+            session.info.setdefault(_SAVEPOINT_MARKS, {})[transaction] = queued
 
+    def _discard(session: Session, previous_transaction) -> None:
+        if not previous_transaction.nested:
+            session.info.pop("pending_notification_ids", None)
+            session.info.pop(_SAVEPOINT_MARKS, None)
+            return
+        queued = session.info.get(_SAVEPOINT_MARKS, {}).pop(previous_transaction, None)
+        if queued is not None and "pending_notification_ids" in session.info:
+            del session.info["pending_notification_ids"][queued:]
+
+    sqlalchemy_event.listens_for(Session, "after_transaction_create")(_mark)
     sqlalchemy_event.listens_for(Session, "after_commit")(_publish)
-    sqlalchemy_event.listens_for(Session, "after_rollback")(_discard)
-    _active_listeners = (_publish, _discard)
+    sqlalchemy_event.listens_for(Session, "after_soft_rollback")(_discard)
+    _active_listeners = (_publish, _discard, _mark)
