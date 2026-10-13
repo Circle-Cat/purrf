@@ -9,7 +9,7 @@ is the price of the two pages coexisting.
 Entry-point service: every write method commits its own transaction.
 """
 
-from backend.admin.block_service import BLOCK_USER
+from backend.admin.block_service import BLOCK_USER, require_standing_over
 from backend.common.identity_type import IdentityType
 from backend.common.name_utils import display_name_of
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
@@ -41,6 +41,7 @@ class UserAccountService:
         users_repository,
         user_emails_repository,
         user_identities_repository,
+        user_permissions_repository,
         approval_service,
         logger,
     ):
@@ -52,6 +53,8 @@ class UserAccountService:
                 resolution for the list, and the sign-in email rows.
             user_identities_repository (UserIdentitiesRepository): The federated
                 identities on the sign-in methods view.
+            user_permissions_repository (UserPermissionsRepository): Tells
+                whether the operator and target are permission admins.
             approval_service (ApprovalService): Reads the caller's pending
                 block requests to flag rows in the list.
             logger (Logger): Injected logger.
@@ -59,6 +62,7 @@ class UserAccountService:
         self._users = users_repository
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
+        self._permissions = user_permissions_repository
         self._approvals = approval_service
         self._logger = logger
 
@@ -218,15 +222,24 @@ class UserAccountService:
 
         Raises:
             ValueError: If no user exists with ``user_id`` (surfaces as 400).
-            PermissionError: If the operator is deactivating themselves
-                (surfaces as 403).
+            PermissionError: If the operator is deactivating themselves, or
+                is deactivating a permission admin without being one (surfaces
+                as 403).
         """
-        await self._require_user(session, user_id)
+        target = await self._require_user(session, user_id)
         if user_id == actor_id:
-            # The only guard on this page. Deactivating yourself takes away the
-            # door you would need to undo it.
+            # Deactivating yourself takes away the door you would need to undo
+            # it.
             self._logger.warning("Refused self-deactivation for user_id=%s", actor_id)
             raise PermissionError("You cannot deactivate your own account")
+        await require_standing_over(
+            session,
+            actor_id=actor_id,
+            target=target,
+            verb="deactivate",
+            users_repository=self._users,
+            user_permissions_repository=self._permissions,
+        )
         await self._users.deactivate(session, user_id, actor_id, note)
         await record_event(
             session,

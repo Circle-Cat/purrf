@@ -232,6 +232,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 MagicMock(),
                 MagicMock(),
                 MagicMock(),
+                UserPermissionsRepository(),
             )
         )
         self.approvals.register(

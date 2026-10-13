@@ -6,7 +6,12 @@ person; approving applies the same block an operator applies directly
 waits, so rejecting or withdrawing it has nothing to undo.
 """
 
-from backend.admin.block_service import BLOCK_TARGET, BLOCK_USER, apply_block_kernel
+from backend.admin.block_service import (
+    BLOCK_TARGET,
+    BLOCK_USER,
+    apply_block_kernel,
+    require_standing_over,
+)
 from backend.approval.approval_handler import ApprovalHandler
 from backend.common.permissions import Permission
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
@@ -29,6 +34,7 @@ class BlockUserHandler(ApprovalHandler):
         application_interview_repository,
         interview_scheduling_service,
         mentorship_block_service,
+        user_permissions_repository,
     ):
         """
         Args:
@@ -43,6 +49,8 @@ class BlockUserHandler(ApprovalHandler):
                 them.
             mentorship_block_service (MentorshipBlockService): Ends the
                 person's mentorship pairs.
+            user_permissions_repository (UserPermissionsRepository): Tells
+                whether the reviewer and the person are permission admins.
         """
         self._users = users_repository
         self._applications = application_repository
@@ -50,6 +58,7 @@ class BlockUserHandler(ApprovalHandler):
         self._interviews = application_interview_repository
         self._interview_scheduling = interview_scheduling_service
         self._mentorship = mentorship_block_service
+        self._permissions = user_permissions_repository
 
     def subject_id(self, request) -> int:
         return int(request.target_id)
@@ -69,6 +78,18 @@ class BlockUserHandler(ApprovalHandler):
         if int(request.target_id) == request.reviewer_id:
             raise PermissionError("You cannot block your own account")
         target = await self._users.get_user_by_user_id(session, int(request.target_id))
+        if target is not None:
+            # Raised, not refused: it is the reviewer who lacks standing, not
+            # the request that went stale, so it stays open for them to reject
+            # or for the raiser to hand to a permission admin.
+            await require_standing_over(
+                session,
+                actor_id=request.reviewer_id,
+                target=target,
+                verb="block",
+                users_repository=self._users,
+                user_permissions_repository=self._permissions,
+            )
         if target is not None and target.is_blocked:
             # An operator blocked them directly while this waited.
             return ["This person is already blocked."]
