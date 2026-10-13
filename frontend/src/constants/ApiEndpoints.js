@@ -168,6 +168,8 @@ export const API_ENDPOINTS = {
     `/recruiting/applications/${id}/emails`,
   RECRUITING_APPLICATION_EMAIL_TEMPLATES: (id) =>
     `/recruiting/applications/${id}/email-templates`,
+  RECRUITING_APPLICATION_EMAIL_ATTACHMENT: (id, messageId, index) =>
+    `/recruiting/applications/${id}/emails/messages/${messageId}/attachments/${index}`,
   RECRUITING_APPLICATION_MENTIONABLE_USERS: (id) =>
     `/recruiting/applications/${id}/mentionable-users`,
   RECRUITING_APPLICATION_OTHER_APPLICATIONS: (id) =>

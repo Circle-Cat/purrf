@@ -8,12 +8,11 @@ import {
 } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { AlertTriangle, Check, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { EMAIL_BODY_BOX_CLASS, sanitizeEmailBody } from "@/utils/emailHtml";
 import {
   Select,
   SelectContent,
@@ -47,7 +46,10 @@ import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
-import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
+import ComposeEmailDialog from "@/components/email/ComposeEmailDialog";
+import EmailConversation from "@/components/email/EmailConversation";
+import { recipientOptionsOf } from "@/components/email/emailThreads";
+import { useComposeEmail } from "@/components/email/useComposeEmail";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 import {
@@ -72,6 +74,8 @@ import {
   postComment,
   getApplicationEmails,
   sendApplicationEmail,
+  getApplicationEmailTemplates,
+  applicationEmailAttachmentUrl,
   resumeUrl,
   scheduleInterview,
   updateInterview,
@@ -720,191 +724,23 @@ const CommentsPanel = ({
   );
 };
 
-const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
-
-const EMAIL_KIND_TAGS = {
-  auto_reply: {
-    label: "Auto-reply",
-    className: "border-slate-300 bg-slate-100 text-slate-600",
-  },
-  bounce: {
-    label: "Delivery failed",
-    className: "border-red-200 bg-red-50 text-red-700",
-  },
-};
-
-/**
- * One stored message in the Emails tab. Auto-replies and delivery-failure
- * reports (`inboundKind`) are tagged and dimmed so they read as noise next to
- * human replies.
- *
- * @param {{message: object, timezone: string}} props
- */
-const EmailMessageBubble = ({ message, timezone }) => {
-  const kind =
-    message.inboundKind ??
-    (message.failedRecipients != null ? "bounce" : undefined);
-  const tag = EMAIL_KIND_TAGS[kind];
-  const html =
-    message.bodyHtml != null && message.bodyHtml !== ""
-      ? sanitizeEmailBody(message.bodyHtml)
-      : null;
-  const when = message.gmailInternalDate ?? message.createdAt;
-  return (
-    <li
-      className={`rounded border p-2 text-sm ${
-        tag ? "border-dashed border-slate-300 bg-slate-50 text-slate-500" : ""
-      }`}
-    >
-      <div className="mb-1 flex flex-wrap items-center gap-x-1.5 text-slate-500">
-        <span className="font-medium text-slate-700">
-          {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
-        </span>
-        {when ? <span>· {formatDateTimeWithZone(when, timezone)}</span> : null}
-        {tag && (
-          <Badge variant="outline" className={tag.className}>
-            {tag.label}
-          </Badge>
-        )}
-      </div>
-      <dl className="mb-1 grid grid-cols-[2.25rem_1fr] gap-x-2 text-xs text-slate-500">
-        <dt>From</dt>
-        <dd className="break-all text-slate-700">{message.fromAddress}</dd>
-        <dt>To</dt>
-        <dd className="break-all text-slate-700">{message.toAddresses}</dd>
-      </dl>
-      {html != null ? (
-        // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
-        // margins, drops list markers and strips link underlines — without
-        // these hooks a message reads as one dense block whose links are
-        // indistinguishable from plain text.
-        <div
-          className={`max-w-none text-slate-700 ${EMAIL_BODY_BOX_CLASS} [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5`}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <p className="whitespace-pre-wrap text-slate-700">
-          {message.bodyText ?? ""}
-        </p>
-      )}
-    </li>
-  );
-};
-
-/**
- * One application's email conversation.
- *
- * Sending is owner-only (`send_application_email` refuses `read.all`). The
- * read-only reuse inside an expanded other-application row turns `canSend`
- * off, which drops the toolbar entirely. `sendDisabledHint` keeps Send/Reply
- * rendered but disabled and titled, for an owner who lacks the grant sending
- * needs.
- *
- * @param {{conversation: {threads: object[]}|null, canSend: boolean,
- *          sendDisabledHint?: string, onCompose?: () => void,
- *          onReply?: (thread: object) => void, timezone: string}} props
- */
-const EmailsPanel = ({
-  conversation,
-  canSend,
-  sendDisabledHint,
-  onCompose,
-  onReply,
-  timezone,
-}) => {
-  const threads = conversation?.threads ?? [];
-  return (
-    <div className="space-y-4">
-      {canSend && (
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            disabled={Boolean(sendDisabledHint)}
-            title={sendDisabledHint}
-            onClick={onCompose}
-          >
-            Send email
-          </Button>
-        </div>
-      )}
-      {threads.length === 0 ? (
-        <p className="text-sm text-slate-400">No emails yet.</p>
-      ) : (
-        <ul className="space-y-4">
-          {threads.map((thread) => (
-            <li key={thread.threadId} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700">
-                  {thread.subject || "(no subject)"}
-                  {thread.needsReply && (
-                    <Badge
-                      variant="outline"
-                      className="border-orange-200 bg-orange-50 text-orange-700"
-                    >
-                      Needs reply
-                    </Badge>
-                  )}
-                </span>
-                {canSend && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={Boolean(sendDisabledHint)}
-                    title={sendDisabledHint}
-                    onClick={() => onReply(thread)}
-                  >
-                    Reply
-                  </Button>
-                )}
-              </div>
-              {thread.openBounce && (
-                <div
-                  role="alert"
-                  className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-800"
-                >
-                  <AlertTriangle size={14} />
-                  Delivery failed: your email to {
-                    thread.openBounce.bouncedTo
-                  }{" "}
-                  was not delivered
-                </div>
-              )}
-              <ul className="space-y-2">
-                {thread.messages.map((message) => (
-                  <EmailMessageBubble
-                    key={message.messageId}
-                    message={message}
-                    timezone={timezone}
-                  />
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
 /**
  * The Emails tab inside an expanded other-application row: read-only, and
  * three-state rather than two.
  *
- * "No emails yet." (rendered by EmailsPanel for an empty thread list) and
- * "you may not read these" are different facts, so the withheld case gets
+ * "No emails yet." (rendered by EmailConversation for an empty thread list)
+ * and "you may not read these" are different facts, so the withheld case gets
  * its own copy instead of silently looking like an empty inbox. Visibility
  * is decided by the server per entry (`emailsVisible`, which mirrors the
  * emails endpoint's own owner/read.all gate), so a viewer without standing
  * never fires the request that endpoint would reject with a 400.
  *
- * @param {{visible: boolean,
+ * @param {{applicationId: number, visible: boolean,
  *          state: {status: "loading"|"ready"|"error",
  *                  conversation?: object}|undefined,
  *          timezone: string}} props
  */
-const RowEmails = ({ visible, state, timezone }) => {
+const RowEmails = ({ applicationId, visible, state, timezone }) => {
   if (!visible) {
     return (
       <p className="text-sm text-slate-400">
@@ -919,10 +755,13 @@ const RowEmails = ({ visible, state, timezone }) => {
     return <p className="text-sm text-slate-400">Loading emails...</p>;
   }
   return (
-    <EmailsPanel
+    <EmailConversation
       conversation={state.conversation}
+      formatTime={(iso) => formatDateTimeWithZone(iso, timezone)}
+      attachmentUrl={(messageId, index) =>
+        applicationEmailAttachmentUrl(applicationId, messageId, index)
+      }
       canSend={false}
-      timezone={timezone}
     />
   );
 };
@@ -1100,6 +939,7 @@ const OtherApplicationsSection = ({
                       </TabsContent>
                       <TabsContent value="emails">
                         <RowEmails
+                          applicationId={other.application.id}
                           visible={other.emailsVisible}
                           state={emailsById[other.application.id]}
                           timezone={timezone}
@@ -1260,9 +1100,14 @@ const ApplicationDetailPage = () => {
     threads: [],
     defaultTo: null,
   });
-  const [sendingEmail, setSendingEmail] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [replyThread, setReplyThread] = useState(null);
+  const emailCompose = useComposeEmail({
+    submit: (payload) =>
+      sendApplicationEmail(applicationId, payload).then(({ data }) => data),
+    reload: () => getApplicationEmails(applicationId).then(({ data }) => data),
+    onConversation: (data) =>
+      setEmails(data ?? { threads: [], defaultTo: null }),
+    contextKey: applicationId,
+  });
 
   const load = useCallback(() => {
     if (applicationId == null) return;
@@ -1888,31 +1733,6 @@ const ApplicationDetailPage = () => {
       .finally(() => setPostingComment(false));
   };
 
-  const handleSendEmail = (payload) => {
-    if (sendingEmail) return Promise.resolve();
-    setSendingEmail(true);
-    return sendApplicationEmail(applicationId, payload)
-      .then(({ data }) => {
-        setEmails(data);
-        toast.success("Email sent.");
-      })
-      .catch((e) => {
-        toast.error(e.message);
-        throw e;
-      })
-      .finally(() => setSendingEmail(false));
-  };
-
-  const openCompose = () => {
-    setReplyThread(null);
-    setComposeOpen(true);
-  };
-
-  const openReply = (thread) => {
-    setReplyThread(thread);
-    setComposeOpen(true);
-  };
-
   if (!loaded || !detail) {
     return (
       <LoadGate
@@ -1938,6 +1758,7 @@ const ApplicationDetailPage = () => {
     (detail.assigneeId != null
       ? unresolvedPersonLabel(detail.assigneeId)
       : null);
+  const formatEmailTime = (iso) => formatDateTimeWithZone(iso, viewerTimezone);
   // Every write an owner makes here needs the same grant as raising a block.
   const canOperate = detail.isOwner && canRequestBlock;
   // Only an owner gets the hint: a read.all viewer never had these controls.
@@ -2188,22 +2009,38 @@ const ApplicationDetailPage = () => {
                   />
                 </TabsContent>
                 <TabsContent value="emails">
-                  <EmailsPanel
+                  <EmailConversation
                     conversation={emails}
+                    formatTime={formatEmailTime}
+                    attachmentUrl={(messageId, index) =>
+                      applicationEmailAttachmentUrl(
+                        applicationId,
+                        messageId,
+                        index,
+                      )
+                    }
                     canSend={detail.isOwner}
-                    sendDisabledHint={operateHint}
-                    onCompose={openCompose}
-                    onReply={openReply}
-                    timezone={viewerTimezone}
+                    sendDisabledHint={
+                      operateHint ??
+                      (emails.canSend === false
+                        ? "Sending email is not set up here"
+                        : undefined)
+                    }
+                    onCompose={emailCompose.openCompose}
+                    onReply={emailCompose.openReply}
                   />
                   <ComposeEmailDialog
-                    open={composeOpen}
-                    onOpenChange={setComposeOpen}
-                    applicationId={applicationId}
+                    {...emailCompose.dialogProps}
+                    mode="rich"
+                    recipientOptions={recipientOptionsOf(emails)}
                     defaultTo={emails.defaultTo}
-                    replyThread={replyThread}
-                    onSend={handleSendEmail}
-                    sending={sendingEmail}
+                    senderAddress={emails.senderAddress}
+                    loadTemplates={() =>
+                      getApplicationEmailTemplates(applicationId).then(
+                        (res) => res?.data,
+                      )
+                    }
+                    formatTime={formatEmailTime}
                   />
                 </TabsContent>
               </Tabs>

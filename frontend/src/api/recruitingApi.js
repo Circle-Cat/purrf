@@ -239,14 +239,9 @@ export const cancelInterview = (id) =>
 /**
  * Build the full URL to a candidate's resume PDF.
  * Used to construct href for direct file download links.
- * Mirrors the base URL logic from request.js to ensure consistency.
  */
-export const resumeUrl = (id) => {
-  const baseURL = import.meta.env.PROD
-    ? import.meta.env.VITE_API_BASE_URL + "/api"
-    : "/api";
-  return baseURL + API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id);
-};
+export const resumeUrl = (id) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id)}`;
 
 /** List the current user's assigned evaluations (EvaluationSummaryDto[]). */
 export const listMyEvaluations = () =>
@@ -281,6 +276,13 @@ export const sendApplicationEmail = (id, body) =>
 /** Preset compose templates, already rendered for this application. */
 export const getApplicationEmailTemplates = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_TEMPLATES(id));
+
+/**
+ * Build the URL of an attachment on a stored email, for a plain download
+ * link; the session cookie authorizes it.
+ */
+export const applicationEmailAttachmentUrl = (id, messageId, index) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_ATTACHMENT(id, messageId, index)}`;
 
 /** Everyone who can currently be @-mentioned on this application. */
 export const getMentionableUsers = (id) =>
