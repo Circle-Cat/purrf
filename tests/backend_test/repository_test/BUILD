@@ -397,6 +397,7 @@ py_test(
     deps = [
         ":base_repository_test_lib",
         "//backend/common:approval_enums",
+        "//backend/entity:entities",
         "@pypi//sqlalchemy",
     ],
 )

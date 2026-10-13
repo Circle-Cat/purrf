@@ -335,16 +335,43 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
             self.session, request_id=41, actor_id=RAISER, reviewer_id=12
         )
 
-    async def test_an_exemption_may_still_be_handed_to_its_subject(self):
+    async def test_the_person_exempted_cannot_be_named_reviewer(self):
+        with self.assertRaises(ValueError) as caught:
+            await self.service.request_exemption(
+                self.session,
+                round_id=7,
+                user_id=PERSON,
+                actor_id=RAISER,
+                reviewer_id=PERSON,
+                reason="Her mentor left midway",
+            )
+        self.assertEqual(
+            str(caught.exception),
+            "The person being exempted cannot review their own exemption.",
+        )
+        self.approvals.raise_request.assert_not_awaited()
+
+    async def test_an_exemption_cannot_be_handed_to_the_person_exempted(self):
         exemption = _request(action="exempt_matching")
         exemption.payload = {"round_id": 7, "user_id": 12}
         self.approvals.get_request.return_value = exemption
 
-        await self.service.reassign(
-            self.session, request_id=31, actor_id=RAISER, reviewer_id=12
+        with self.assertRaises(ValueError) as caught:
+            await self.service.reassign(
+                self.session, request_id=31, actor_id=RAISER, reviewer_id=12
+            )
+        self.assertEqual(
+            str(caught.exception),
+            "The person being exempted cannot review their own exemption.",
         )
+        self.approvals.reassign.assert_not_awaited()
 
-        self.approvals.reassign.assert_awaited_once()
+        await self.service.reassign(
+            self.session, request_id=31, actor_id=RAISER, reviewer_id=PERSON
+        )
+        self.approvals.reassign.assert_awaited_once_with(
+            self.session, request_id=31, actor_id=RAISER, reviewer_id=PERSON
+        )
 
     async def test_pending_requests_on_a_participant_are_described(self):
         waiting = {
