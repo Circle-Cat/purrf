@@ -259,7 +259,11 @@ const NoteTimeline = ({
             </Button>
           )}
           {canAdd && canMarkNotified && (
-            <Button size="sm" variant="outline" onClick={() => setMarking(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setMarking(true)}
+            >
               Mark as notified
             </Button>
           )}
