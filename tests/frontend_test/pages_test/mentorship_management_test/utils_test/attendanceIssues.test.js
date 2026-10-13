@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { attendanceIssueLines } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import {
+  attendanceIssueLines,
+  formatPacific,
+} from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
 const names = { mentorName: "Dana Wu", menteeName: "Erin Ma" };
 
@@ -25,5 +28,11 @@ describe("attendanceIssueLines", () => {
 
   it("is empty when no meeting is flagged", () => {
     expect(attendanceIssueLines([], names)).toEqual([]);
+  });
+});
+
+describe("formatPacific", () => {
+  it("shows a time in Los Angeles to the minute", () => {
+    expect(formatPacific("2026-10-02T17:30:00Z")).toBe("2026-10-02 10:30");
   });
 });

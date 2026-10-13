@@ -5,6 +5,16 @@ import { noteTagLabel } from "@/pages/MentorshipManagement/utils/meetingNoteTags
 export const MEETING_TIMEZONE = "America/Los_Angeles";
 
 /**
+ * A time as the mentorship admin pages show it, in MEETING_TIMEZONE:
+ * "2026-10-02 10:30".
+ *
+ * @param {string} iso
+ * @returns {string}
+ */
+export const formatPacific = (iso) =>
+  formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
+
+/**
  * One line per flagged meeting, in the order given (the API sends them
  * oldest first): "2026-08-30: Erin Ma absent; Erin Ma late arrival".
  *

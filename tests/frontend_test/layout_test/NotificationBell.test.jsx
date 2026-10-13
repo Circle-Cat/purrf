@@ -833,6 +833,137 @@ describe("NotificationBell", () => {
       screen.getByText("Your email was not delivered"),
     ).toBeInTheDocument();
   });
+
+  it("says who replied by email, naming the round", async () => {
+    await openWith({
+      id: 14,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 4,
+        userId: 21,
+        personName: "Maya Chen",
+        roundName: "Spring 2026 Mentorship",
+        threadId: 5,
+        subject: "Re: Your match",
+        from: "maya@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Maya Chen replied by email (Spring 2026 Mentorship): Re: Your match",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the round from a reply when the round is null", async () => {
+    await openWith({
+      id: 15,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 6,
+        userId: 22,
+        personName: "Owen Park",
+        roundName: null,
+        threadId: 7,
+        subject: "Availability next week",
+        from: "owen@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText("Owen Park replied by email: Availability next week"),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to a generic name and subject for a reply with neither", async () => {
+    await openWith({
+      id: 16,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 8,
+        userId: 23,
+        personName: "",
+        roundName: null,
+        threadId: 9,
+        subject: "",
+        from: "unknown@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText("A participant replied by email: (no subject)"),
+    ).toBeInTheDocument();
+  });
+
+  it("says which address an email bounced to and about what", async () => {
+    await openWith({
+      id: 17,
+      eventType: "mentorship.email_bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 10,
+        userId: 24,
+        personName: "Priya Nair",
+        roundName: "Autumn 2026 Pilot",
+        threadId: 11,
+        subject: "Welcome to the pilot",
+        bouncedTo: "lee.k@example.org",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email to lee.k@example.org about Welcome to the pilot was not delivered",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the address from a bounce when none is named", async () => {
+    await openWith({
+      id: 18,
+      eventType: "mentorship.email_bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 12,
+        userId: 25,
+        personName: "Sam Ortiz",
+        roundName: null,
+        threadId: 13,
+        subject: "Welcome to the pilot",
+        bouncedTo: "",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email about Welcome to the pilot was not delivered",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {
