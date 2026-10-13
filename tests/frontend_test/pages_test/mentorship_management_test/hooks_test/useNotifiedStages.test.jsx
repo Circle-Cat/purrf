@@ -132,4 +132,36 @@ describe("useNotifiedStages", () => {
     expect(result.current.stagesByUser.size).toBe(0);
     error.mockRestore();
   });
+
+  it("does not let a reload for the old round overwrite the new round", async () => {
+    let resolveStaleReload;
+    listNotifiedStages
+      .mockResolvedValueOnce([{ userId: 11, stages: ["admission"] }])
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveStaleReload = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([{ userId: 21, stages: ["match_result"] }]);
+    const { result, rerender } = renderHook(
+      ({ roundId }) => useNotifiedStages(roundId),
+      { initialProps: { roundId: "7" } },
+    );
+    await waitFor(() => expect(result.current.stagesByUser.has(11)).toBe(true));
+
+    let staleReload;
+    act(() => {
+      staleReload = result.current.reload();
+    });
+    rerender({ roundId: "8" });
+    await waitFor(() => expect(result.current.stagesByUser.has(21)).toBe(true));
+
+    await act(async () => {
+      resolveStaleReload([{ userId: 11, stages: ["admission"] }]);
+      await staleReload;
+    });
+
+    expect(listNotifiedStages.mock.calls).toEqual([["7"], ["7"], ["8"]]);
+    expect([...result.current.stagesByUser.keys()]).toEqual([21]);
+  });
 });

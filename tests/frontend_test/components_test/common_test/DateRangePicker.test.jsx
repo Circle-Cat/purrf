@@ -3,8 +3,45 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import "@testing-library/jest-dom/vitest";
 
+// The test runner's zone is UTC and cannot be changed from a test, so a zone
+// seven hours behind is stood in for by shifting the local calendar getters.
+const withLocalZoneBehindUtc = (hours) => {
+  const shifted = (date) => new Date(date.getTime() - hours * 3600 * 1000);
+  vi.spyOn(Date.prototype, "getFullYear").mockImplementation(function () {
+    return shifted(this).getUTCFullYear();
+  });
+  vi.spyOn(Date.prototype, "getMonth").mockImplementation(function () {
+    return shifted(this).getUTCMonth();
+  });
+  vi.spyOn(Date.prototype, "getDate").mockImplementation(function () {
+    return shifted(this).getUTCDate();
+  });
+};
+
 describe("DateRangePicker", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("caps both dates at the local today, not the UTC one", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 19:00 on Mar 10 seven hours behind UTC, already Mar 11 in UTC.
+    vi.setSystemTime(new Date("2026-03-11T02:00:00Z"));
+    withLocalZoneBehindUtc(7);
+
+    render(<DateRangePicker />);
+
+    expect(screen.getByTestId("start-date-input")).toHaveAttribute(
+      "max",
+      "2026-03-10",
+    );
+    expect(screen.getByTestId("end-date-input")).toHaveAttribute(
+      "max",
+      "2026-03-10",
+    );
+  });
 
   it("renders with default empty values", () => {
     render(<DateRangePicker />);

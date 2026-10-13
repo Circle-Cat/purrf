@@ -4,6 +4,7 @@ import {
   getMatchingRun,
   getMatchingUnmatched,
 } from "@/api/mentorshipApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /**
  * Loads where a round's latest matching run stands, again whenever the round
@@ -18,40 +19,48 @@ export const useMatchingRun = (roundId) => {
   const [overview, setOverview] = useState(null);
   const [isLoading, setIsLoading] = useState(Boolean(roundId));
   const [error, setError] = useState(false);
+  // One guard for the round's load and every reload, so a reload still in
+  // flight for a round switched away from cannot land on the new one.
+  const { begin, isCurrent } = useRequestGuard();
 
   useEffect(() => {
+    const seq = begin();
     setOverview(null);
     setError(false);
     if (!roundId) {
       setIsLoading(false);
-      return undefined;
+      return;
     }
-    let cancelled = false;
     setIsLoading(true);
     getMatchingRun(roundId)
       .then(({ data }) => {
-        if (!cancelled) setOverview(data ?? null);
+        if (isCurrent(seq)) setOverview(data ?? null);
       })
       .catch((err) => {
         console.error("Failed to fetch the matching run", err);
-        if (!cancelled) setError(true);
+        if (isCurrent(seq)) setError(true);
       })
       .finally(() => {
-        if (!cancelled) setIsLoading(false);
+        if (isCurrent(seq)) setIsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [roundId]);
+  }, [begin, isCurrent, roundId]);
 
   const reload = useCallback(() => {
     if (!roundId) return Promise.resolve();
+    const seq = begin();
     return getMatchingRun(roundId)
-      .then(({ data }) => setOverview(data ?? null))
+      .then(({ data }) => {
+        if (isCurrent(seq)) setOverview(data ?? null);
+      })
       .catch((err) => {
         console.error("Failed to fetch the matching run", err);
+      })
+      .finally(() => {
+        // A reload started while the round's own load is in flight supersedes
+        // it, so the load no longer clears the flag; the newest request does.
+        if (isCurrent(seq)) setIsLoading(false);
       });
-  }, [roundId]);
+  }, [begin, isCurrent, roundId]);
 
   return { overview, isLoading, error, reload };
 };

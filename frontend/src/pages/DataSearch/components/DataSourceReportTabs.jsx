@@ -9,6 +9,7 @@ import {
   DataSourceNames,
   JiraIssueStatus,
 } from "@/constants/Groups";
+import { formatLocalYmd } from "@/utils/dateTime";
 
 /** Lightweight inline SVG icons */
 const IconChat = (props) => (
@@ -129,7 +130,7 @@ const getReportTableProps = (sourceName, committedSearchParams) => {
     case DataSourceNames.JIRA: {
       const jiraConfig = selectedDataSources[sourceName];
       if (!jiraConfig?.length) return null;
-      const today = new Date().toISOString().split("T")[0];
+      const today = formatLocalYmd(new Date());
       const endDate = commonParams.endDate;
       const isPast = endDate < today;
       const statusList = isPast
