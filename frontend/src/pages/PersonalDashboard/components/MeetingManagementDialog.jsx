@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Select from "react-select";
 import {
   CalendarIcon,
@@ -126,6 +126,12 @@ export default function MeetingManagementDialog({
     timezone: userTimezone,
   };
   const [formData, setFormData] = useState(initialFormState);
+  // Held from the booking call through onBooked and the form reset: the
+  // backend has no conflict check, so a second submit in that window books the
+  // series again. The ref stops two submits landing in the same tick, before
+  // the state has re-rendered the button.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     setFormData((prev) => ({ ...prev, timezone: userTimezone }));
@@ -204,6 +210,10 @@ export default function MeetingManagementDialog({
       return;
     }
 
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+
     try {
       const startInstant = localToUtcIso(
         selectedDate,
@@ -248,6 +258,9 @@ export default function MeetingManagementDialog({
       }
     } catch {
       toast.error("Failed to book meeting. Please try again.");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -527,10 +540,10 @@ export default function MeetingManagementDialog({
                     <div className="flex justify-end pt-4 border-t">
                       <button
                         type="submit"
-                        disabled={isLoading}
+                        disabled={isLoading || isSubmitting}
                         className="flex items-center gap-2 rounded-lg bg-[#6035F3] hover:bg-[#4d2ac2] px-6 py-2.5 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:active:scale-100"
                       >
-                        {isLoading ? (
+                        {isLoading || isSubmitting ? (
                           <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         ) : (
                           <Plus className="w-5 h-5" />

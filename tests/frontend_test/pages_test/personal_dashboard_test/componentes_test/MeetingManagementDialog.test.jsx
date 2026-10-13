@@ -378,6 +378,99 @@ describe("MeetingManagementDialog Component", () => {
 
     vi.useRealTimers();
   });
+
+  describe("while a booking is in flight", () => {
+    const fillScheduleForm = async (user) => {
+      await user.click(
+        screen.getByRole("button", { name: /manage meetings/i }),
+      );
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument();
+      });
+      await user.selectOptions(screen.getByLabelText("Select Partner"), "1");
+      fireEvent.change(screen.getByTestId("timezone-selector"), {
+        target: { value: "America/New_York" },
+      });
+      await user.click(screen.getByRole("button", { name: /pick a date/i }));
+      const dayButtons = screen.getAllByRole("button", { name: /30/ });
+      await user.click(dayButtons[dayButtons.length - 1]);
+      await selectStartTime("09:00");
+    };
+
+    const confirmButton = () =>
+      screen.getByRole("button", { name: /confirm booking/i });
+
+    it("keeps Confirm Booking disabled until the refresh after booking finishes", async () => {
+      // The backend has no conflict check, so a second submit while the
+      // dialog is still refreshing would book the whole series again.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      mockBookMeeting.mockResolvedValue({
+        created: [{ meetingId: "g-1" }],
+        failed: [],
+      });
+      let finishRefresh;
+      mockOnBooked.mockReturnValue(
+        new Promise((resolve) => {
+          finishRefresh = resolve;
+        }),
+      );
+
+      render(
+        <MeetingManagementDialog
+          roundId={2}
+          onBooked={mockOnBooked}
+          userTimezone="America/New_York"
+        />,
+      );
+      await fillScheduleForm(user);
+
+      const form = document.querySelector("form");
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+
+      await waitFor(() => expect(mockOnBooked).toHaveBeenCalled());
+      expect(confirmButton()).toBeDisabled();
+      fireEvent.submit(form);
+      expect(mockBookMeeting).toHaveBeenCalledTimes(1);
+
+      finishRefresh();
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith(
+          "Meeting booked successfully!",
+        ),
+      );
+      expect(mockBookMeeting).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it("enables Confirm Booking again after a booking fails", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      mockBookMeeting.mockRejectedValue(new Error("network"));
+
+      render(
+        <MeetingManagementDialog
+          roundId={2}
+          onBooked={mockOnBooked}
+          userTimezone="America/New_York"
+        />,
+      );
+      await fillScheduleForm(user);
+
+      fireEvent.submit(document.querySelector("form"));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "Failed to book meeting. Please try again.",
+        ),
+      );
+      await waitFor(() => expect(confirmButton()).toBeEnabled());
+      vi.useRealTimers();
+    });
+  });
 });
 
 describe("MeetingManagementDialog entry point", () => {
