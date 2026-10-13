@@ -13,10 +13,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { addParticipantNote } from "@/api/mentorshipApi";
-import { formatInTz } from "@/utils/dateTime";
 import { userDisplayName } from "@/utils/userName";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
-import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import { formatPacific } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import EmailThreadCard from "@/components/email/EmailThreadCard";
+import { threadActivityAt } from "@/components/email/emailThreads";
 import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
 import MarkNotifiedDialog from "@/pages/MentorshipManagement/components/email/MarkNotifiedDialog";
 
@@ -107,7 +108,7 @@ export const AddNoteDialog = ({
   );
 };
 
-const at = (iso) => formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
+const at = formatPacific;
 
 const NoteEntry = ({ note, partner }) => (
   <li className="text-sm">
@@ -141,19 +142,51 @@ const SendEntry = ({ send }) => (
   </li>
 );
 
+const EmailEntry = ({ thread, canReply, onReply, attachmentUrl }) => {
+  const activity = threadActivityAt(thread);
+  return (
+    <li className="text-sm">
+      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <Badge variant="secondary">Email</Badge>
+        {activity && <span>{at(activity)}</span>}
+      </div>
+      <EmailThreadCard
+        thread={thread}
+        formatTime={at}
+        attachmentUrl={attachmentUrl}
+        canReply={canReply}
+        onReply={onReply}
+      />
+    </li>
+  );
+};
+
+const refreshedText = (count) =>
+  count === 0
+    ? "No new messages"
+    : `${count} new ${count === 1 ? "message" : "messages"}`;
+
 /**
  * Everything about a person in one round, newest first: the notes written
- * about them, whatever kind, and the Kit notifications that went out to them
- * or failed to. A note an approval wrote says so.
+ * about them, whatever kind, the Kit notifications that went out to them or
+ * failed to, and the email threads with them, each placed by its newest
+ * message. A note an approval wrote says so.
  *
  * @param {{notes: Object[], sends?: Object[], roundId: number|string,
  *          userId: number|string, canAdd: boolean, onAdded: () => void,
  *          pairs?: Object[], canMarkNotified?: boolean, personName?: string,
- *          markStageOptions?: Object[], notifiedStages?: string[]}} props
+ *          markStageOptions?: Object[], notifiedStages?: string[],
+ *          emailThreads?: Object[], canReply?: boolean,
+ *          onReply?: (thread: Object) => void,
+ *          attachmentUrl?: (messageId: number, index: number) => string,
+ *          onRefreshEmails?: () => Promise<number|null>,
+ *          emailLoadError?: boolean}} props
  *   pairs: the round's pairs, to name the partner of the pair a note is
  *   about. canMarkNotified: offer Mark as notified beside Add a note, for
  *   the person personName, among markStageOptions, with notifiedStages
- *   already reached.
+ *   already reached. onRefreshEmails: pulls new messages and resolves to how
+ *   many came in, or null when it failed; without it there is no Refresh
+ *   emails.
  */
 const NoteTimeline = ({
   notes,
@@ -167,9 +200,17 @@ const NoteTimeline = ({
   personName,
   markStageOptions = [],
   notifiedStages = [],
+  emailThreads = [],
+  canReply = false,
+  onReply,
+  attachmentUrl,
+  onRefreshEmails,
+  emailLoadError = false,
 }) => {
   const [adding, setAdding] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshed, setRefreshed] = useState("");
   const partnerOf = new Map(
     pairs.map((pair) => [pair.pairId, userDisplayName(pair.partner)]),
   );
@@ -184,46 +225,94 @@ const NoteTimeline = ({
       time: send.at,
       send,
     })),
+    ...emailThreads.map((thread) => ({
+      key: `email-${thread.threadId}`,
+      time: threadActivityAt(thread),
+      thread,
+    })),
   ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
+  const refreshEmails = async () => {
+    setRefreshed("");
+    setRefreshing(true);
+    try {
+      const count = await onRefreshEmails();
+      if (count != null) setRefreshed(refreshedText(count));
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <section>
       <header className="mb-2 flex items-center gap-3">
         <h3 className="text-sm font-semibold">Timeline</h3>
-        {canAdd && (
-          <div className="ml-auto flex gap-2">
-            {canMarkNotified && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setMarking(true)}
-              >
-                Mark as notified
-              </Button>
-            )}
+        <div className="ml-auto flex gap-2">
+          {onRefreshEmails && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={refreshing}
+              onClick={refreshEmails}
+            >
+              Refresh emails
+            </Button>
+          )}
+          {canAdd && canMarkNotified && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setMarking(true)}
+            >
+              Mark as notified
+            </Button>
+          )}
+          {canAdd && (
             <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
               Add a note
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </header>
+      {onRefreshEmails && (
+        // Mounted before any result so screen readers announce the first one.
+        <p
+          role="status"
+          className={refreshed ? "mb-2 text-xs text-slate-500" : undefined}
+        >
+          {refreshed}
+        </p>
+      )}
+      {emailLoadError && (
+        <p className="mb-2 text-xs text-red-700">Couldn't load emails.</p>
+      )}
       {entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No notes yet.</p>
+        <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (
         <ul className="space-y-3">
-          {entries.map(({ key, note, send }) =>
-            note ? (
-              <NoteEntry
+          {entries.map(({ key, note, send, thread }) => {
+            if (note) {
+              return (
+                <NoteEntry
+                  key={key}
+                  note={note}
+                  partner={
+                    note.pairId != null ? partnerOf.get(note.pairId) : undefined
+                  }
+                />
+              );
+            }
+            if (send) return <SendEntry key={key} send={send} />;
+            return (
+              <EmailEntry
                 key={key}
-                note={note}
-                partner={
-                  note.pairId != null ? partnerOf.get(note.pairId) : undefined
-                }
+                thread={thread}
+                canReply={canReply}
+                onReply={onReply}
+                attachmentUrl={attachmentUrl}
               />
-            ) : (
-              <SendEntry key={key} send={send} />
-            ),
-          )}
+            );
+          })}
         </ul>
       )}
       {canAdd && (

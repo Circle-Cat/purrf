@@ -22,8 +22,13 @@ import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { userDisplayName } from "@/utils/userName";
 import {
   getAllMentorshipRounds,
+  participantEmailAttachmentUrl,
   searchParticipants,
 } from "@/api/mentorshipApi";
+import ComposeEmailDialog from "@/components/email/ComposeEmailDialog";
+import { recipientOptionsOf } from "@/components/email/emailThreads";
+import { useComposeEmail } from "@/components/email/useComposeEmail";
+import { useParticipantEmails } from "@/pages/MentorshipManagement/hooks/useParticipantEmails";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import MarkBadges from "@/pages/MentorshipManagement/components/MarkBadges";
 import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
@@ -39,7 +44,13 @@ import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPur
 import ChangeStatusDialog from "@/pages/MentorshipManagement/components/ChangeStatusDialog";
 import WaitingOnDecision from "@/pages/MentorshipManagement/components/WaitingOnDecision";
 import { availableStatusRequestTypes } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
-import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import {
+  MEETING_TIMEZONE,
+  formatPacific,
+} from "@/pages/MentorshipManagement/utils/attendanceIssues";
+
+// The backend refuses a longer email body.
+const MAX_EMAIL_BODY_LENGTH = 10000;
 
 // What this person has already been notified of this round: Kit delivered
 // it, or someone marked it by hand.
@@ -155,12 +166,13 @@ const ExemptionBox = ({
  * ParticipantDetailPage
  *
  * One person in one round: who they are, their status and pairs with each
- * pair's meeting log, the round's notes, their feedback, and the rounds they
- * took part in before. Registered or not, the same page. Writing (notes,
- * meeting edits, exemptions, status requests) needs mentorship write access
- * and a round in progress; asking for a block needs write access only.
- * Requests about the person wait in Waiting on a decision until their
- * reviewer decides.
+ * pair's meeting log, the round's notes and the emails with them, their
+ * feedback, and the rounds they took part in before. Registered or not, the
+ * same page. Writing (notes, meeting edits, exemptions, status requests)
+ * needs mentorship write access and a round in progress; asking for a block
+ * and sending email need write access only, and email also a sender in this
+ * environment. Requests about the person wait in Waiting on a decision until
+ * their reviewer decides.
  *
  * Route: /mentorship-management/participants/:userId?round=&pair=
  */
@@ -193,6 +205,13 @@ const ParticipantDetailPage = () => {
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
   const kitEmailOn = Boolean(flags[FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]);
   const sends = usePersonSends(kitEmailOn ? roundId : null, userId);
+  const emails = useParticipantEmails(roundId, userId);
+  const emailCompose = useComposeEmail({
+    submit: emails.submit,
+    reload: emails.reload,
+    onConversation: emails.setConversation,
+    contextKey: `${roundId}|${userId}`,
+  });
 
   // Which pair's meeting log is open. The URL's pair wins; with no pair in
   // the URL, a single pair opens by itself. Applied once per person, round
@@ -264,6 +283,15 @@ const ParticipantDetailPage = () => {
         ? registration?.menteeOnboardingStatus
         : registration?.mentorOnboardingStatus;
     const subject = { userId: person.userId, name, role };
+    // Sending needs write access and a sender in this environment, not a
+    // round in progress.
+    const canEmail = canWrite && Boolean(emails.conversation?.canSend);
+    const emailOptions = recipientOptionsOf(emails.conversation);
+    const emailNotice = person.isBlocked
+      ? `${name} is blocked from Purrf. The email is still sent.`
+      : person.isDeactivated
+        ? `${name} is deactivated in Purrf. The email is still sent.`
+        : undefined;
     // Requests go through the mentorship approvals, which sit behind the
     // matching-run flag.
     const pendingRequests = detail.pendingRequests ?? [];
@@ -326,6 +354,21 @@ const ParticipantDetailPage = () => {
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-start gap-2">
+            {canEmail && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={emailOptions.length === 0}
+                title={
+                  emailOptions.length === 0
+                    ? "No email address on file"
+                    : undefined
+                }
+                onClick={emailCompose.openCompose}
+              >
+                Send email
+              </Button>
+            )}
             {statusTypes.length > 0 && (
               <Button size="sm" onClick={() => setChangingStatus(true)}>
                 Change status / flag
@@ -338,6 +381,18 @@ const ParticipantDetailPage = () => {
               onRequested={refetch}
             />
           </div>
+          {canEmail && (
+            <ComposeEmailDialog
+              {...emailCompose.dialogProps}
+              mode="text"
+              maxBodyLength={MAX_EMAIL_BODY_LENGTH}
+              recipientOptions={emailOptions}
+              defaultTo={emails.conversation.defaultTo}
+              senderAddress={emails.conversation.senderAddress}
+              notice={emailNotice}
+              formatTime={formatPacific}
+            />
+          )}
           {statusTypes.length > 0 && changingStatus && (
             <ChangeStatusDialog
               open
@@ -439,6 +494,14 @@ const ParticipantDetailPage = () => {
           personName={name}
           markStageOptions={stagesForList(!registration)}
           notifiedStages={notifiedStagesOf(sends, detail.notes)}
+          emailThreads={emails.conversation?.threads ?? []}
+          emailLoadError={emails.loadError}
+          canReply={canEmail}
+          onReply={emailCompose.openReply}
+          attachmentUrl={(messageId, index) =>
+            participantEmailAttachmentUrl(roundId, userId, messageId, index)
+          }
+          onRefreshEmails={canWrite ? emails.refresh : undefined}
         />
 
         <ParticipantFeedback feedback={detail.feedback} />

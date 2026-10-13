@@ -474,3 +474,75 @@ export const addParticipantNote = (roundId, userId, body) =>
       body,
     },
   );
+
+/**
+ * One person's email conversation in a round: their threads, the addresses
+ * that can be written to, and whether this environment can send.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ */
+export const getParticipantEmails = (roundId, userId) =>
+  request.get(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_EMAILS(roundId, userId),
+  );
+
+/**
+ * Send a new plain-text email to the person; resolves to the updated
+ * conversation.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ * @param {{to: string[], subject: string, body: string}} email
+ */
+export const sendParticipantEmail = (roundId, userId, { to, subject, body }) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_EMAILS(roundId, userId),
+    { to, subject, body },
+  );
+
+/**
+ * Reply in one of the person's threads. Refused with 409 THREAD_CHANGED when
+ * a message arrived after `lastSeenMessageId`.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ * @param {number} threadId
+ * @param {{body: string, lastSeenMessageId: number|null}} reply
+ */
+export const replyParticipantEmail = (
+  roundId,
+  userId,
+  threadId,
+  { body, lastSeenMessageId },
+) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY(
+      roundId,
+      userId,
+      threadId,
+    ),
+    { body, lastSeenMessageId },
+  );
+
+/**
+ * Pull new replies in the person's threads from Gmail; resolves to
+ * `{conversation, newReplies}`.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ */
+export const refreshParticipantEmails = (roundId, userId) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH(roundId, userId),
+  );
+
+/** Build the absolute URL of an attachment, for a plain download link. */
+export const participantEmailAttachmentUrl = (
+  roundId,
+  userId,
+  messageId,
+  index,
+) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT(
+    roundId,
+    userId,
+    messageId,
+    index,
+  )}`;

@@ -161,6 +161,21 @@ const describe = (n) => {
       return n.details?.bouncedTo
         ? `Your email to ${n.details.bouncedTo} was not delivered`
         : "Your email was not delivered";
+    // Told to whoever wrote into the thread through Purrf, else every
+    // mentorship admin writer.
+    case "mentorship.email_received": {
+      const who = n.details?.personName?.trim() || "A participant";
+      const round = n.details?.roundName?.trim();
+      const subject = n.details?.subject || "(no subject)";
+      return `${who} replied by email${round ? ` (${round})` : ""}: ${subject}`;
+    }
+    // Told to whoever wrote into the thread.
+    case "mentorship.email_bounced": {
+      const subject = n.details?.subject || "(no subject)";
+      return n.details?.bouncedTo
+        ? `Your email to ${n.details.bouncedTo} about ${subject} was not delivered`
+        : `Your email about ${subject} was not delivered`;
+    }
     case "recruiting.reassigned":
       return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":

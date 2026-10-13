@@ -59,6 +59,9 @@ const highlightBrackets = (html) =>
 /** How many `[UPPERCASE]` markers the sender has not replaced yet. */
 const countUnfilledBrackets = (text) => (text.match(BRACKET_RE) ?? []).length;
 
+// The backend refuses a longer subject, for every kind of conversation.
+const SUBJECT_MAX_LENGTH = 990;
+
 const NO_OPTIONS = [];
 const NO_MESSAGES = [];
 const asIs = (iso) => iso;
@@ -319,6 +322,7 @@ const ComposeEmailDialog = ({
               <Input
                 id="email-subject"
                 value={subject}
+                maxLength={SUBJECT_MAX_LENGTH}
                 readOnly={Boolean(replyThread)}
                 onChange={(e) => setSubject(e.target.value)}
               />
