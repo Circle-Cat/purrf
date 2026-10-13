@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, StringConstraints
 
 from backend.common.mentorship_email_enums import (
     MentorshipEmailRecipientResult,
@@ -8,6 +9,7 @@ from backend.common.mentorship_email_enums import (
     MentorshipEmailStage,
 )
 from backend.dto.base_dto import BaseDto
+from backend.dto.participant_detail_dto import NOTE_MAX_LENGTH
 
 
 class KitDraftDto(BaseDto):
@@ -66,6 +68,9 @@ class EmailNotifiedDto(BaseDto):
     # At most one per stage, the latest still to go out; a stage in both lists
     # shows as scheduled.
     scheduled: list[EmailScheduledStageDto]
+    # Stages an admin marked notified by hand: the notification went out
+    # some other way.
+    manual: list[str] = Field(default_factory=list)
 
 
 class EmailPersonSendDto(BaseDto):
@@ -91,3 +96,32 @@ class EmailPreviewDto(BaseDto):
     no_email: list[EmailRecipientDto]
     recently_sent_user_ids: list[int]
     preview_token: str
+
+
+# The most people one mark covers; a list page holds fewer.
+MARK_MAX_PEOPLE = 500
+
+
+class NotificationMarkDto(BaseDto):
+    """Marking people notified when the notification went out some other
+    way. The body says how; it is the only record there is."""
+
+    user_ids: list[int] = Field(min_length=1, max_length=MARK_MAX_PEOPLE)
+    stage: MentorshipEmailStage
+    body: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True, min_length=1, max_length=NOTE_MAX_LENGTH
+        ),
+    ]
+
+
+class NotificationMarkSkipDto(BaseDto):
+    user_id: int
+    # ``already_notified`` or ``not_offered``.
+    reason: str
+
+
+class NotificationMarkResultDto(BaseDto):
+    marked: list[int]
+    skipped: list[NotificationMarkSkipDto]

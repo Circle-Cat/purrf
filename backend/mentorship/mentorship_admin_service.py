@@ -794,6 +794,7 @@ class MentorshipAdminService:
             body=note.body,
             pair_id=note.pair_id,
             request_id=note.request_id,
+            notification_stage=note.notification_stage,
             author=ApprovalPersonDto(
                 user_id=note.author_user_id, name=names.get(note.author_user_id)
             ),

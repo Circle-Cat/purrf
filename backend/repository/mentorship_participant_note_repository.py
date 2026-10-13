@@ -38,6 +38,7 @@ class MentorshipParticipantNoteRepository:
         tag: ParticipantNoteTag | None = None,
         pair_id: int | None = None,
         request_id: int | None = None,
+        notification_stage: str | None = None,
     ) -> MentorshipParticipantNoteEntity:
         """
         Add a note. Does not commit -- the calling service owns the
@@ -54,6 +55,7 @@ class MentorshipParticipantNoteRepository:
                 for a plain remark.
             pair_id (int | None): The pair it is about, when it is about one.
             request_id (int | None): The approval request that produced it.
+            notification_stage (str | None): The notification a ``notified`` mark records.
 
         Returns:
             MentorshipParticipantNoteEntity: The new row.
@@ -66,6 +68,7 @@ class MentorshipParticipantNoteRepository:
             tag=tag,
             pair_id=pair_id,
             request_id=request_id,
+            notification_stage=notification_stage,
         )
         session.add(row)
         await session.flush()

@@ -47,6 +47,9 @@ class MentorshipParticipantNoteEntity(Base):
     request_id: Mapped[int | None] = mapped_column(
         ForeignKey("approval_request.request_id")
     )
+    # Which notification a ``notified`` note records, as a
+    # MentorshipEmailStage value; None for every other note.
+    notification_stage: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
