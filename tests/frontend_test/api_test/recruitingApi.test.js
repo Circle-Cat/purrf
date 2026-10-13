@@ -49,6 +49,7 @@ vi.mock("@/utils/request", () => ({
     put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
+    defaults: { baseURL: "/api" },
   },
 }));
 
@@ -327,7 +328,6 @@ describe("recruitingApi", () => {
 
   it("resumeUrl returns correctly formatted URL", () => {
     const url = resumeUrl(7);
-    // In test (dev-mode), baseURL is "/api", so full URL should be exact
     expect(url).toBe("/api/recruiting/applications/7/resume");
   });
 
