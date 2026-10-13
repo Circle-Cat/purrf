@@ -331,6 +331,69 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(row.status, NotificationStatus.SENT)
         self.assertIsNone(row.claimed_at)
 
+    async def test_expire_unclaimed_expires_a_pending_row(self):
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        row = await self._notification(recipient)
+
+        expired = await repo.expire_unclaimed(
+            self.session,
+            row.notification_id,
+            stale_before=datetime.now(timezone.utc) - timedelta(minutes=10),
+        )
+
+        self.assertTrue(expired)
+        await self.session.refresh(row)
+        self.assertEqual(row.status, NotificationStatus.EXPIRED)
+        self.assertIsNone(row.claimed_at)
+
+    async def test_expire_unclaimed_expires_an_abandoned_claim(self):
+        """A send that died mid-way must still end, not stay SENDING forever."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        row = await self._notification(
+            recipient,
+            status=NotificationStatus.SENDING,
+            claimed_at=now - timedelta(hours=1),
+        )
+
+        expired = await repo.expire_unclaimed(
+            self.session, row.notification_id, stale_before=now - timedelta(minutes=10)
+        )
+
+        self.assertTrue(expired)
+        await self.session.refresh(row)
+        self.assertEqual(row.status, NotificationStatus.EXPIRED)
+
+    async def test_expire_unclaimed_leaves_settled_and_held_rows_alone(self):
+        """A late redelivery must not rewrite a row that was sent, failed or is
+        being sent right now."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        claimed_at = now - timedelta(minutes=1)
+        for status in (
+            NotificationStatus.SENT,
+            NotificationStatus.SENDING,
+            NotificationStatus.FAILED,
+        ):
+            with self.subTest(status=status):
+                row = await self._notification(
+                    recipient, status=status, claimed_at=claimed_at
+                )
+
+                expired = await repo.expire_unclaimed(
+                    self.session,
+                    row.notification_id,
+                    stale_before=now - timedelta(minutes=10),
+                )
+
+                self.assertFalse(expired)
+                await self.session.refresh(row)
+                self.assertEqual(row.status, status)
+                self.assertEqual(row.claimed_at, claimed_at)
+
     async def test_list_pending_ids_created_before_returns_oldest_first(self):
         """The oldest straggler has waited longest, so it is republished first."""
         _app, recipient = await self._seed()

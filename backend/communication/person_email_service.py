@@ -337,7 +337,6 @@ class PersonEmailService:
         thread = await self._owned_thread(session, policy, thread_id)
         if not policy.may_send:
             raise ValueError(_NO_WRITE)
-        _check_body(policy.body_format, body)
         return await self.reply_into(
             session,
             thread,
@@ -377,8 +376,10 @@ class PersonEmailService:
 
         Raises:
             ConflictError: ``THREAD_CHANGED`` when a newer message arrived.
-            ValueError: No sender address, or nobody to reply to.
+            ValueError: An empty or overlong body, no sender address, or
+                nobody to reply to.
         """
+        _check_body(body_format, body)
         messages = await self._messages.list_by_thread(session, thread.thread_id)
         if messages and messages[-1].message_id != last_seen_message_id:
             raise ConflictError(

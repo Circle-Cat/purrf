@@ -35,7 +35,7 @@ class InboxThreadWrites:
 
         Raises:
             ValueError: Thread not found or not visible; no alias in this
-                environment; nobody to reply to.
+                environment; an empty or overlong body; nobody to reply to.
             ConflictError: ``THREAD_CHANGED`` when a newer message arrived.
         """
         thread, service = await self._load_visible(session, user, thread_id)

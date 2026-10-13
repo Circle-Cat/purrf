@@ -132,6 +132,50 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
         self.assertEqual(notification.status, NotificationStatus.EXPIRED)
         self.email.send.assert_not_awaited()
 
+    async def test_a_late_redelivery_of_a_sent_row_leaves_it_sent(self):
+        """The straggler sweep can republish a row that then goes out; a copy
+        of that message arriving after the shelf life must not relabel it."""
+        notification = await self._make_notification(
+            status=NotificationStatus.SENT,
+            created_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        )
+
+        outcome = await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        await self.session.refresh(notification)
+        self.assertEqual(notification.status, NotificationStatus.SENT)
+        self.email.send.assert_not_awaited()
+
+    async def test_expiry_goes_through_the_unclaimed_only_write(self):
+        repository = MagicMock()
+        repository.get_by_id = AsyncMock(
+            return_value=MagicMock(
+                created_at=datetime.now(timezone.utc) - timedelta(hours=25)
+            )
+        )
+        repository.expire_unclaimed = AsyncMock(return_value=False)
+        repository.set_status = AsyncMock()
+        session = MagicMock(commit=AsyncMock())
+        service = DeliveryService(
+            logger=self.logger,
+            email_service=self.email,
+            notification_repository=repository,
+        )
+
+        outcome = await service.deliver(session, 41)
+
+        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        repository.expire_unclaimed.assert_awaited_once()
+        args, kwargs = repository.expire_unclaimed.await_args
+        self.assertEqual(args, (session, 41))
+        held_for = datetime.now(timezone.utc) - kwargs["stale_before"]
+        self.assertGreaterEqual(held_for, timedelta(minutes=10))
+        self.assertLess(held_for, timedelta(minutes=11))
+        repository.set_status.assert_not_awaited()
+        session.commit.assert_awaited_once()
+        self.email.send.assert_not_awaited()
+
     async def test_a_recipient_with_no_address_fails_permanently(self):
         self.email.send.side_effect = LookupError("no address on file")
         notification = await self._make_notification()

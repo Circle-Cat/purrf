@@ -250,6 +250,16 @@ class InboxControllerTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.service.reply.assert_not_called()
 
+    def test_an_empty_reply_is_400(self):
+        self.service.reply.side_effect = ValueError("The message is empty")
+
+        response = self.client.post(
+            "/inbox/threads/31/reply", json={"body": " ", "lastSeenMessageId": 70}
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["message"], "The message is empty")
+
     def test_archive_and_unarchive(self):
         self.service.archive.return_value = _detail()
         self.service.unarchive.return_value = _detail()

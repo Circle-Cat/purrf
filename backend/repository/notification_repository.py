@@ -140,6 +140,40 @@ class NotificationRepository:
             .values(status=status, claimed_at=None)
         )
 
+    async def expire_unclaimed(
+        self, session: AsyncSession, notification_id: int, *, stale_before: datetime
+    ) -> bool:
+        """Mark the row EXPIRED, but only while nobody holds it: PENDING, or a
+        SENDING claim gone stale.
+
+        Expiry is decided from ``created_at`` alone, so a message redelivered
+        late can reach here for a row another delivery already sent, failed or
+        is sending right now. The guard sits in the WHERE clause so that row
+        keeps what it has, while a send that died mid-way still ends.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            notification_id (int): The row to expire.
+            stale_before (datetime): A SENDING claim older than this counts
+                as abandoned, as in :meth:`claim_for_sending`.
+
+        Returns:
+            bool: True when the row was unclaimed and is now EXPIRED.
+        """
+        result = await session.execute(
+            update(NotificationEntity)
+            .where(
+                NotificationEntity.notification_id == notification_id,
+                or_(
+                    NotificationEntity.status == NotificationStatus.PENDING,
+                    (NotificationEntity.status == NotificationStatus.SENDING)
+                    & (NotificationEntity.claimed_at < stale_before),
+                ),
+            )
+            .values(status=NotificationStatus.EXPIRED, claimed_at=None)
+        )
+        return result.rowcount == 1
+
     async def list_pending_ids_created_before(
         self, session: AsyncSession, cutoff: datetime, limit: int
     ) -> list[int]:
