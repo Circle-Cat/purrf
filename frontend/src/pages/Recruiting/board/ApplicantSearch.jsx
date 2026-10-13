@@ -2,14 +2,15 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { searchBoardApplicants } from "@/api/recruitingApi";
 import { stageLabel } from "@/pages/Recruiting/board/stageFormat";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /**
  * Applicant search for the board header: type a name or email, press Search,
  * pick someone, land on their application.
  *
  * Deliberately explicit-trigger — no search-as-you-type. Every request is one
- * the owner asked for, which also means there are no in-flight races to
- * reconcile and no debounce to tune.
+ * the owner asked for, so there is no debounce to tune. The one race left is
+ * a switch of job while a search is in flight; its answer is then dropped.
  *
  * The panel navigates to the application detail page rather than scrolling to
  * the applicant's card: a card sitting in an unloaded terminal-lane page
@@ -44,12 +45,16 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
     activeIndex >= 0 ? (result?.hits?.[activeIndex] ?? null) : null;
 
   const canSearch = term.trim().length > 0 && !searching;
+  const { begin, isCurrent } = useRequestGuard();
 
-  // A result set is only meaningful against the board it was searched from.
+  // A result set is only meaningful against the board it was searched from,
+  // so a search still in flight for the previous job is dropped too.
   useEffect(() => {
+    begin();
     setTerm("");
     setResult(null);
-  }, [selectedJobId]);
+    setSearching(false);
+  }, [selectedJobId, begin]);
 
   const closePanel = useCallback(() => {
     setResult(null);
@@ -58,24 +63,35 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
 
   const runSearch = useCallback(async () => {
     if (!canSearch) return;
+    const request = begin();
     setSearching(true);
     try {
       const { data } = await searchBoardApplicants(term.trim(), {
         jobId: allPostings ? null : selectedJobId,
         currentJobId: selectedJobId,
       });
+      if (!isCurrent(request)) return;
       setResult({ hits: data?.hits ?? [], truncated: !!data?.truncated });
       setActiveIndex(-1);
     } catch (e) {
+      if (!isCurrent(request)) return;
       // A failed search must never leave a previous term's results on
       // screen behind the error toast — that reads as a match for the
       // term just submitted and invites clicking the wrong person.
       closePanel();
       toast.error(e.message);
     } finally {
-      setSearching(false);
+      if (isCurrent(request)) setSearching(false);
     }
-  }, [canSearch, term, allPostings, selectedJobId, closePanel]);
+  }, [
+    canSearch,
+    term,
+    allPostings,
+    selectedJobId,
+    closePanel,
+    begin,
+    isCurrent,
+  ]);
 
   const handleKeyDown = useCallback(
     (e) => {
