@@ -224,17 +224,16 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             moved_at=move.created_at if move else None,
         )
 
-    async def _load_visible(self, session, user, thread_id, inbox_only=True):
+    async def _load_visible(self, session, user, thread_id):
         """Raises ValueError(f"thread {thread_id} not found") when missing or not visible.
 
-        With ``inbox_only`` a thread that is not (or no longer) in the Inbox
-        counts as missing.
+        A thread that is not (or no longer) in the Inbox counts as missing.
         """
         not_found = ValueError(f"thread {thread_id} not found")
         thread = await self._threads.get(session, thread_id)
         if thread is None:
             raise not_found
-        if inbox_only and thread.context_type not in _INBOX_CONTEXTS:
+        if thread.context_type not in _INBOX_CONTEXTS:
             raise not_found
         try:
             service = await self._resolver.service_of(session, thread)
