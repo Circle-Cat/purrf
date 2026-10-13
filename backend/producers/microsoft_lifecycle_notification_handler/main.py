@@ -236,7 +236,12 @@ async def _handle_lifecycle_notification_webhook(request):
             logger.info(
                 "Validation token received from Microsoft notification webhook setup. Responding with token for validation handshake."
             )
-            return validation_token, HTTPStatus.OK
+            # Graph rejects the handshake unless the token comes back as text/plain.
+            return (
+                validation_token,
+                HTTPStatus.OK,
+                {"Content-Type": "text/plain"},
+            )
 
         request_body = request.get_json(silent=True)
         if not request_body:
