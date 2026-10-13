@@ -9,7 +9,7 @@ import BalanceHistoryRow from "@/pages/Leave/BalanceHistoryPage/components/Balan
 import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 
 export default function BalanceHistoryPage() {
-  const isEnabled = useLeaveEnabled();
+  const { isEnabled, isReady } = useLeaveEnabled();
 
   const { isCovered, isLoading: isStandingLoading } = useLeaveStanding({
     enabled: isEnabled,
@@ -23,6 +23,14 @@ export default function BalanceHistoryPage() {
   } = useMyLeaveLedger({
     enabled: isEnabled && isCovered,
   });
+
+  if (!isReady) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        Loading balance history...
+      </div>
+    );
+  }
 
   if (!isEnabled) {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;

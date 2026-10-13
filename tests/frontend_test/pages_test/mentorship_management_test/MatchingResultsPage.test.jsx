@@ -12,6 +12,7 @@ import {
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { FlagsContext } from "@/context/flags";
 import { formatInTz } from "@/utils/dateTime";
 
 vi.mock("@/api/mentorshipApi", () => ({
@@ -337,6 +338,32 @@ describe("MatchingResultsPage", () => {
   });
 
   describe("flag off", () => {
+    it("does not say matching is unavailable before flags have loaded", async () => {
+      useFeatureFlags.mockReturnValue({});
+      render(
+        <FlagsContext.Provider
+          value={{ flags: {}, setFlags: () => {}, ready: false }}
+        >
+          <MemoryRouter initialEntries={["/mentorship-management/matching/7"]}>
+            <Routes>
+              <Route
+                path="/mentorship-management/matching/:roundId"
+                element={<MatchingResultsPage />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </FlagsContext.Provider>,
+      );
+
+      expect(
+        await screen.findByText("Matching — Fall 2026"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Matching runs are not available."),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("Loading matching run...")).toBeInTheDocument();
+    });
+
     it("says matching is not available and asks the API nothing about it", async () => {
       useFeatureFlags.mockReturnValue({
         [FEATURE_FLAGS.MATCHING_RUN]: false,

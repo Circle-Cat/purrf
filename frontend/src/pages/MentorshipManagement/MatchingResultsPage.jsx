@@ -15,6 +15,7 @@ import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useFeatureFlagsReady } from "@/hooks/useFeatureFlagsReady";
 import { formatInTz } from "@/utils/dateTime";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import {
@@ -729,6 +730,7 @@ const MatchingResultsPage = () => {
   const roundName =
     (rounds ?? []).find((r) => String(r.id) === String(roundId))?.name ?? "";
   const flags = useFeatureFlags();
+  const flagsReady = useFeatureFlagsReady();
   // The backend refuses every matching endpoint while the flag is off.
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
   const { overview, isLoading, error, reload } = useMatchingRun(
@@ -740,7 +742,13 @@ const MatchingResultsPage = () => {
   const draft = useMatchDraft(roundId, reload);
 
   let body;
-  if (!matchingOn) {
+  if (!flagsReady) {
+    body = (
+      <div className="py-10 text-center text-gray-500">
+        Loading matching run...
+      </div>
+    );
+  } else if (!matchingOn) {
     body = <p className="text-sm">Matching runs are not available.</p>;
   } else if (isLoading) {
     body = (

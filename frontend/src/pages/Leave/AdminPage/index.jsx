@@ -20,7 +20,11 @@ import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
  * @returns {JSX.Element}
  */
 const LeaveAdminPage = () => {
-  const isEnabled = useLeaveEnabled();
+  const { isEnabled, isReady } = useLeaveEnabled();
+
+  if (!isReady) {
+    return null;
+  }
 
   if (!isEnabled) {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;

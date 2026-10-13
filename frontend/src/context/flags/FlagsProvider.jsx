@@ -11,9 +11,10 @@ import { ldReactContext } from "./ldReactContext";
  */
 export function FlagsProvider({ children }) {
   const [flags, setFlags] = useState({});
+  const [ready, setReady] = useState(false);
 
   return (
-    <FlagsContext.Provider value={{ flags, setFlags }}>
+    <FlagsContext.Provider value={{ flags, setFlags, ready, setReady }}>
       {children}
     </FlagsContext.Provider>
   );
@@ -26,13 +27,16 @@ export function FlagsProvider({ children }) {
  * Renders nothing. Must be placed inside both {@link FlagsProvider} and `AuthProvider`
  * so it can access both `setFlags` and the authenticated user.
  *
+ * Marks the context `ready` once identify settles either way, so pages that redirect
+ * on a flag being off can tell "off" apart from "not answered yet".
+ *
  * Uses `ldReactContext` explicitly so that `useLDClient` reads from the same context
  * instance that `withLDProvider` writes to, regardless of bundle chunk boundaries.
  */
 export function LDIdentifier() {
   const ldClient = useLDClient(ldReactContext);
   const { user } = useAuth();
-  const { setFlags } = useContext(FlagsContext);
+  const { setFlags, setReady } = useContext(FlagsContext);
 
   useEffect(() => {
     if (!ldClient || !user) return;
@@ -47,6 +51,13 @@ export function LDIdentifier() {
       })
       .then(() => {
         setFlags(ldClient.allFlags());
+      })
+      .catch((error) => {
+        // Flags stay empty, so everything gated reads as off.
+        console.error("LaunchDarkly identify failed", error);
+      })
+      .finally(() => {
+        setReady(true);
       });
 
     const handleChange = () => setFlags(ldClient.allFlags());

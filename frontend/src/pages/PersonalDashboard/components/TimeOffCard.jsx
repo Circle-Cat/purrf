@@ -75,7 +75,7 @@ const TimeOffCard = ({
   usedHours,
 }) => {
   const navigate = useNavigate();
-  const isEnabled = useLeaveEnabled();
+  const { isEnabled } = useLeaveEnabled();
   // Somebody outside the population has no requests to list, by definition.
   const { isSaving, saveError, file } = useMyLeaveRequests({
     enabled: isCovered,
