@@ -30,13 +30,17 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.session = MagicMock()
         self.users = MagicMock()
         self.users.get_user_by_user_id = AsyncMock(
-            return_value=SimpleNamespace(user_id=TARGET, is_blocked=False)
+            return_value=SimpleNamespace(
+                user_id=TARGET, is_blocked=False, is_super_admin=False
+            )
         )
         self.applications = MagicMock()
         self.submissions = MagicMock()
         self.interviews = MagicMock()
         self.scheduling = MagicMock()
         self.mentorship = MagicMock()
+        self.permissions = MagicMock()
+        self.permissions.get_active_permission_names = AsyncMock(return_value=set())
         self.handler = BlockUserHandler(
             self.users,
             self.applications,
@@ -44,6 +48,7 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
             self.interviews,
             self.scheduling,
             self.mentorship,
+            self.permissions,
         )
 
     def test_declares_the_user_events_and_the_user_admin_reviewer(self):
@@ -70,7 +75,7 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_raising_against_someone_already_blocked_is_refused(self):
         self.users.get_user_by_user_id.return_value = SimpleNamespace(
-            user_id=TARGET, is_blocked=True
+            user_id=TARGET, is_blocked=True, is_super_admin=False
         )
 
         with self.assertRaisesRegex(ValueError, "already blocked"):
@@ -91,7 +96,7 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_approving_someone_blocked_since_is_a_problem(self):
         self.users.get_user_by_user_id.return_value = SimpleNamespace(
-            user_id=TARGET, is_blocked=True
+            user_id=TARGET, is_blocked=True, is_super_admin=False
         )
 
         problems = await self.handler.problems_at_approval(self.session, _request())

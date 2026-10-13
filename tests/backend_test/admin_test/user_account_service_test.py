@@ -62,6 +62,11 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.user_emails = AsyncMock()
         self.user_identities = AsyncMock()
         self.approvals = AsyncMock()
+        self.user_permissions = AsyncMock()
+        self.grants: dict[int, set[str]] = {}
+        self.user_permissions.get_active_permission_names.side_effect = (
+            lambda _session, user_id: self.grants.get(user_id, set())
+        )
         self.logger = Mock()
 
         self.user_emails.get_contact_emails_by_user_ids.return_value = {}
@@ -72,6 +77,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             users_repository=self.users,
             user_emails_repository=self.user_emails,
             user_identities_repository=self.user_identities,
+            user_permissions_repository=self.user_permissions,
             approval_service=self.approvals,
             logger=self.logger,
         )
@@ -111,6 +117,76 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.users.deactivate.assert_awaited_once_with(
             self.session, TARGET, ME, "requested by email"
         )
+        self.session.commit.assert_awaited_once()
+
+    def _seed_people(self, *people):
+        by_id = {row.user_id: row for row in people}
+        self.users.get_user_by_user_id.side_effect = (
+            lambda _session, user_id: by_id.get(user_id)
+        )
+
+    async def test_user_admin_cannot_deactivate_a_super_admin(self):
+        self._seed_people(_user(ME), _user(TARGET, is_super_admin=True))
+        self.grants[ME] = {"user.admin"}
+
+        with self.assertRaisesRegex(
+            PermissionError,
+            "Only a permission admin can deactivate a permission admin.",
+        ):
+            await self.service.deactivate(
+                self.session, actor_id=ME, user_id=TARGET, note=None
+            )
+
+        self.users.deactivate.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_user_admin_cannot_deactivate_a_permission_manage_holder(self):
+        self._seed_people(_user(ME), _user(TARGET))
+        self.grants[ME] = {"user.admin"}
+        self.grants[TARGET] = {"permission.manage"}
+
+        with self.assertRaisesRegex(
+            PermissionError,
+            "Only a permission admin can deactivate a permission admin.",
+        ):
+            await self.service.deactivate(
+                self.session, actor_id=ME, user_id=TARGET, note=None
+            )
+
+        self.users.deactivate.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_permission_manage_holder_can_deactivate_a_permission_admin(self):
+        self._seed_people(_user(ME), _user(TARGET, is_super_admin=True))
+        self.grants[ME] = {"user.admin", "permission.manage"}
+
+        await self.service.deactivate(
+            self.session, actor_id=ME, user_id=TARGET, note=None
+        )
+
+        self.users.deactivate.assert_awaited_once_with(self.session, TARGET, ME, None)
+        self.session.commit.assert_awaited_once()
+
+    async def test_super_admin_can_deactivate_a_permission_manage_holder(self):
+        self._seed_people(_user(ME, is_super_admin=True), _user(TARGET))
+        self.grants[TARGET] = {"permission.manage"}
+
+        await self.service.deactivate(
+            self.session, actor_id=ME, user_id=TARGET, note=None
+        )
+
+        self.users.deactivate.assert_awaited_once_with(self.session, TARGET, ME, None)
+
+    async def test_user_admin_can_deactivate_another_user_admin(self):
+        self._seed_people(_user(ME), _user(TARGET))
+        self.grants[ME] = {"user.admin"}
+        self.grants[TARGET] = {"user.admin", "mentorship.admin.write"}
+
+        await self.service.deactivate(
+            self.session, actor_id=ME, user_id=TARGET, note=None
+        )
+
+        self.users.deactivate.assert_awaited_once_with(self.session, TARGET, ME, None)
         self.session.commit.assert_awaited_once()
 
     async def test_reactivate_self_is_allowed(self):

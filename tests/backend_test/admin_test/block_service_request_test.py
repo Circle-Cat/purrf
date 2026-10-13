@@ -29,6 +29,7 @@ def _user(user_id):
     # leak who raised it" assertion match the article in any English sentence.
     row = UsersEntity(first_name=f"Firstname{user_id}", last_name=f"Lastname{user_id}")
     row.user_id = user_id
+    row.is_super_admin = False
     row.is_active = True
     row.is_blocked = False
     row.blocked_by = None
@@ -145,6 +146,10 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.interview_svc = MagicMock()
         self.interview_svc.cancel_for_round = AsyncMock(return_value=True)
         self.perms_repo = MagicMock()
+        self.grants: dict[int, set[str]] = {}
+        self.perms_repo.get_active_permission_names = AsyncMock(
+            side_effect=lambda _s, user_id: self.grants.get(user_id, set())
+        )
         self.requests = _FakeApprovalRequestRepository()
         self.session = AsyncMock()
 
@@ -192,6 +197,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                     self.interview_repo,
                     self.interview_svc,
                     self.mentorship,
+                    self.perms_repo,
                 )
             ],
         )
@@ -719,6 +725,48 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(row.status, ApprovalRequestStatus.PENDING)
         self.session.commit.assert_not_awaited()
 
+    async def test_a_user_admin_cannot_approve_blocking_a_super_admin(self):
+        """Approving is the same block through the request door, so it takes
+        the same standing as blocking directly. The request stays open for
+        the reviewer to reject or the raiser to hand on."""
+        self.people[TARGET].is_super_admin = True
+        self.grants[REVIEWER] = {Permission.USER_ADMIN.value}
+        request = await self._raise()
+        self.session.commit.reset_mock()
+
+        with self.assertRaisesRegex(
+            PermissionError, "Only a permission admin can block a permission admin."
+        ):
+            await self._decide(request.id, approved=True)
+
+        self.assertFalse(self.people[TARGET].is_blocked)
+        self.assertIs(self.requests.rows[0].status, ApprovalRequestStatus.PENDING)
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_user_admin_can_still_reject_blocking_a_permission_admin(self):
+        self.grants[TARGET] = {Permission.PERMISSION_MANAGE.value}
+        self.grants[REVIEWER] = {Permission.USER_ADMIN.value}
+        request = await self._raise()
+
+        out = await self._decide(request.id, approved=False, note="no")
+
+        self.assertEqual(out.status, ApprovalRequestStatus.REJECTED.value)
+
+    async def test_a_permission_manage_reviewer_can_approve_blocking_a_permission_admin(
+        self,
+    ):
+        self.grants[TARGET] = {Permission.PERMISSION_MANAGE.value}
+        self.grants[REVIEWER] = {
+            Permission.USER_ADMIN.value,
+            Permission.PERMISSION_MANAGE.value,
+        }
+        request = await self._raise()
+
+        out = await self._decide(request.id, approved=True)
+
+        self.assertTrue(self.people[TARGET].is_blocked)
+        self.assertEqual(out.status, ApprovalRequestStatus.APPROVED.value)
+
     async def test_deciding_twice_is_a_conflict_and_changes_nothing(self):
         """A double submit must apply once and notify once."""
         request = await self._raise()
@@ -907,6 +955,62 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests.rows, [])
         self.assertTrue(self.people[TARGET].is_blocked)
         self.session.commit.assert_awaited_once()
+
+    async def test_a_user_admin_cannot_block_a_super_admin_directly(self):
+        self.people[TARGET].is_super_admin = True
+        self.grants[ADMIN] = {Permission.USER_ADMIN.value}
+
+        with self.assertRaisesRegex(
+            PermissionError, "Only a permission admin can block a permission admin."
+        ):
+            await self.service.block_directly(
+                self.session, actor_id=ADMIN, user_id=TARGET, reason="r"
+            )
+
+        self.assertFalse(self.people[TARGET].is_blocked)
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_user_admin_cannot_block_a_permission_manage_holder_directly(
+        self,
+    ):
+        self.grants[TARGET] = {Permission.PERMISSION_MANAGE.value}
+        self.grants[ADMIN] = {Permission.USER_ADMIN.value}
+
+        with self.assertRaisesRegex(
+            PermissionError, "Only a permission admin can block a permission admin."
+        ):
+            await self.service.block_directly(
+                self.session, actor_id=ADMIN, user_id=TARGET, reason="r"
+            )
+
+        self.assertFalse(self.people[TARGET].is_blocked)
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_permission_manage_holder_can_block_a_permission_admin_directly(
+        self,
+    ):
+        self.people[TARGET].is_super_admin = True
+        self.grants[ADMIN] = {
+            Permission.USER_ADMIN.value,
+            Permission.PERMISSION_MANAGE.value,
+        }
+
+        await self.service.block_directly(
+            self.session, actor_id=ADMIN, user_id=TARGET, reason="r"
+        )
+
+        self.assertTrue(self.people[TARGET].is_blocked)
+        self.session.commit.assert_awaited_once()
+
+    async def test_a_user_admin_can_block_another_user_admin_directly(self):
+        self.grants[TARGET] = {Permission.USER_ADMIN.value}
+        self.grants[ADMIN] = {Permission.USER_ADMIN.value}
+
+        await self.service.block_directly(
+            self.session, actor_id=ADMIN, user_id=TARGET, reason="r"
+        )
+
+        self.assertTrue(self.people[TARGET].is_blocked)
 
     async def test_block_self_is_rejected(self):
         with self.assertRaises(PermissionError):

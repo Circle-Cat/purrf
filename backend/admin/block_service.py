@@ -41,6 +41,56 @@ RAISE_PERMISSION_BY_SOURCE: dict[str, Permission] = {
 }
 
 
+async def _is_permission_admin(session, user, user_permissions_repository) -> bool:
+    """Whether ``user`` holds PERMISSION_MANAGE, resolved the way the auth
+    middleware resolves it: a super admin holds every permission without
+    grant rows."""
+    if user.is_super_admin:
+        return True
+    names = await user_permissions_repository.get_active_permission_names(
+        session, user.user_id
+    )
+    return Permission.PERMISSION_MANAGE.value in names
+
+
+async def require_standing_over(
+    session,
+    *,
+    actor_id: int,
+    target,
+    verb: str,
+    users_repository,
+    user_permissions_repository,
+) -> None:
+    """Refuse a USER_ADMIN deactivating or blocking a permission admin.
+
+    A permission admin (a super admin or a PERMISSION_MANAGE holder) can grant
+    and revoke everything, USER_ADMIN included, so an account that can only
+    manage accounts must not be able to lock one out. Acting on them takes a
+    permission admin.
+
+    Args:
+        session (AsyncSession): Active database async session.
+        actor_id (int): The user performing the action.
+        target (UsersEntity): The user it is performed on.
+        verb (str): The action, for the refusal ("deactivate", "block").
+        users_repository (UsersRepository): Loads the actor.
+        user_permissions_repository (UserPermissionsRepository): Their grants.
+
+    Raises:
+        PermissionError: If the target is a permission admin and the actor is
+            not (surfaces as 403).
+    """
+    if not await _is_permission_admin(session, target, user_permissions_repository):
+        return
+    actor = await users_repository.get_user_by_user_id(session, actor_id)
+    if actor is not None and await _is_permission_admin(
+        session, actor, user_permissions_repository
+    ):
+        return
+    raise PermissionError(f"Only a permission admin can {verb} a permission admin.")
+
+
 async def apply_block_kernel(
     session,
     *,
@@ -259,7 +309,8 @@ class BlockService:
             approval_service (ApprovalService): Runs block requests, through
                 the ``block_user`` handler.
             user_permissions_repository (UserPermissionsRepository): Lists the
-                USER_ADMIN holders a request can be sent to.
+                USER_ADMIN holders a request can be sent to, and tells
+                whether the operator and target are permission admins.
             mentorship_block_service (MentorshipBlockService): Ends and counts
                 the mentorship pairs a block reaches.
             logger (Logger): Injected logger.
@@ -523,12 +574,22 @@ class BlockService:
 
         Raises:
             ValueError: If no user exists with ``user_id``.
-            PermissionError: If the operator is blocking themselves.
+            PermissionError: If the operator is blocking themselves, or is
+                blocking a permission admin without being one.
         """
         if user_id == actor_id:
             self._logger.warning("Refused self-block for user_id=%s", actor_id)
             raise PermissionError("You cannot block your own account")
         target = await self._users.get_user_by_user_id(session, user_id)
+        if target is not None:
+            await require_standing_over(
+                session,
+                actor_id=actor_id,
+                target=target,
+                verb="block",
+                users_repository=self._users,
+                user_permissions_repository=self._permissions,
+            )
         if target is not None and target.is_blocked:
             # Re-applying overwrites blocked_by/at/reason, so the record of
             # who imposed the sanction in force is lost. Lift it first if the

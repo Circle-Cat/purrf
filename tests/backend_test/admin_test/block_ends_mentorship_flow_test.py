@@ -263,6 +263,7 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
                 interviews,
                 self.interviews_svc,
                 mentorship,
+                perms,
             )
         )
         self.service = BlockService(
