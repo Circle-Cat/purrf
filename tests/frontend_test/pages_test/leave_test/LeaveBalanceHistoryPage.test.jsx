@@ -29,7 +29,10 @@ const renderPage = () =>
 describe("BalanceHistoryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(useLeaveEnabled).mockReturnValue(true);
+    vi.mocked(useLeaveEnabled).mockReturnValue({
+      isEnabled: true,
+      isReady: true,
+    });
     vi.mocked(useMyLeaveLedger).mockReturnValue({
       data: null,
       isLoading: false,
@@ -41,6 +44,28 @@ describe("BalanceHistoryPage", () => {
       isCovered: true,
       isLoading: false,
     });
+  });
+
+  it("waits rather than redirecting while flags are still loading", () => {
+    vi.mocked(useLeaveEnabled).mockReturnValue({
+      isEnabled: false,
+      isReady: false,
+    });
+
+    renderPage();
+
+    expect(screen.queryByText("Redirected")).not.toBeInTheDocument();
+  });
+
+  it("redirects once flags load as off", () => {
+    vi.mocked(useLeaveEnabled).mockReturnValue({
+      isEnabled: false,
+      isReady: true,
+    });
+
+    renderPage();
+
+    expect(screen.getByText("Redirected")).toBeInTheDocument();
   });
 
   it("shows an empty-state sentence when entries are empty", async () => {

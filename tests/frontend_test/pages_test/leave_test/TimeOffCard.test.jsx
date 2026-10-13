@@ -8,7 +8,7 @@ import * as api from "@/api/leaveApi";
 
 vi.mock("@/api/leaveApi");
 vi.mock("@/pages/Leave/hooks/useLeaveEnabled", () => ({
-  useLeaveEnabled: vi.fn(() => true),
+  useLeaveEnabled: vi.fn(() => ({ isEnabled: true, isReady: true })),
 }));
 
 const envelope = (data) => ({ success: true, message: "ok", data });
@@ -270,7 +270,7 @@ describe("TimeOffCard for an approver", () => {
   });
 
   it("hides balance history button when leave is disabled", async () => {
-    useLeaveEnabled.mockReturnValue(false);
+    useLeaveEnabled.mockReturnValue({ isEnabled: false, isReady: true });
 
     renderCard();
     await waitFor(() =>

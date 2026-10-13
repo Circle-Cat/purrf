@@ -102,7 +102,7 @@ const PersonalDashboard = () => {
   // asking: it is not a permission, and a manager who is outside the leave
   // population has no employment profile to read it off. So this fetch is
   // unconditional, unlike the sections gated on data we already hold.
-  const isLeaveEnabled = useLeaveEnabled();
+  const { isEnabled: isLeaveEnabled } = useLeaveEnabled();
   const { isApprover, pendingCount } = useLeaveApprovals({
     enabled: isLeaveEnabled,
   });

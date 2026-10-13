@@ -30,7 +30,7 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
  * @returns {JSX.Element}
  */
 const LeaveRequestsPage = () => {
-  const isEnabled = useLeaveEnabled();
+  const { isEnabled, isReady } = useLeaveEnabled();
   const { isCovered, isLoading: isCoverageLoading } = useLeaveStanding({
     enabled: isEnabled,
   });
@@ -43,6 +43,10 @@ const LeaveRequestsPage = () => {
     load,
     withdraw,
   } = useMyLeaveRequests({ enabled: isEnabled });
+
+  if (!isReady) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
 
   if (!isEnabled) {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
