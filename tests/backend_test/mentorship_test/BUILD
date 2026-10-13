@@ -411,6 +411,17 @@ py_test(
 )
 
 py_test(
+    name = "notification_mark_service_test",
+    srcs = ["notification_mark_service_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
     name = "mentorship_email_prepare_service_test",
     srcs = ["mentorship_email_prepare_service_test.py"],
     deps = [
@@ -432,5 +443,20 @@ py_test(
         "//backend/mentorship",
         "@pypi//fastapi",
         "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "notification_mark_flow_test",
+    srcs = ["notification_mark_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
     ],
 )
