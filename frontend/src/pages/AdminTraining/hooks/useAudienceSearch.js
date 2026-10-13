@@ -7,8 +7,19 @@ import {
 } from "@/api/trainingApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 import { defaultCourseStatusFor } from "@/pages/AdminTraining/utils";
+import { localToUtcIso } from "@/utils/dateTime";
 
 const LIMIT = 20;
+
+// Round onboarding deadlines are kept the same way: the end of the day in
+// Pacific time, unless the operator picks another zone.
+const DEFAULT_DEADLINE_TIMEZONE = "America/Los_Angeles";
+
+/** The last second of a "yyyy-MM-dd" day in `timezone`, as a UTC ISO string. */
+const endOfDayIn = (ymd, timezone) => {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return localToUtcIso(new Date(year, month - 1, day), "23:59:59", timezone);
+};
 
 /** Empty facets read as "no constraint", which the API wants as absent. */
 const orUndefined = (value) => (value === "" ? undefined : value);
@@ -58,6 +69,9 @@ export function useAudienceSearch({ courses }) {
   // null until the first submit: no query, nothing fetched, empty screen.
   const [query, setQuery] = useState(null);
   const [deadline, setDeadline] = useState("");
+  const [deadlineTimezone, setDeadlineTimezone] = useState(
+    DEFAULT_DEADLINE_TIMEZONE,
+  );
 
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -221,8 +235,13 @@ export function useAudienceSearch({ courses }) {
     [selected],
   );
 
+  // Facets edited since the last search: the rows, the total and the ids
+  // behind "select all" all still answer the previous question, while the
+  // course to assign already follows the draft.
+  const facetsEdited = query !== null && !sameFacets(draft, query);
+
   const assign = useCallback(async () => {
-    if (!selectedCourse || selectedIds.length === 0) return;
+    if (!selectedCourse || selectedIds.length === 0 || facetsEdited) return;
     setAssigning(true);
     try {
       const response = await assignCourseBulk({
@@ -230,7 +249,9 @@ export function useAudienceSearch({ courses }) {
         userIds: selectedIds,
         // Absent, not empty: the request DTO rejects an empty string, and a
         // course with no deadline is the ordinary case.
-        ...(deadline ? { deadline } : {}),
+        ...(deadline
+          ? { deadline: endOfDayIn(deadline, deadlineTimezone) }
+          : {}),
       });
       toast.success(response?.message ?? "Training assigned.");
       setSelected(new Set());
@@ -240,7 +261,14 @@ export function useAudienceSearch({ courses }) {
     } finally {
       setAssigning(false);
     }
-  }, [deadline, fetchPage, selectedCourse, selectedIds]);
+  }, [
+    deadline,
+    deadlineTimezone,
+    facetsEdited,
+    fetchPage,
+    selectedCourse,
+    selectedIds,
+  ]);
 
   return {
     search: draft.search,
@@ -265,12 +293,12 @@ export function useAudienceSearch({ courses }) {
     // column that followed the draft would claim a status nobody asked the
     // server about.
     resultsCourseId: query?.courseId ?? "",
-    // Facets edited since the last search: the rows, the total and the ids
-    // behind "select all" all still answer the previous question.
-    facetsEdited: query !== null && !sameFacets(draft, query),
+    facetsEdited,
     selectedCourse,
     deadline,
     setDeadline,
+    deadlineTimezone,
+    setDeadlineTimezone,
     submitSearch,
     rows,
     total,
