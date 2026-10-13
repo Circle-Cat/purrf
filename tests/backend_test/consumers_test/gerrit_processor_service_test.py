@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, call  # Import call for multiple assertions
 from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.common.constants import (
+    GERRIT_DEDUPE_MERGED_KEY,
     GERRIT_DEDUPE_REVIEWED_KEY,
     GERRIT_CL_REVIEWED_FIELD,
     GerritChangeStatus,
@@ -92,17 +93,18 @@ class TestStorePayload(unittest.TestCase):
             "comment": "Patch Set 1: LGTM+1",
         }
 
-        # Mock Redis deduplication check: first comment (not in set)
-        self.mock_redis.sismember.return_value = False
+        # First comment from this user on this CL: SADD adds a member
+        self.mock_redis.sadd.return_value = 1
 
         mock_pipeline = MagicMock()
         self.mock_redis.pipeline.return_value = mock_pipeline
 
         self.service.store_payload(payload)
 
-        # Check deduplication key
+        # The dedupe set is claimed atomically, before anything is counted
         dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=7043)
-        self.mock_redis.sismember.assert_called_once_with(dedupe_key, "alice")
+        self.mock_redis.sadd.assert_called_once_with(dedupe_key, "alice")
+        self.mock_redis.sismember.assert_not_called()
 
         # Assert project-specific stats key generation and increment execution
         stats_key_project = GERRIT_STATS_PROJECT_BUCKET_KEY.format(
@@ -120,7 +122,7 @@ class TestStorePayload(unittest.TestCase):
             stats_key_global, GERRIT_CL_REVIEWED_FIELD, 1
         )
 
-        mock_pipeline.sadd.assert_called_once_with(dedupe_key, "alice")
+        mock_pipeline.sadd.assert_not_called()
         mock_pipeline.expire.assert_called_once_with(
             dedupe_key, THREE_MONTHS_IN_SECONDS
         )
@@ -139,7 +141,7 @@ class TestStorePayload(unittest.TestCase):
         self.service.store_payload(payload)
 
         # Verify: No Redis operations executed (bot comments are skipped)
-        self.mock_redis.sismember.assert_not_called()
+        self.mock_redis.sadd.assert_not_called()
         self.mock_redis.pipeline.assert_not_called()
 
     def test_change_merged(self):
@@ -313,14 +315,87 @@ class TestStorePayload(unittest.TestCase):
             "eventCreatedOn": 1761279121,  # Added timestamp for compute_buckets_weekly to be called
         }
 
-        # Mock deduplication check: already reviewed
-        self.mock_redis.sismember.return_value = True
+        # Already in the dedupe set: SADD adds nothing
+        self.mock_redis.sadd.return_value = 0
 
         self.service.store_payload(payload)
 
         # Verify: No statistics update (duplicate count skipped)
         self.mock_redis.pipeline.assert_not_called()
-        self.mock_redis.sismember.assert_called_once()  # sismember is still called to check for duplication
+        self.mock_redis.sadd.assert_called_once()
+
+    def test_comment_whose_count_fails_releases_its_claim(self):
+        """A failed write must leave the redelivery free to count it."""
+        payload = {
+            "type": "comment-added",
+            "author": {"username": "alice"},
+            "change": {
+                "number": 7043,
+                "owner": {"username": "bob"},
+                "project": self.mock_project_value,
+            },
+            "eventCreatedOn": 1761279121,
+        }
+        self.mock_redis.sadd.return_value = 1
+        self.mock_redis.pipeline.return_value.execute.side_effect = ConnectionError()
+
+        with self.assertRaises(ConnectionError):
+            self.service.store_payload(payload)
+
+        dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=7043)
+        self.mock_redis.srem.assert_called_once_with(dedupe_key, "alice")
+
+    def _merged_payload(self):
+        return {
+            "type": "change-merged",
+            "eventCreatedOn": 1761280203,
+            "change": {
+                "number": 7043,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+            },
+        }
+
+    def test_change_merged_claims_the_change_before_counting(self):
+        self.mock_redis.set.return_value = True
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
+
+        self.service.store_payload(self._merged_payload())
+
+        self.mock_redis.set.assert_called_once_with(
+            GERRIT_DEDUPE_MERGED_KEY.format(change_number=7043),
+            1,
+            nx=True,
+            ex=THREE_MONTHS_IN_SECONDS,
+        )
+        self.mock_redis.pipeline.return_value.execute.assert_called_once()
+
+    def test_redelivered_change_merged_is_counted_once(self):
+        """Pub/Sub push is at-least-once; a second copy must not add to the stats."""
+        self.mock_redis.set.return_value = None
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
+
+        self.service.store_payload(self._merged_payload())
+
+        self.mock_redis.pipeline.assert_not_called()
+
+    def test_change_merged_whose_count_fails_releases_its_claim(self):
+        self.mock_redis.set.return_value = True
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
+        self.mock_redis.pipeline.return_value.execute.side_effect = ConnectionError()
+
+        with self.assertRaises(ConnectionError):
+            self.service.store_payload(self._merged_payload())
+
+        self.mock_redis.delete.assert_called_once_with(
+            GERRIT_DEDUPE_MERGED_KEY.format(change_number=7043)
+        )
 
 
 if __name__ == "__main__":

@@ -94,8 +94,9 @@ def notification_webhook(request):
                                    list of Microsoft Graph change notification events.
 
     Returns:
-        tuple[str, int]: A tuple containing:
-                         - An empty string `""` or the `validationToken` itself.
+        tuple: A tuple containing:
+                         - An empty string `""` or the `validationToken` itself
+                           (the token is sent with a `text/plain` header).
                          - An HTTP status code indicating the outcome of the request:
                            - `HTTPStatus.OK` (200): For successful webhook validation handshake.
                            - `HTTPStatus.ACCEPTED` (202): For successful processing
@@ -124,7 +125,12 @@ def notification_webhook(request):
             logger.info(
                 "Validation token received from Microsoft notification webhook setup. Responding with token for validation handshake."
             )
-            return validation_token, HTTPStatus.OK
+            # Graph rejects the handshake unless the token comes back as text/plain.
+            return (
+                validation_token,
+                HTTPStatus.OK,
+                {"Content-Type": "text/plain"},
+            )
 
         request_body = request.get_json(silent=True)
         if not request_body:

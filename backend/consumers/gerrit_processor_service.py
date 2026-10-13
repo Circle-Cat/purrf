@@ -1,6 +1,7 @@
 import json
 from backend.common.constants import (
     GERRIT_PROJECTS_KEY,
+    GERRIT_DEDUPE_MERGED_KEY,
     GERRIT_DEDUPE_REVIEWED_KEY,
     GERRIT_UNMERGED_CL_KEY_BY_PROJECT,
     GERRIT_PERSUBMIT_BOT,
@@ -135,6 +136,24 @@ class GerritProcessorService:
             score,
         )
 
+    def _execute_or_release(self, pipeline, release) -> None:
+        """Run the counting pipeline; if it fails, undo the dedupe claim.
+
+        The claim is taken before counting so a concurrent redelivery cannot
+        count too. Releasing it on failure lets Pub/Sub's retry count the
+        event instead of finding it already claimed and dropping it.
+        """
+        try:
+            self.retry_utils.get_retry_on_transient(pipeline.execute)
+        except Exception:
+            try:
+                self.retry_utils.get_retry_on_transient(release)
+            except Exception:
+                self.logger.exception(
+                    "[GerritProcessorService] Could not release dedupe claim; this event will not be counted"
+                )
+            raise
+
     def _handle_comment_added(self, payload: dict) -> None:
         """
         Process "comment-added" Pub/Sub events to track reviewer contributions.
@@ -159,9 +178,12 @@ class GerritProcessorService:
         event_unix_timestamp = data["event_unix_timestamp"]
         dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=change_number)
 
-        # Check for deduplication before performing any Redis operations
-        has_reviewed = self.redis_client.sismember(dedupe_key, commenter)
-        if has_reviewed:
+        # SADD is the dedupe check and the claim in one step, so two copies of
+        # the same event cannot both see "not yet counted".
+        added = self.retry_utils.get_retry_on_transient(
+            lambda: self.redis_client.sadd(dedupe_key, commenter)
+        )
+        if not added:
             self.logger.info(
                 "[GerritProcessorService] Skipping duplicate count for CL %s, user %s has already reviewed it",
                 change_number,
@@ -185,11 +207,11 @@ class GerritProcessorService:
         )
         pipeline.hincrby(user_weekly_stats_key_global, GERRIT_CL_REVIEWED_FIELD, 1)
 
-        # Add to deduplication set
-        pipeline.sadd(dedupe_key, commenter)
         pipeline.expire(dedupe_key, THREE_MONTHS_IN_SECONDS)
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self._execute_or_release(
+            pipeline, lambda: self.redis_client.srem(dedupe_key, commenter)
+        )
         self.logger.info(
             "[GerritProcessorService] Updated review stats: user %s reviewed CL %s (project: %s), incremented '%s' in %s and %s",
             commenter,
@@ -418,6 +440,7 @@ class GerritProcessorService:
            - Increment merged CL count for the weekly bucket (project-specific and global).
         3. Removes the CL from the "NEW" status tracking sets (project-specific and global) since it's now merged.
         4. Uses Redis pipeline and retry logic to ensure atomicity and resilience against transient errors.
+        5. Counts each change once: a SET NX marker per change turns away redelivered events.
 
         Args:
             payload: Pub/Sub event payload containing mandatory fields:
@@ -449,6 +472,20 @@ class GerritProcessorService:
         change_summary = self.gerrit_client.get_change_by_change_id(change_number)
         insertions = change_summary.get("insertions", 0)
 
+        # A change merges once, so a second copy of this event is a redelivery.
+        merged_key = GERRIT_DEDUPE_MERGED_KEY.format(change_number=change_number)
+        claimed = self.retry_utils.get_retry_on_transient(
+            lambda: self.redis_client.set(
+                merged_key, 1, nx=True, ex=THREE_MONTHS_IN_SECONDS
+            )
+        )
+        if not claimed:
+            self.logger.info(
+                "[GerritProcessorService] Skipping duplicate change-merged for CL %s; already counted",
+                change_number,
+            )
+            return
+
         bucket = self.date_time_util.compute_buckets_weekly(merged_unix_timestamp)
         cl_merged_field = GERRIT_STATUS_TO_FIELD_TEMPLATE.format(
             status=GerritChangeStatus.MERGED.value
@@ -479,7 +516,7 @@ class GerritProcessorService:
             pipeline, owner_ldap, project, change_number, GerritChangeStatus.NEW
         )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self._execute_or_release(pipeline, lambda: self.redis_client.delete(merged_key))
         self.logger.info(
             "[GerritProcessorService] Merged CL %s: updated stats (LOC: +%d, merged count: +1) in %s and %s; removed from NEW status tracking sets",
             change_number,
