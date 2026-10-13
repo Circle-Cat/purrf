@@ -449,6 +449,40 @@ class ParticipationService:
             )
             raise ValueError("The feedback deadline for this round has passed.")
 
+    async def _assert_feedback_partners(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        round_id: int,
+        partner_ids: list[int],
+    ) -> None:
+        """Raise ValueError unless each partner is someone the user was paired
+        with in the round, ended pairs included, and appears only once."""
+        if not partner_ids:
+            return
+        seen = set()
+        for partner_id in partner_ids:
+            if partner_id in seen:
+                raise ValueError(
+                    f"Feedback on partner {partner_id} is given more than once."
+                )
+            seen.add(partner_id)
+        pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
+            session=session, user_id=user_id, round_id=round_id
+        )
+        partners = {p_user.user_id for _, p_user in pairs_data}
+        for partner_id in partner_ids:
+            if partner_id not in partners:
+                self.logger.warning(
+                    "[ParticipationService] feedback on non-partner user_id=%s from user_id=%s, round_id=%s",
+                    partner_id,
+                    user_id,
+                    round_id,
+                )
+                raise ValueError(
+                    f"User {partner_id} is not your partner in this round."
+                )
+
     async def upsert_program_feedback(
         self,
         session: AsyncSession,
@@ -473,9 +507,10 @@ class ParticipationService:
             FeedbackDto: The saved feedback DTO.
 
         Raises:
-            ValueError: If the user has no participant record for this round, or
+            ValueError: If the user has no participant record for this round,
                 if the round's feedback window has not opened yet or has
-                already closed.
+                already closed, or if partner feedback names someone who was
+                not their partner in the round or names one partner twice.
         """
 
         self.logger.debug(
@@ -499,6 +534,12 @@ class ParticipationService:
             )
 
         await self._assert_feedback_open(session=session, round_id=round_id)
+        await self._assert_feedback_partners(
+            session=session,
+            user_id=user_context.user_id,
+            round_id=round_id,
+            partner_ids=[p.partner_id for p in feedback_data.partner_feedback],
+        )
 
         feedback_dump = feedback_data.model_dump(
             mode="json", by_alias=False, exclude_unset=False
