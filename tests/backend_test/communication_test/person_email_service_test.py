@@ -532,6 +532,23 @@ class ReplyIntoTest(_Fixture):
         kwargs = self.conversation.send.call_args.kwargs
         self.assertEqual((kwargs["body"], kwargs["body_text"]), ("<p>x</p>", None))
 
+    async def test_an_empty_or_blank_body_is_refused_before_anything_is_sent(self):
+        self.messages = {70: [_in(2, 5)]}
+        for body in ("", "  \n\t "):
+            with self.subTest(body=body):
+                with self.assertRaisesRegex(ValueError, "The message is empty"):
+                    await self.service.reply_into(
+                        self.session,
+                        _thread(70),
+                        body=body,
+                        body_format=BodyFormat.RICH,
+                        last_seen_message_id=2,
+                        sender_address=_ALIAS,
+                        sender_user_id=900,
+                    )
+
+        self.conversation.send.assert_not_awaited()
+
 
 class RefreshTest(_Fixture):
     def setUp(self):
