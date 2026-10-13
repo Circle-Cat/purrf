@@ -75,6 +75,26 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.timezone, "America/Los_Angeles")
         self.users_repository.upsert_users.assert_awaited_once()
 
+    async def test_update_users_saves_communication_method(self):
+        """A changed communication method lands on the mapped column."""
+        existing_user = UsersEntity(
+            user_id=1,
+            timezone="America/Los_Angeles",
+            communication_channel=CommunicationMethod.EMAIL,
+        )
+
+        profile_dto = self._create_profile_dto(
+            communication_method=CommunicationMethod.GOOGLE_CHAT
+        )
+
+        self.users_repository.upsert_users.side_effect = lambda s, u: u
+
+        result = await self.service.update_users(
+            self.session, profile_dto, existing_user
+        )
+
+        self.assertEqual(result.communication_channel, CommunicationMethod.GOOGLE_CHAT)
+
     async def test_update_users_timezone_success_after_30_days(self):
         """Update timezone successfully when more than 30 days have passed since last update."""
         last_update = datetime.now(timezone.utc) - timedelta(days=31)
