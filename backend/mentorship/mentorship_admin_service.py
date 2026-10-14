@@ -82,6 +82,7 @@ class MentorshipAdminService:
         note_repository,
         approval_service,
         mentorship_email_service,
+        meeting_service,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -97,6 +98,7 @@ class MentorshipAdminService:
         self.note_repository = note_repository
         self.approval_service = approval_service
         self.mentorship_email_service = mentorship_email_service
+        self.meeting_service = meeting_service
 
     async def _notification_condition(
         self, session: AsyncSession, round_id: int | None, filters
@@ -1270,6 +1272,9 @@ class MentorshipAdminService:
                 only a targeted row that is itself MANUAL is rejected. Also
                 raised, with code ``round_not_in_progress``, when the pair's
                 round is not in progress: a past round's log is read-only.
+                Also raised, with code ``calendar_cancel_failed``, when
+                Calendar refuses to cancel a deleted upcoming GOOGLE
+                meeting's event; nothing is written then.
         """
         if not batch.updates and not batch.deletes:
             raise ValueError("updates and deletes must not both be empty.")
@@ -1313,6 +1318,18 @@ class MentorshipAdminService:
             raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
 
         if delete_ids:
+            # An upcoming meeting still has a live invite; a started one is
+            # history, and cancelling it would mail everyone a cancellation.
+            now = datetime.now(timezone.utc)
+            upcoming_ids = sorted(
+                mid
+                for mid in delete_ids
+                if by_id[mid].source == MeetingSource.GOOGLE
+                and by_id[mid].start_datetime is not None
+                and by_id[mid].start_datetime > now
+            )
+            if upcoming_ids:
+                await self.meeting_service.cancel_calendar_events(upcoming_ids)
             await self.mentorship_meeting_repository.delete_meetings(
                 session, pair_id, list(delete_ids)
             )

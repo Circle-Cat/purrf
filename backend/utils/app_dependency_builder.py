@@ -851,6 +851,7 @@ class AppDependencyBuilder:
             note_repository=self.mentorship_participant_note_repository,
             approval_service=self.approval_service,
             mentorship_email_service=self.mentorship_email_service,
+            meeting_service=self.meeting_service,
         )
         self.matching_run_service = MatchingRunService(
             matching_payload_service=self.matching_payload_service,
