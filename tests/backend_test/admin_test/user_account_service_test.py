@@ -263,6 +263,18 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(rows[0].blocked_by_name, "Pei")
 
+    async def test_nameless_actor_is_named_by_user_id(self):
+        """An email-code account has no name; "Blocked by" must not be blank."""
+        row = _user(BLOCKED, is_blocked=True, blocked_by=ME, blocked_reason="cheated")
+        self.users.list_users.return_value = ([(row, True)], 1)
+        self.users.get_all_by_ids.return_value = [_user(ME, first="", last="")]
+
+        rows, _ = await self.service.list_accounts(
+            self.session, caller_id=ME, limit=50, offset=0
+        )
+
+        self.assertEqual(rows[0].blocked_by_name, f"User {ME}")
+
     async def test_unresolvable_actor_leaves_the_name_none(self):
         """An audit trail can outlive the account it names."""
         row = _user(BLOCKED, is_blocked=True, blocked_by=404)

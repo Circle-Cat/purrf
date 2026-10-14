@@ -14,7 +14,7 @@ back.
 
 from datetime import datetime, timezone
 
-from backend.common.name_utils import display_name_of
+from backend.common.name_utils import display_name_of, display_name_or_id
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
@@ -749,7 +749,7 @@ class BlockService:
             if person_id is not None
         }
         people = await self._users.get_all_by_ids(session, sorted(ids))
-        name_by_id = {person.user_id: display_name_of(person) for person in people}
+        name_by_id = {person.user_id: display_name_or_id(person) for person in people}
         return [
             BlockRequestDto(
                 id=row.request_id,
