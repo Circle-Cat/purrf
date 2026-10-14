@@ -125,9 +125,9 @@ class InternalActivityController:
 
         self.router.add_api_route(
             MICROSOFT_LDAPS_ENDPOINT,
-            endpoint=authenticate(
-                permissions=[Permission.DIRECTORY_MICROSOFT_LDAP_READ]
-            )(self.get_ldaps_and_names),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_ldaps_and_names
+            ),
             methods=["GET"],
         )
         self.router.add_api_route(
