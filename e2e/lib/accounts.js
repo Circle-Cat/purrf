@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readLocal } from "./local.js";
+import { readLoginCache } from "./login.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const TOKENS_DIR = path.join(ROOT, ".tokens");
@@ -35,16 +36,21 @@ export const ROLE_PERMISSIONS = {
   ],
   // user.admin lets it decide the block request a test raises.
   reviewer: ["mentorship.admin.read", "mentorship.approve", "user.admin"],
+  // A second reviewer, so a request can really be reassigned.
+  reviewer2: ["mentorship.admin.read", "mentorship.approve", "user.admin"],
   member: [],
 };
 
 export const ROLES = Object.keys(ROLE_PERMISSIONS);
 
 /**
- * The role's Cloudflare Access cookie, from `e2e.local.json` or
- * `.tokens/<role>.txt`, or null when none was handed over.
+ * The role's Cloudflare Access cookie: the one global setup signed in for,
+ * else one handed over in `e2e.local.json` or `.tokens/<role>.txt`, else
+ * null.
  */
 export function readToken(role) {
+  const signedIn = readLoginCache()[role]?.token;
+  if (signedIn) return signedIn;
   const local = readLocal().tokens?.[role]?.trim();
   if (local) return local;
   const file = path.join(TOKENS_DIR, `${role}.txt`);

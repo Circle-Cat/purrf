@@ -103,6 +103,8 @@ test.describe(
     test("ending a pair: raise, withdraw, raise again, then approve", async ({
       as,
     }) => {
+      // Four round trips between two accounts; it runs close to the default.
+      test.setTimeout(120_000);
       needFlagOn("matching-run");
       const reviewer = await as("reviewer");
       const page = await as("admin");

@@ -112,7 +112,26 @@ export const allowed = {
   requests: new Set(),
   pairs: new Set(),
   runs: new Set(),
+  rounds: new Set(),
 };
+
+/** Creating or editing a round: one endpoint, an edit carries the id. */
+const ROUND_UPSERT = /^\/api\/mentorship\/rounds$/;
+
+/** How far in the past every date of a suite round must lie. */
+const PAST_MS = 30 * 86_400_000;
+
+/**
+ * A round only the suite would write: named "E2E …" with every date at
+ * least 30 days ago, so it is never in progress or upcoming, and
+ * cleanup.sql removes it by the same rule.
+ */
+const isSuiteRound = (body) =>
+  typeof body?.name === "string" &&
+  body.name.startsWith("E2E ") &&
+  Object.values(body.timeline ?? {})
+    .filter((date) => date != null)
+    .every((date) => Date.parse(date) < Date.now() - PAST_MS);
 
 /**
  * Work on a round's latest matching result, allowed only once the suite has
@@ -152,6 +171,15 @@ function refuseWrite({ role, method, path, body }) {
       ? null
       : `round ${run[1]} has no run started by the suite`;
   }
+  if (method === "POST" && ROUND_UPSERT.test(path)) {
+    const round = parse(body);
+    if (!isSuiteRound(round))
+      return "a round must be named E2E … with every date at least 30 days ago";
+    if (round.id == null) return null;
+    return allowed.rounds.has(Number(round.id))
+      ? null
+      : `round ${round.id} was not created by the suite`;
+  }
   if (PEOPLE_IN_BODY.some((re) => re.test(path))) {
     const strangers = peopleIn(parse(body)).filter(
       (id) => !allowed.people.has(id),
@@ -171,6 +199,14 @@ function learn(path, method, json, body) {
   if (!data) return;
   if (method === "POST" && path === "/api/mentorship/admin/match-runs") {
     allowed.runs.add(Number(parse(body)?.roundId));
+  }
+  if (
+    method === "POST" &&
+    ROUND_UPSERT.test(path) &&
+    parse(body)?.id == null &&
+    Number.isInteger(data.id)
+  ) {
+    allowed.rounds.add(data.id);
   }
   const raised =
     method === "POST" &&

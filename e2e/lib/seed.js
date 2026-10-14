@@ -12,7 +12,7 @@ export const SEED_STATE_FILE = path.join(ROOT, ".state", "seed.json");
 export const SEED_USER_ID_FLOOR = 990001;
 
 /** How many people seed.sql creates, e2e-member not counted. */
-const SEEDED_PEOPLE = 15;
+const SEEDED_PEOPLE = 22;
 
 /**
  * psql wants a libpq URL; the backend's DATABASE_URL is SQLAlchemy-shaped
