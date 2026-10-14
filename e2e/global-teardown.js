@@ -32,7 +32,9 @@ async function withdrawOwnPublishRequest(seeded) {
 export default async function globalTeardown() {
   const seeded = readSeedState();
   if (!seeded || process.env.E2E_KEEP_SEED) return;
-  await withdrawOwnPublishRequest(seeded);
+  await withdrawOwnPublishRequest(seeded).catch((e) =>
+    console.log(`[teardown] could not check the publish request: ${e.message}`),
+  );
   cleanup(seeded);
   console.log(`[teardown] cleaned up ${seeded.roundName}`);
 }

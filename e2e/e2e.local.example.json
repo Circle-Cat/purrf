@@ -1,8 +1,13 @@
 {
+  "mailbox": {
+    "address": ""
+  },
+  "logins": {},
   "tokens": {
     "superadmin": "",
     "admin": "",
     "reviewer": "",
+    "reviewer2": "",
     "member": ""
   },
   "databaseUrl": "",

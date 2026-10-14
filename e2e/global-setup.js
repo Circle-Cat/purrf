@@ -12,6 +12,8 @@ import {
 import { apiAs, getData } from "./lib/api.js";
 import { browserCookies } from "./lib/cookies.js";
 import { verifyFlags } from "./lib/flags.js";
+import { refreshLogins } from "./lib/login.js";
+import { grantInDatabase } from "./lib/db.js";
 import {
   SEED_STATE_FILE,
   cleanup,
@@ -46,6 +48,15 @@ async function topUp(role, me, superToken) {
   const want = ROLE_PERMISSIONS[role];
   const missing = want.filter((p) => !me.permissions.includes(p));
   if (missing.length === 0) return me;
+  // Never grant anything to an account that is not a plain test account.
+  checkIdentity(role, me);
+  if (ENV.writesAllowed && databaseUrl()) {
+    grantInDatabase(me.user_id, missing);
+    console.log(
+      `[setup] ${role}: granted ${missing.join(", ")} in the database`,
+    );
+    return whoAmI(role, readToken(role));
+  }
   if (!superToken) {
     throw new Error(
       `${role}: missing ${missing.join(", ")} and no superadmin token (an account with permission.manage) to grant them`,
@@ -77,7 +88,7 @@ async function topUp(role, me, superToken) {
   return whoAmI(role, readToken(role));
 }
 
-function checkAccount(role, me) {
+function checkIdentity(role, me) {
   if (me.is_super_admin) {
     throw new Error(
       `${role} (${me.email}) is a super admin; use a plain account`,
@@ -88,6 +99,11 @@ function checkAccount(role, me) {
       `${role} (${me.email}) is a company address, which gets the employee permission bundle; use a personal address`,
     );
   }
+}
+
+/** A plain test account that holds nothing beyond its role's list. */
+function checkAccount(role, me) {
+  checkIdentity(role, me);
   const extra = ROLE_PERMISSIONS.admin.filter(
     (p) => !ROLE_PERMISSIONS[role].includes(p) && me.permissions.includes(p),
   );
@@ -119,8 +135,22 @@ async function checkBanner(token) {
   }
 }
 
+/** Whether Access and the API still accept this cookie for a while. */
+async function tokenWorks(token) {
+  if (tokenExpiry(token) - Date.now() / 1000 < 15 * 60) return false;
+  const api = await apiAs(token);
+  try {
+    return (await api.get("/api/permissions/me")).status() === 200;
+  } finally {
+    await api.dispose();
+  }
+}
+
 export default async function globalSetup() {
-  const superToken = readToken("superadmin");
+  await refreshLogins(["superadmin", ...ROLES], tokenWorks);
+  // Whoever grants the others their permissions: the super admin when one
+  // was given, else e2e-admin, which holds permission.manage itself.
+  const superToken = readToken("superadmin") ?? readToken("admin");
   const state = {};
   for (const role of ROLES) {
     const token = readToken(role);

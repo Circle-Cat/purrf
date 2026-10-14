@@ -6,37 +6,47 @@ of CI or `bazel test`.
 
 ## Accounts
 
-Three dedicated accounts on personal addresses (not `@circlecat.org`, which
-would get the employee permission bundle on first login), plus an account holding
-`permission.manage` (any admin who can grant permissions; it need not be a
-super admin) that only tops up their permissions:
+Four dedicated accounts on personal addresses (not `@circlecat.org`, which
+would get the employee permission bundle on first login). By default they are
+plus aliases of one mailbox, so every sign-in code lands in one inbox:
 
-| Token file               | Account      | Holds                                         |
-| ------------------------ | ------------ | --------------------------------------------- |
-| `.tokens/superadmin.txt` | super admin  | used by the pre-run check only                |
-| `.tokens/admin.txt`      | e2e-admin    | every admin permission except approving       |
-| `.tokens/reviewer.txt`   | e2e-reviewer | `mentorship.admin.read`, `mentorship.approve` |
-| `.tokens/member.txt`     | e2e-member   | nothing                                       |
+| Role      | Signs in as                 | Holds                                                       |
+| --------- | --------------------------- | ----------------------------------------------------------- |
+| admin     | `<mailbox>+e2e-admin@…`     | every admin permission except approving                     |
+| reviewer  | `<mailbox>+e2e-reviewer@…`  | `mentorship.admin.read`, `mentorship.approve`, `user.admin` |
+| reviewer2 | `<mailbox>+e2e-reviewer2@…` | the same as reviewer, so a request can really be reassigned |
+| member    | `<mailbox>+e2e-member@…`    | nothing                                                     |
 
-The exact lists live in `lib/accounts.js`. A missing token skips the tests
-that need that account.
+The exact lists live in `lib/accounts.js`. `logins` in the settings file
+overrides an address. Global setup refuses an account that is a super admin,
+a company address, or holds more than its list; a role without a way to sign
+in skips the tests that need it.
 
 ## Settings file
 
-Copy `e2e.local.example.json` to `e2e.local.json` (gitignored) and fill it in:
-the four tokens, the test database URL (needed for the write tests), and the
-flags you set in LaunchDarkly (optional). Empty values count as not given.
-The per-file forms below (`.tokens/<role>.txt`, `E2E_DATABASE_URL`,
-`.flags.json`, `E2E_FLAGS`) still work.
+Copy `e2e.local.example.json` to `e2e.local.json` (gitignored) and fill in:
 
-## Getting a token
+- `mailbox.address`: the mailbox the aliases belong to.
+- `databaseUrl`: the test database (seeding, cleanup, and topping up the
+  accounts' permissions).
+- `flags`: the flags you set in LaunchDarkly for these accounts (optional).
+- `logins`: per-role addresses that differ from the alias (optional).
+- `tokens`: per-role Access cookies handed over by hand instead of signing in
+  (optional; `.tokens/<role>.txt` still works too).
 
-Log in to the environment in a browser, open DevTools → Application → Cookies,
-and copy the value of `CF_Authorization`. It is good for 24 hours.
+## Signing in
 
-```sh
-printf '%s' '<value>' > e2e/.tokens/admin.txt
-```
+Global setup signs each account in the way a person does, by emailed code,
+and caches the Access cookie in `.state/logins.json` for its 24 hours. When a
+cached cookie is missing or no longer accepted, it sends a code to every such
+account at once and waits for them: run from a terminal, it asks for each
+code; run otherwise, it waits up to 5 minutes for `.state/codes/<role>.txt`.
+A code is good for 3 minutes. It never signs out, because signing out ends the
+Access session a cookie belongs to.
+
+Missing permissions are written straight into the test database, as the
+permission console would, so no super admin is needed. On staging there is no
+database URL; grant the accounts their permissions there once by hand.
 
 ## Running
 
@@ -50,11 +60,10 @@ npx playwright test --grep @smoke       # just the read-only pass
 npx playwright show-report              # screenshots and traces of failures
 ```
 
-Before any test, `global-setup.js` checks every token, grants missing
-permissions with the super admin's token, refuses accounts that are super
-admins or company addresses, and refuses to run unless the page shows the
-banner of the chosen environment. Set `E2E_ANY_ACCOUNT=1` to skip the account
-checks when trying the suite with your own login.
+Before any test, `global-setup.js` signs the accounts in, tops up their
+permissions, checks them, and refuses to run unless the page shows the banner
+of the chosen environment. Set `E2E_ANY_ACCOUNT=1` to skip the account checks
+when trying the suite with your own login.
 
 ## Seeding the write tests
 
@@ -104,6 +113,8 @@ mismatch. To cover both states, run twice and flip the flag in between.
 - Other tests may write only about seeded people and e2e-member, may decide
   only requests the suite raised itself, and may save or publish a matching
   result only in a round where the suite started the run.
+- A round may be created only when it is named `E2E …` with every date at
+  least 30 days ago, and edited only when the suite created it in the same run.
 - Anything that sends mail (Kit, single sends, replies) is always aborted.
 - Any API response of 400 or above fails the test unless it is listed in
   `KNOWN_API_ERRORS` with the reason.

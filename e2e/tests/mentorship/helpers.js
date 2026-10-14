@@ -175,3 +175,49 @@ export const participantRows = (page) =>
 /** The Participants row of one person, found by the "ID <n>" under the name. */
 export const rowFor = (page, userId) =>
   participantRows(page).filter({ hasText: new RegExp(`ID ${userId}\\b`) });
+
+/** Wait for the Participants card's list (either kind) to answer. */
+export const listAnswered = (page) =>
+  page.waitForResponse(
+    (r) =>
+      r.request().method() === "GET" &&
+      /\/mentorship\/admin\/(participants|rounds\/\d+\/unregistered)$/.test(
+        new URL(r.url()).pathname,
+      ),
+    { timeout: 30_000 },
+  );
+
+/**
+ * Pick filters in the Participants card, by each select's label and the
+ * option's text, then press Search and wait for the list.
+ */
+export async function searchWith(page, picks) {
+  for (const [label, option] of Object.entries(picks)) {
+    await page.getByRole("combobox", { name: label, exact: true }).click();
+    await page.getByRole("option", { name: option, exact: true }).click();
+  }
+  const answered = listAnswered(page);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await answered;
+  await settle(page);
+}
+
+/** The user ids the Participants table lists, top to bottom. */
+export const listedIds = async (page) =>
+  (await participantRows(page).allTextContents()).map((text) =>
+    Number(text.match(/ID (\d+)\b/)[1]),
+  );
+
+/** One cell of a Participants row, found by its column's header. */
+export async function cellIn(page, row, header) {
+  const headers = await page
+    .locator("table")
+    .filter({ hasText: "Int / ext" })
+    .getByRole("row")
+    .first()
+    .getByRole("cell")
+    .allTextContents();
+  const index = headers.map((h) => h.trim()).indexOf(header);
+  if (index < 0) throw new Error(`no "${header}" column`);
+  return row.getByRole("cell").nth(index);
+}

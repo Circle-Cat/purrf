@@ -117,6 +117,9 @@ DELETE FROM training WHERE user_id IN (SELECT user_id FROM e2e_users);
 
 DELETE FROM application WHERE user_id = :member_id AND tags ->> 'e2e' = 'true';
 
+-- Seeded people's own applications (Mentor H-M1's admission).
+DELETE FROM application WHERE user_id IN (SELECT user_id FROM e2e_users);
+
 DELETE FROM mentorship_email_recipient WHERE user_id IN (SELECT user_id FROM e2e_users);
 
 DELETE FROM user_identities WHERE user_id IN (SELECT user_id FROM e2e_users);
@@ -135,5 +138,22 @@ SELECT (SELECT count(*) FROM e2e_users)    AS users_removed,
        (SELECT count(*) FROM e2e_pairs)    AS pairs_removed,
        (SELECT count(*) FROM e2e_requests) AS requests_removed,
        (SELECT count(*) FROM e2e_events)   AS events_removed;
+
+-- Rounds the suite created: named "E2E ...", every date at least 30 days ago, and
+-- nothing pointing at them. A real round can match none of the three.
+DELETE FROM mentorship_round r
+WHERE r.name LIKE 'E2E %'
+  AND GREATEST(
+        r.promotion_start_at, r.mentor_application_deadline_at,
+        r.mentee_application_deadline_at, r.onboarding_notification_at,
+        r.onboarding_deadline_at, r.match_notification_at,
+        r.first_meeting_deadline_at, r.meeting_log_reminder_at,
+        r.meetings_completion_deadline_at, r.feedback_start_at,
+        r.feedback_deadline_at
+      ) < now() - interval '30 days'
+  AND NOT EXISTS (SELECT 1 FROM mentorship_round_participants p WHERE p.round_id = r.round_id)
+  AND NOT EXISTS (SELECT 1 FROM mentorship_pairs p WHERE p.round_id = r.round_id)
+  AND NOT EXISTS (SELECT 1 FROM mentorship_participant_note n WHERE n.round_id = r.round_id)
+  AND NOT EXISTS (SELECT 1 FROM mentorship_email_send s WHERE s.round_id = r.round_id);
 
 COMMIT;
