@@ -124,7 +124,7 @@ class MeetAttendanceService:
                   per pair for the whole sweep, not once per round.
                 - meetings_selected (int): Number of pending meetings this run
                   picked up. Equals reconciled + not_yet_due + in_progress +
-                  no_show + failed.
+                  no_show + set_by_admin + failed.
                 - meetings_reconciled (int): Number of meetings that had a
                   conference record and were written back.
                 - meetings_completed (int): Of those, how many came out
@@ -143,6 +143,10 @@ class MeetAttendanceService:
                   period have both passed with no conference ever recorded --
                   nobody joined. This is the only actionable count; it is
                   also logged at INFO per meeting.
+                - meetings_set_by_admin (int): Meetings skipped because an
+                  admin has set their attendance. The selection query
+                  excludes these, so this stays 0 unless that filter and this
+                  guard ever disagree.
                 - meetings_failed (int): Number of meetings that raised while
                   being processed, plus every meeting a failed round had
                   already selected but not yet classified.
@@ -154,7 +158,8 @@ class MeetAttendanceService:
                   on that path too.
             The additive invariant holds on the aggregate on every path:
             meetings_selected == meetings_reconciled + meetings_not_yet_due +
-            meetings_in_progress + meetings_no_show + meetings_failed.
+            meetings_in_progress + meetings_no_show + meetings_set_by_admin +
+            meetings_failed.
             Returns an empty dict when no round is currently selectable.
         """
         # The grace only widens which ROUNDS stay selectable, never which
@@ -217,6 +222,7 @@ class MeetAttendanceService:
             "meetings_not_yet_due": 0,
             "meetings_in_progress": 0,
             "meetings_no_show": 0,
+            "meetings_set_by_admin": 0,
             "meetings_failed": 0,
             "rounds_failed": 0,
         }
@@ -322,6 +328,13 @@ class MeetAttendanceService:
                         )
                         mentor = user_by_id.get(pair.mentor_id)
                         mentee = user_by_id.get(pair.mentee_id)
+
+                        # The selection query already excludes these; this
+                        # keeps the sweep from ever overwriting an admin's
+                        # correction if a row reaches it some other way.
+                        if meeting.attendance_set_by_admin_at is not None:
+                            summary["meetings_set_by_admin"] += 1
+                            continue
 
                         # get_pending_google_meetings_in_window already restricts to
                         # is_completed=False rows -- no "already completed" re-check
