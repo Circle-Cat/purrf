@@ -17,7 +17,6 @@ class Permission(StrEnum):
     SYSTEM_SYNC = "system.sync"
     SYSTEM_SUBSCRIBE = "system.subscribe"
     INTERNAL_ACTIVITY_READ = "internal_activity.read"
-    DIRECTORY_MICROSOFT_LDAP_READ = "directory.microsoft_ldap.read"
     DASHBOARD_ACTIVITY_SUMMARY_READ = "dashboard.activity_summary.read"
     MENTORSHIP_ADMIN_READ = "mentorship.admin.read"
     MENTORSHIP_ADMIN_WRITE = "mentorship.admin.write"
@@ -59,7 +58,6 @@ class Permission(StrEnum):
 # identity is removed. This constant is the source of truth; changing it needs a
 # migration to sync existing system_internal rows.
 INTERNAL_EMPLOYEE_PERMISSIONS = frozenset({
-    Permission.DIRECTORY_MICROSOFT_LDAP_READ,
     Permission.DASHBOARD_ACTIVITY_SUMMARY_READ,
 })
 

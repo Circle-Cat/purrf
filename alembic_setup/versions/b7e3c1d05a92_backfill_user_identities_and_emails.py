@@ -162,7 +162,6 @@ def upgrade() -> None:
             SELECT u.user_id, p.permission_name, 'system_internal', NULL
             FROM users u
             CROSS JOIN (VALUES
-                ('directory.microsoft_ldap.read'),
                 ('dashboard.activity_summary.read')
             ) AS p(permission_name)
             WHERE u.is_active
