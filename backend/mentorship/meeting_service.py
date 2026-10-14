@@ -935,6 +935,34 @@ class MeetingService:
         )
         return len(upcoming)
 
+    async def cancel_calendar_events(self, meeting_ids: list[str]) -> None:
+        """Cancel these GOOGLE meetings' Calendar events. Touches no rows.
+
+        For a caller that deletes the rows itself and must not delete them
+        unless every event is gone (an event already missing counts as gone).
+
+        Args:
+            meeting_ids (list[str]): GOOGLE meeting ids, which are the
+                Calendar event ids.
+
+        Raises:
+            ConflictError: Calendar refused to delete some events (code
+                ``calendar_cancel_failed``).
+        """
+        if not meeting_ids:
+            return
+        _succeeded, failed = await self.meeting_scheduling_service.cancel(
+            list(meeting_ids), calendar_id=self.mentorship_calendar_id
+        )
+        if failed:
+            self.logger.error("[MeetingService] Calendar refused to cancel %s", failed)
+            raise ConflictError(
+                f"{len(failed)} upcoming meeting(s) could not be cancelled on the "
+                "calendar, so nothing in Purrf was changed. Some invites may already be "
+                "cancelled; save again to finish.",
+                code="calendar_cancel_failed",
+            )
+
     def _has_time_conflict(
         self,
         existing_meetings: list[MentorshipMeetingEntity],

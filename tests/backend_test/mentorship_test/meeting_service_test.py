@@ -1671,6 +1671,29 @@ class TestMeetingServiceCancelUpcomingForPairs(unittest.IsolatedAsyncioTestCase)
         self.scheduling.cancel.assert_not_awaited()
         self.mock_meeting_repo.delete_meetings.assert_not_awaited()
 
+    async def test_cancel_calendar_events_cancels_on_the_mentorship_calendar(self):
+        await self.service.cancel_calendar_events(["g-a-up", "g-b-up"])
+
+        self.scheduling.cancel.assert_awaited_once_with(
+            ["g-a-up", "g-b-up"], calendar_id="cal-mentorship"
+        )
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_cancel_calendar_events_raises_when_calendar_refuses(self):
+        self.scheduling.cancel.return_value = (["g-a-up"], ["g-b-up"])
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.cancel_calendar_events(["g-a-up", "g-b-up"])
+
+        self.assertEqual(caught.exception.code, "calendar_cancel_failed")
+
+    async def test_cancel_calendar_events_with_no_ids_never_calls_the_calendar(
+        self,
+    ):
+        await self.service.cancel_calendar_events([])
+
+        self.scheduling.cancel.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()
