@@ -9,10 +9,16 @@
  * separately instead. Recruiting candidates are named by their legal
  * "first last" name and are resolved on the backend, not here.
  *
- * @param {{firstName?: string, lastName?: string, preferredName?: string}} [person]
- *   The person whose name should be displayed.
- * @returns {string} The preferred name, or the trimmed "first last" fallback;
- *   an empty string when nothing usable is provided.
+ * An account created by an email-code sign-in has no name at all. Such a
+ * person is shown as "User <id>" rather than an empty string, which would
+ * leave a blank link or a gap in a sentence.
+ *
+ * @param {{firstName?: string, lastName?: string, preferredName?: string,
+ *          userId?: number, id?: number}} [person]
+ *   The person whose name should be displayed. Search rows carry `userId`,
+ *   partners carry `id`.
+ * @returns {string} The preferred name, the trimmed "first last" fallback, or
+ *   "User <id>"; an empty string when nothing usable is provided.
  */
 export function userDisplayName(person) {
   if (!person) return "";
@@ -20,7 +26,11 @@ export function userDisplayName(person) {
   const preferred = person.preferredName?.trim();
   if (preferred) return preferred;
 
-  return `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
+  const fullName = `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
+  if (fullName) return fullName;
+
+  const id = person.userId ?? person.id;
+  return id == null ? "" : `User ${id}`;
 }
 
 /**
