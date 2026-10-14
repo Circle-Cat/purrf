@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import AssignTrainingCard from "@/pages/AdminTraining/components/AssignTrainingCard";
@@ -9,6 +15,23 @@ import {
   assignCourseBulk,
   listUserAssignments,
 } from "@/api/trainingApi";
+
+// The real picker is a react-select; a plain select keeps the option shape
+// ({value}) its onChange hands over, as in MeetingManagementDialog.test.jsx.
+vi.mock("@/components/common/TimezoneSelector", () => ({
+  default: ({ value, onChange, "aria-label": ariaLabel }) => (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(e) => onChange({ value: e.target.value })}
+    >
+      <option value="America/Los_Angeles">
+        Pacific Time (US &amp; Canada)
+      </option>
+      <option value="America/New_York">Eastern Time (US &amp; Canada)</option>
+    </select>
+  ),
+}));
 
 vi.mock("@/api/trainingApi", () => ({
   searchAudience: vi.fn(),
@@ -511,5 +534,64 @@ describe("AssignTrainingCard", () => {
     expect(
       within(reason).getByRole("button", { name: "Select all 40 matching" }),
     ).toBeDisabled();
+  });
+
+  it("will not assign a newly named course to rows found for another", async () => {
+    const user = userEvent.setup();
+    const OTHER_LIVE = {
+      courseId: 4,
+      name: "Security Basics",
+      liveState: "live",
+      isActive: true,
+    };
+    render(<AssignTrainingCard courses={[...COURSES, OTHER_LIVE]} />);
+    await pickCourse(user, "Corporate Culture");
+    await submitSearch(user);
+    await screen.findByLabelText("Select Ada Internal");
+
+    // The rows were filtered on Corporate Culture; naming another course
+    // without searching again must not let them be ticked and given it.
+    await pickCourse(user, "Security Basics");
+
+    expect(
+      screen.queryByLabelText("Select Ada Internal"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Select everyone on this page"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    expect(
+      screen.getByText("Search again to assign with these filters"),
+    ).toBeInTheDocument();
+    expect(assignCourseBulk).not.toHaveBeenCalled();
+
+    await submitSearch(user);
+
+    expect(
+      await screen.findByLabelText("Select Ada Internal"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Search again to assign with these filters"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the deadline as 23:59:59 in the timezone picked beside it", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await pickCourse(user, "Corporate Culture");
+    await submitSearch(user);
+    await user.click(await screen.findByLabelText("Select Ada Internal"));
+
+    const zone = screen.getByLabelText("Deadline timezone");
+    expect(zone).toHaveValue("America/Los_Angeles");
+    fireEvent.change(screen.getByLabelText("Deadline (optional)"), {
+      target: { value: "2026-10-20" },
+    });
+    await user.selectOptions(zone, "America/New_York");
+    await user.click(screen.getByRole("button", { name: "Assign" }));
+
+    await waitFor(() => expect(assignCourseBulk).toHaveBeenCalled());
+    const { deadline } = assignCourseBulk.mock.calls[0][0];
+    expect(new Date(deadline).toISOString()).toBe("2026-10-21T03:59:59.000Z");
   });
 });

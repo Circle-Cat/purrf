@@ -1,3 +1,4 @@
+import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,9 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
   // is the same table. Only the ticks and the Assign button go.
   const canAssign = canWrite && blockedReason === null;
   const showControls = canAssign && audience.rows.length > 0;
+  // The course to assign follows the draft, the rows the last search: ticking
+  // them now would hand the new course to people filtered for the old one.
+  const awaitingSearch = showControls && audience.facetsEdited;
   // Why a named course cannot be assigned. Naming none is not a fault to
   // report -- the card answers "what does this person hold" that way.
   // Not shown to a reader: it explains why assigning is unavailable, and for
@@ -242,14 +246,38 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
                 onChange={(event) => audience.setDeadline(event.target.value)}
               />
             </div>
+            {/* The deadline is the end of the picked day in this zone. */}
+            <div className="flex w-64 flex-col gap-1">
+              <Label htmlFor="audience-deadline-timezone">
+                Deadline timezone
+              </Label>
+              <TimezoneSelector
+                inputId="audience-deadline-timezone"
+                aria-label="Deadline timezone"
+                value={audience.deadlineTimezone}
+                onChange={(option) =>
+                  audience.setDeadlineTimezone(
+                    typeof option === "string" ? option : option.value,
+                  )
+                }
+              />
+            </div>
             <Button
               type="button"
-              disabled={selectedCount === 0 || audience.assigning}
+              disabled={
+                selectedCount === 0 || audience.assigning || awaitingSearch
+              }
               onClick={audience.assign}
             >
               Assign
             </Button>
           </div>
+        )}
+
+        {awaitingSearch && (
+          <p className="text-right text-sm text-muted-foreground">
+            Search again to assign with these filters
+          </p>
         )}
 
         {!audience.hasSearched ? (
@@ -266,7 +294,7 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
           <AudienceTable
             rows={audience.rows}
             courseScoped={audience.resultsCourseId !== ""}
-            selectable={canAssign}
+            selectable={canAssign && !audience.facetsEdited}
             selectedIds={audience.selectedIds}
             onToggle={audience.toggleSelected}
             onTogglePage={audience.togglePage}

@@ -45,6 +45,14 @@ const searched = async (expectedTotal = 2) => {
   return view;
 };
 
+const searchedForCourse = async (course) => {
+  const view = render();
+  act(() => view.result.current.setCourseId(String(course.courseId)));
+  act(() => view.result.current.submitSearch());
+  await waitFor(() => expect(view.result.current.total).toBe(2));
+  return view;
+};
+
 describe("useAudienceSearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -99,8 +107,7 @@ describe("useAudienceSearch", () => {
   });
 
   it("disables and resets the course-status facet under all courses", async () => {
-    const { result } = await searched();
-    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+    const { result } = await searchedForCourse(LIVE_COURSE);
 
     act(() => result.current.setCourseId(""));
 
@@ -207,8 +214,7 @@ describe("useAudienceSearch", () => {
   });
 
   it("assigns the ticked ids to the course in scope", async () => {
-    const { result } = await searched();
-    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+    const { result } = await searchedForCourse(LIVE_COURSE);
     act(() => result.current.toggleSelected(11, true));
     act(() => result.current.toggleSelected(12, true));
 
@@ -222,26 +228,58 @@ describe("useAudienceSearch", () => {
     });
   });
 
-  it("sends a deadline only when one was typed", async () => {
-    const { result } = await searched();
-    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+  it("ends a typed deadline at 23:59:59 Pacific by default", async () => {
+    const { result } = await searchedForCourse(LIVE_COURSE);
+    expect(result.current.deadlineTimezone).toBe("America/Los_Angeles");
     act(() => result.current.toggleSelected(11, true));
-    act(() => result.current.setDeadline("2026-10-01"));
+    act(() => result.current.setDeadline("2026-10-20"));
 
     await act(async () => {
       await result.current.assign();
     });
 
-    expect(assignCourseBulk).toHaveBeenCalledWith({
+    const payload = assignCourseBulk.mock.calls[0][0];
+    expect(payload).toEqual({
       courseId: LIVE_COURSE.courseId,
       userIds: [11],
-      deadline: "2026-10-01",
+      deadline: expect.any(String),
     });
+    // 2026-10-20T23:59:59-07:00
+    expect(new Date(payload.deadline).toISOString()).toBe(
+      "2026-10-21T06:59:59.000Z",
+    );
+  });
+
+  it("ends the deadline in the timezone picked for it", async () => {
+    const { result } = await searchedForCourse(LIVE_COURSE);
+    act(() => result.current.toggleSelected(11, true));
+    act(() => result.current.setDeadline("2026-10-20"));
+    act(() => result.current.setDeadlineTimezone("America/New_York"));
+
+    await act(async () => {
+      await result.current.assign();
+    });
+
+    const { deadline } = assignCourseBulk.mock.calls[0][0];
+    // 2026-10-20T23:59:59-04:00
+    expect(new Date(deadline).toISOString()).toBe("2026-10-21T03:59:59.000Z");
+  });
+
+  it("will not assign a course named after the rows were found", async () => {
+    const { result } = await searched();
+    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+    act(() => result.current.toggleSelected(11, true));
+
+    await act(async () => {
+      await result.current.assign();
+    });
+
+    expect(result.current.facetsEdited).toBe(true);
+    expect(assignCourseBulk).not.toHaveBeenCalled();
   });
 
   it("clears the selection and reloads the page after assigning", async () => {
-    const { result } = await searched();
-    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+    const { result } = await searchedForCourse(LIVE_COURSE);
     act(() => result.current.toggleSelected(11, true));
     searchAudience.mockClear();
 
@@ -255,8 +293,7 @@ describe("useAudienceSearch", () => {
 
   it("keeps the selection when assigning fails", async () => {
     assignCourseBulk.mockRejectedValue(new Error("nothing published yet"));
-    const { result } = await searched();
-    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+    const { result } = await searchedForCourse(LIVE_COURSE);
     act(() => result.current.toggleSelected(11, true));
 
     await act(async () => {
@@ -291,8 +328,7 @@ describe("useAudienceSearch", () => {
   });
 
   it("scopes the results once the search is submitted again", async () => {
-    const { result } = await searched();
-    act(() => result.current.setCourseId(String(LIVE_COURSE.courseId)));
+    const { result } = await searchedForCourse(LIVE_COURSE);
 
     act(() => result.current.submitSearch());
 
