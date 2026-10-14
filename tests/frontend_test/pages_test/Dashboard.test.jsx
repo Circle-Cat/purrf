@@ -7,7 +7,6 @@ import Dashboard from "@/pages/Dashboard";
 import DateRangePicker from "@/components/common/DateRangePicker";
 
 import { Group } from "@/constants/Groups";
-import { LdapStatus } from "@/constants/LdapStatus";
 import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
 
 vi.mock("@/components/common/DateRangePicker", () => {
@@ -112,22 +111,6 @@ const mockSummaryData = [
   },
 ];
 
-const mockLdapsData = {
-  [Group.Interns]: {
-    [LdapStatus.Active]: {
-      "test.user1": "Test User1",
-    },
-  },
-  [Group.Employees]: {
-    [LdapStatus.Active]: {
-      "test.user2": "Test User2",
-    },
-    [LdapStatus.Terminated]: {
-      "test.user3": "Test User3",
-    },
-  },
-};
-
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -145,17 +128,18 @@ describe("Dashboard", () => {
 
   it("fetches and displays summary and table data correctly on search", async () => {
     getSummary.mockResolvedValue({ data: mockSummaryData });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
 
     await vi.waitFor(() => {
       expect(getSummary).toHaveBeenCalled();
-      expect(getLdapsAndDisplayNames).toHaveBeenCalled();
     });
+    // Dashboard needs only the summary permission, so it must not read the
+    // LDAP directory (PUR-777).
+    expect(getLdapsAndDisplayNames).not.toHaveBeenCalled();
 
     await vi.waitFor(() => {
-      expect(screen.getByTestId("card-Members")).toHaveTextContent("3"); // totalMembers from mockLdapsData
+      expect(screen.getByTestId("card-Members")).toHaveTextContent("3"); // one per summary row
       expect(screen.getByTestId("card-Jira-Tickets-(Done)")).toHaveTextContent(
         "15",
       ); // 5+2+8
@@ -176,13 +160,11 @@ describe("Dashboard", () => {
 
   it("handles empty API results gracefully", async () => {
     getSummary.mockResolvedValue({ data: [] });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: {} });
 
     render(<Dashboard />);
 
     await vi.waitFor(() => {
       expect(getSummary).toHaveBeenCalled();
-      expect(getLdapsAndDisplayNames).toHaveBeenCalled();
 
       const cards = [
         "Members",
@@ -209,7 +191,6 @@ describe("Dashboard", () => {
 
     await vi.waitFor(() => {
       expect(getSummary).toHaveBeenCalled();
-      expect(getLdapsAndDisplayNames).toHaveBeenCalled();
       expect(screen.getByTestId("card-Members")).toHaveTextContent("0");
       expect(consoleErrorSpy).toHaveBeenCalled();
     });
@@ -217,7 +198,6 @@ describe("Dashboard", () => {
 
   it("sorts table data correctly by numeric column (jiraTicketsDone) in ascending and descending order", async () => {
     getSummary.mockResolvedValue({ data: mockSummaryData });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
 
@@ -253,7 +233,6 @@ describe("Dashboard", () => {
 
   it("sorts table data correctly by string column (ldap) in ascending and descending order", async () => {
     getSummary.mockResolvedValue({ data: mockSummaryData });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
     await vi.waitFor(() => {
@@ -283,7 +262,6 @@ describe("Dashboard", () => {
 
   it("renders with correct initial state and default values", () => {
     getSummary.mockResolvedValue({ data: mockSummaryData });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
 
@@ -440,7 +418,6 @@ describe("Dashboard", () => {
 
   it("allows searching when at least one required group is selected", async () => {
     getSummary.mockResolvedValue({ data: mockSummaryData });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
 
@@ -501,7 +478,6 @@ describe("Dashboard", () => {
     ];
 
     getSummary.mockResolvedValue({ data: mockDecimalSummaryData });
-    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
 

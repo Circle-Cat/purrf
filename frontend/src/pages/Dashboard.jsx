@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { formatLocalYmd } from "@/utils/dateTime";
 import { Group } from "@/constants/Groups";
-import { LdapStatus } from "@/constants/LdapStatus";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import Table from "@/components/common/Table";
-import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
+import { getSummary } from "@/api/dashboardApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 
@@ -170,28 +169,14 @@ const Dashboard = () => {
     includeTerminated,
   }) => {
     try {
-      const [{ data: summaryResult }, { data: ldapsResult }] =
-        await Promise.all([
-          getSummary({
-            startDate: startDate,
-            endDate: endDate,
-            groups: groups,
-            includeTerminated: includeTerminated,
-          }),
-          getLdapsAndDisplayNames({
-            status: includeTerminated ? LdapStatus.All : LdapStatus.Active,
-            groups: groups,
-          }),
-        ]);
-
-      let totalLdaps = 0;
-      for (const group in ldapsResult) {
-        const statusObject = ldapsResult[group];
-        for (const status in statusObject) {
-          const ldapMap = statusObject[status];
-          totalLdaps += Object.keys(ldapMap).length;
-        }
-      }
+      // The summary has one row per member of the selected groups, members
+      // with no activity included, so its length is the member count.
+      const { data: summaryResult } = await getSummary({
+        startDate: startDate,
+        endDate: endDate,
+        groups: groups,
+        includeTerminated: includeTerminated,
+      });
 
       const accumulatedSummary = summaryResult.reduce(
         (acc, member) => {
@@ -233,7 +218,7 @@ const Dashboard = () => {
         totalMergedLoc: accumulatedSummary.totalMergedLoc,
         totalMessagesSent: accumulatedSummary.totalMessagesSent,
         totalMeetingHours: finalTotalMeetingHours,
-        totalMembers: totalLdaps,
+        totalMembers: summaryResult.length,
       });
     } catch (err) {
       console.log(err);
