@@ -2,7 +2,8 @@ import { test as base, expect } from "@playwright/test";
 import { ENV } from "./lib/env.js";
 import { readAccountState, readToken } from "./lib/accounts.js";
 import { browserCookies } from "./lib/cookies.js";
-import { guardContext } from "./lib/guard.js";
+import { allowed, guardContext } from "./lib/guard.js";
+import { readSeedState } from "./lib/seed.js";
 
 /**
  * `as(role)` opens a page logged in as that test account. Writes are blocked
@@ -16,16 +17,19 @@ export const test = base.extend({
       ENV.writesAllowed && !testInfo.tags.includes("@smoke");
     const problems = [];
     const contexts = [];
+    const seed = readSeedState();
+    for (const id of seed?.people ?? []) allowed.people.add(id);
 
     await use(async (role) => {
       const token = readToken(role);
       testInfo.skip(!token || !accounts[role], `no ${role} token`);
       const context = await browser.newContext();
       await context.addCookies(browserCookies(token));
-      await guardContext(context, { writesAllowed, problems });
+      await guardContext(context, { role, writesAllowed, problems });
       contexts.push(context);
       const page = await context.newPage();
       page.account = accounts[role];
+      page.seed = seed;
       return page;
     });
 

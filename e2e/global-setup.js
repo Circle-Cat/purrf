@@ -11,6 +11,14 @@ import {
 } from "./lib/accounts.js";
 import { apiAs, getData } from "./lib/api.js";
 import { browserCookies } from "./lib/cookies.js";
+import { verifyFlags } from "./lib/flags.js";
+import {
+  SEED_STATE_FILE,
+  cleanup,
+  databaseUrl,
+  seed,
+  writeSeedState,
+} from "./lib/seed.js";
 
 const COMPANY_DOMAINS = ["@circlecat.org", "@u.circlecat.org"];
 
@@ -40,7 +48,7 @@ async function topUp(role, me, superToken) {
   if (missing.length === 0) return me;
   if (!superToken) {
     throw new Error(
-      `${role}: missing ${missing.join(", ")} and no .tokens/superadmin.txt to grant them`,
+      `${role}: missing ${missing.join(", ")} and no superadmin token (an account with permission.manage) to grant them`,
     );
   }
   const api = await apiAs(superToken);
@@ -137,9 +145,92 @@ export default async function globalSetup() {
     console.log(`[setup] ${role}: user ${me.user_id} ${me.email}`);
   }
   const any = ROLES.map(readToken).find(Boolean);
-  if (!any) throw new Error("No tokens in .tokens/; see README.md");
+  if (!any)
+    throw new Error("No tokens in e2e.local.json or .tokens/; see README.md");
   await checkBanner(any);
+  await verifyFlags(
+    Object.fromEntries(
+      Object.keys(state).map((role) => [role, readToken(role)]),
+    ),
+  );
 
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+
+  fs.rmSync(SEED_STATE_FILE, { force: true });
+  await seedIfPossible(state);
+}
+
+/** The round in progress and the last round that started before it. */
+async function pickRounds(token) {
+  const api = await apiAs(token);
+  try {
+    const rounds = await getData(
+      api,
+      "/api/mentorship/rounds?need_details=true",
+    );
+    const current = rounds.find((r) => r.isInProgress);
+    if (!current) return {};
+    const started = (r) => r.timeline?.promotionStartAt ?? "";
+    const prev = rounds
+      .filter((r) => r.id !== current.id && started(r) < started(current))
+      .sort((a, b) => started(b).localeCompare(started(a)))[0];
+    const run = await getData(
+      api,
+      `/api/mentorship/admin/match-runs/${current.id}`,
+    ).catch(() => null);
+    const busy = Boolean(
+      run &&
+      (run.status === "running" ||
+        run.editLock ||
+        // E2E_TAKE_MATCHING=1 says someone's leftover draft may be thrown
+        // away by the suite's own run; locks, running runs and pending
+        // publish requests still win.
+        (run.draftCount > 0 && !process.env.E2E_TAKE_MATCHING) ||
+        run.publishRequest),
+    );
+    return { current, prev, matchingBusy: busy };
+  } finally {
+    await api.dispose();
+  }
+}
+
+/**
+ * Seed the round in progress for the write tests. Skipped, with the write
+ * tests skipping after it, on staging, without a database URL, or without
+ * the admin and member accounts.
+ */
+async function seedIfPossible(state) {
+  const why = !ENV.writesAllowed
+    ? `${ENV.name} is read-only`
+    : !databaseUrl()
+      ? "no database URL"
+      : !state.admin || !state.member
+        ? "admin and member tokens are both needed"
+        : null;
+  if (why) {
+    console.log(`[setup] not seeding: ${why}; write tests will be skipped`);
+    return;
+  }
+  const { current, prev, matchingBusy } = await pickRounds(readToken("admin"));
+  if (!current || !prev) {
+    console.log(
+      "[setup] not seeding: no round in progress with a round before it",
+    );
+    return;
+  }
+  const ids = {
+    roundId: current.id,
+    prevRoundId: prev.id,
+    memberId: state.member.userId,
+  };
+  cleanup(ids);
+  const seeded = seed(ids);
+  writeSeedState({ ...seeded, roundName: current.name, matchingBusy });
+  console.log(
+    `[setup] seeded ${seeded.people.length} people into ${current.name}` +
+      (matchingBusy
+        ? "; its matching is in use, matching tests will be skipped"
+        : ""),
+  );
 }

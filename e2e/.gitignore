@@ -3,3 +3,5 @@ node_modules/
 .state/
 playwright-report/
 test-results/
+.flags.json
+e2e.local.json

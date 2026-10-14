@@ -1,0 +1,10 @@
+{
+  "tokens": {
+    "superadmin": "",
+    "admin": "",
+    "reviewer": "",
+    "member": ""
+  },
+  "databaseUrl": "",
+  "flags": {}
+}
