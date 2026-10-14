@@ -38,12 +38,16 @@ test.describe("mentorship admin pages", { tag: "@smoke" }, () => {
     test.skip(!round, "no round to look at");
     await searchParticipants(page, round);
 
-    const rows = page.locator("table").last().locator("tbody tr");
+    // A person with no name gets an empty link, so take the first named one.
+    const names = page
+      .getByRole("row")
+      .filter({ hasText: /ID \d+\b/ })
+      .getByRole("link", { name: /\S/ });
     test.skip(
-      (await rows.count()) === 0,
+      (await names.count()) === 0,
       `${round.name} has no registered people`,
     );
-    await rows.first().locator("td").nth(1).getByText(/\S/).first().click();
+    await names.first().click();
 
     await expect(page).toHaveURL(
       /\/mentorship-management\/participants\/\d+\?round=\d+/,

@@ -1,19 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readLocal } from "./local.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const TOKENS_DIR = path.join(ROOT, ".tokens");
 export const STATE_FILE = path.join(ROOT, ".state", "accounts.json");
 
 /**
- * What each test account must hold. The super admin only tops these up and
- * never drives a test: it bypasses permission checks and would hide bugs in
- * them.
+ * What each test account must hold. The `superadmin` token, any account
+ * holding permission.manage, only tops these up and never drives a test.
  */
 export const ROLE_PERMISSIONS = {
   admin: [
     "dashboard.activity_summary.read",
+    // The Dashboard page also reads the LDAP directory.
+    "directory.microsoft_ldap.read",
     "internal_activity.read",
     "mentorship.admin.read",
     "mentorship.admin.write",
@@ -31,14 +33,20 @@ export const ROLE_PERMISSIONS = {
     "training.admin.read",
     "training.admin.write",
   ],
-  reviewer: ["mentorship.admin.read", "mentorship.approve"],
+  // user.admin lets it decide the block request a test raises.
+  reviewer: ["mentorship.admin.read", "mentorship.approve", "user.admin"],
   member: [],
 };
 
 export const ROLES = Object.keys(ROLE_PERMISSIONS);
 
-/** The role's Cloudflare Access cookie, or null when none was handed over. */
+/**
+ * The role's Cloudflare Access cookie, from `e2e.local.json` or
+ * `.tokens/<role>.txt`, or null when none was handed over.
+ */
 export function readToken(role) {
+  const local = readLocal().tokens?.[role]?.trim();
+  if (local) return local;
   const file = path.join(TOKENS_DIR, `${role}.txt`);
   if (!fs.existsSync(file)) return null;
   const token = fs.readFileSync(file, "utf8").trim();
