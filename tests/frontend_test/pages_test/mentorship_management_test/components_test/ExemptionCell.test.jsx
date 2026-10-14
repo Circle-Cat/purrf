@@ -142,4 +142,57 @@ describe("ExemptionCell", () => {
       expect(toast.error).toHaveBeenCalledWith("The round is not in progress."),
     );
   });
+
+  it("does not offer the person as the reviewer of their own exemption", async () => {
+    const user = userEvent.setup();
+    getMentorshipApprovers.mockResolvedValue({
+      data: [
+        { userId: 8, name: "Rae Kim" },
+        { userId: 12, name: "Sam Oyelaran" },
+        { userId: 21, name: "Ann Lee" },
+      ],
+    });
+    render(
+      <ExemptionCell
+        row={rowOf(null)}
+        roundId="7"
+        canWrite
+        canApprove={false}
+        userId={9}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Request exemption" }));
+    await screen.findByRole("option", { name: "Sam Oyelaran" });
+
+    expect(
+      screen.queryByRole("option", { name: "Ann Lee" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Ann Lee cannot review a request about themselves."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer the person when the request is handed over", async () => {
+    const user = userEvent.setup();
+    getMentorshipApprovers.mockResolvedValue({
+      data: [
+        { userId: 8, name: "Rae Kim" },
+        { userId: 12, name: "Sam Oyelaran" },
+        { userId: 21, name: "Ann Lee" },
+      ],
+    });
+    renderCell();
+
+    await user.click(screen.getByRole("button", { name: "Reassign reviewer" }));
+    await screen.findByRole("option", { name: "Sam Oyelaran" });
+
+    expect(
+      screen.queryByRole("option", { name: "Ann Lee" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Rae Kim" }),
+    ).not.toBeInTheDocument();
+  });
 });
