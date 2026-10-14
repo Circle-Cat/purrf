@@ -220,8 +220,9 @@ class BoardService:
             interview_scheduling_service (InterviewSchedulingService): Owns
                 every Calendar-touching interview write. ``change_stage``/
                 ``set_round`` delegate the opt-in "cancel the meeting on the
-                round being left" cleanup to its ``cancel_for_round``, rather
-                than reaching for the Calendar themselves.
+                round being left" cleanup to its ``release_for_round`` and
+                ``delete_calendar_events``, rather than reaching for the
+                Calendar themselves.
             mentorship_admission_service (MentorshipAdmissionService): Owns
                 what an admission means -- the onboarding training task, and
                 the admission email a mentor receives. A no-op for every
@@ -1652,9 +1653,10 @@ class BoardService:
         of OFFER (no rubric exists for it).
 
         When ``dto.cancel_interview`` is set, the meeting booked on the
-        stage+round being LEFT is cancelled in this same transaction (see
-        ``InterviewSchedulingService.cancel_for_round``, which no-ops when that
-        round has no meeting or its meeting has already started). Without it,
+        stage+round being LEFT is removed in this same transaction and its
+        Calendar event deleted once the transaction commits (see
+        ``InterviewSchedulingService.release_for_round``, which no-ops when
+        that round has no meeting or its meeting has already started). Without it,
         such a meeting stays live on everyone's calendar while becoming
         invisible in Purrf, which only ever shows the current stage+round's.
 
@@ -1720,19 +1722,23 @@ class BoardService:
         # Last thing before the writes begin, so a rejected transition or an
         # unqualified assignee never costs the candidate their meeting, and
         # inside this transaction, so the cancellation and the decision that
-        # asked for it stand or fall together.
+        # asked for it stand or fall together. The Calendar event goes only
+        # after the commit: Google mails the cancellation on delete.
+        released_event_id = None
         if dto.cancel_interview:
-            await self.interview_scheduling_service.cancel_for_round(
-                session,
-                application_id,
-                from_stage,
-                application.current_round,
-                current_user.user_id,
-                via=(
-                    "rejected"
-                    if dto.to_stage == ApplicationStage.REJECTED
-                    else "stage_changed"
-                ),
+            released_event_id = (
+                await self.interview_scheduling_service.release_for_round(
+                    session,
+                    application_id,
+                    from_stage,
+                    application.current_round,
+                    current_user.user_id,
+                    via=(
+                        "rejected"
+                        if dto.to_stage == ApplicationStage.REJECTED
+                        else "stage_changed"
+                    ),
+                )
             )
 
         if dto.to_stage == ApplicationStage.REJECTED:
@@ -1809,6 +1815,10 @@ class BoardService:
                 },
             )
         await session.commit()
+        if released_event_id is not None:
+            await self.interview_scheduling_service.delete_calendar_events([
+                released_event_id
+            ])
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
         # is never in that window, so this is always False here.
@@ -2081,15 +2091,19 @@ class BoardService:
         )
         # Only a move to a DIFFERENT round leaves a round (and therefore a
         # meeting) behind; re-setting the current round leaves the meeting
-        # exactly where the page still shows it.
+        # exactly where the page still shows it. As in change_stage, the
+        # Calendar event goes only after the commit.
+        released_event_id = None
         if dto.cancel_interview and dto.round != from_round:
-            await self.interview_scheduling_service.cancel_for_round(
-                session,
-                application_id,
-                application.stage,
-                from_round,
-                current_user.user_id,
-                via="round_advanced",
+            released_event_id = (
+                await self.interview_scheduling_service.release_for_round(
+                    session,
+                    application_id,
+                    application.stage,
+                    from_round,
+                    current_user.user_id,
+                    via="round_advanced",
+                )
             )
 
         application.current_round = dto.round
@@ -2122,6 +2136,10 @@ class BoardService:
             },
         )
         await session.commit()
+        if released_event_id is not None:
+            await self.interview_scheduling_service.delete_calendar_events([
+                released_event_id
+            ])
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
         )

@@ -468,11 +468,17 @@ class InterviewSchedulingService:
     ) -> bool:
         """Cancel one round's still-upcoming meeting, mid-caller-transaction.
 
-        The ghost-meeting cleanup ``BoardService``'s advance/round-advance/
-        reject paths drive: the detail page only ever surfaces the meeting on
-        the application's CURRENT stage+round, so once a decision moves the
-        application on, a meeting left booked on the round behind it is live on
-        everyone's calendar and invisible in Purrf.
+        The ghost-meeting cleanup: the detail page only ever surfaces the
+        meeting on the application's CURRENT stage+round, so once a decision
+        moves the application on, a meeting left booked on the round behind it
+        is live on everyone's calendar and invisible in Purrf.
+
+        This deletes the Calendar event before the caller commits, so a
+        caller whose transaction can still fail afterwards should call
+        ``release_for_round`` instead and ``delete_calendar_events`` after its
+        commit, as ``BoardService``'s advance/round-advance/reject paths do.
+        The block sweep still uses this one: its commit belongs to whichever
+        flow applied the block (an approval decision or a direct block).
 
         Four deliberate differences from ``cancel``, which is the recruiter's
         own explicit "cancel this meeting" action:
@@ -509,21 +515,90 @@ class InterviewSchedulingService:
             bool: True if a meeting was cancelled; False if that round had
                 none booked, or the one it had has already started.
         """
+        event_id = await self.release_for_round(
+            session, application_id, stage, round, actor_user_id, via=via
+        )
+        if event_id is None:
+            return False
+        await self.delete_calendar_events([event_id])
+        return True
+
+    async def release_for_round(
+        self,
+        session: AsyncSession,
+        application_id: int,
+        stage: ApplicationStage,
+        round: int,
+        actor_user_id: int,
+        *,
+        via: str,
+    ) -> str | None:
+        """The database half of ``cancel_for_round``; leaves the Calendar alone.
+
+        Removes the round's still-upcoming meeting row and records its
+        ``interview_cancelled`` entry inside the caller's transaction, and
+        hands back the Calendar event id for the caller to pass to
+        ``delete_calendar_events`` once that transaction has committed. Google
+        mails the cancellation the moment the event is deleted, so deleting it
+        before the commit would announce a decision that may still roll back.
+
+        Args:
+            session (AsyncSession): The caller's active, uncommitted session.
+            application_id (int): The application being decided on.
+            stage (ApplicationStage): The stage being left.
+            round (int): The round being left, within that stage.
+            actor_user_id (int): Recorded as the activity entry's actor.
+            via (str): As in ``cancel_for_round``.
+
+        Returns:
+            str | None: The event to delete after commit; None if that round
+                had no meeting booked, or the one it had has already started.
+        """
         interview = await self.application_interview_repository.get(
             session, application_id, stage, round
         )
         if interview is None:
-            return False
+            return None
         if interview.start_at <= datetime.now(timezone.utc):
-            return False
-        await self._delete_meeting(
+            return None
+        await self._remove_meeting_row(
             session,
             interview,
             application_id,
             actor_user_id,
             extra_details={"via": via},
         )
-        return True
+        return interview.google_event_id
+
+    async def delete_calendar_events(self, event_ids: list[str]) -> None:
+        """Delete interview Calendar events; Google mails the cancellations.
+
+        Never raises. A caller running this after its commit has already
+        made the decision stand, and a delete Google refuses is logged and
+        swallowed under the same end-state-wins policy as ``_delete_meeting``.
+
+        Args:
+            event_ids (list[str]): Calendar event ids to delete.
+        """
+        if not event_ids:
+            return
+        try:
+            _succeeded, failed = await self.meeting_scheduling_service.cancel(
+                list(event_ids), calendar_id=self.interview_calendar_id
+            )
+        except Exception:
+            self.logger.exception(
+                "[InterviewSchedulingService] Failed to delete Calendar "
+                "event(s) %s; their rows are already gone.",
+                event_ids,
+            )
+            return
+        if failed:
+            self.logger.warning(
+                "[InterviewSchedulingService] Failed to delete Calendar "
+                "event(s) %s; their rows are already gone.",
+                failed,
+            )
 
     async def _delete_meeting(
         self,
@@ -535,10 +610,9 @@ class InterviewSchedulingService:
     ) -> None:
         """Drop a meeting's Calendar event, its row, and log the cancellation.
 
-        Shared by ``cancel`` and ``cancel_for_round`` so the Google call, the
-        end-state-wins policy on a failed delete, and the activity payload
-        exist in exactly one place. Neither the application's ``sub_status``
-        nor the commit belongs here — those differ between the two callers.
+        Used by ``cancel``. The activity payload lives in
+        ``_remove_meeting_row``, shared with ``release_for_round``. Neither the
+        application's ``sub_status`` nor the commit belongs here.
 
         A Calendar delete that Google refuses is logged and swallowed: the row
         is removed anyway, because the desired end state is "this meeting is
@@ -553,14 +627,6 @@ class InterviewSchedulingService:
             extra_details (dict | None): Extra keys merged into the
                 ``interview_cancelled`` details payload.
         """
-        # The interview entity stores no attendee snapshot itself (see its
-        # docstring); the assignee it was scheduled with comes from the
-        # assignment row, read before the row is deleted below.
-        assignment = await self.application_assignment_repository.get(
-            session, application_id, interview.stage, interview.round
-        )
-        cancelled_assignee_id = assignment.assignee_id if assignment else None
-
         _succeeded, failed = await self.meeting_scheduling_service.cancel(
             [interview.google_event_id],
             calendar_id=self.interview_calendar_id,
@@ -573,6 +639,26 @@ class InterviewSchedulingService:
                 failed,
                 application_id,
             )
+        await self._remove_meeting_row(
+            session, interview, application_id, actor_user_id, extra_details
+        )
+
+    async def _remove_meeting_row(
+        self,
+        session: AsyncSession,
+        interview,
+        application_id: int,
+        actor_user_id: int,
+        extra_details: dict | None = None,
+    ) -> None:
+        """Delete a meeting's row and log the cancellation; no Calendar call."""
+        # The interview entity stores no attendee snapshot itself (see its
+        # docstring); the assignee it was scheduled with comes from the
+        # assignment row, read before the row is deleted below.
+        assignment = await self.application_assignment_repository.get(
+            session, application_id, interview.stage, interview.round
+        )
+        cancelled_assignee_id = assignment.assignee_id if assignment else None
 
         await self.application_interview_repository.delete(session, interview)
         await record_event(

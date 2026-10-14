@@ -157,11 +157,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         # The interview collaborator board_service delegates the "cancel the
         # meeting on the round being left" action to. autospec so a signature
-        # drift on cancel_for_round fails the test instead of silently
-        # accepting any arity. Default True = "there was a future meeting and
-        # it was cancelled"; the flag-off tests assert it is never awaited.
+        # drift on release_for_round fails the test instead of silently
+        # accepting any arity. Default "evt-1" = "there was a future meeting,
+        # its row is gone and its event awaits deletion"; the flag-off tests
+        # assert it is never awaited.
         self.interview_svc = create_autospec(InterviewSchedulingService, instance=True)
-        self.interview_svc.cancel_for_round.return_value = True
+        self.interview_svc.release_for_round.return_value = "evt-1"
         # autospec so a signature drift on on_admitted fails the test
         # instead of silently accepting any arity.
         self.mentorship_admission_svc = create_autospec(
@@ -3264,7 +3265,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # The stage+round being LEFT, not the target: the meeting that just
         # became unreachable in the UI is behavioral round 2's, and the
         # application is about to read tech round 1.
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3282,7 +3283,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dto.cancel_interview)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_change_stage_reject_cancels_with_the_reject_source(self):
         self._setup_behavioral_application()
@@ -3294,7 +3295,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3313,7 +3314,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             commits_seen_at_cancel.append(self.session.commit.await_count)
             return True
 
-        self.interview_svc.cancel_for_round = AsyncMock(side_effect=record)
+        self.interview_svc.release_for_round = AsyncMock(side_effect=record)
         self._setup_behavioral_application()
 
         dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
@@ -3333,7 +3334,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_set_round_cancels_the_left_rounds_meeting_when_asked(self):
         self._setup_behavioral_application(current_round=1)
@@ -3341,7 +3342,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=2, cancel_interview=True)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3357,7 +3358,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dto.cancel_interview)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_set_round_to_the_same_round_never_cancels(self):
         """Re-setting the current round leaves no round behind, so there is no
@@ -3368,7 +3369,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=2, cancel_interview=True)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_set_round_moving_backward_cancels_the_round_it_leaves(self):
         """Rescue lanes move an application back a round; the round being left
@@ -3378,7 +3379,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=1, cancel_interview=True)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3394,7 +3395,74 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
+
+    def _track_cancel_order(self):
+        manager = MagicMock()
+        manager.attach_mock(self.interview_svc.release_for_round, "release")
+        manager.attach_mock(self.session.commit, "commit")
+        manager.attach_mock(self.interview_svc.delete_calendar_events, "delete")
+        return manager
+
+    async def test_change_stage_deletes_the_calendar_event_only_after_commit(self):
+        """Google mails the cancellation the moment the event is deleted, so it
+        must not happen for a decision that could still roll back."""
+        self._setup_behavioral_application(current_round=2)
+        manager = self._track_cancel_order()
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(
+            [c[0] for c in manager.mock_calls], ["release", "commit", "delete"]
+        )
+        self.interview_svc.delete_calendar_events.assert_awaited_once_with(["evt-1"])
+
+    async def test_change_stage_failing_after_the_release_deletes_no_event(self):
+        self._setup_behavioral_application(current_round=2)
+        self.app_repo.update = AsyncMock(side_effect=RuntimeError("db down"))
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        with self.assertRaises(RuntimeError):
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.release_for_round.assert_awaited_once()
+        self.session.commit.assert_not_awaited()
+        self.interview_svc.delete_calendar_events.assert_not_awaited()
+
+    async def test_change_stage_with_nothing_released_deletes_no_event(self):
+        """No upcoming meeting on the round being left: nothing to delete."""
+        self._setup_behavioral_application()
+        self.interview_svc.release_for_round.return_value = None
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.session.commit.assert_awaited_once()
+        self.interview_svc.delete_calendar_events.assert_not_awaited()
+
+    async def test_set_round_deletes_the_calendar_event_only_after_commit(self):
+        self._setup_behavioral_application(current_round=1)
+        manager = self._track_cancel_order()
+
+        dto = RoundChangeDto(round=2, cancel_interview=True)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(
+            [c[0] for c in manager.mock_calls], ["release", "commit", "delete"]
+        )
+        self.interview_svc.delete_calendar_events.assert_awaited_once_with(["evt-1"])
+
+    async def test_set_round_failing_after_the_release_deletes_no_event(self):
+        self._setup_behavioral_application(current_round=1)
+        self.app_repo.update = AsyncMock(side_effect=RuntimeError("db down"))
+
+        dto = RoundChangeDto(round=2, cancel_interview=True)
+        with self.assertRaises(RuntimeError):
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.session.commit.assert_not_awaited()
+        self.interview_svc.delete_calendar_events.assert_not_awaited()
 
     # Far from any real "now" in both directions, so these never turn into
     # time bombs.
