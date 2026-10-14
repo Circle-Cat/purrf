@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listNotifiedStages } from "@/api/mentorshipEmailApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 const NONE = new Map();
 
@@ -47,31 +48,26 @@ const byUser = (rows) =>
  */
 export const useNotifiedStages = (roundId) => {
   const [stagesByUser, setStagesByUser] = useState(NONE);
+  // One guard for the round's load and every reload, so a reload still in
+  // flight for a round switched away from cannot land on the new one.
+  const { begin, isCurrent } = useRequestGuard();
 
-  useEffect(() => {
-    setStagesByUser(NONE);
-    if (!roundId) return undefined;
-    let cancelled = false;
-    listNotifiedStages(roundId)
+  const load = useCallback(() => {
+    const seq = begin();
+    if (!roundId) return Promise.resolve();
+    return listNotifiedStages(roundId)
       .then((rows) => {
-        if (!cancelled) setStagesByUser(byUser(rows));
+        if (isCurrent(seq)) setStagesByUser(byUser(rows));
       })
       .catch((err) => {
         console.error("Failed to fetch the notified stages", err);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [roundId]);
+  }, [begin, isCurrent, roundId]);
 
-  const reload = useCallback(() => {
-    if (!roundId) return Promise.resolve();
-    return listNotifiedStages(roundId)
-      .then((rows) => setStagesByUser(byUser(rows)))
-      .catch((err) => {
-        console.error("Failed to fetch the notified stages", err);
-      });
-  }, [roundId]);
+  useEffect(() => {
+    setStagesByUser(NONE);
+    load();
+  }, [load]);
 
-  return { stagesByUser, reload };
+  return { stagesByUser, reload: load };
 };

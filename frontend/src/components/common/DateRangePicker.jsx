@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatLocalYmd } from "@/utils/dateTime";
 
 /**
  * DateRangePicker Component
@@ -26,7 +27,7 @@ export default function DateRangePicker({
   defaultEndDate = "",
   onChange,
 }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = formatLocalYmd(new Date());
   const [startDate, setStartDate] = useState(defaultStartDate || "");
   const [endDate, setEndDate] = useState(defaultEndDate || "");
 

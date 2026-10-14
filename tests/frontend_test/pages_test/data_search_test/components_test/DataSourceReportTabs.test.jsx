@@ -52,6 +52,21 @@ vi.mock("@/pages/DataSearch/components/GerritReportTable", () => ({
   )),
 }));
 
+// The test runner's zone is UTC and cannot be changed from a test, so a zone
+// seven hours behind is stood in for by shifting the local calendar getters.
+const withLocalZoneBehindUtc = (hours) => {
+  const shifted = (date) => new Date(date.getTime() - hours * 3600 * 1000);
+  vi.spyOn(Date.prototype, "getFullYear").mockImplementation(function () {
+    return shifted(this).getUTCFullYear();
+  });
+  vi.spyOn(Date.prototype, "getMonth").mockImplementation(function () {
+    return shifted(this).getUTCMonth();
+  });
+  vi.spyOn(Date.prototype, "getDate").mockImplementation(function () {
+    return shifted(this).getUTCDate();
+  });
+};
+
 describe("DataSourceReportTabs Component", () => {
   // Common search parameters for testing
   const commonSearchParams = {
@@ -68,6 +83,33 @@ describe("DataSourceReportTabs Component", () => {
   afterEach(() => {
     // Clean up the DOM after each test run
     cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("treats a range ending on the local today as still open", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 19:00 on Mar 10 seven hours behind UTC, already Mar 11 in UTC.
+    vi.setSystemTime(new Date("2026-03-11T02:00:00Z"));
+    withLocalZoneBehindUtc(7);
+
+    render(
+      <DataSourceReportTabs
+        committedSearchParams={{
+          ...commonSearchParams,
+          endDate: "2026-03-10",
+          selectedDataSources: { [DataSourceNames.JIRA]: ["jira-project-1"] },
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(JiraReportTable).toHaveBeenCalled());
+    const props = JiraReportTable.mock.calls.at(-1)[0];
+    expect(props.jiraReportProps.searchParams.statusList).toEqual([
+      JiraIssueStatus.DONE,
+      JiraIssueStatus.IN_PROGRESS,
+      JiraIssueStatus.TODO,
+    ]);
   });
 
   it("should not render tabs (no committedSearchParams)", () => {
