@@ -2,7 +2,11 @@
 
 from unittest import TestCase, main
 
-from backend.common.name_utils import display_name_of, user_display_name
+from backend.common.name_utils import (
+    display_name_of,
+    display_name_or_id,
+    user_display_name,
+)
 
 
 class UserDisplayNameTest(TestCase):
@@ -59,6 +63,25 @@ class DisplayNameOfTest(TestCase):
     def test_returns_empty_string_for_a_missing_row(self):
         """Callers pass None when the users row could not be loaded."""
         assert display_name_of(None) == ""
+
+
+class DisplayNameOrIdTest(TestCase):
+    class _Row:
+        def __init__(self, user_id, first_name, last_name, preferred_name=None):
+            self.user_id = user_id
+            self.first_name = first_name
+            self.last_name = last_name
+            self.preferred_name = preferred_name
+
+    def test_returns_the_display_name_when_there_is_one(self):
+        assert display_name_or_id(self._Row(270, "Alice", "Anderson", "Ali")) == "Ali"
+
+    def test_falls_back_to_the_user_id_for_a_nameless_row(self):
+        """An email-code sign-in creates the account with empty names."""
+        assert display_name_or_id(self._Row(270, "", "")) == "User 270"
+
+    def test_whitespace_only_names_count_as_no_name(self):
+        assert display_name_or_id(self._Row(270, " ", " ", " ")) == "User 270"
 
 
 if __name__ == "__main__":

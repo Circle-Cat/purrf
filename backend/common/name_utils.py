@@ -68,3 +68,19 @@ def display_name_of(user) -> str:
         last_name=user.last_name,
         preferred_name=user.preferred_name,
     )
+
+
+def display_name_or_id(user) -> str:
+    """``display_name_of``, or ``"User <id>"`` for a person with no name.
+
+    An account created by an email-code sign-in has no first, last or preferred
+    name. Wherever such a person is named in text, an empty string leaves a gap
+    ("approved by ."), so this falls back to their user id instead.
+
+    Args:
+        user: A loaded ``UsersEntity``.
+
+    Returns:
+        str: The resolved display name, or ``"User <id>"`` when it is empty.
+    """
+    return display_name_of(user) or f"User {user.user_id}"

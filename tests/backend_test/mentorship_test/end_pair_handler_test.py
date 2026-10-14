@@ -255,6 +255,24 @@ class EndPairHandlerTest(unittest.IsolatedAsyncioTestCase):
             notes[MENTEE]["body"], f"Pair ended; matched -> un_matched. {tail}"
         )
 
+    async def test_a_nameless_approver_is_named_by_user_id(self):
+        """An email-code account has no name; the note must not read
+        "approved by ."."""
+        people = self.users.get_all_by_ids.side_effect
+
+        def nameless_reviewer(session, ids):
+            rows = people(session, ids)
+            for row in rows:
+                if row.user_id == REVIEWER:
+                    row.first_name = row.last_name = ""
+            return rows
+
+        self.users.get_all_by_ids.side_effect = nameless_reviewer
+
+        await self.handler.execute(self.session, _request(), actor_id=REVIEWER)
+
+        self.assertIn(f"approved by User {REVIEWER}.", self._notes()[MENTOR]["body"])
+
     async def test_events_name_both_people_and_the_round(self):
         details = await self.handler.event_details(self.session, _request())
 
