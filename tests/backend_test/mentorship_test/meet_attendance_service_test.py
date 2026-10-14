@@ -973,6 +973,37 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(meeting.has_unknown_absent)
         self.assertIsNotNone(meeting.last_sync_at)
 
+    async def test_meeting_whose_attendance_an_admin_set_is_not_written(self):
+        """The selection query already leaves these rows out; this pins that
+        the sweep never overwrites one even when it is handed it, and that
+        Meet is not asked about it."""
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
+        pair, meeting = self._make_active_pair_and_meeting()
+        meeting.absent_user_id = self.mentee.user_id
+        meeting.late_user_ids = []
+        marked_at = datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc)
+        meeting.attendance_set_by_admin_at = marked_at
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
+            meeting
+        ]
+        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.mock_google_service.list_conferences_by_meeting_code.assert_not_called()
+        self.assertEqual(result["meetings_selected"], 1)
+        self.assertEqual(result["meetings_set_by_admin"], 1)
+        self.assertEqual(result["meetings_reconciled"], 0)
+        self.assertEqual(result["meetings_failed"], 0)
+        self.assertFalse(meeting.is_completed)
+        self.assertEqual(meeting.absent_user_id, self.mentee.user_id)
+        self.assertEqual(meeting.late_user_ids, [])
+        self.assertIsNone(meeting.last_sync_at)
+        self.assertEqual(meeting.attendance_set_by_admin_at, marked_at)
+
     async def test_two_signed_in_meeting_not_completed(self):
         """Both attended but duration < 80% → is_completed=False, no absence flag."""
         self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
