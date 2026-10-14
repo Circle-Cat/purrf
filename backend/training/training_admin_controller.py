@@ -415,7 +415,9 @@ class TrainingAdminController:
             status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
         )
 
-    async def upload_package(self, course_id: int, file: UploadFile = File(...)):
+    async def upload_package(
+        self, course_id: int, current_user, file: UploadFile = File(...)
+    ):
         """Store a SCORM package and point the course at it.
 
         Rejections come back as 400 with the rule that was broken, because the
@@ -424,7 +426,7 @@ class TrainingAdminController:
         archive_bytes = await file.read()
         async with self.database.session() as session:
             result = await self.training_package_service.upload_package(
-                session, course_id, archive_bytes
+                session, course_id, archive_bytes, current_user.user_id
             )
         return api_response(
             message="Package uploaded.",

@@ -1,6 +1,7 @@
 """The course catalogue: what exists, and what may be assigned."""
 
 from backend.common.mentorship_enums import TrainingPackageState
+from backend.common.name_utils import display_name_or_id
 from backend.common.training_links import external_link_for
 from backend.dto.training_course_dto import (
     StagedPackageDto,
@@ -54,8 +55,13 @@ def to_course_dto(
     pending_package: TrainingCoursePackageEntity | None,
     assigned_count: int,
     unfinished_count: int,
+    uploader_name: str | None = None,
 ) -> TrainingCourseDto:
-    """Project one course row, its live and pending packages, and headcounts."""
+    """Project one course row, its live and pending packages, and headcounts.
+
+    ``uploader_name`` names whoever uploaded the pending package; None when
+    there is none or the upload predates the column being written.
+    """
     return TrainingCourseDto(
         course_id=course.course_id,
         name=course.name,
@@ -90,6 +96,7 @@ def to_course_dto(
                 package_version=pending_package.package_version,
                 uploaded_at=pending_package.uploaded_at,
                 uploaded_by_user_id=pending_package.uploaded_by_user_id,
+                uploaded_by_name=uploader_name,
                 verified_completable_at=pending_package.verified_completable_at,
                 verified_by_user_id=pending_package.verified_by_user_id,
             )
@@ -106,7 +113,11 @@ class TrainingCourseService:
     """
 
     def __init__(
-        self, logger, training_course_repository, training_course_package_repository
+        self,
+        logger,
+        training_course_repository,
+        training_course_package_repository,
+        users_repository,
     ):
         """
         Args:
@@ -115,10 +126,13 @@ class TrainingCourseService:
                 reads and writes.
             training_course_package_repository (TrainingCoursePackageRepository):
                 The live package behind each course.
+            users_repository (UsersRepository): Names the uploader of a
+                staged package.
         """
         self.logger = logger
         self.training_course_repository = training_course_repository
         self.training_course_package_repository = training_course_package_repository
+        self.users_repository = users_repository
 
     async def list_courses(
         self, session, include_inactive: bool = True
@@ -135,16 +149,38 @@ class TrainingCourseService:
         slots = await self.training_course_package_repository.packages_for(
             session, [course.course_id for course, _, _ in rows]
         )
-        return [
-            to_course_dto(
-                course,
-                slots.get(course.course_id, {}).get(TrainingPackageState.LIVE),
-                slots.get(course.course_id, {}).get(TrainingPackageState.PENDING),
-                assigned,
-                unfinished,
+        pendings = [slot.get(TrainingPackageState.PENDING) for slot in slots.values()]
+        names = await self._uploader_names(session, pendings)
+        dtos = []
+        for course, assigned, unfinished in rows:
+            pending = slots.get(course.course_id, {}).get(TrainingPackageState.PENDING)
+            dtos.append(
+                to_course_dto(
+                    course,
+                    slots.get(course.course_id, {}).get(TrainingPackageState.LIVE),
+                    pending,
+                    assigned,
+                    unfinished,
+                    names.get(pending.uploaded_by_user_id) if pending else None,
+                )
             )
-            for course, assigned, unfinished in rows
-        ]
+        return dtos
+
+    async def _uploader_names(self, session, packages) -> dict[int, str]:
+        """Display names of the people who uploaded these packages, by user_id.
+
+        One lookup for the whole list. A person with no name reads as
+        "User <id>".
+        """
+        ids = sorted({
+            package.uploaded_by_user_id
+            for package in packages
+            if package is not None and package.uploaded_by_user_id is not None
+        })
+        if not ids:
+            return {}
+        users = await self.users_repository.get_all_by_ids(session, ids)
+        return {user.user_id: display_name_or_id(user) for user in users}
 
     async def create_course(
         self, session, payload: TrainingCourseCreateDto
@@ -209,4 +245,12 @@ class TrainingCourseService:
         pending = await self.training_course_package_repository.get_by_state(
             session, course_id, TrainingPackageState.PENDING
         )
-        return to_course_dto(course, package, pending, assigned_count, unfinished_count)
+        names = await self._uploader_names(session, [pending])
+        return to_course_dto(
+            course,
+            package,
+            pending,
+            assigned_count,
+            unfinished_count,
+            names.get(pending.uploaded_by_user_id) if pending else None,
+        )

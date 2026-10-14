@@ -29,6 +29,12 @@ from backend.training.scorm_package import (
 from backend.training.training_storage import content_type_for
 
 
+_STAGED_PACKAGE_CHANGED = (
+    "The staged package changed while this was in progress. Reload the page "
+    "to see what is staged now."
+)
+
+
 class TrainingPackageService:
     """Turning an uploaded zip into a staged course package.
 
@@ -65,7 +71,12 @@ class TrainingPackageService:
         self.training_storage = training_storage
 
     async def upload_package(
-        self, session, course_id: int, archive_bytes: bytes, now: datetime | None = None
+        self,
+        session,
+        course_id: int,
+        archive_bytes: bytes,
+        uploaded_by_user_id: int,
+        now: datetime | None = None,
     ) -> TrainingPackageUploadResultDto:
         """Validate a zip, store it, and stage it as the course's pending package.
 
@@ -150,6 +161,7 @@ class TrainingPackageService:
                     package_version=package_version,
                     reporting_mode=reporting_mode,
                     uploaded_at=moment,
+                    uploaded_by_user_id=uploaded_by_user_id,
                 ),
             )
             await session.commit()
@@ -312,14 +324,21 @@ class TrainingPackageService:
         )
         outgoing_prefix = live.storage_prefix if live is not None else None
 
-        cleared = await self.training_progress_repository.clear_resume_state(
-            session, course_id
-        )
-        if live is not None:
-            await self.training_course_package_repository.delete(session, live)
-        pending.state = TrainingPackageState.LIVE
-        await session.flush()
-        await session.commit()
+        try:
+            cleared = await self.training_progress_repository.clear_resume_state(
+                session, course_id
+            )
+            if live is not None:
+                await self.training_course_package_repository.delete(session, live)
+            pending.state = TrainingPackageState.LIVE
+            await session.flush()
+            await session.commit()
+        except (IntegrityError, StaleDataError) as error:
+            # Someone discarded, replaced or published this staged package
+            # between our read and our write. The rollback also undoes the
+            # resume-state reset, and no files have been deleted yet.
+            await session.rollback()
+            raise ConflictError(_STAGED_PACKAGE_CHANGED) from error
 
         self.logger.info(
             "[TrainingPackageService] course %s now serves package %s (%s); "
@@ -375,8 +394,14 @@ class TrainingPackageService:
             raise ConflictError("There is no staged package on this course to discard.")
 
         prefix = pending.storage_prefix
-        await self.training_course_package_repository.delete(session, pending)
-        await session.commit()
+        try:
+            await self.training_course_package_repository.delete(session, pending)
+            await session.commit()
+        except StaleDataError as error:
+            # Someone published, replaced or discarded it first. Its files
+            # now belong to whatever won, so they are left alone.
+            await session.rollback()
+            raise ConflictError(_STAGED_PACKAGE_CHANGED) from error
 
         self.logger.info(
             "[TrainingPackageService] course %s discarded staged package %s",

@@ -19,6 +19,7 @@ from backend.dto.training_course_dto import (
     TrainingCourseUpdateDto,
 )
 from backend.entity.training_course_entity import TrainingCourseEntity
+from backend.entity.users_entity import UsersEntity
 from backend.entity.training_course_package_entity import (
     TrainingCoursePackageEntity,
 )
@@ -244,11 +245,72 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.repository.add_course = AsyncMock(side_effect=_add_course)
         self.repository.get_course_by_id = AsyncMock(return_value=None)
         self.session.commit = AsyncMock(side_effect=lambda: self.calls.append("commit"))
+        self.users_repository = MagicMock()
+        self.users_repository.get_all_by_ids = AsyncMock(return_value=[])
         self.service = TrainingCourseService(
             logger=MagicMock(),
             training_course_repository=self.repository,
             training_course_package_repository=self.package_repository,
+            users_repository=self.users_repository,
         )
+
+    async def test_list_names_who_uploaded_the_staged_package(self):
+        course = _course(course_id=5)
+        pending = _package(
+            course_id=5,
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            uploaded_by_user_id=55,
+        )
+        self.repository.list_courses.return_value = [(course, 0, 0)]
+        self.package_repository.packages_for.return_value = {
+            5: {TrainingPackageState.PENDING: pending}
+        }
+        self.users_repository.get_all_by_ids.return_value = [
+            UsersEntity(user_id=55, first_name="Grace", last_name="Hopper")
+        ]
+
+        [dto] = await self.service.list_courses(self.session)
+
+        self.assertEqual(dto.staged.uploaded_by_name, "Grace Hopper")
+        # One lookup for the whole list, never one per course.
+        self.users_repository.get_all_by_ids.assert_awaited_once_with(
+            self.session, [55]
+        )
+
+    async def test_list_names_a_nameless_uploader_by_user_id(self):
+        pending = _package(
+            course_id=5,
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            uploaded_by_user_id=55,
+        )
+        self.repository.list_courses.return_value = [(_course(course_id=5), 0, 0)]
+        self.package_repository.packages_for.return_value = {
+            5: {TrainingPackageState.PENDING: pending}
+        }
+        self.users_repository.get_all_by_ids.return_value = [
+            UsersEntity(user_id=55, first_name="", last_name="")
+        ]
+
+        [dto] = await self.service.list_courses(self.session)
+
+        self.assertEqual(dto.staged.uploaded_by_name, "User 55")
+
+    async def test_list_leaves_an_unrecorded_uploader_unnamed(self):
+        """Packages staged before the uploader was recorded have no one to name."""
+        pending = _package(
+            course_id=5, package_id=2, state=TrainingPackageState.PENDING
+        )
+        self.repository.list_courses.return_value = [(_course(course_id=5), 0, 0)]
+        self.package_repository.packages_for.return_value = {
+            5: {TrainingPackageState.PENDING: pending}
+        }
+
+        [dto] = await self.service.list_courses(self.session)
+
+        self.assertIsNone(dto.staged.uploaded_by_name)
+        self.users_repository.get_all_by_ids.assert_not_awaited()
 
     async def test_list_carries_the_assignment_count_through(self):
         course = TrainingCourseEntity(
