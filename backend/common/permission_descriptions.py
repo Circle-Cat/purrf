@@ -35,7 +35,6 @@ PERMISSION_DESCRIPTIONS: dict[Permission, str] = _validate_complete({
     Permission.SYSTEM_SYNC: "Trigger a data sync job with external systems (Jira incremental update, Calendar history pull, meeting-attendance sync, Pub/Sub consumer).",
     Permission.SYSTEM_SUBSCRIBE: "Register webhook subscriptions with Microsoft Teams/Google Chat so Purrf receives their chat event notifications.",
     Permission.INTERNAL_ACTIVITY_READ: "View internal employee activity records (MS chat, Jira, Calendar, Gerrit, Google Chat summaries).",
-    Permission.DIRECTORY_MICROSOFT_LDAP_READ: "Read user directory data from Microsoft/LDAP.",
     Permission.DASHBOARD_ACTIVITY_SUMMARY_READ: "View the activity summary dashboard.",
     Permission.MENTORSHIP_ADMIN_READ: "Mentorship admin read access: the management page, per-round participant and completed-meeting counts, participant records with pair meeting logs, and cross-participant detail in meeting-log views (the basic round list needs no permission).",
     Permission.MENTORSHIP_ADMIN_WRITE: "Mentorship admin write access: create or edit mentorship rounds and edit mentorship meeting logs.",

@@ -115,7 +115,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_ldaps_and_names(self):
         """Test MICROSOFT_LDAPS_ENDPOINT (GET)."""
-        self._set_auth([Permission.DIRECTORY_MICROSOFT_LDAP_READ])
+        self._set_auth([Permission.INTERNAL_ACTIVITY_READ])
         self.ldap_service.get_ldaps_by_status_and_group.return_value = {"data": "test"}
 
         path = MICROSOFT_LDAPS_ENDPOINT.replace("{status}", "active")
