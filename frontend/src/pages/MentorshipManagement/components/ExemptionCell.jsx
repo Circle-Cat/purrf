@@ -49,6 +49,8 @@ const ExemptionCell = ({
   const { busy, act: run } = useApprovalAction(onChanged);
   const pending = row.exemptionRequest;
   const name = userDisplayName(row);
+  // The backend refuses an exemption reviewed by the person it exempts.
+  const selfReviewHint = `${name} cannot review a request about themselves.`;
 
   const act = async (call, done, fallback) => {
     if (await run(call, done, fallback)) setDialog(null);
@@ -74,6 +76,8 @@ const ExemptionCell = ({
           reviewers={reviewers.approvers}
           reviewersLoading={reviewers.isLoading}
           reviewersError={reviewers.error}
+          excludeUserIds={[row.userId]}
+          reviewerHint={selfReviewHint}
           askReason
           confirmLabel="Send request"
           submitting={busy}
@@ -157,7 +161,8 @@ const ExemptionCell = ({
         reviewers={reviewers.approvers}
         reviewersLoading={reviewers.isLoading}
         reviewersError={reviewers.error}
-        excludeUserIds={[pending.reviewer?.userId]}
+        excludeUserIds={[pending.reviewer?.userId, row.userId]}
+        reviewerHint={selfReviewHint}
         submitting={busy}
         onConfirm={({ reviewerId }) =>
           act(
