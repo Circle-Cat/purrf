@@ -50,7 +50,7 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
 )
 from backend.common.mentorship_email_enums import MentorshipEmailNotificationState
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import display_name_or_id, user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.mentorship.round_windows import is_in_progress
 from backend.repository.user_id_condition import UserIdCondition
@@ -780,14 +780,7 @@ class MentorshipAdminService:
     async def _names(self, session: AsyncSession, user_ids) -> dict[int, str]:
         """Display names of these people, keyed by user_id."""
         users = await self.users_repository.get_all_by_ids(session, list(user_ids))
-        return {
-            u.user_id: user_display_name(
-                first_name=u.first_name,
-                last_name=u.last_name,
-                preferred_name=u.preferred_name,
-            )
-            for u in users
-        }
+        return {u.user_id: display_name_or_id(u) for u in users}
 
     def _note_dto(self, note, names: dict[int, str]) -> ParticipantNoteDto:
         return ParticipantNoteDto(

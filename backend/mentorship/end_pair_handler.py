@@ -17,7 +17,7 @@ from backend.common.mentorship_enums import (
     PairStatus,
     ParticipantNoteTag,
 )
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import display_name_or_id
 from backend.common.permissions import Permission
 from backend.mentorship.pair_endings import unmatch_if_unpaired
 from backend.mentorship.publish_matching_handler import MENTORSHIP_ROUND_SUBJECT
@@ -201,11 +201,4 @@ class EndPairHandler(ApprovalHandler):
 
     async def _names(self, session, user_ids) -> dict[int, str]:
         people = await self.users_repository.get_all_by_ids(session, list(user_ids))
-        return {
-            person.user_id: user_display_name(
-                first_name=person.first_name,
-                last_name=person.last_name,
-                preferred_name=person.preferred_name,
-            )
-            for person in people
-        }
+        return {person.user_id: display_name_or_id(person) for person in people}

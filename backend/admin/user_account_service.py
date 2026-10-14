@@ -11,7 +11,7 @@ Entry-point service: every write method commits its own transaction.
 
 from backend.admin.block_service import BLOCK_USER, require_standing_over
 from backend.common.identity_type import IdentityType
-from backend.common.name_utils import display_name_of
+from backend.common.name_utils import display_name_or_id
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.notification_management.event_recorder import record_event
 from backend.dto.user_account_dto import (
@@ -348,7 +348,7 @@ class UserAccountService:
             return {}
         actors = await self._users.get_all_by_ids(session, sorted(ids))
         # Colleagues acting, not candidates: PUR-609 puts them on preferred_name.
-        return {actor.user_id: display_name_of(actor) for actor in actors}
+        return {actor.user_id: display_name_or_id(actor) for actor in actors}
 
     async def _pending_targets_for(self, session, caller_id: int) -> set[int]:
         """
