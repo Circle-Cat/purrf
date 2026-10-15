@@ -795,7 +795,7 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "Grace Hopper moved an email from Recruiting that needs a reply: Regarding Q4 plans",
+        "Grace Hopper transferred an email from Recruiting that needs a reply: Regarding Q4 plans",
       ),
     ).toBeInTheDocument();
   });

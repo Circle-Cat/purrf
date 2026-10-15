@@ -10,7 +10,7 @@ const TAG_STYLES = {
   "Delivery failed": "border-red-200 bg-red-50 text-red-700",
   Archived: "border-slate-300 bg-white text-slate-500",
   "Needs reply": "border-orange-200 bg-orange-50 text-orange-700",
-  Moved: "border-violet-200 bg-violet-50 text-violet-700",
+  Transferred: "border-violet-200 bg-violet-50 text-violet-700",
 };
 
 /**
@@ -75,7 +75,7 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
           MACHINE_TAG_LABELS[thread.machineTag] ?? null,
           thread.archived ? "Archived" : null,
           thread.movedFrom
-            ? `Moved from ${serviceOf(thread.movedFrom).label}`
+            ? `Transferred from ${serviceOf(thread.movedFrom).label}`
             : null,
         ].filter(Boolean);
         return (
@@ -112,7 +112,9 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
                       key={tag}
                       variant="outline"
                       className={
-                        TAG_STYLES[tag.startsWith("Moved") ? "Moved" : tag]
+                        TAG_STYLES[
+                          tag.startsWith("Transferred") ? "Transferred" : tag
+                        ]
                       }
                     >
                       {tag}

@@ -159,7 +159,7 @@ class InboxController:
                 round_id=payload.round_id,
                 application_id=payload.application_id,
             )
-        return api_response(message="Thread assigned.", data=result)
+        return api_response(message="Thread filed.", data=result)
 
     async def move(
         self,

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getInboxAssignOptions, searchInboxPeople } from "@/api/inboxApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
+import { serviceOf } from "@/pages/Inbox/inboxDisplay";
 import { stageLabel } from "@/pages/Recruiting/board/stageFormat";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
 
@@ -109,8 +110,8 @@ const ApplicationPicker = ({ name, jobs, value, onChange }) => {
   if (!jobs.length) {
     return (
       <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        {name} has not applied to any job, so this thread can&apos;t be
-        assigned. You can still reply without assigning, or Archive it.
+        {name} has not applied to any job, so this thread can&apos;t be filed.
+        You can still reply, or Archive it.
       </p>
     );
   }
@@ -149,10 +150,10 @@ const ApplicationPicker = ({ name, jobs, value, onChange }) => {
 /**
  * AssignDialog
  *
- * Assign a thread to a person, then to the context its service needs: a round
+ * File a thread to a person, then to the context its service needs: a round
  * for Mentorship, one of the person's applications for Recruiting. The
  * person is prefilled when the sender matches a user; otherwise staff search
- * for one. Once assigned, the thread leaves the Inbox.
+ * for one. Once filed, the thread leaves the Inbox.
  *
  * Mounted fresh for each opening so its state never leaks between threads.
  *
@@ -203,7 +204,7 @@ const AssignDialog = ({ thread, onAssign, onCancel }) => {
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign thread</DialogTitle>
+          <DialogTitle>{serviceOf(thread.service).file?.title}</DialogTitle>
           <DialogDescription>{thread.subject}</DialogDescription>
         </DialogHeader>
 
@@ -270,7 +271,7 @@ const AssignDialog = ({ thread, onAssign, onCancel }) => {
             Cancel
           </Button>
           <Button disabled={!ready} onClick={confirm}>
-            Assign
+            File
           </Button>
         </DialogFooter>
       </DialogContent>
