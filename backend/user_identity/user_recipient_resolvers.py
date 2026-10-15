@@ -97,16 +97,23 @@ async def _both_reviewers(session: AsyncSession, event: EventEntity) -> set[int]
 @register_recipients(UserEvent.BLOCK_REQUEST_DECIDED, subject_type=USER_SUBJECT_TYPE)
 async def _the_other_side(session: AsyncSession, event: EventEntity) -> set[int]:
     """Whoever is waiting on the request now that it is closed: the raiser
-    when the reviewer decided it, the reviewer when the raiser withdrew it.
+    when the reviewer decided it, the reviewer when the raiser withdrew it,
+    and both when a direct block superseded it. Whoever acted is left out by
+    the event recorder, so a raiser or reviewer who blocked directly is not
+    told about their own action.
 
     Args:
         session (AsyncSession): Session inside the caller's open transaction.
         event (EventEntity): The ``user.block_request_decided`` event.
 
     Returns:
-        set[int]: The raiser, or the reviewer for a withdrawal.
+        set[int]: The raiser, the reviewer for a withdrawal, or both for a
+            superseded request.
     """
     row = await _request_of(session, event)
-    if event.details.get("decision") == ApprovalRequestStatus.WITHDRAWN.value:
+    decision = event.details.get("decision")
+    if decision == ApprovalRequestStatus.WITHDRAWN.value:
         return {row.reviewer_id}
+    if decision == ApprovalRequestStatus.SUPERSEDED.value:
+        return {row.raised_by, row.reviewer_id}
     return {row.raised_by}

@@ -130,10 +130,18 @@ async def _render_block_request_reassigned(session: AsyncSession, event: EventEn
 
 @register_render(UserEvent.BLOCK_REQUEST_DECIDED)
 async def _render_block_request_decided(session: AsyncSession, event: EventEntity):
-    """Tell the raiser what the answer was, or the reviewer that the request
-    was withdrawn."""
+    """Tell the raiser what the answer was, the reviewer that the request
+    was withdrawn, or both that a direct block closed it undecided."""
     row = await _request_of(session, event)
     target = _person(await _name_of(session, event.subject_id), "a user")
+    if event.details.get("decision") == ApprovalRequestStatus.SUPERSEDED.value:
+        actor = _person(await _name_of(session, event.actor_id), "An administrator")
+        return (
+            "A block request was closed without a decision",
+            f"<p>{actor} directly blocked {target}, so the block request about "
+            "them was closed without a decision. There is nothing left for you "
+            "to do.</p>" + _FOOTER,
+        )
     if event.details.get("decision") == ApprovalRequestStatus.WITHDRAWN.value:
         raiser = _person(
             await _name_of(session, row.raised_by if row else None), "A colleague"
