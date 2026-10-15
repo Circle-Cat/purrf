@@ -564,6 +564,28 @@ describe("CourseTable staged sub-row", () => {
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
 
+  it("names who uploaded the staged package next to the upload time", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: "RaOvlxxJ",
+          uploadedAt: "2026-09-05T03:41:00Z",
+          uploadedByName: "Grace Hopper",
+          verifiedCompletableAt: null,
+        },
+      }),
+    ]);
+
+    const time = formatDateTimeWithZone(
+      "2026-09-05T03:41:00Z",
+      "America/New_York",
+    );
+    expect(
+      screen.getByText(`Uploaded by Grace Hopper · ${time}`),
+    ).toBeInTheDocument();
+  });
+
   it("offers a Trial run link into the course's own trial route", () => {
     renderTable([staged()]);
 
