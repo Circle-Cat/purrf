@@ -176,8 +176,10 @@ const describe = (n) => {
         ? `Your email to ${n.details.bouncedTo} about ${subject} was not delivered`
         : `Your email about ${subject} was not delivered`;
     }
+    // Told to the posting owners as well as the evaluator, so it cannot say
+    // "you".
     case "recruiting.reassigned":
-      return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
+      return `${actor} assigned an evaluator for ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":
       return `You were auto-assigned to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.mentioned":
