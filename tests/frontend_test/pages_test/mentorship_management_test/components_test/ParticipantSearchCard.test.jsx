@@ -1779,6 +1779,23 @@ describe("ParticipantSearchCard", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("hides the run controls from a reader but keeps the results button", async () => {
+      useAuth.mockReturnValue({
+        permissions: ["mentorship.admin.read"],
+        user: { userId: 9 },
+      });
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Run matching/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "View matching results" }),
+      ).toBeInTheDocument();
+    });
+
     it("hides the run controls and the results button with the flag off, asking nothing", async () => {
       useFeatureFlags.mockReturnValue({
         [FEATURE_FLAGS.MATCHING_RUN]: false,
