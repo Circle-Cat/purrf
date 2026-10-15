@@ -383,7 +383,9 @@ const ParticipantSearchCard = () => {
   const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
   // The backend refuses every matching endpoint while the flag is off.
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
-  const showRunUi = matchingOn && eligible && hasSearched && canSearch;
+  // Starting a run needs write; readers still see the run's status button.
+  const showRunUi =
+    matchingOn && eligible && hasSearched && canSearch && canWrite;
   const showNotifications = kitEmailOn && !eligible && hasSearched && canSearch;
   const canNotify = showNotifications && canWrite;
   const { stagesByUser, reload: reloadNotified } = useNotifiedStages(
