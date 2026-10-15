@@ -256,9 +256,8 @@ class MeetingService:
 
         # Keeps `mentorship_pairs.completed_count` current. Nothing on this
         # response path reads it any more -- the mapper is handed counted
-        # values -- but `backend/backfill/export_mentorship_records.py` still
-        # reads the column for eligibility rule 2, so it has to stay true
-        # until that script is rewritten (PUR-608).
+        # values -- but matching eligibility and the admin participant views
+        # still read the column, so it has to stay true.
         #
         # Assigned directly rather than left for the ORM to refresh: the
         # UPDATE above sets `completed_count` from a scalar subquery, which
