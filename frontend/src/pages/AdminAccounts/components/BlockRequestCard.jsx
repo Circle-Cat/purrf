@@ -16,13 +16,16 @@ const humanizeSource = (raisedFrom) =>
  * reviewer -- a request is nobody else's to see, which the endpoint enforces.
  *
  * Both decisions are confirmed in the shared decision dialog: approving blocks
- * at once, and rejecting asks for the reason the raiser is emailed.
+ * at once, and rejecting asks for the reason the raiser is emailed. The dialog
+ * stays open until the decision is recorded, so nothing reads the account
+ * while the block is still being applied.
  *
  * @param {Object} props
  * @param {Object} props.request - BlockRequestDto for this account.
- * @param {(note: string|null) => void} props.onApprove - Approve and block.
- * @param {(note: string) => void} props.onReject - Turn the request down,
- *   with the reason.
+ * @param {(note: string|null) => Promise<boolean>} props.onApprove - Approve
+ *   and block; resolves true once recorded.
+ * @param {(note: string) => Promise<boolean>} props.onReject - Turn the
+ *   request down, with the reason; resolves true once recorded.
  * @param {boolean} props.submitting - A decision is in flight.
  */
 const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
@@ -68,7 +71,7 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
       </div>
       <ApprovalDecisionDialog
         open={decision !== null}
-        onOpenChange={(open) => !open && setDecision(null)}
+        onOpenChange={(open) => !open && !submitting && setDecision(null)}
         decision={decision ?? "approve"}
         title={
           decision === "reject"
@@ -80,10 +83,12 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
             ? `${target} is not blocked. ${request.raisedByName || "The raiser"} is told your reason.`
             : `${target} is blocked from Purrf at once: their open applications close and their upcoming interviews are cancelled.`
         }
-        onConfirm={(comment) => {
-          if (decision === "reject") onReject(comment);
-          else onApprove(null);
-          setDecision(null);
+        onConfirm={async (comment) => {
+          const recorded =
+            decision === "reject"
+              ? await onReject(comment)
+              : await onApprove(null);
+          if (recorded) setDecision(null);
         }}
         submitting={submitting}
       />
