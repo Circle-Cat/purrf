@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.name_utils import display_name_of
+from backend.common.name_utils import display_name_of, display_name_or_id
 from backend.common.recruiting_enums import ApplicationStage
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.render_registry import register_render
@@ -79,6 +79,23 @@ async def _actor_name(session: AsyncSession, user_id: int) -> str:
     """
     user = await _users_repository.get_user_by_user_id(session, user_id)
     return display_name_of(user) if user is not None else ""
+
+
+async def _assignee_name(session: AsyncSession, user_id: int | None) -> str:
+    """Name the evaluator an assignment event hands the application to.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        user_id (int | None): ``assigneeId`` from the event's details.
+
+    Returns:
+        str: The evaluator's display name, ``"User <id>"`` when they have no
+            name, or "" when the event names nobody or the user is gone.
+    """
+    if user_id is None:
+        return ""
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_or_id(user) if user is not None else ""
 
 
 async def _application_context(session: AsyncSession, application_id: int):
@@ -222,6 +239,7 @@ async def _render_auto_rejected(session, event):
 async def _render_assigned_to_evaluate(session, event):
     dto = await _base_dto(session, event)
     dto.round = event.details.get("round")
+    dto.assignee_name = await _assignee_name(session, event.details.get("assigneeId"))
     return _with_footer(copy._assigned_to_evaluate(dto, _stage(event.details)))
 
 

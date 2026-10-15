@@ -393,6 +393,52 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertIn("Grace Hopper", body)
         self.assertIn("Backend Engineer", body)
 
+    async def test_reassigned_names_the_evaluator_rather_than_you(self):
+        """The posting owners get this email too, so it names the evaluator."""
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("Ada", "Lovelace")
+        evaluator = _make_user("Linus", "Torvalds")
+        await self.insert_entities([actor, candidate, evaluator])
+        job = await self._make_job()
+        application = await self._make_application(
+            job.job_id, candidate, stage=ApplicationStage.TECH
+        )
+        event = await self._make_event(
+            "recruiting.reassigned",
+            "application",
+            application.application_id,
+            actor,
+            details={"stage": "tech", "assigneeId": evaluator.user_id, "round": 1},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "Grace Hopper assigned Linus Torvalds to evaluate Ada Lovelace", body
+        )
+        self.assertNotIn("assigned you", body)
+
+    async def test_reassigned_names_a_nameless_evaluator_by_user_id(self):
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("Ada", "Lovelace")
+        evaluator = _make_user("", "")
+        await self.insert_entities([actor, candidate, evaluator])
+        job = await self._make_job()
+        application = await self._make_application(
+            job.job_id, candidate, stage=ApplicationStage.TECH
+        )
+        event = await self._make_event(
+            "recruiting.reassigned",
+            "application",
+            application.application_id,
+            actor,
+            details={"stage": "tech", "assigneeId": evaluator.user_id, "round": 1},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(f"Grace Hopper assigned User {evaluator.user_id} to", body)
+
     async def test_blacklisted_carries_the_reason_and_names_no_page(self):
         actor, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
         await self.insert_entities([actor, candidate])
