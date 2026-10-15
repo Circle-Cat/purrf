@@ -2469,6 +2469,25 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[0].actor_name, "Addy")
 
+    async def test_get_job_activity_names_an_actor_with_no_name_by_user_id(self):
+        """An email-code account has no name; the log still names who acted."""
+        row = MagicMock()
+        row.event_id = 1
+        row.subject_type = "job"
+        row.subject_id = 9
+        row.actor_id = 276
+        row.event_type = "recruiting.job_created"
+        row.details = {}
+        row.created_at = datetime(2026, 7, 4, 12, 0, 0)
+        self.event_repo.list_by_subject.return_value = [row]
+        actor = UsersEntity(first_name="", last_name="", preferred_name=None)
+        actor.user_id = 276
+        self.users_repo.get_all_by_ids.return_value = [actor]
+
+        result = await self.service.get_job_activity(self.session, 9)
+
+        self.assertEqual(result[0].actor_name, "User 276")
+
     async def test_get_job_activity_falls_back_for_unresolved_actor(self):
         """A since-removed actor resolves to a 'User {id}' fallback."""
         row = MagicMock()

@@ -34,7 +34,7 @@ from backend.dto.email_dto import (
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.name_utils import display_name_of
+from backend.common.name_utils import display_name_or_id
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.notification_management.event_recorder import record_event
@@ -872,7 +872,7 @@ class BoardService:
             default_by_stage = {}
         name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
         reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
-        names_by_id = {u.user_id: display_name_of(u) for u in reviewers}
+        names_by_id = {u.user_id: display_name_or_id(u) for u in reviewers}
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, [user.user_id for _, user in rows]
@@ -1221,9 +1221,11 @@ class BoardService:
         return self.recruiting_mapper.to_interview_dto(
             interview,
             assignee_id=assignee_id,
-            assignee_name=(display_name_of(assignee) if assignee is not None else None),
+            assignee_name=(
+                display_name_or_id(assignee) if assignee is not None else None
+            ),
             scheduled_by_name=(
-                display_name_of(scheduler) if scheduler is not None else None
+                display_name_or_id(scheduler) if scheduler is not None else None
             ),
         )
 
@@ -1397,7 +1399,7 @@ class BoardService:
         users = await self.users_repository.get_all_by_ids(
             session, list(ids_to_resolve)
         )
-        names_by_id = {user.user_id: display_name_of(user) for user in users}
+        names_by_id = {user.user_id: display_name_or_id(user) for user in users}
         result = []
         for row in rows:
             details = {**row.details}
@@ -2228,7 +2230,7 @@ class BoardService:
         if not mentioned_ids:
             return []
         users = await self.users_repository.get_all_by_ids(session, mentioned_ids)
-        names_by_id = {user.user_id: display_name_of(user) for user in users}
+        names_by_id = {user.user_id: display_name_or_id(user) for user in users}
         return [
             MentionedUserDto(user_id=uid, name=names_by_id.get(uid, f"User {uid}"))
             for uid in mentioned_ids
@@ -2299,7 +2301,7 @@ class BoardService:
         authors = await self.users_repository.get_all_by_ids(
             session, list({row.author_id for row in rows})
         )
-        names_by_id = {user.user_id: display_name_of(user) for user in authors}
+        names_by_id = {user.user_id: display_name_or_id(user) for user in authors}
         comment_ids = [row.comment_id for row in rows]
         mention_rows = (
             await self.application_comment_mention_repository.get_by_comment_ids(
@@ -2310,7 +2312,7 @@ class BoardService:
             session, list({m.mentioned_user_id for m in mention_rows})
         )
         mention_names_by_id = {
-            user.user_id: display_name_of(user) for user in mentioned_users
+            user.user_id: display_name_or_id(user) for user in mentioned_users
         }
         mentions_by_comment: dict[int, list[MentionedUserDto]] = {}
         for m in mention_rows:
@@ -2417,7 +2419,7 @@ class BoardService:
             session, current_user.user_id
         )
         author_name = (
-            display_name_of(author)
+            display_name_or_id(author)
             if author is not None
             else f"User {current_user.user_id}"
         )
@@ -2481,7 +2483,7 @@ class BoardService:
             (
                 MentionedUserDto(
                     user_id=user.user_id,
-                    name=display_name_of(user),
+                    name=display_name_or_id(user),
                 )
                 for user in users
             ),

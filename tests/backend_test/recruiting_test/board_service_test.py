@@ -3976,6 +3976,184 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(names[0].name, "Evie")
 
+    # -- A colleague with no name (an email-code account) is named User <id>
+    # -- instead of an empty string, which the pages would hide.
+
+    async def test_get_board_names_a_reviewer_with_no_name_by_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.app_repo.list_by_job = AsyncMock(
+            return_value=[(app, self._user(user_id=3))]
+        )
+        self.assignment_repo.list_by_application_ids = AsyncMock(
+            return_value=[
+                self._assignment(10, ApplicationStage.RECRUITER_SCREENING, 1, 276)
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=276, first="", last="")]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertEqual(
+            result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
+            "User 276",
+        )
+
+    async def test_get_application_detail_names_interview_staff_with_no_name_by_id(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        assignment = MagicMock()
+        assignment.assignee_id = 276
+        self.assignment_repo.get.return_value = assignment
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: self._user(user_id=3, first="C", last="D"),
+                276: self._user(user_id=276, first="", last=""),
+                2: self._user(user_id=2, first=None, last=None),
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.interview_repo.get.return_value = SimpleNamespace(
+            interview_id=77,
+            stage=ApplicationStage.BEHAVIORAL,
+            round=1,
+            start_at=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc),
+            end_at=datetime(2026, 8, 5, 21, 45, tzinfo=timezone.utc),
+            meet_link="https://meet.example/abc",
+            scheduled_by=2,
+        )
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.interview.assignee_name, "User 276")
+        self.assertEqual(result.interview.scheduled_by_name, "User 2")
+
+    async def test_get_application_activity_names_people_with_no_name_by_user_id(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.event_repo.list_by_subject = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    event_id=1,
+                    subject_type="application",
+                    subject_id=10,
+                    actor_id=276,
+                    event_type="recruiting.stage_changed",
+                    details={"toStage": "tech", "assigneeId": 277},
+                    created_at=datetime(2026, 7, 4, 12, 0, 0),
+                )
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=276, first="", last=""),
+                self._user(user_id=277, first="", last=""),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].actor_name, "User 276")
+        self.assertEqual(result[0].details["assigneeName"], "User 277")
+
+    async def test_list_comments_names_author_and_mention_with_no_name_by_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.comment_repo.list_by_application = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    comment_id=1,
+                    application_id=10,
+                    author_id=276,
+                    body="cc @[277]",
+                    created_at=datetime(2026, 7, 7, 12, 0, 0),
+                )
+            ]
+        )
+        self.comment_mention_repo.get_by_comment_ids = AsyncMock(
+            return_value=[SimpleNamespace(comment_id=1, mentioned_user_id=277)]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=276, first="", last=""),
+                self._user(user_id=277, first="", last=""),
+            ]
+        )
+
+        result = await self.service.list_comments(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].author_name, "User 276")
+        self.assertEqual(result[0].mentions[0].name, "User 277")
+
+    async def test_add_comment_names_an_author_with_no_name_by_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.comment_repo.create = AsyncMock(
+            return_value=SimpleNamespace(
+                comment_id=5,
+                application_id=10,
+                author_id=2,
+                body="Great candidate.",
+                created_at=datetime(2026, 7, 7, 12, 0, 0),
+            )
+        )
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="", last="")
+        )
+
+        result = await self.service.add_comment(
+            self.session,
+            self._ctx(user_id=2),
+            10,
+            CommentCreateDto(body="Great candidate."),
+        )
+
+        self.assertEqual(result.author_name, "User 2")
+
+    async def test_list_mentionable_users_names_one_with_no_name_by_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=276)
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=276, first="", last=""),
+            ]
+        )
+
+        result = await self.service.list_mentionable_users(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual([m.name for m in result], ["Owen Owner", "User 276"])
+
     async def test_get_application_activity_returns_dtos_with_resolved_actor_names(
         self,
     ):

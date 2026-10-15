@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exceptions import MeetingGoneError
-from backend.common.name_utils import display_name_of
+from backend.common.name_utils import display_name_or_id
 from backend.common.wall_clock import wall_clock_to_utc
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.dto.interview_dto import InterviewDto, InterviewScheduleRequestDto
@@ -53,12 +53,13 @@ def _meeting_title(candidate_first_name: str, stage: ApplicationStage) -> str:
 def _staff_name(user) -> str | None:
     """The interviewer/scheduler name, or None when the row is gone.
 
-    They are colleagues, so the preferred name wins. The candidate is named
-    separately by ``_meeting_title``, which keeps their legal first name.
+    They are colleagues, so the preferred name wins, and a colleague with no
+    name reads ``User <id>``. The candidate is named separately by
+    ``_meeting_title``, which keeps their legal first name.
     """
     if user is None:
         return None
-    return display_name_of(user)
+    return display_name_or_id(user)
 
 
 class InterviewSchedulingService:
