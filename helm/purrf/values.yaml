@@ -70,8 +70,26 @@ resources:
     cpu: 50m
     memory: 325Mi
 
-livenessProbe: null
-readinessProbe: null
+# Both probe /fastapi/health, which answers without credentials and reads
+# nothing. Readiness keeps a new pod out of the Service until the app listens,
+# and with one replica the default rolling update then keeps the old pod
+# serving until then. Liveness waits long enough for a slow start.
+readinessProbe:
+  httpGet:
+    path: /fastapi/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+livenessProbe:
+  httpGet:
+    path: /fastapi/health
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
 
 autoscaling:
   enabled: false
