@@ -281,12 +281,15 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         upload = MagicMock()
         upload.read = AsyncMock(return_value=b"zipbytes")
 
-        response = await self.controller.upload_package(7, upload)
+        uploader = _user()
+
+        response = await self.controller.upload_package(7, uploader, upload)
 
         self.assertEqual(response["status_code"], HTTPStatus.CREATED)
         self.assertEqual(response["data"].storage_prefix, "training/7/abc/")
+        # The uploader is recorded so the staged row can say who put it there.
         self.package_service.upload_package.assert_awaited_once_with(
-            self.session, 7, b"zipbytes"
+            self.session, 7, b"zipbytes", uploader.user_id
         )
 
     async def test_publish_answers_the_new_live_package(self):

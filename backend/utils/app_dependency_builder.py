@@ -1382,6 +1382,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             training_course_repository=self.training_course_repository,
             training_course_package_repository=self.training_course_package_repository,
+            users_repository=self.users_repository,
         )
         self.training_assignment_service = TrainingAssignmentService(
             logger=self.logger,

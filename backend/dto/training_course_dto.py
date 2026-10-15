@@ -43,6 +43,7 @@ class StagedPackageDto(BaseDto):
     package_version: str | None = None
     uploaded_at: datetime
     uploaded_by_user_id: int | None = None
+    uploaded_by_name: str | None = None
     verified_completable_at: datetime | None = None
     verified_by_user_id: int | None = None
 

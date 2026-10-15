@@ -11,6 +11,7 @@ import zipfile
 from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.exc import StaleDataError
 
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ScormVersion, TrainingPackageState
@@ -21,6 +22,7 @@ from backend.entity.training_course_package_entity import (
 from backend.training.scorm_package import PackageRejected
 from backend.training.training_package_service import TrainingPackageService
 
+_UPLOADER = 77
 _COURSE_ID = 7
 _ENTRY_PATH = "index.html"
 _LIVE_PREFIX = "training/7/9cf1e0d2/"
@@ -269,16 +271,22 @@ class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
     """
 
     async def test_the_new_row_is_pending(self):
-        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
 
         added = self.package_repository.add.await_args.args[1]
         self.assertIs(added.state, TrainingPackageState.PENDING)
+
+    async def test_the_new_row_records_who_uploaded_it(self):
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
+
+        added = self.package_repository.add.await_args.args[1]
+        self.assertEqual(added.uploaded_by_user_id, _UPLOADER)
 
     async def test_the_live_package_is_left_alone(self):
         live = self._package(package_id=1, state=TrainingPackageState.LIVE)
         self._slots(live=live, pending=None)
 
-        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
 
         self.package_repository.delete.assert_not_awaited()
         self.storage.delete_prefix.assert_not_called()
@@ -286,7 +294,7 @@ class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
     async def test_no_learner_is_reset(self):
         self._slots(live=self._package(package_id=1), pending=None)
 
-        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
 
         self.progress_repository.clear_resume_state.assert_not_awaited()
 
@@ -298,7 +306,7 @@ class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
         )
         self._slots(live=None, pending=pending)
 
-        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
 
         self.package_repository.delete.assert_awaited_once_with(self.session, pending)
         self.storage.delete_prefix.assert_called_once_with("training/9/old-pending/")
@@ -314,7 +322,7 @@ class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
         self.session.commit.side_effect = lambda: order.append("commit")
         self.storage.delete_prefix.side_effect = lambda prefix: order.append("delete")
 
-        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
 
         self.assertEqual(order, ["commit", "delete"])
 
@@ -325,7 +333,7 @@ class TestUploadPackage(_PackageServiceCase):
         members = _members()
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _zip(members), now=_NOW
+            self.session, _COURSE_ID, _zip(members), _UPLOADER, now=_NOW
         )
 
         self.assertTrue(result.storage_prefix.startswith(f"training/{_COURSE_ID}/"))
@@ -347,7 +355,7 @@ class TestUploadPackage(_PackageServiceCase):
         }
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _zip(members), now=_NOW
+            self.session, _COURSE_ID, _zip(members), _UPLOADER, now=_NOW
         )
 
         self.assertEqual(result.entry_path, _ENTRY_PATH)
@@ -371,7 +379,7 @@ class TestUploadPackage(_PackageServiceCase):
         )
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.assertNotEqual(result.storage_prefix, _PENDING_PREFIX)
@@ -389,7 +397,7 @@ class TestUploadPackage(_PackageServiceCase):
         ))
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         names = [name for name, _ in events]
@@ -420,7 +428,7 @@ class TestUploadPackage(_PackageServiceCase):
 
         with self.assertRaises(RuntimeError):
             await self.service.upload_package(
-                self.session, _COURSE_ID, archive, now=_NOW
+                self.session, _COURSE_ID, archive, _UPLOADER, now=_NOW
             )
 
         self.package_repository.delete.assert_not_awaited()
@@ -442,7 +450,7 @@ class TestUploadPackage(_PackageServiceCase):
         )
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.assertEqual(self.progress_repository.mock_calls, [])
@@ -458,6 +466,7 @@ class TestUploadPackage(_PackageServiceCase):
                 self.session,
                 _COURSE_ID,
                 _package(schemaversion="2004 4th Edition"),
+                _UPLOADER,
                 now=_NOW,
             )
 
@@ -473,7 +482,7 @@ class TestUploadPackage(_PackageServiceCase):
 
         with self.assertRaises(PackageRejected):
             await self.service.upload_package(
-                self.session, _COURSE_ID, archive, now=_NOW
+                self.session, _COURSE_ID, archive, _UPLOADER, now=_NOW
             )
 
         self.storage.put.assert_not_called()
@@ -484,7 +493,9 @@ class TestUploadPackage(_PackageServiceCase):
         self.course_repository.get_course_by_id.return_value = None
 
         with self.assertRaises(ValueError):
-            await self.service.upload_package(self.session, 404, _package(), now=_NOW)
+            await self.service.upload_package(
+                self.session, 404, _package(), _UPLOADER, now=_NOW
+            )
 
         self.storage.put.assert_not_called()
         self.progress_repository.clear_resume_state.assert_not_awaited()
@@ -494,7 +505,7 @@ class TestUploadPackage(_PackageServiceCase):
         members = _members()
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _zip(members), now=_NOW
+            self.session, _COURSE_ID, _zip(members), _UPLOADER, now=_NOW
         )
 
         self.assertEqual(result.course_id, _COURSE_ID)
@@ -508,7 +519,7 @@ class TestUploadPackage(_PackageServiceCase):
         self._course()
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.assertEqual(result.package_version, "qPpo9zHD")
@@ -521,7 +532,7 @@ class TestUploadPackage(_PackageServiceCase):
         self._course()
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _package(driver_config=None), now=_NOW
+            self.session, _COURSE_ID, _package(driver_config=None), _UPLOADER, now=_NOW
         )
 
         self.assertFalse(result.completion_config_readable)
@@ -539,7 +550,7 @@ class TestUploadPackage(_PackageServiceCase):
         )
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, archive, now=_NOW
+            self.session, _COURSE_ID, archive, _UPLOADER, now=_NOW
         )
 
         self.assertEqual(result.missing_declared_files, ["assets/gone.png"])
@@ -562,7 +573,7 @@ class TestUploadPackage(_PackageServiceCase):
         self.session.commit.side_effect = lambda: events.append(("commit", None))
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         names = [name for name, _ in events]
@@ -574,7 +585,7 @@ class TestUploadPackage(_PackageServiceCase):
         self._course()
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.session.commit.assert_awaited_once()
@@ -587,6 +598,7 @@ class TestUploadPackage(_PackageServiceCase):
                 self.session,
                 _COURSE_ID,
                 _package(schemaversion="2004 4th Edition"),
+                _UPLOADER,
                 now=_NOW,
             )
 
@@ -598,7 +610,7 @@ class TestUploadPackage(_PackageServiceCase):
 
         with self.assertRaises(PackageRejected):
             await self.service.upload_package(
-                self.session, _COURSE_ID, archive, now=_NOW
+                self.session, _COURSE_ID, archive, _UPLOADER, now=_NOW
             )
 
         self.session.commit.assert_not_awaited()
@@ -617,7 +629,7 @@ class TestUploadPackage(_PackageServiceCase):
 
         with self.assertRaises(RuntimeError):
             await self.service.upload_package(
-                self.session, _COURSE_ID, archive, now=_NOW
+                self.session, _COURSE_ID, archive, _UPLOADER, now=_NOW
             )
 
         self.session.commit.assert_not_awaited()
@@ -626,7 +638,7 @@ class TestUploadPackage(_PackageServiceCase):
         self._course()
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _zip(_members()), now=_NOW
+            self.session, _COURSE_ID, _zip(_members()), _UPLOADER, now=_NOW
         )
 
         self.package_repository.get_by_state.assert_awaited_once_with(
@@ -652,7 +664,7 @@ class TestUploadPackage(_PackageServiceCase):
         self.package_repository.get_by_state.return_value = previous
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _zip(_members()), now=_NOW
+            self.session, _COURSE_ID, _zip(_members()), _UPLOADER, now=_NOW
         )
 
         self.package_repository.delete.assert_awaited_once_with(self.session, previous)
@@ -665,7 +677,7 @@ class TestUploadPackage(_PackageServiceCase):
 
         with self.assertRaises(PackageRejected):
             await self.service.upload_package(
-                self.session, _COURSE_ID, b"not a zip", now=_NOW
+                self.session, _COURSE_ID, b"not a zip", _UPLOADER, now=_NOW
             )
 
         self.package_repository.add.assert_not_awaited()
@@ -687,7 +699,7 @@ class TestReplacedPrefixDeletion(_PackageServiceCase):
         )
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.assertEqual(self._deleted_prefixes(), [_PENDING_PREFIX])
@@ -697,7 +709,7 @@ class TestReplacedPrefixDeletion(_PackageServiceCase):
         self._course()
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.storage.delete_prefix.assert_not_called()
@@ -719,7 +731,7 @@ class TestReplacedPrefixDeletion(_PackageServiceCase):
         )
 
         await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.assertEqual(events, ["commit", "delete"])
@@ -740,7 +752,7 @@ class TestReplacedPrefixDeletion(_PackageServiceCase):
 
         with self.assertRaises(RuntimeError):
             await self.service.upload_package(
-                self.session, _COURSE_ID, _package(), now=_NOW
+                self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
             )
 
         self.storage.delete_prefix.assert_not_called()
@@ -760,7 +772,7 @@ class TestReplacedPrefixDeletion(_PackageServiceCase):
         self.storage.delete_prefix.side_effect = RuntimeError("bucket said no")
 
         result = await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+            self.session, _COURSE_ID, _package(), _UPLOADER, now=_NOW
         )
 
         self.assertIsNotNone(result)
@@ -910,7 +922,9 @@ class TestADamagedMemberNamesItself(_PackageServiceCase):
         broken = _with_a_mangled_member(_ARCHIVE, _ENTRY_PATH)
 
         with self.assertRaises(PackageRejected) as caught:
-            await self.service.upload_package(self.session, _COURSE_ID, broken)
+            await self.service.upload_package(
+                self.session, _COURSE_ID, broken, _UPLOADER
+            )
 
         self.assertIn(_ENTRY_PATH, str(caught.exception))
 
@@ -920,7 +934,9 @@ class TestADamagedMemberNamesItself(_PackageServiceCase):
         broken = _with_a_mangled_member(with_asset, _ASSET_PATH)
 
         with self.assertRaises(PackageRejected) as caught:
-            await self.service.upload_package(self.session, _COURSE_ID, broken)
+            await self.service.upload_package(
+                self.session, _COURSE_ID, broken, _UPLOADER
+            )
 
         self.assertIn(_ASSET_PATH, str(caught.exception))
 
@@ -930,7 +946,9 @@ class TestADamagedMemberNamesItself(_PackageServiceCase):
         broken = _with_a_bad_checksum(_ARCHIVE, _ENTRY_PATH)
 
         with self.assertRaises(PackageRejected) as caught:
-            await self.service.upload_package(self.session, _COURSE_ID, broken)
+            await self.service.upload_package(
+                self.session, _COURSE_ID, broken, _UPLOADER
+            )
 
         self.assertIn(_ENTRY_PATH, str(caught.exception))
 
@@ -938,7 +956,7 @@ class TestADamagedMemberNamesItself(_PackageServiceCase):
         """The message that was wrong above is right here, and has to stay."""
         with self.assertRaises(PackageRejected) as caught:
             await self.service.upload_package(
-                self.session, _COURSE_ID, b"this is not a zip"
+                self.session, _COURSE_ID, b"this is not a zip", _UPLOADER
             )
 
         self.assertIn("not a readable zip archive", str(caught.exception))
@@ -956,7 +974,9 @@ class TestAFailedUploadCleansUpAfterItself(_PackageServiceCase):
         self.storage.put.side_effect = [None, RuntimeError("bucket said no")]
 
         with self.assertRaises(RuntimeError):
-            await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+            await self.service.upload_package(
+                self.session, _COURSE_ID, _ARCHIVE, _UPLOADER
+            )
 
         self.storage.delete_prefix.assert_called_once()
         self.assertTrue(
@@ -975,6 +995,7 @@ class TestAFailedUploadCleansUpAfterItself(_PackageServiceCase):
                 self.session,
                 _COURSE_ID,
                 _with_a_mangled_member(with_asset, _ASSET_PATH),
+                _UPLOADER,
             )
 
         self.storage.delete_prefix.assert_called_once()
@@ -996,13 +1017,17 @@ class TestTwoUploadsRacingForThePendingSlot(_PackageServiceCase):
         self._lose_the_race()
 
         with self.assertRaises(ConflictError):
-            await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+            await self.service.upload_package(
+                self.session, _COURSE_ID, _ARCHIVE, _UPLOADER
+            )
 
     async def test_losing_the_race_rolls_back_and_drops_its_own_files(self):
         self._lose_the_race()
 
         with self.assertRaises(ConflictError):
-            await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+            await self.service.upload_package(
+                self.session, _COURSE_ID, _ARCHIVE, _UPLOADER
+            )
 
         self.session.rollback.assert_awaited()
         self.storage.delete_prefix.assert_called_once()
@@ -1038,7 +1063,7 @@ class TestStorageStaysOffTheEventLoop(_PackageServiceCase):
         Rise export."""
         seen = self._record(self.storage.put)
 
-        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE, _UPLOADER)
 
         self.assertTrue(seen, "no file was stored, so the test proves nothing")
         self.assertNotIn(threading.get_ident(), seen)
@@ -1160,6 +1185,35 @@ class TestPublish(_PackageServiceCase):
         self.assertEqual(result.package_id, 2)
         self.logger.exception.assert_called()
 
+    async def test_a_publish_that_loses_a_race_is_a_conflict_not_a_500(self):
+        """Someone discarded or replaced the staged row between our read and
+        our write; SQLAlchemy reports it as a stale row at flush."""
+        live = self._package(
+            package_id=1,
+            state=TrainingPackageState.LIVE,
+            storage_prefix="training/9/outgoing/",
+        )
+        self._slots(live=live, pending=self._verified_pending())
+        self.session.flush.side_effect = StaleDataError("0 rows matched")
+
+        with self.assertRaises(ConflictError):
+            await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.session.rollback.assert_awaited()
+        self.session.commit.assert_not_awaited()
+        # The outgoing files are still what learners are served.
+        self.storage.delete_prefix.assert_not_called()
+
+    async def test_a_second_publish_of_the_same_package_is_a_conflict(self):
+        self._slots(live=self._package(package_id=1), pending=self._verified_pending())
+        self.session.commit.side_effect = IntegrityError("insert", {}, Exception())
+
+        with self.assertRaises(ConflictError):
+            await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.session.rollback.assert_awaited()
+        self.storage.delete_prefix.assert_not_called()
+
 
 class TestDiscard(_PackageServiceCase):
     async def test_discarding_removes_the_staged_row_and_its_files(self):
@@ -1186,6 +1240,23 @@ class TestDiscard(_PackageServiceCase):
 
         deleted = [c.args[1] for c in self.package_repository.delete.await_args_list]
         self.assertNotIn(live, deleted)
+
+    async def test_a_discard_that_loses_a_race_is_a_conflict_not_a_500(self):
+        """Someone published or replaced the staged row first; its files now
+        belong to whatever won."""
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/staged/",
+        )
+        self._slots(live=None, pending=pending)
+        self.session.commit.side_effect = StaleDataError("0 rows matched")
+
+        with self.assertRaises(ConflictError):
+            await self.service.discard_package(self.session, _COURSE_ID)
+
+        self.session.rollback.assert_awaited()
+        self.storage.delete_prefix.assert_not_called()
 
     async def test_nothing_staged_is_a_conflict(self):
         self._slots(live=self._package(package_id=1), pending=None)
