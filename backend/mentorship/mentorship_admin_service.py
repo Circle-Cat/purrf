@@ -1058,11 +1058,7 @@ class MentorshipAdminService:
 
         return ParticipantFeedbackDto(
             user_id=user.user_id,
-            name=user_display_name(
-                first_name=user.first_name,
-                last_name=user.last_name,
-                preferred_name=user.preferred_name,
-            ),
+            name=display_name_or_id(user),
             role=participant.participant_role,
             has_submitted=submitted,
             most_valuable_aspects=program.get("most_valuable_aspects"),
