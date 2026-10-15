@@ -70,7 +70,7 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "Grace Hopper assigned you to evaluate Ada Lovelace — Backend Engineer",
+        "Grace Hopper assigned an evaluator for Ada Lovelace — Backend Engineer",
       ),
     ).toBeInTheDocument();
   });
@@ -295,7 +295,7 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "Someone assigned you to evaluate Ada Lovelace — Backend Engineer",
+        "Someone assigned an evaluator for Ada Lovelace — Backend Engineer",
       ),
     ).toBeInTheDocument();
   });
