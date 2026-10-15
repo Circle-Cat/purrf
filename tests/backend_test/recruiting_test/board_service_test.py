@@ -62,6 +62,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo = MagicMock()
         self.app_repo = MagicMock()
         self.sub_repo = MagicMock()
+        # Default: nobody typed a name, so a nameless applicant reads
+        # "User <id>" unless a test seeds what they typed.
+        self.sub_repo.get_latest_personal_by_user_ids = AsyncMock(return_value={})
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
         # Nobody in these fixtures is deactivated or blocked, so the default
@@ -3805,6 +3808,132 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.applicant_name, "Ada Lovelace")
+
+    # -- An applicant whose account has no name (an email-code sign-in) is
+    # -- named by what they typed into their latest application, else by id.
+
+    def _nameless(self, user_id=3):
+        return self._user(user_id=user_id, first="", last="", preferred="Addy")
+
+    def _typed(self, user_id=3):
+        self.sub_repo.get_latest_personal_by_user_ids = AsyncMock(
+            return_value={user_id: {"firstName": "Typed", "lastName": "Applicant"}}
+        )
+
+    async def _board_with(self, *rows):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.list_by_job = AsyncMock(return_value=list(rows))
+        self.assignment_repo.list_by_application_ids = AsyncMock(return_value=[])
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+        return result["stages"]["recruiter_screening"]["items"]
+
+    async def test_get_board_names_a_nameless_applicant_by_what_they_typed(self):
+        named = self._user(user_id=4, first="Ada", last="Lovelace")
+        self._typed(3)
+
+        items = await self._board_with(
+            (self._application(application_id=10, user_id=3), self._nameless(3)),
+            (self._application(application_id=11, user_id=4), named),
+        )
+
+        names = {item.id: item.applicant_name for item in items}
+        self.assertEqual(names, {10: "Typed Applicant", 11: "Ada Lovelace"})
+        # One query, for the nameless applicant only.
+        self.sub_repo.get_latest_personal_by_user_ids.assert_awaited_once_with(
+            self.session, [3]
+        )
+
+    async def test_get_board_names_an_applicant_who_typed_nothing_by_user_id(self):
+        items = await self._board_with((
+            self._application(application_id=10, user_id=3),
+            self._nameless(3),
+        ))
+
+        self.assertEqual(items[0].applicant_name, "User 3")
+
+    async def test_get_board_skips_the_submission_query_when_everyone_has_a_name(
+        self,
+    ):
+        await self._board_with(
+            (
+                self._application(application_id=10, user_id=3),
+                self._user(user_id=3, first="Ada", last="Lovelace"),
+            ),
+            (
+                self._application(application_id=11, user_id=4),
+                self._user(user_id=4, first="Grace", last="Hopper"),
+            ),
+        )
+
+        self.sub_repo.get_latest_personal_by_user_ids.assert_not_awaited()
+
+    async def test_search_applicants_names_a_nameless_applicant_by_what_they_typed(
+        self,
+    ):
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
+        application, _ = self._hit_row(application_id=10, job_id=1, user_id=5)
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[(application, self._nameless(5))]
+        )
+        self._typed(5)
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "typed", job_id=1
+        )
+
+        self.assertEqual(result["hits"][0].applicant_name, "Typed Applicant")
+
+    async def test_search_applicants_names_an_applicant_who_typed_nothing_by_id(self):
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
+        application, _ = self._hit_row(application_id=10, job_id=1, user_id=5)
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[(application, self._nameless(5))]
+        )
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "user", job_id=1
+        )
+
+        self.assertEqual(result["hits"][0].applicant_name, "User 5")
+
+    async def _detail_for(self, applicant):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: applicant,
+                2: self._user(user_id=2),
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        return await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+    async def test_get_application_detail_names_a_nameless_applicant_by_what_they_typed(
+        self,
+    ):
+        self._typed(3)
+
+        result = await self._detail_for(self._nameless(3))
+
+        self.assertEqual(result.applicant_name, "Typed Applicant")
+
+    async def test_get_application_detail_names_an_applicant_who_typed_nothing_by_id(
+        self,
+    ):
+        result = await self._detail_for(self._nameless(3))
+
+        self.assertEqual(result.applicant_name, "User 3")
 
     async def test_get_application_detail_names_interview_staff_by_preferred_name(
         self,

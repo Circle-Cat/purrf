@@ -3,7 +3,7 @@ from backend.entity.application_interview_entity import ApplicationInterviewEnti
 from backend.entity.job_entity import JobEntity
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
-from backend.common.name_utils import display_name_or_id
+from backend.common.name_utils import candidate_name, display_name_or_id
 from backend.common.recruiting_enums import PUBLICLY_VISIBLE_JOB_STATUSES
 from backend.dto.board_dto import BoardApplicantHitDto, BoardCardDto
 from backend.dto.interview_dto import InterviewDto
@@ -180,6 +180,7 @@ class RecruitingMapper:
         user: UsersEntity,
         reviewer_name: str | None = None,
         applicant_email: str = "",
+        applicant_name: str | None = None,
     ) -> BoardCardDto:
         """Map an application + its joined applicant to a board card.
 
@@ -193,13 +194,17 @@ class RecruitingMapper:
                 or nobody is assigned yet).
             applicant_email (str): The applicant's contact address from
                 user_emails; empty when they have none.
+            applicant_name (str | None): The applicant's resolved name (see
+                ``candidate_names``); None names them from ``user`` alone.
 
         Returns:
             BoardCardDto: The board's applicant-card projection.
         """
         return BoardCardDto(
             id=application.application_id,
-            applicant_name=f"{user.first_name} {user.last_name}".strip(),
+            applicant_name=(
+                applicant_name if applicant_name is not None else candidate_name(user)
+            ),
             applicant_email=applicant_email,
             stage=application.stage,
             sub_status=application.sub_status,
@@ -216,6 +221,7 @@ class RecruitingMapper:
         user: UsersEntity,
         job: JobEntity,
         applicant_email: str = "",
+        applicant_name: str | None = None,
     ) -> BoardApplicantHitDto:
         """Map an application + its applicant + its job to a search hit.
 
@@ -230,13 +236,17 @@ class RecruitingMapper:
                 user_emails; empty when they have none. Note this is the
                 DISPLAY address, which need not be the address the search
                 term matched.
+            applicant_name (str | None): The applicant's resolved name (see
+                ``candidate_names``); None names them from ``user`` alone.
 
         Returns:
             BoardApplicantHitDto: The search-result projection.
         """
         return BoardApplicantHitDto(
             application_id=application.application_id,
-            applicant_name=f"{user.first_name} {user.last_name}".strip(),
+            applicant_name=(
+                applicant_name if applicant_name is not None else candidate_name(user)
+            ),
             applicant_email=applicant_email,
             job_id=job.job_id,
             job_title=job.title,

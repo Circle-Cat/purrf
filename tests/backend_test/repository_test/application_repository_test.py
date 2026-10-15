@@ -201,6 +201,93 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         versions = await sub_repo.list_by_application(self.session, app.application_id)
         self.assertEqual([v.version for v in versions], [1, 2])
 
+    async def _submit(self, application, submitted_at, personal, version=1):
+        return await ApplicationSubmissionRepository().create(
+            self.session,
+            ApplicationSubmissionEntity(
+                application_id=application.application_id,
+                version=version,
+                submission=None if personal is None else {"personal": personal},
+                submitted_at=submitted_at,
+            ),
+        )
+
+    async def test_get_latest_personal_by_user_ids_reads_each_users_latest_across_jobs(
+        self,
+    ):
+        """Latest by submitted_at across every job, not by insertion or job."""
+        job_a, user = await self._seed_job_and_user()
+        job_b, other = await self._seed_job_and_user()
+        _, never_submitted = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        on_a = await repo.create(
+            self.session, ApplicationEntity(job_id=job_a.job_id, user_id=user.user_id)
+        )
+        on_b = await repo.create(
+            self.session, ApplicationEntity(job_id=job_b.job_id, user_id=user.user_id)
+        )
+        others = await repo.create(
+            self.session, ApplicationEntity(job_id=job_b.job_id, user_id=other.user_id)
+        )
+        t0 = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        # Inserted first but submitted last: a submission_id order would miss it.
+        await self._submit(on_b, t0 + timedelta(days=2), {"firstName": "Newest"})
+        await self._submit(on_a, t0, {"firstName": "Oldest"}, version=1)
+        await self._submit(on_a, t0 + timedelta(days=1), {"firstName": "Middle"}, 2)
+        await self._submit(others, t0, {"firstName": "Other"})
+
+        found = await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+            self.session,
+            [user.user_id, other.user_id, never_submitted.user_id],
+        )
+
+        self.assertEqual(
+            found,
+            {
+                user.user_id: {"firstName": "Newest"},
+                other.user_id: {"firstName": "Other"},
+            },
+        )
+
+    async def test_get_latest_personal_by_user_ids_breaks_a_tie_by_submission_id(
+        self,
+    ):
+        job, user = await self._seed_job_and_user()
+        application = await ApplicationRepository().create(
+            self.session, ApplicationEntity(job_id=job.job_id, user_id=user.user_id)
+        )
+        same_instant = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        await self._submit(application, same_instant, {"firstName": "First"}, 1)
+        await self._submit(application, same_instant, {"firstName": "Second"}, 2)
+
+        found = await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+            self.session, [user.user_id]
+        )
+
+        self.assertEqual(found, {user.user_id: {"firstName": "Second"}})
+
+    async def test_get_latest_personal_by_user_ids_without_a_personal_block(self):
+        """A latest submission with no personal block reads as {}, not absent."""
+        job, user = await self._seed_job_and_user()
+        application = await ApplicationRepository().create(
+            self.session, ApplicationEntity(job_id=job.job_id, user_id=user.user_id)
+        )
+        await self._submit(application, datetime.now(timezone.utc), None)
+
+        found = await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+            self.session, [user.user_id]
+        )
+
+        self.assertEqual(found, {user.user_id: {}})
+
+    async def test_get_latest_personal_by_user_ids_with_no_ids_skips_the_query(self):
+        self.assertEqual(
+            await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+                self.session, []
+            ),
+            {},
+        )
+
     async def test_list_by_job_returns_joined_rows_ordered_excluding_other_jobs(self):
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
         other_job = JobEntity(

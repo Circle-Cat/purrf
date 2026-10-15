@@ -18,6 +18,9 @@ from backend.repository.event_repository import EventRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.users_repository import UsersRepository
+from backend.repository.application_submission_repository import (
+    ApplicationSubmissionRepository,
+)
 
 
 class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
@@ -27,6 +30,8 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.job_repo = create_autospec(JobRepository, instance=True)
         self.users_repo = create_autospec(UsersRepository, instance=True)
         self.event_repo = create_autospec(EventRepository, instance=True)
+        self.sub_repo = create_autospec(ApplicationSubmissionRepository, instance=True)
+        self.sub_repo.get_latest_personal_by_user_ids.return_value = {}
         self.session = AsyncMock()
         self.service = RecruitingNotificationService(
             self.notification_repo,
@@ -34,6 +39,7 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
             self.job_repo,
             self.users_repo,
             self.event_repo,
+            self.sub_repo,
         )
 
     def _notification(self, event=None, **overrides):
@@ -195,6 +201,48 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(item.applicant_name, "Ada Lovelace")
         self.assertEqual(item.actor_name, "Amazing Grace")
+
+    async def _bell_for(self, applicant):
+        row = self._notification()
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        application = ApplicationEntity(
+            job_id=1, user_id=3, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.application_id = 10
+        self.app_repo.get_by_ids = AsyncMock(return_value=[application])
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[])
+        actor = UsersEntity(first_name="Grace", last_name="Hopper")
+        actor.user_id = 9
+        self._stub_users(applicant, actor)
+        return (
+            await self.service.list_for_user(self.session, user_id=2)
+        ).notifications[0]
+
+    def _nameless_applicant(self):
+        applicant = UsersEntity(first_name="", last_name="", preferred_name="Addy")
+        applicant.user_id = 3
+        return applicant
+
+    async def test_list_for_user_names_a_nameless_applicant_by_what_they_typed(self):
+        self.sub_repo.get_latest_personal_by_user_ids.return_value = {
+            3: {"firstName": "Typed", "lastName": "Applicant"}
+        }
+
+        item = await self._bell_for(self._nameless_applicant())
+
+        self.assertEqual(item.applicant_name, "Typed Applicant")
+        # Only the candidate is looked up; the actor is named by the colleague rule.
+        self.sub_repo.get_latest_personal_by_user_ids.assert_awaited_once_with(
+            self.session, [3]
+        )
+
+    async def test_list_for_user_names_an_applicant_who_typed_nothing_by_user_id(
+        self,
+    ):
+        item = await self._bell_for(self._nameless_applicant())
+
+        self.assertEqual(item.applicant_name, "User 3")
 
     async def test_list_for_user_resolves_job_scoped_display_fields(self):
         row = self._notification(
