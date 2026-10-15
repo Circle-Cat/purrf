@@ -14,8 +14,7 @@ class MentorshipRoundEntity(Base):
     mentee_average_score: Mapped[float | None] = mapped_column(Float)
     mentor_average_score: Mapped[float | None] = mapped_column(Float)
     expectations: Mapped[str | None] = mapped_column(String)
-    # Superseded by the timeline columns below and no longer read or written
-    # by the app; only backend/backfill/ still reads it.
+    # Superseded by the timeline columns below; nothing reads or writes it.
     description: Mapped[dict | None] = mapped_column(JSONB)
     required_meetings: Mapped[int] = mapped_column(Integer, default=5)
     created_datetime: Mapped[datetime] = mapped_column(
