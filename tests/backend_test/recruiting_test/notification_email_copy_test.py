@@ -24,6 +24,7 @@ def _dto(**overrides):
         applicant_name="Ada Lovelace",
         applicant_email="ada@example.com",
         actor_name="Grace Hopper",
+        assignee_name="Linus Torvalds",
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
         # Read only by the templates that mention them; harmless elsewhere.
         reason="Not a fit",
@@ -100,11 +101,28 @@ class TestRender(unittest.TestCase):
             subject, "Evaluation assigned: Ada Lovelace (Backend Engineer)"
         )
         self.assertIn(
-            "Grace Hopper assigned you to evaluate Ada Lovelace for Backend Engineer.",
+            "Grace Hopper assigned Linus Torvalds to evaluate Ada Lovelace for "
+            "Backend Engineer.",
             body,
         )
         self.assertIn("Stage: Tech.", body)
-        self.assertIn("Open My Interview Evaluations in Purrf", body)
+        self.assertIn("open My Interview Evaluations in Purrf", body)
+
+    def test_assigned_to_evaluate_never_says_you_when_someone_assigned_it(self):
+        """The posting owners get this email too, so it must be true for them."""
+        _, body = notification_email_copy._assigned_to_evaluate(
+            _dto(), ApplicationStage.TECH
+        )
+
+        self.assertNotIn("assigned you", body)
+        self.assertIn("If you are the evaluator", body)
+
+    def test_assigned_to_evaluate_without_a_resolved_evaluator(self):
+        _, body = notification_email_copy._assigned_to_evaluate(
+            _dto(assignee_name=""), ApplicationStage.TECH
+        )
+
+        self.assertIn("Grace Hopper assigned someone to evaluate", body)
 
     def test_assigned_to_evaluate_appends_the_round_only_past_the_first(self):
         _, body = notification_email_copy._assigned_to_evaluate(

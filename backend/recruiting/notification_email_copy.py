@@ -199,12 +199,22 @@ def _assigned_to_evaluate(dto, stage):
             f"You were automatically assigned to evaluate {dto.applicant} for "
             f"{dto.job_title}, as the posting's default assignee for this stage."
         )
+        closing = "Open My Interview Evaluations in Purrf to submit your evaluation."
     else:
         # Someone did assign it; their name is just unresolvable (a deleted
         # user row resolves to ""). "Someone" is truer than claiming the
         # assignment was automatic.
+        # The posting owners get this email as well as the evaluator, and it
+        # is rendered once for all of them, so it names the evaluator instead
+        # of saying "you".
+        evaluator = dto.assignee_name or "someone"
         opening = (
-            f"{dto.actor} assigned you to evaluate {dto.applicant} for {dto.job_title}."
+            f"{dto.actor} assigned {evaluator} to evaluate {dto.applicant} for "
+            f"{dto.job_title}."
+        )
+        closing = (
+            "If you are the evaluator, open My Interview Evaluations in Purrf "
+            "to submit your evaluation."
         )
     return (
         f"Evaluation assigned: {dto.plain.applicant} ({dto.plain.job_title})",
@@ -212,8 +222,7 @@ def _assigned_to_evaluate(dto, stage):
         f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}"
         f"{_round_suffix(dto.round)}.</p>"
-        "<p>Open My Interview Evaluations in Purrf to submit your "
-        "evaluation.</p>",
+        f"<p>{closing}</p>",
     )
 
 
