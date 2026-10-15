@@ -83,6 +83,10 @@ const TrainingSection = ({ list, timezone }) => {
             {list.map((training) => {
               const required = isIncompleteOnboarding(training);
               const safeLink = safeHttpUrl(training.link);
+              // A live package wins over the stored link: the link was written
+              // when the row was created, before the course had a package,
+              // and nothing clears it when one is published.
+              const hosted = Boolean(training.courseId && training.isHosted);
               const statusBadge =
                 STATUS_BADGE[training.status] ?? STATUS_BADGE.to_do;
               const actionLabel =
@@ -115,7 +119,20 @@ const TrainingSection = ({ list, timezone }) => {
                   </td>
                   <td>{formatTrainingDate(training.deadline, timezone)}</td>
                   <td>
-                    {safeLink ? (
+                    {training.isCourseActive === false ? (
+                      // Deactivating a course closes it to the people already
+                      // on it, part-way through included, whether it is hosted
+                      // or still an external link. The row keeps their status
+                      // and their dates, and their progress is still stored
+                      // for if it is turned back on.
+                      <span className="text-muted-foreground">
+                        No longer available
+                      </span>
+                    ) : hosted ? (
+                      <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
+                        {actionLabel}
+                      </Link>
+                    ) : safeLink ? (
                       <a
                         href={safeLink}
                         target="_blank"
@@ -123,18 +140,6 @@ const TrainingSection = ({ list, timezone }) => {
                       >
                         View Link
                       </a>
-                    ) : training.isCourseActive === false ? (
-                      // Deactivating a course closes it to the people already
-                      // on it, part-way through included. The row keeps their
-                      // status and their dates, and their progress is still
-                      // stored for if it is turned back on.
-                      <span className="text-muted-foreground">
-                        No longer available
-                      </span>
-                    ) : training.courseId && training.isHosted ? (
-                      <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
-                        {actionLabel}
-                      </Link>
                     ) : (
                       "-"
                     )}

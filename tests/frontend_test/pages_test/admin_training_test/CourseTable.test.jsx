@@ -404,6 +404,23 @@ describe("CourseTable staged sub-row", () => {
     ).toBeInTheDocument();
   });
 
+  it("says learners still follow the external link on a seed course", () => {
+    renderTable([
+      staged({
+        liveState: "external_link",
+        packageVersion: null,
+        link: "https://docs.example.com/onboarding",
+      }),
+    ]);
+
+    expect(
+      screen.getByText(
+        "Learners still follow the external link; publishing moves them to this package.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is live yet/)).not.toBeInTheDocument();
+  });
+
   it("keeps Publish on screen but disabled, and says why on hover", async () => {
     const user = userEvent.setup();
     renderTable([staged()]);
