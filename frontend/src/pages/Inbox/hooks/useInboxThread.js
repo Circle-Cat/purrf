@@ -9,6 +9,7 @@ import {
   unarchiveInboxThread,
 } from "@/api/inboxApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
+import { serviceOf } from "@/pages/Inbox/inboxDisplay";
 
 const statusOf = (e) => e?.response?.status;
 
@@ -129,7 +130,7 @@ export const useInboxThread = (threadId, { onChanged, onGone }) => {
         if (stillOpen()) toast.error(e.message);
         return false;
       }
-      toast.success("Assigned. This thread is no longer in the Inbox.");
+      toast.success(serviceOf(thread?.service).file?.done);
       if (stillOpen()) onGone();
       else onChanged();
       return true;

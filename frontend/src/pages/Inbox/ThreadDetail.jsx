@@ -202,7 +202,7 @@ const ThreadDetail = ({
       <div className="flex flex-wrap items-center gap-2 border-y border-slate-200 py-3">
         {thread.canAssign && (
           <Button size="sm" disabled={pending} onClick={onAssign}>
-            Assign
+            {service.file?.action}
           </Button>
         )}
         {thread.archived ? (

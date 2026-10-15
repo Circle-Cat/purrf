@@ -110,10 +110,10 @@ class InboxThreadWrites:
         """
         thread, service, facts = await self._load_for_write(session, user, thread_id)
         if not can_assign(service, facts):
-            raise ValueError("This thread cannot be assigned")
+            raise ValueError("This thread cannot be filed")
         if service == InboxService.MENTORSHIP:
             if round_id is None or application_id is not None:
-                raise ValueError("A Mentorship thread is assigned to a round")
+                raise ValueError("A Mentorship thread is filed to a round")
             context_type, context_id = ContextType.ACTIVITY, round_id
             details = {"userId": person_id, "roundId": round_id}
             if await self._rounds.get_by_round_id(session, round_id) is None:
@@ -122,7 +122,7 @@ class InboxThreadWrites:
                 raise ValueError(f"user {person_id} not found")
         else:
             if application_id is None or round_id is not None:
-                raise ValueError("A Recruiting thread is assigned to an application")
+                raise ValueError("A Recruiting thread is filed to an application")
             await self._check_application(session, person_id, application_id)
             context_type, context_id = ContextType.APPLICATION, application_id
             details = {"userId": person_id, "applicationId": application_id}

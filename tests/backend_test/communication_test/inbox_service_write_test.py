@@ -321,7 +321,7 @@ class AssignTest(_WriteFixture):
         self._assert_nothing_written()
 
     async def test_mentorship_thread_cannot_take_an_application(self):
-        with self.assertRaisesRegex(ValueError, "assigned to a round"):
+        with self.assertRaisesRegex(ValueError, "filed to a round"):
             await self.service.assign(
                 self.session,
                 _viewer(*_ALL),
@@ -373,7 +373,7 @@ class AssignTest(_WriteFixture):
         self.assertNotIn(4, self._ids(await self._list(viewer)))
 
     async def test_recruiting_assign_needs_an_application(self):
-        with self.assertRaisesRegex(ValueError, "assigned to an application"):
+        with self.assertRaisesRegex(ValueError, "filed to an application"):
             await self.service.assign(self.session, _viewer(*_ALL), 4, person_id=40)
 
         self._assert_nothing_written()
@@ -381,7 +381,7 @@ class AssignTest(_WriteFixture):
     async def test_recruiting_thread_cannot_take_a_round(self):
         self.applications = [_application(57, _ANALYST, ApplicationStage.APPLIED)]
 
-        with self.assertRaisesRegex(ValueError, "assigned to an application"):
+        with self.assertRaisesRegex(ValueError, "filed to an application"):
             await self.service.assign(
                 self.session,
                 _viewer(*_ALL),
