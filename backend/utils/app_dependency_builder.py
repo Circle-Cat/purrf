@@ -137,7 +137,7 @@ from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
 from backend.leave.leave_balance_service import LeaveBalanceService
 from backend.leave.leave_balance_controller import LeaveBalanceController
-from backend.training.content_host import resolve_content_host
+from backend.training.content_host import app_origin_set, resolve_content_host
 from backend.training.training_admin_controller import TrainingAdminController
 from backend.training.training_assignment_service import TrainingAssignmentService
 from backend.training.training_audience_service import TrainingAudienceService
@@ -1449,6 +1449,7 @@ class AppDependencyBuilder:
             self.training_content_host,
             self.database,
             self.logger,
+            app_origins=app_origin_set(os.getenv(APP_ORIGINS)),
         )
 
         self.leave_request_repository = LeaveRequestRepository()
