@@ -378,6 +378,79 @@ describe("TrainingSection Component", () => {
     expect(screen.getByText("Mentor Onboarding")).toBeInTheDocument();
   });
 
+  it("opens the live package, not the link stored before it was published", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: true,
+            name: "Mentee Onboarding",
+            category: "mentee_onboarding",
+            status: "in_progress",
+            link: "https://docs.example.com/old-course",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /^continue$/i })).toHaveAttribute(
+      "href",
+      "/training/42",
+    );
+    expect(
+      screen.queryByRole("link", { name: /view link/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not fall back to the old link when the hosted course is off", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: true,
+            isCourseActive: false,
+            name: "Mentee Onboarding",
+            category: "mentee_onboarding",
+            status: "in_progress",
+            link: "https://docs.example.com/old-course",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText(/no longer available/i)).toBeInTheDocument();
+  });
+
+  it("offers no external link either once the course is turned off", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: false,
+            isCourseActive: false,
+            name: "Corporate Culture",
+            category: "corporate_culture_course",
+            status: "to_do",
+            link: "http://test.com",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText(/no longer available/i)).toBeInTheDocument();
+  });
+
   it("keeps sending a seed row to its external link", () => {
     renderInRouter(
       <TrainingSection

@@ -201,7 +201,9 @@ function StagedRow({ course, onDiscard, onPublish, discarding, canWrite }) {
               ? course.packageVersion
                 ? `Learners still see ${course.packageVersion}.`
                 : "Learners still see the current package."
-              : "Nothing is live yet; publishing makes this course assignable."}
+              : course.liveState === "external_link"
+                ? "Learners still follow the external link; publishing moves them to this package."
+                : "Nothing is live yet; publishing makes this course assignable."}
           </p>
           {/* The sub-row itself stays for a reader: that a package is waiting
               is the kind of thing the read grant exists to show. Only the
