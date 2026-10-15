@@ -9,13 +9,18 @@ not as defence in depth, but because a path-only exemption in the
 authentication middleware would otherwise open the same URL on the API host.
 """
 
+import posixpath
 from http import HTTPStatus
 
 from fastapi import APIRouter, Request, Response
 
 from backend.common.api_endpoints import TRAINING_CONTENT_ENDPOINT
 from backend.training.byte_range import UnsatisfiableRange, parse_range_header
-from backend.training.training_content_service import InvalidContentToken
+from backend.training.content_host import origin_of
+from backend.training.training_content_service import (
+    PLAYER_PATH,
+    InvalidContentToken,
+)
 
 # Private, because the response is one learner's course. An hour, not longer:
 # the token in the path carries no prefix, so a replacement package answers at
@@ -29,11 +34,22 @@ _LOGGED_HOST_LIMIT = 128
 # Same treatment for a Range header, for the same reason.
 _LOGGED_RANGE_LIMIT = 128
 
+# And for the appOrigin a player URL carries.
+_LOGGED_ORIGIN_LIMIT = 128
+
 
 class TrainingContentController:
     """Serves package files against a signed token, with no cookie involved."""
 
-    def __init__(self, training_content_service, content_host, database, logger):
+    def __init__(
+        self,
+        training_content_service,
+        content_host,
+        database,
+        logger,
+        *,
+        app_origins=frozenset(),
+    ):
         """
         Args:
             training_content_service (TrainingContentService): Token checking
@@ -43,9 +59,13 @@ class TrainingContentController:
                 environment where content hosting is not configured.
             database: Async session provider.
             logger: Injected logger.
+            app_origins (frozenset[str]): APP_ORIGINS, normalised. The only
+                pages the player will agree to talk to; empty refuses the
+                player everywhere.
         """
         self.training_content_service = training_content_service
         self.content_host = content_host
+        self.app_origins = app_origins
         self.database = database
         self.logger = logger
         self.router = APIRouter(tags=["training-content"])
@@ -70,6 +90,32 @@ class TrainingContentController:
             != self.content_host
         )
 
+    def _player_for_a_stranger(self, asset_path: str, request: Request) -> bool:
+        """Whether this asks for the player on behalf of a page that is not ours.
+
+        The player reads the page it talks to from its own ``appOrigin`` query
+        parameter: that origin is where it posts and the only one it takes an
+        INIT from. Left unchecked, a player URL could point it at any page.
+        Nothing the player receives is trusted today, but the first thing INIT
+        carries that is would turn this parameter into a trust anchor anybody
+        can set.
+
+        Checked against APP_ORIGINS rather than injected by the server: the
+        player stays a static file read once, and a page served from a host
+        not in APP_ORIGINS, such as a pages.dev preview, is refused visibly
+        instead of loading a player that never hears back.
+        """
+        if posixpath.normpath(asset_path.lstrip("/")) != PLAYER_PATH:
+            return False
+        claimed = request.query_params.get("appOrigin") or ""
+        if origin_of(claimed) in self.app_origins:
+            return False
+        self.logger.warning(
+            "[TrainingContentController] refused the player for appOrigin %r",
+            claimed[:_LOGGED_ORIGIN_LIMIT],
+        )
+        return True
+
     async def get_asset(self, token: str, asset_path: str, request: Request):
         """Return one file, or one range of one, from the package behind this token.
 
@@ -91,6 +137,14 @@ class TrainingContentController:
                 self.content_host,
             )
             return Response(status_code=HTTPStatus.NOT_FOUND)
+
+        if self._player_for_a_stranger(asset_path, request):
+            # Shown inside the course frame, so it says where to open it.
+            return Response(
+                content="This course can only be opened from Purrf.",
+                status_code=HTTPStatus.BAD_REQUEST,
+                media_type="text/plain",
+            )
 
         requested = request.headers.get("range")
         byte_range = parse_range_header(requested)
