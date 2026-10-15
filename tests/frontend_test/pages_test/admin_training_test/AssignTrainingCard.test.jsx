@@ -502,21 +502,28 @@ describe("AssignTrainingCard", () => {
     ).toBeDisabled();
     expect(listAudienceIds).not.toHaveBeenCalled();
   });
-  it("explains a disabled facet on something that can be hovered", async () => {
+  it("explains a disabled facet in a tooltip on hover", async () => {
+    const user = userEvent.setup();
     renderCard();
 
-    // Same rule as the Assign button: the select itself is disabled, so it
-    // would never show the tooltip.
-    const groupReason = screen.getByTitle(
-      "A group only exists for an internal account",
-    );
-    expect(groupReason).not.toBeDisabled();
-    expect(within(groupReason).getByLabelText("Group")).toBeDisabled();
-
-    const statusReason = screen.getByTitle("Pick a course to filter by");
+    const group = screen.getByLabelText("Group");
+    expect(group).toBeDisabled();
+    await user.hover(group.parentElement);
     expect(
-      within(statusReason).getByLabelText("On this course"),
-    ).toBeDisabled();
+      await screen.findByRole("tooltip", {
+        name: "A group only exists for an internal account",
+      }),
+    ).toBeInTheDocument();
+    await user.unhover(group.parentElement);
+
+    const status = screen.getByLabelText("On this course");
+    expect(status).toBeDisabled();
+    await user.hover(status.parentElement);
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Pick a course to filter by",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("explains why select-all is unavailable after a facet edit", async () => {
@@ -529,11 +536,17 @@ describe("AssignTrainingCard", () => {
 
     await user.selectOptions(screen.getByLabelText("Type"), "External");
 
-    const reason = screen.getByTitle("Search again before selecting everyone");
-    expect(reason).not.toBeDisabled();
+    const selectAll = screen.getByRole("button", {
+      name: "Select all 40 matching",
+    });
+    expect(selectAll).toBeDisabled();
+
+    await user.hover(selectAll.parentElement);
     expect(
-      within(reason).getByRole("button", { name: "Select all 40 matching" }),
-    ).toBeDisabled();
+      await screen.findByRole("tooltip", {
+        name: "Search again before selecting everyone",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("will not assign a newly named course to rows found for another", async () => {
