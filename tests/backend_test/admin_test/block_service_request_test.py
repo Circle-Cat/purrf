@@ -895,7 +895,8 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
 
     async def test_direct_block_supersedes_a_pending_request(self):
         """The pending request's outcome already happened, and nobody judged
-        it -- superseded is not a decision."""
+        it -- superseded is not a decision, but it is still announced so the
+        people it was waiting on are not left holding it."""
         request = await self._raise()
         self.record_event.reset_mock()
         self.session.commit.reset_mock()
@@ -911,7 +912,10 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row.decision_comment)
         self.assertTrue(self.people[TARGET].is_blocked)
         self.assertEqual(self.people[TARGET].blocked_reason, "direct")
-        self.assertEqual(self._events(UserEvent.BLOCK_REQUEST_DECIDED), [])
+        decided = self._events(UserEvent.BLOCK_REQUEST_DECIDED)
+        self.assertEqual(len(decided), 1)
+        self.assertEqual(decided[0].kwargs["details"]["decision"], "superseded")
+        self.assertEqual(decided[0].kwargs["actor_id"], ADMIN)
         self.session.commit.assert_awaited_once()
 
     async def test_direct_block_leaves_other_targets_requests_alone(self):

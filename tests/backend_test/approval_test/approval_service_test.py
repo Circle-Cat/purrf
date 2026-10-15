@@ -647,7 +647,54 @@ class TestSupersede(ApprovalServiceTestBase):
             decision_comment=None,
         )
         self.session.commit.assert_not_awaited()
+
+    async def test_superseding_records_the_decided_event(self):
+        """Like a withdrawal, so the people it was waiting on are told."""
+        self.requests.get_pending_for_target.return_value = _request()
+
+        await self.service.supersede_pending(
+            self.session,
+            action="publish_matching",
+            target_id="run-7",
+            actor_id=OUTSIDER,
+        )
+
+        self.record_event.assert_awaited_once_with(
+            self.session,
+            subject_type="mentorship_round",
+            subject_id=SUBJECT_ID,
+            actor_id=OUTSIDER,
+            event_type="test.decided",
+            details={
+                "roundName": "Spring 2026",
+                "requestId": REQUEST_ID,
+                "action": "publish_matching",
+                "decision": "superseded",
+                "comment": None,
+            },
+        )
+
+    async def test_a_request_closed_meanwhile_records_nothing(self):
+        self.requests.get_pending_for_target.return_value = _request()
+        self.requests.close = AsyncMock(return_value=False)
+
+        count = await self.service.supersede_pending(
+            self.session,
+            action="publish_matching",
+            target_id="run-7",
+            actor_id=OUTSIDER,
+        )
+
+        self.assertEqual(count, 0)
         self.record_event.assert_not_awaited()
+
+    async def test_acting_on_a_superseded_request_says_why_it_closed(self):
+        self.stored = _request(status=ApprovalRequestStatus.SUPERSEDED)
+
+        with self.assertRaisesRegex(ConflictError, "done directly"):
+            await self.service.withdraw(
+                self.session, request_id=REQUEST_ID, actor_id=RAISER
+            )
 
 
 class TestReads(ApprovalServiceTestBase):

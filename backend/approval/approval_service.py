@@ -393,6 +393,10 @@ class ApprovalService:
         brought about directly. Does NOT commit: the caller does that once
         the direct action and this land together.
 
+        Records the handler's decided event with ``decision="superseded"``,
+        as a withdrawal does with ``"withdrawn"``, so the people the request
+        was waiting on are told it is gone rather than left holding it.
+
         Args:
             session (AsyncSession): Active database async session.
             action (str): The action.
@@ -408,6 +412,7 @@ class ApprovalService:
         )
         if row is None:
             return 0
+        extra = await handler.event_details(session, row)
         closed = await self._requests.close(
             session,
             row.request_id,
@@ -415,7 +420,23 @@ class ApprovalService:
             decided_by=actor_id,
             decision_comment=None,
         )
-        return 1 if closed else 0
+        if not closed:
+            return 0
+        await record_event(
+            session,
+            subject_type=handler.subject_type,
+            subject_id=handler.subject_id(row),
+            actor_id=actor_id,
+            event_type=handler.decided_event,
+            details={
+                **extra,
+                "requestId": row.request_id,
+                "action": action,
+                "decision": ApprovalRequestStatus.SUPERSEDED.value,
+                "comment": None,
+            },
+        )
+        return 1
 
     async def get_request(self, session, request_id: int) -> ApprovalRequestEntity:
         """One request by id, whatever its status.
@@ -552,6 +573,10 @@ class ApprovalService:
 
     @staticmethod
     def _require_pending(row: ApprovalRequestEntity) -> None:
+        if row.status == ApprovalRequestStatus.SUPERSEDED:
+            raise ConflictError(
+                "This request was closed because what it asked for was done directly."
+            )
         if row.status != ApprovalRequestStatus.PENDING:
             raise ConflictError("This request has already been closed.")
 

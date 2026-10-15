@@ -378,6 +378,22 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it("says a direct block closed the request, never that it was rejected", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "superseded" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper blocked Ada Lovelace directly, closing the block request about them",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rejected/)).not.toBeInTheDocument();
+  });
+
   it("reads the decision field, not the old approved flag", async () => {
     await openWith(
       blockRow({

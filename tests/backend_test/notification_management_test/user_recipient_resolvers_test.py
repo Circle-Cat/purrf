@@ -134,6 +134,22 @@ class TestUserRecipientResolvers(BaseRepositoryTestLib):
             await resolve_recipients(self.session, event), {self.reviewer.user_id}
         )
 
+    async def test_superseded_reaches_the_raiser_and_the_reviewer(self):
+        """A direct block closed it undecided; both were waiting on it."""
+        self.request.status = ApprovalRequestStatus.SUPERSEDED
+        self.request.decided_by = self.other_admin.user_id
+        await self.session.flush()
+        event = _event(
+            UserEvent.BLOCK_REQUEST_DECIDED,
+            self.target.user_id,
+            {"requestId": self.request.request_id, "decision": "superseded"},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {self.raiser.user_id, self.reviewer.user_id},
+        )
+
     async def test_state_change_events_notify_nobody(self):
         """Timeline only. The target is never told: blocking deliberately
         discloses no reason, and deactivation is by definition what the user
