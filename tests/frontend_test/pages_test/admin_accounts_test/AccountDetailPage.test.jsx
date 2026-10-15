@@ -261,6 +261,55 @@ describe("AccountDetailPage — the block request card", () => {
     );
   });
 
+  it("keeps the confirm open until the approval is recorded", async () => {
+    let finish;
+    api.decideBlockRequest.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Approve and block/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(api.decideBlockRequest).toHaveBeenCalled());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Approve" }),
+    ).toBeDisabled();
+
+    api.getPendingBlockRequests.mockResolvedValue({ data: [] });
+    finish({ data: null });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the confirm open when the approval fails", async () => {
+    api.decideBlockRequest.mockRejectedValue({
+      response: { data: { message: "Calendar refused" } },
+    });
+    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Approve and block/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(api.decideBlockRequest).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Approve" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   it("sends nothing when the approval is cancelled", async () => {
     api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
     renderPage();
