@@ -1970,6 +1970,18 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(dan_row.program_rating)
         self.assertEqual(dan_row.partner_feedback, [])
 
+    async def test_names_a_participant_with_no_name_by_user_id(self):
+        """An email-code account has no name; its row still reads User <id>."""
+        nameless = _feedback_user(276, "", last_name="")
+        self.participants_repo.get_feedback_owed_in_round.return_value = [
+            (_feedback_participant(ParticipantRole.MENTEE), nameless),
+        ]
+        self.users_repo.get_all_by_ids.return_value = []
+
+        result = await self.service.get_round_feedback(self.session, 7)
+
+        self.assertEqual(result.participants[0].name, "User 276")
+
     async def test_unknown_round_raises(self):
         self.rounds_repo.get_by_round_id.return_value = None
 
