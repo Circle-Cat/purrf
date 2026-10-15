@@ -57,10 +57,10 @@ class NeedsReplyRenderTest(unittest.IsolatedAsyncioTestCase):
             service=InboxService.INQUIRIES, movedFrom=InboxService.RECRUITING
         )
 
-        self.assertEqual(subject, "An email moved to your inbox needs a reply")
+        self.assertEqual(subject, "An email transferred to your inbox needs a reply")
         self.assertTrue(
             body.startswith(
-                "<p>An email was moved from the Recruiting inbox to the "
+                "<p>An email was transferred from the Recruiting inbox to the "
                 "Inquiries inbox and needs a reply: "
                 "“A question” from asker@ext.com.</p>"
                 "<p>Open Inbox in Purrf to read and reply.</p>"

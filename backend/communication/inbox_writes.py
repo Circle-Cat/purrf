@@ -156,7 +156,7 @@ class InboxThreadWrites:
         """
         thread, service, facts = await self._load_for_write(session, user, thread_id)
         if facts.tracked:
-            raise ValueError("A thread we started cannot be moved")
+            raise ValueError("A thread we started cannot be transferred")
         if target == service:
             raise ValueError(f"This thread is already in {target}")
         thread.context_type = INBOX_CONTEXT[target]

@@ -227,7 +227,7 @@ describe("InboxPage list", () => {
     for (const text of [
       "Delivery failed",
       "Archived",
-      "Moved from Inquiries",
+      "Transferred from Inquiries",
     ]) {
       expect(first).toHaveTextContent(text);
     }
@@ -281,7 +281,7 @@ describe("InboxPage thread detail", () => {
     );
   });
 
-  it("hides filing when canAssign is false but always offers Move", async () => {
+  it("hides filing when canAssign is false but always offers Transfer", async () => {
     api.getInboxThread.mockResolvedValue({
       data: detail({ service: "inquiries", canAssign: false }),
     });
@@ -291,10 +291,10 @@ describe("InboxPage thread detail", () => {
     const pane = await thread();
     await within(pane).findByRole("button", { name: "Archive" });
     expect(within(pane).queryByRole("button", { name: /^File to/ })).toBeNull();
-    expect(within(pane).getByLabelText("Move to")).toBeInTheDocument();
+    expect(within(pane).getByLabelText("Transfer to")).toBeInTheDocument();
   });
 
-  it("lists only the other two services in Move and moves the thread", async () => {
+  it("lists only the other two services in Transfer and transfers the thread", async () => {
     api.moveInboxThread.mockResolvedValue({
       data: detail({ service: "recruiting", movedFrom: "mentorship" }),
     });
@@ -302,59 +302,60 @@ describe("InboxPage thread detail", () => {
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
-    const select = await within(pane).findByLabelText("Move to");
+    const select = await within(pane).findByLabelText("Transfer to");
     const options = within(select)
       .getAllByRole("option")
       .map((o) => o.value);
     expect(options).toEqual(["", "recruiting", "inquiries"]);
     fireEvent.change(select, { target: { value: "recruiting" } });
-    fireEvent.click(within(pane).getByRole("button", { name: "Move" }));
+    fireEvent.click(within(pane).getByRole("button", { name: "Transfer" }));
     await waitFor(() =>
       expect(api.moveInboxThread).toHaveBeenCalledWith(1, "recruiting"),
     );
   });
 
-  it("clears the selection when the thread is no longer visible after Move", async () => {
+  it("clears the selection when the thread is no longer visible after Transfer", async () => {
     api.moveInboxThread.mockResolvedValue({ data: detail() });
     renderAt();
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
-    const select = await within(pane).findByLabelText("Move to");
+    const select = await within(pane).findByLabelText("Transfer to");
     api.getInboxThread.mockRejectedValue({
       response: { status: 400 },
       message: "not found",
     });
     const before = api.listInboxThreads.mock.calls.length;
     fireEvent.change(select, { target: { value: "inquiries" } });
-    fireEvent.click(within(pane).getByRole("button", { name: "Move" }));
+    fireEvent.click(within(pane).getByRole("button", { name: "Transfer" }));
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Thread" })).toBeNull(),
     );
     expect(api.listInboxThreads.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it("closes the thread when Move returns no data", async () => {
+  it("closes the thread when Transfer returns no data", async () => {
     api.moveInboxThread.mockResolvedValue({ data: null });
     renderAt();
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
-    const select = await within(pane).findByLabelText("Move to");
+    const select = await within(pane).findByLabelText("Transfer to");
     api.getInboxThread.mockRejectedValue({
       response: { status: 400 },
       message: "not found",
     });
     const before = api.listInboxThreads.mock.calls.length;
     fireEvent.change(select, { target: { value: "inquiries" } });
-    fireEvent.click(within(pane).getByRole("button", { name: "Move" }));
+    fireEvent.click(within(pane).getByRole("button", { name: "Transfer" }));
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Thread" })).toBeNull(),
     );
     expect(api.listInboxThreads.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it("archives and notifies the sidebar", async () => {
+  it("archives, says when it comes back and notifies the sidebar", async () => {
+    const successSpy = vi.spyOn(toast, "success").mockImplementation(() => {});
     const listener = vi.fn();
     window.addEventListener("inbox:changed", listener);
     api.archiveInboxThread.mockResolvedValue({
@@ -370,6 +371,9 @@ describe("InboxPage thread detail", () => {
     expect(
       await within(pane).findByRole("button", { name: "Unarchive" }),
     ).toBeInTheDocument();
+    expect(successSpy).toHaveBeenCalledWith(
+      "Archived. It comes back when they write again.",
+    );
     expect(listener).toHaveBeenCalled();
     window.removeEventListener("inbox:changed", listener);
   });

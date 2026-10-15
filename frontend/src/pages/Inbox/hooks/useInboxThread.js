@@ -148,7 +148,11 @@ export const useInboxThread = (threadId, { onChanged, onGone }) => {
     stale,
     pending: pendingId != null && pendingId === threadId,
     reply,
-    archive: () => write((id) => archiveInboxThread(id)),
+    archive: async () => {
+      if (await write((id) => archiveInboxThread(id))) {
+        toast.success("Archived. It comes back when they write again.");
+      }
+    },
     unarchive: () => write((id) => unarchiveInboxThread(id)),
     assign,
     move,
