@@ -163,10 +163,14 @@ function PackageCell({ course }) {
 function StagedRow({ course, onDiscard, onPublish, discarding, canWrite }) {
   const { staged } = course;
   const verified = Boolean(staged.verifiedCompletableAt);
-  const uploadedLabel = formatDateTimeWithZone(
+  const uploadedAt = formatDateTimeWithZone(
     staged.uploadedAt,
     resolveViewerTimezone(),
   );
+  // Packages staged before the uploader was recorded have nobody to name.
+  const uploadedLabel = staged.uploadedByName
+    ? `Uploaded by ${staged.uploadedByName} · ${uploadedAt}`
+    : uploadedAt;
   // A package built by a toolchain we cannot read (Captivate, iSpring, a
   // bare Storyline export) carries no version at all -- same class of
   // package PackageHealthBox already warns about. Name the thing without a
