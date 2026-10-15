@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 
 from backend.common.api_endpoints import (
     GMAIL_PUSH_ENDPOINT,
+    HEALTH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
     PUBSUB_PUSH_GERRIT_ENDPOINT,
@@ -664,6 +665,27 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.text, "announced")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_health_check_skips_authentication(self):
+        """Kubernetes probes the health check with no credentials.
+
+        Authenticated, every probe would be answered 400 and a probed pod
+        would never become ready.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(HEALTH_ENDPOINT, lambda request: PlainTextResponse("OK"))
+        )
+
+        client = self._add_middleware()
+        response = client.get(HEALTH_ENDPOINT)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "OK")
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
 

@@ -124,6 +124,10 @@ MENTORSHIP_ADMIN_ROUND_UNREGISTERED = "/mentorship/admin/rounds/{round_id}/unreg
 # /admin: the caller is a service account, not a signed-in administrator.
 MENTORSHIP_MATCH_RUN_COMPLETE = "/mentorship/match-runs/complete"
 
+# Not under /api. Kubernetes probes it with no credentials, so the auth
+# middleware exempts it.
+HEALTH_ENDPOINT = "/fastapi/health"
+
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"
 ADMIN_USER_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions"

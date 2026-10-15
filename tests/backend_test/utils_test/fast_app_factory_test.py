@@ -1,9 +1,11 @@
 import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi import FastAPI, APIRouter
+from fastapi.testclient import TestClient
 from backend.common.api_endpoints import (
     ADMIN_ACCOUNTS_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
+    HEALTH_ENDPOINT,
 )
 from backend.utils.fast_app_factory import FastAppFactory
 
@@ -565,6 +567,19 @@ class TestFastAppFactory(unittest.TestCase):
             "/api/recruiting/evaluations/ping",
             {route.path for route in app.routes},
         )
+
+    def test_health_check_answers_without_credentials(self):
+        """Kubernetes probes the health check with no credentials, through the
+        real auth middleware, and has to get a 200."""
+        self.mock_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        client = TestClient(self.factory.create_app())
+
+        response = client.get(HEALTH_ENDPOINT)
+
+        self.assertEqual(response.status_code, 200)
+        self.mock_service.authenticate_request.assert_not_called()
 
     def test_notification_delivery_routes_are_mounted_unauthenticated(self):
         """The Pub/Sub push endpoint is mounted under /api and carries no
