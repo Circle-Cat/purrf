@@ -7,6 +7,7 @@ from starlette.requests import Request
 
 from backend.common.api_endpoints import (
     GMAIL_PUSH_ENDPOINT,
+    HEALTH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
     PUBSUB_PUSH_GERRIT_ENDPOINT,
@@ -37,7 +38,11 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 # The matcher job's completion callback arrives the same way, through the same
 # Worker, and its route asserts the Google token and the job's account itself.
 # So do the Google Chat, Microsoft Teams and Gerrit event pushes.
+#
+# The health check is probed by Kubernetes, which sends no credentials. It
+# answers a fixed body and reads nothing.
 _UNAUTHENTICATED_PATHS = frozenset({
+    HEALTH_ENDPOINT,
     f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
     f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
     f"/api{GMAIL_PUSH_ENDPOINT}",

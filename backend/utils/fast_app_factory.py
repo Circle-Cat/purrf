@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from backend.common.api_endpoints import HEALTH_ENDPOINT
 from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.notification_management.publish_on_commit import (
     install_publish_listener,
@@ -274,13 +275,14 @@ class FastAppFactory:
         app.include_router(self.inbox_controller.router, prefix="/api")
         app.include_router(self.pubsub_push_controller.router, prefix="/api")
 
-        @app.get("/fastapi/health")
+        @app.get(HEALTH_ENDPOINT)
         def health_check():
             """
             Health check endpoint.
 
             Returns a simple JSON response to verify that the
-            application is running.
+            application is running. It reads no database and calls nothing
+            outside, so a slow dependency never takes the pod out of rotation.
 
             Returns:
                 dict: JSON containing the health status.
