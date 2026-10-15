@@ -1,6 +1,6 @@
 from collections.abc import Collection
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.approval_enums import ApprovalRequestStatus
@@ -113,6 +113,29 @@ class ApprovalRequestRepository:
             )
         )
         return result.scalars().one_or_none()
+
+    async def delete_for_target(
+        self, session: AsyncSession, action: str, target_type: str, target_id: str
+    ) -> int:
+        """Delete every request, in any status, about one target. Does not commit.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            action (str): The action.
+            target_type (str): The kind of target.
+            target_id (str): The target.
+
+        Returns:
+            int: How many rows were deleted.
+        """
+        result = await session.execute(
+            delete(ApprovalRequestEntity).where(
+                ApprovalRequestEntity.action == action,
+                ApprovalRequestEntity.target_type == target_type,
+                ApprovalRequestEntity.target_id == target_id,
+            )
+        )
+        return result.rowcount
 
     async def list_pending_for_targets(
         self,
