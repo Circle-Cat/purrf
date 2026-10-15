@@ -7,6 +7,7 @@ from backend.dto.notification_dto import (
     NotificationListDto,
     UnreadCountDto,
 )
+from backend.recruiting.candidate_names import candidate_names
 
 
 async def _by_id(load, session, ids, key):
@@ -40,6 +41,7 @@ class RecruitingNotificationService:
         job_repository,
         users_repository,
         event_repository,
+        application_submission_repository,
     ):
         """
         Args:
@@ -52,24 +54,21 @@ class RecruitingNotificationService:
                 display names.
             event_repository (EventRepository): Reads the event each
                 notification points at, which is what says what happened.
+            application_submission_repository (ApplicationSubmissionRepository):
+                Reads the name a candidate with a nameless account typed into
+                their application.
         """
         self.notification_repository = notification_repository
         self.application_repository = application_repository
         self.job_repository = job_repository
         self.users_repository = users_repository
         self.event_repository = event_repository
+        self.application_submission_repository = application_submission_repository
 
     @staticmethod
-    def _candidate_name(user) -> str:
-        """A candidate's legal "First Last", or "" when the user is gone.
-
-        A candidate is named the way their application names them, so a
-        preferred name on their profile does not apply here.
-        """
-        return f"{user.first_name} {user.last_name}".strip() if user is not None else ""
-
-    @staticmethod
-    def _to_dto(row, events, applications, jobs, users) -> NotificationDto:
+    def _to_dto(
+        row, events, applications, jobs, users, applicant_names
+    ) -> NotificationDto:
         """Resolve one notification row into what the bell renders.
 
         What happened is read from the event the row points at, not from the
@@ -84,6 +83,9 @@ class RecruitingNotificationService:
             jobs (dict[int, JobEntity]): Their jobs by id.
             users (dict[int, UsersEntity]): Their candidates, actors and
                 user subjects by id.
+            applicant_names (dict[int, str]): Their candidates' names by user
+                id, resolved by the candidate rule rather than the colleague
+                one: a preferred name on a candidate's profile does not apply.
 
         Returns:
             NotificationDto: Empty display fields where the referenced rows
@@ -97,9 +99,7 @@ class RecruitingNotificationService:
             application = applications.get(event.subject_id)
             if application is not None:
                 job = jobs.get(application.job_id)
-                applicant_name = RecruitingNotificationService._candidate_name(
-                    users.get(application.user_id)
-                )
+                applicant_name = applicant_names.get(application.user_id, "")
         elif event is not None and event.subject_type == USER_SUBJECT_TYPE:
             # A block request is about a person with no application in sight.
             # Named by the colleague rule, which is what the email about the
@@ -131,11 +131,13 @@ class RecruitingNotificationService:
 
         Each kind's ids come from the kind before it, so the order is fixed:
         events, then their applications, then the jobs of both, then every
-        person named anywhere on the page.
+        person named anywhere on the page, then the typed names of the
+        candidates among them whose accounts have none.
 
         Returns:
-            tuple[dict, dict, dict, dict]: Events, applications, jobs and
-                users, each keyed by id.
+            tuple[dict, dict, dict, dict, dict]: Events, applications, jobs
+                and users, each keyed by id, and the candidates' names keyed
+                by user id.
         """
         events = await _by_id(
             self.event_repository.get_by_ids,
@@ -168,7 +170,12 @@ class RecruitingNotificationService:
         users = await _by_id(
             self.users_repository.get_all_by_ids, session, user_ids, "user_id"
         )
-        return events, applications, jobs, users
+        applicant_names = await candidate_names(
+            session,
+            self.application_submission_repository,
+            [users[a.user_id] for a in applications.values() if a.user_id in users],
+        )
+        return events, applications, jobs, users, applicant_names
 
     async def list_for_user(
         self, session: AsyncSession, user_id: int, limit: int = 20, offset: int = 0

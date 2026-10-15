@@ -506,6 +506,54 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[0].applicant_name, "Ada Lovelace")
 
+    async def _get_mine_for(self, applicant):
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[])
+        self.app_repo.get_by_id = AsyncMock(
+            return_value=self._application(
+                application_id=10, stage=ApplicationStage.TECH, current_round=1
+            )
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, title="Engineer")
+        )
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.evaluation_repo.list_by_assignee = AsyncMock(
+            return_value=[
+                self._evaluation(
+                    application_id=10,
+                    stage=ApplicationStage.TECH,
+                    round=1,
+                    evaluator_id=2,
+                    is_confirmed=True,
+                )
+            ]
+        )
+        return await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+    async def test_get_mine_names_a_nameless_candidate_by_what_they_typed(self):
+        """An email-code account has no name; the one they typed stands in."""
+        self.submission_repo.get_latest_personal_by_user_ids.return_value = {
+            3: {"firstName": "Typed", "lastName": "Applicant"}
+        }
+
+        result = await self._get_mine_for(
+            self._user(user_id=3, first="", last="", preferred="Addy")
+        )
+
+        self.assertEqual(result[0].applicant_name, "Typed Applicant")
+        self.submission_repo.get_latest_personal_by_user_ids.assert_awaited_once_with(
+            self.session, [3]
+        )
+
+    async def test_get_mine_names_a_candidate_who_typed_nothing_by_user_id(self):
+        self.submission_repo.get_latest_personal_by_user_ids.return_value = {}
+
+        result = await self._get_mine_for(
+            self._user(user_id=3, first="", last="", preferred="Addy")
+        )
+
+        self.assertEqual(result[0].applicant_name, "User 3")
+
     async def test_get_mine_excludes_unconfirmed_draft_after_reassignment(self):
         self.assignment_repo.list_by_assignee = AsyncMock(return_value=[])
         draft_row = self._evaluation(

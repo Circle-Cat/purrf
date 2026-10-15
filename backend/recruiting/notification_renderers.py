@@ -35,7 +35,11 @@ from backend.common.recruiting_enums import ApplicationStage
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.render_registry import register_render
 from backend.recruiting import notification_email_copy as copy
+from backend.recruiting.candidate_names import candidate_name_of
 from backend.repository.application_repository import ApplicationRepository
+from backend.repository.application_submission_repository import (
+    ApplicationSubmissionRepository,
+)
 from backend.repository.job_repository import JobRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
 from backend.repository.users_repository import UsersRepository
@@ -44,11 +48,12 @@ from backend.repository.users_repository import UsersRepository
 _user_emails_repository = UserEmailsRepository()
 _users_repository = UsersRepository()
 _application_repository = ApplicationRepository()
+_application_submission_repository = ApplicationSubmissionRepository()
 _job_repository = JobRepository()
 
 
 async def _candidate_name(session: AsyncSession, user_id: int) -> str:
-    """Resolve a candidate id to their legal "First Last", or "".
+    """Resolve a candidate id to their name as a candidate, or "".
 
     A candidate is named the way their application names them, so a preferred
     name on their profile does not apply to mail about them.
@@ -58,10 +63,11 @@ async def _candidate_name(session: AsyncSession, user_id: int) -> str:
         user_id (int): The candidate to resolve.
 
     Returns:
-        str: "First Last" (whitespace-trimmed), or "" if no such user.
+        str: Their legal "First Last", else the name they typed into their
+            latest application, else "User <id>"; "" if no such user.
     """
     user = await _users_repository.get_user_by_user_id(session, user_id)
-    return f"{user.first_name} {user.last_name}".strip() if user is not None else ""
+    return await candidate_name_of(session, _application_submission_repository, user)
 
 
 async def _actor_name(session: AsyncSession, user_id: int) -> str:

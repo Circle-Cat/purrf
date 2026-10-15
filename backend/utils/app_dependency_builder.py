@@ -974,12 +974,14 @@ class AppDependencyBuilder:
                 *self.inbox_aliases.addresses(),
             ],
         )
+        self.application_submission_repository = ApplicationSubmissionRepository()
         self.recruiting_notification_service = RecruitingNotificationService(
             self.notification_repository,
             self.application_repository,
             self.job_repository,
             self.users_repository,
             self.event_repository,
+            self.application_submission_repository,
         )
         self.notification_email_service = NotificationEmailService(
             gmail_client=self.gmail_client,
@@ -1028,7 +1030,6 @@ class AppDependencyBuilder:
         self.application_comment_mention_repository = (
             ApplicationCommentMentionRepository()
         )
-        self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.evaluation_repository = EvaluationRepository()
         # Shared owner/assignee gating + interview-evaluator validation, used

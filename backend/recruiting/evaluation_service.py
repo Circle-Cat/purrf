@@ -11,6 +11,7 @@ from backend.dto.evaluation_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.notification_management.event_recorder import record_event
 from backend.recruiting import evaluation_rubric
+from backend.recruiting.candidate_names import candidate_name_of
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.common.permissions import Permission
 
@@ -45,7 +46,8 @@ class EvaluationService:
                 applicant names in "My Interview Evaluations".
             application_submission_repository (ApplicationSubmissionRepository):
                 Submission data access, used to freeze the answers an
-                evaluation was written against.
+                evaluation was written against and to name an applicant whose
+                account has no name.
         """
         self.application_repository = application_repository
         self.application_assignment_repository = application_assignment_repository
@@ -153,8 +155,8 @@ class EvaluationService:
     ) -> tuple[str, str]:
         """Resolve an application's job title and applicant display name.
 
-        Shared by get_mine's two passes so the "" / "First Last" fallback
-        logic isn't duplicated.
+        Shared by get_mine's two passes so the fallback logic isn't
+        duplicated.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -169,8 +171,8 @@ class EvaluationService:
             session, application.user_id
         )
         job_title = job.title if job is not None else ""
-        applicant_name = (
-            f"{user.first_name} {user.last_name}".strip() if user is not None else ""
+        applicant_name = await candidate_name_of(
+            session, self.application_submission_repository, user
         )
         return job_title, applicant_name
 
