@@ -38,21 +38,21 @@ locals {
       name        = "Manual Submit Meeting"
       description = "Enables the manual meeting submit flow"
       off_in      = []
-      public_in   = ["production", "staging"]
+      public_in   = ["production", "staging", "test"]
     }
     view_personal_summary = {
       key         = "view-personal-summary"
       name        = "View Personal Summary"
       description = "Enables the view personal summary feature"
       off_in      = []
-      public_in   = ["production", "staging"]
+      public_in   = ["production", "staging", "test"]
     }
     create_google_meeting = {
       key         = "create-google-meeting"
       name        = "Create Google Meeting"
       description = "Enables the Google Meeting related feature"
       off_in      = ["production"]
-      public_in   = []
+      public_in   = ["test"]
     }
     # Only test has a matcher job to start; elsewhere the endpoint would refuse
     # anyway, and each press is an hour of a paid job once the stub is off.
