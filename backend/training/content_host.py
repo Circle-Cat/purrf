@@ -101,3 +101,41 @@ def resolve_content_host(content_host, app_origins, logger) -> str | None:
         return None
 
     return content_host
+
+
+def origin_of(value: str) -> str:
+    """The normalised ``scheme://host[:port]`` of an origin, or ``""``.
+
+    Lowercased, with any path dropped and the port kept only when one was
+    written, so ``https://Purrf.io/`` and ``https://purrf.io`` compare equal
+    and match what a browser's ``window.location.origin`` reports.
+
+    Args:
+        value (str): An origin as written in configuration or sent by a page.
+
+    Returns:
+        str: The normalised origin, or ``""`` when it has no scheme or host.
+    """
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return ""
+    if not parts.scheme or not parts.hostname:
+        return ""
+    host = parts.hostname if port is None else f"{parts.hostname}:{port}"
+    return f"{parts.scheme.lower()}://{host}"
+
+
+def app_origin_set(app_origins: str | None) -> frozenset[str]:
+    """APP_ORIGINS as a set of normalised origins, for exact comparison.
+
+    Args:
+        app_origins (str | None): APP_ORIGINS, comma-separated.
+
+    Returns:
+        frozenset[str]: Every origin it names; empty when it is unset.
+    """
+    return frozenset(origin_of(origin) for origin in (app_origins or "").split(",")) - {
+        ""
+    }

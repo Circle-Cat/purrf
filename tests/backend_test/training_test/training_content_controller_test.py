@@ -14,7 +14,7 @@ from backend.training.training_content_controller import (
     _CACHE_CONTROL,
     TrainingContentController,
 )
-from backend.training.training_content_service import ContentAsset
+from backend.training.training_content_service import PLAYER_PATH, ContentAsset
 from backend.training.training_content_token import InvalidContentToken
 
 CONTENT_HOST = "training-content.example.com"
@@ -25,7 +25,7 @@ ASSET_BYTES = b"\x00\x01course-audio-bytes\x02\x03"
 ASSET_CONTENT_TYPE = "audio/mpeg"
 
 
-def make_request(host, path, range_header=None):
+def make_request(host, path, range_header=None, query_string=b""):
     """Build a request the way an ASGI server would, with `host` in the headers.
 
     `host=None` builds one with no Host header at all, which is what a bare
@@ -41,7 +41,7 @@ def make_request(host, path, range_header=None):
         "scheme": "https",
         "path": path,
         "root_path": "",
-        "query_string": b"",
+        "query_string": query_string,
         "headers": headers,
         "server": (host.split(":")[0] if host else "unknown", 443),
         "client": ("203.0.113.7", 51234),
@@ -256,6 +256,74 @@ class TestDisabledContentHosting(unittest.IsolatedAsyncioTestCase):
 
         self.content_service.read_asset.assert_not_awaited()
         self.database.session.assert_not_called()
+
+
+class TestPlayerAppOrigin(unittest.IsolatedAsyncioTestCase):
+    """The player talks only to a page the app is served from."""
+
+    async def asyncSetUp(self):
+        self.database = MagicMock()
+        self.database.session.return_value.__aenter__.return_value = AsyncMock()
+        self.database.session.return_value.__aexit__.return_value = None
+        self.content_service = MagicMock()
+        self.content_service.read_asset = AsyncMock(
+            return_value=ContentAsset(
+                data=b"<html>player</html>", content_type="text/html"
+            )
+        )
+        self.logger = MagicMock()
+        self.controller = TrainingContentController(
+            self.content_service,
+            CONTENT_HOST,
+            self.database,
+            self.logger,
+            app_origins=frozenset({"https://app.example.com"}),
+        )
+
+    async def get_player(self, query_string, asset_path=PLAYER_PATH):
+        request = make_request(
+            CONTENT_HOST, f"/p/{TOKEN}/{asset_path}", query_string=query_string
+        )
+        return await self.controller.get_asset(TOKEN, asset_path, request)
+
+    async def test_the_player_is_served_to_an_app_origin(self):
+        response = await self.get_player(b"appOrigin=https%3A%2F%2Fapp.example.com")
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.content_service.read_asset.assert_awaited_once()
+
+    async def test_the_player_is_refused_to_any_other_page(self):
+        for query in [
+            b"appOrigin=https%3A%2F%2Fevil.example.com",
+            b"appOrigin=https%3A%2F%2Fmain.purrf.pages.dev",
+            b"appOrigin=http%3A%2F%2Fapp.example.com",
+            b"appOrigin=",
+            b"",
+        ]:
+            with self.subTest(query=query):
+                self.content_service.read_asset.reset_mock()
+
+                response = await self.get_player(query)
+
+                self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+                self.assertEqual(
+                    await read_body(response),
+                    b"This course can only be opened from Purrf.",
+                )
+                self.content_service.read_asset.assert_not_awaited()
+
+    async def test_a_path_that_normalises_to_the_player_is_checked_too(self):
+        response = await self.get_player(b"", asset_path="./__player.html")
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+
+    async def test_course_files_are_not_checked_for_an_app_origin(self):
+        """Only the player reads appOrigin; the course's own files never carry it."""
+        request = make_request(CONTENT_HOST, f"/p/{TOKEN}/{ASSET_PATH}")
+
+        response = await self.controller.get_asset(TOKEN, ASSET_PATH, request)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
 
 class TestByteRanges(unittest.IsolatedAsyncioTestCase):

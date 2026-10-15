@@ -138,6 +138,7 @@ py_library(
     srcs = ["training_content_controller.py"],
     deps = [
         ":byte_range",
+        ":content_host",
         ":training_content_service",
         "//backend/common:api_endpoints",
         "@pypi//fastapi",

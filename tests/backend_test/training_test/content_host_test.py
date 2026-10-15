@@ -3,7 +3,12 @@
 import unittest
 from unittest.mock import MagicMock
 
-from backend.training.content_host import hostname_of, resolve_content_host
+from backend.training.content_host import (
+    app_origin_set,
+    hostname_of,
+    origin_of,
+    resolve_content_host,
+)
 
 _APP_ORIGINS = "https://purrf.io,https://api.purrf.io"
 _CONTENT_HOST = "training-content.purrf.io"
@@ -92,6 +97,35 @@ class TestContentHostingIsDisabled(_ResolveCase):
 
     def test_a_content_host_that_is_not_lowercase_is_refused(self):
         self.assertIsNone(self.resolve("Training.Purrf.io", _APP_ORIGINS))
+
+
+class TestOriginOf(unittest.TestCase):
+    def test_case_and_a_trailing_slash_do_not_matter(self):
+        self.assertEqual(origin_of("HTTPS://Purrf.io/"), "https://purrf.io")
+
+    def test_a_written_port_is_kept_and_a_path_is_dropped(self):
+        self.assertEqual(
+            origin_of("http://localhost:5173/admin"), "http://localhost:5173"
+        )
+
+    def test_a_scheme_is_part_of_the_origin(self):
+        self.assertNotEqual(origin_of("http://purrf.io"), origin_of("https://purrf.io"))
+
+    def test_something_that_is_not_an_origin_is_empty(self):
+        for value in ["", "purrf.io", "not a url", "https://", "https://x:notaport"]:
+            with self.subTest(value=value):
+                self.assertEqual(origin_of(value), "")
+
+
+class TestAppOriginSet(unittest.TestCase):
+    def test_every_listed_origin_is_in_the_set(self):
+        self.assertEqual(
+            app_origin_set(" https://purrf.io , https://api.purrf.io/ ,"),
+            frozenset({"https://purrf.io", "https://api.purrf.io"}),
+        )
+
+    def test_unset_is_empty(self):
+        self.assertEqual(app_origin_set(None), frozenset())
 
 
 if __name__ == "__main__":
