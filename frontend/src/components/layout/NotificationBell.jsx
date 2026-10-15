@@ -238,9 +238,13 @@ const describe = (n) => {
       // reached. Neither is named, because the row carries only the actor.
       return `${actor} reassigned the block request about ${n.subjectName}`;
     case "user.block_request_decided":
-      // The raiser is told a decision; the reviewer is told a withdrawal.
+      // The raiser is told a decision; the reviewer is told a withdrawal;
+      // both are told when a direct block closed it undecided.
       if (n.details?.decision === "withdrawn") {
         return `${actor} withdrew the block request about ${n.subjectName}`;
+      }
+      if (n.details?.decision === "superseded") {
+        return `${actor} blocked ${n.subjectName} directly, closing the block request about them`;
       }
       return n.details?.decision === "approved"
         ? `${actor} approved the block request you raised about ${n.subjectName}`

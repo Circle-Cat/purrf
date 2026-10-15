@@ -258,6 +258,28 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
             ),
             [],
         )
+        events = await self._events()
+        decided = [e for e in events if e[1] == "user.block_request_decided"]
+        self.assertEqual(len(decided), 1)
+        self.assertEqual(decided[0][2]["decision"], "superseded")
+        self.assertEqual(
+            await self._told(decided[0][0]),
+            {self.raiser.user_id, self.reviewer.user_id},
+        )
+
+    async def test_a_reviewer_who_blocks_directly_is_not_told_about_it(self):
+        await self._raise()
+
+        await self.service.block_directly(
+            self.session,
+            actor_id=self.reviewer.user_id,
+            user_id=self.target.user_id,
+            reason="Seen enough",
+        )
+
+        events = await self._events()
+        decided = [e for e in events if e[1] == "user.block_request_decided"]
+        self.assertEqual(await self._told(decided[0][0]), {self.raiser.user_id})
 
     async def test_the_pending_lists_show_the_request_to_both_sides(self):
         raised = await self._raise()

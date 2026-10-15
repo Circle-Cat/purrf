@@ -87,11 +87,11 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
         await self.insert_entities([row])
         return row
 
-    async def _render(self, event_type, details=None):
+    async def _render(self, event_type, details=None, actor_id=None):
         event = EventEntity(
             subject_type=USER_SUBJECT_TYPE,
             subject_id=self.target.user_id,
-            actor_id=self.raiser.user_id,
+            actor_id=self.raiser.user_id if actor_id is None else actor_id,
             event_type=event_type,
             details=(
                 {"requestId": self.request.request_id} if details is None else details
@@ -306,6 +306,33 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
 
         self.assertEqual(subject, "A block request was withdrawn")
         self.assertIn("A colleague has withdrawn the block request about Ada", body)
+
+    async def test_decided_superseded_says_a_direct_block_closed_it(self):
+        """Never worded as rejected: the person was in fact blocked."""
+        self.request.status = ApprovalRequestStatus.SUPERSEDED
+        self.request.decided_by = self.other_admin.user_id
+        await self.session.flush()
+
+        subject, body = await self._render(
+            UserEvent.BLOCK_REQUEST_DECIDED,
+            {
+                "requestId": self.request.request_id,
+                "decision": "superseded",
+                "comment": None,
+            },
+            actor_id=self.other_admin.user_id,
+        )
+
+        self.assertEqual(subject, "A block request was closed without a decision")
+        self.assertIn(
+            "Edsger Dijkstra directly blocked Ada Lovelace, so the block request "
+            "about them was closed without a decision.",
+            body,
+        )
+        self.assertIn("There is nothing left for you to do.", body)
+        self.assertNotIn("rejected", body)
+        self.assertNotIn("has not been blocked", body)
+        self.assertTrue(body.endswith(_FOOTER))
 
     # -- degraded input -----------------------------------------------------
 
