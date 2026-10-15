@@ -28,6 +28,7 @@ import {
 } from "@/utils/dateTime";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";
+import DisabledReason from "@/pages/AdminTraining/components/DisabledReason";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
 // Only the two live states with a hosted course get a dot -- External link
@@ -214,15 +215,8 @@ function StagedRow({ course, onDiscard, onPublish, discarding, canWrite }) {
                   Trial run
                 </Link>
               </Button>
-              {/* The reason hangs on the wrapper, not on the button: a
-                browser fires no pointer events on a disabled control, so a
-                title there is never shown -- and this is the only place the
-                "run it first" rule is stated. Same shape as the Assign
-                button's reasons on the assignment card. */}
-              <span
-                className="inline-flex"
-                title={publishBlockedReason(course) ?? undefined}
-              >
+              {/* This is the only place the "run it first" rule is stated. */}
+              <DisabledReason reason={publishBlockedReason(course)}>
                 <Button
                   size="sm"
                   disabled={!verified}
@@ -230,7 +224,7 @@ function StagedRow({ course, onDiscard, onPublish, discarding, canWrite }) {
                 >
                   Publish
                 </Button>
-              </span>
+              </DisabledReason>
               <Button
                 size="sm"
                 variant="ghost"
