@@ -4,11 +4,21 @@ export const SERVICES = [
     key: "mentorship",
     label: "Mentorship",
     badgeClass: "border-teal-200 bg-teal-50 text-teal-800",
+    file: {
+      action: "File to participant",
+      title: "File to a participant",
+      done: "Filed to the participant. Find it on their page from now on.",
+    },
   },
   {
     key: "recruiting",
     label: "Recruiting",
     badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-800",
+    file: {
+      action: "File to application",
+      title: "File to an application",
+      done: "Filed to the application. Find it on the application from now on.",
+    },
   },
   {
     key: "inquiries",
@@ -18,10 +28,12 @@ export const SERVICES = [
 ];
 
 /**
- * Look up a service's display metadata.
+ * Look up a service's display metadata. `file` holds the wording of filing a
+ * thread out of the Inbox, for the services that can.
  *
  * @param {string} key - Service key.
- * @returns {{key: string, label: string, badgeClass: string}}
+ * @returns {{key: string, label: string, badgeClass: string,
+ *   file?: {action: string, title: string, done: string}}}
  */
 export const serviceOf = (key) =>
   SERVICES.find((s) => s.key === key) ?? {

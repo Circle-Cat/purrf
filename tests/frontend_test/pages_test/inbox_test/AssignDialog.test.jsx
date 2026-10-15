@@ -58,7 +58,7 @@ describe("AssignDialog", () => {
       "Not registered",
     );
     fireEvent.change(select, { target: { value: "4" } });
-    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    fireEvent.click(screen.getByRole("button", { name: "File" }));
     expect(onAssign).toHaveBeenCalledWith({ userId: 7, roundId: 4 });
   });
 
@@ -74,14 +74,14 @@ describe("AssignDialog", () => {
     const { onAssign } = setup(
       thread({ person: null, matchedBy: null, noMatchingUser: true }),
     );
-    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "File" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Search people"), {
       target: { value: "lee" },
     });
     fireEvent.click(await screen.findByRole("button", { name: /Lee Ann/ }));
     expect(api.searchInboxPeople).toHaveBeenCalledWith("lee");
     await screen.findByLabelText("Round");
-    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    fireEvent.click(screen.getByRole("button", { name: "File" }));
     expect(onAssign).toHaveBeenCalledWith({ userId: 9, roundId: 1 });
   });
 
@@ -133,9 +133,12 @@ describe("AssignDialog", () => {
     );
     const { onAssign } = setup(thread({ service: "recruiting" }));
     const app = await screen.findByLabelText("Application");
+    expect(
+      screen.getByRole("heading", { name: "File to an application" }),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText("Job")).toBeNull();
     expect(app).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "File" })).toBeDisabled();
     expect([...app.querySelectorAll("optgroup")].map((g) => g.label)).toEqual([
       "Engineer",
       "Designer",
@@ -144,7 +147,7 @@ describe("AssignDialog", () => {
       screen.getByRole("option", { name: "#41 · Tech · Applied Sep 3, 2026" }),
     ).toBeInTheDocument();
     fireEvent.change(app, { target: { value: "30" } });
-    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    fireEvent.click(screen.getByRole("button", { name: "File" }));
     expect(onAssign).toHaveBeenCalledWith({ userId: 7, applicationId: 30 });
   });
 
@@ -173,7 +176,7 @@ describe("AssignDialog", () => {
         name: "#90 · Admitted · Applied Apr 10, 2026",
       }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    fireEvent.click(screen.getByRole("button", { name: "File" }));
     expect(onAssign).toHaveBeenCalledWith({ userId: 7, applicationId: 90 });
   });
 
@@ -199,11 +202,11 @@ describe("AssignDialog", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Lee Ann/ }));
     expect(await screen.findByLabelText("Application")).toHaveValue("");
     expect(api.getInboxAssignOptions).toHaveBeenLastCalledWith(1, 9);
-    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "File" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Application"), {
       target: { value: "77" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    fireEvent.click(screen.getByRole("button", { name: "File" }));
     expect(onAssign).toHaveBeenCalledWith({ userId: 9, applicationId: 77 });
   });
 
@@ -214,14 +217,16 @@ describe("AssignDialog", () => {
       data: { jobs: [] },
     });
     setup(thread({ service: "recruiting" }));
-    expect(await screen.findByText(/can't be assigned/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    expect(await screen.findByText(/can't be filed/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "File" })).toBeDisabled();
   });
 
   it("has no Remove assignment action", async () => {
     api.getInboxAssignOptions.mockResolvedValue({ data: { rounds: [] } });
     setup(thread());
-    expect(screen.getByRole("heading", { name: "Assign thread" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "File to a participant" }),
+    ).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Remove assignment" }),
     ).toBeNull();

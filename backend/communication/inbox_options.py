@@ -73,7 +73,7 @@ class InboxThreadOptions:
         thread, service = await self._load_visible(session, user, thread_id)
         messages = await self._messages.list_by_thread(session, thread_id)
         if not can_assign(service, facts_of(thread, messages)):
-            raise ValueError("This thread cannot be assigned")
+            raise ValueError("This thread cannot be filed")
         if service == InboxService.MENTORSHIP:
             return AssignOptionsDto(
                 rounds=await self._round_options(session, person_id)

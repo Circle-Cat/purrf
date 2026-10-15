@@ -45,8 +45,8 @@ async def _render_needs_reply(session: AsyncSession, event: EventEntity):
     if moved_from:
         old_name = _SERVICE_NAMES.get(moved_from, moved_from)
         return (
-            "An email moved to your inbox needs a reply",
-            f"<p>An email was moved from the {_e(old_name)} inbox to the "
+            "An email transferred to your inbox needs a reply",
+            f"<p>An email was transferred from the {_e(old_name)} inbox to the "
             f"{_e(name)} inbox and needs a reply: "
             f"“{_e(details.get('subject'))}” from {_e(details.get('from'))}.</p>"
             "<p>Open Inbox in Purrf to read and reply.</p>" + _FOOTER,

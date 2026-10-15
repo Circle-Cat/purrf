@@ -141,7 +141,7 @@ const ThreadDetail = ({
             key: "moved",
             system: true,
             at: thread.movedAt,
-            body: `Moved from ${serviceOf(thread.movedFrom).label}${
+            body: `Transferred from ${serviceOf(thread.movedFrom).label}${
               thread.replyAlias
                 ? `; replies now sent from ${thread.replyAlias}`
                 : ""
@@ -202,7 +202,7 @@ const ThreadDetail = ({
       <div className="flex flex-wrap items-center gap-2 border-y border-slate-200 py-3">
         {thread.canAssign && (
           <Button size="sm" disabled={pending} onClick={onAssign}>
-            Assign
+            {service.file?.action}
           </Button>
         )}
         {thread.archived ? (
@@ -226,7 +226,7 @@ const ThreadDetail = ({
         )}
         <span className="flex items-center gap-1.5">
           <label htmlFor="move-target" className="sr-only">
-            Move to
+            Transfer to
           </label>
           <select
             id="move-target"
@@ -234,7 +234,7 @@ const ThreadDetail = ({
             onChange={(e) => setMoveTarget(e.target.value)}
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
           >
-            <option value="">Move to…</option>
+            <option value="">Transfer to…</option>
             {SERVICES.filter((s) => s.key !== thread.service).map((s) => (
               <option key={s.key} value={s.key}>
                 {s.label}
@@ -250,15 +250,17 @@ const ThreadDetail = ({
               setMoveTarget("");
             }}
           >
-            Move
+            Transfer
           </Button>
         </span>
       </div>
 
       <p className="text-xs text-slate-500">
-        Moving hands the thread to that service. Replies then go out from that
-        service&apos;s alias, and you may no longer see it if you lack that
-        service&apos;s permission.
+        Transfer hands the thread to that team: it arrives unarchived, its
+        people are told if it still needs a reply, and replies then go out from
+        that service&apos;s alias. You may no longer see it if you lack that
+        service&apos;s permission. Archive hides the thread until they write
+        again.
       </p>
 
       {thread.openBounce && (

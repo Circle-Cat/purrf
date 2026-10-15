@@ -153,7 +153,7 @@ const describe = (n) => {
     case "inbox.needs_reply": {
       const subject = n.details?.subject || "(no subject)";
       return n.details?.movedFrom
-        ? `${actor} moved an email from ${serviceOf(n.details.movedFrom).label} that needs a reply: ${subject}`
+        ? `${actor} transferred an email from ${serviceOf(n.details.movedFrom).label} that needs a reply: ${subject}`
         : `New email needs a reply: ${subject}`;
     }
     // Told to the person who sent the email that bounced.
