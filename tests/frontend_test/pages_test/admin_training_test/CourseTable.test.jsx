@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -404,17 +404,22 @@ describe("CourseTable staged sub-row", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps Publish on screen but disabled, with a reason that can be read", () => {
+  it("keeps Publish on screen but disabled, and says why on hover", async () => {
+    const user = userEvent.setup();
     renderTable([staged()]);
 
-    // A browser fires no pointer events on a disabled button, so a title on
-    // the button itself is never shown -- and this is the only place the
-    // rule is stated. It has to hang on something that is not disabled.
-    const reason = screen.getByTitle("Run this package to completion first");
-    expect(reason).not.toBeDisabled();
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish).toBeDisabled();
+
+    // The disabled button takes no pointer events; its wrapper does, and is
+    // focusable for the keyboard.
+    expect(publish.parentElement).toHaveAttribute("tabindex", "0");
+    await user.hover(publish.parentElement);
     expect(
-      within(reason).getByRole("button", { name: "Publish" }),
-    ).toBeDisabled();
+      await screen.findByRole("tooltip", {
+        name: "Run this package to completion first",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("enables Publish once the staged package is verified", () => {

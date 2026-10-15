@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import AudienceTable from "@/pages/AdminTraining/components/AudienceTable";
+import DisabledReason from "@/pages/AdminTraining/components/DisabledReason";
 import { useAudienceSearch } from "@/pages/AdminTraining/hooks/useAudienceSearch";
 import { bulkAssignBlockedReason } from "@/pages/AdminTraining/utils";
 
@@ -127,27 +128,28 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
             </select>
           </div>
 
-          <div
-            className="flex flex-col gap-1"
-            title={
-              audience.groupDisabled
-                ? "A group only exists for an internal account"
-                : undefined
-            }
-          >
+          <div className="flex flex-col gap-1">
             <Label htmlFor="audience-group">Group</Label>
-            <select
-              id="audience-group"
-              className={SELECT_CLASS}
-              value={audience.group}
-              disabled={audience.groupDisabled}
-              onChange={(event) => audience.setGroup(event.target.value)}
+            <DisabledReason
+              reason={
+                audience.groupDisabled
+                  ? "A group only exists for an internal account"
+                  : null
+              }
             >
-              <option value="">All groups</option>
-              <option value="interns">Interns</option>
-              <option value="employees">Employees</option>
-              <option value="volunteers">Volunteers</option>
-            </select>
+              <select
+                id="audience-group"
+                className={SELECT_CLASS}
+                value={audience.group}
+                disabled={audience.groupDisabled}
+                onChange={(event) => audience.setGroup(event.target.value)}
+              >
+                <option value="">All groups</option>
+                <option value="interns">Interns</option>
+                <option value="employees">Employees</option>
+                <option value="volunteers">Volunteers</option>
+              </select>
+            </DisabledReason>
           </div>
 
           <div className="flex flex-col gap-1">
@@ -166,26 +168,29 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
             </select>
           </div>
 
-          <div
-            className="flex flex-col gap-1"
-            title={
-              audience.courseStatusDisabled
-                ? "Pick a course to filter by"
-                : undefined
-            }
-          >
+          <div className="flex flex-col gap-1">
             <Label htmlFor="audience-course-status">On this course</Label>
-            <select
-              id="audience-course-status"
-              className={SELECT_CLASS}
-              value={audience.courseStatus}
-              disabled={audience.courseStatusDisabled}
-              onChange={(event) => audience.setCourseStatus(event.target.value)}
+            <DisabledReason
+              reason={
+                audience.courseStatusDisabled
+                  ? "Pick a course to filter by"
+                  : null
+              }
             >
-              <option value="">All statuses</option>
-              <option value="assigned">Assigned</option>
-              <option value="not_assigned">Not assigned</option>
-            </select>
+              <select
+                id="audience-course-status"
+                className={SELECT_CLASS}
+                value={audience.courseStatus}
+                disabled={audience.courseStatusDisabled}
+                onChange={(event) =>
+                  audience.setCourseStatus(event.target.value)
+                }
+              >
+                <option value="">All statuses</option>
+                <option value="assigned">Assigned</option>
+                <option value="not_assigned">Not assigned</option>
+              </select>
+            </DisabledReason>
           </div>
 
           <Button type="button" onClick={audience.submitSearch}>
@@ -204,12 +209,11 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
             bar. Wrapping keeps that reading on a narrow screen. */}
         {showControls && (
           <div className="flex flex-wrap items-end justify-end gap-3">
-            <span
-              className="inline-flex"
-              title={
+            <DisabledReason
+              reason={
                 audience.facetsEdited
                   ? "Search again before selecting everyone"
-                  : undefined
+                  : null
               }
             >
               <Button
@@ -221,7 +225,7 @@ export default function AssignTrainingCard({ courses, canWrite = true }) {
               >
                 {`Select all ${audience.total} matching`}
               </Button>
-            </span>
+            </DisabledReason>
             <span className="text-sm text-muted-foreground">
               {`${selectedCount} selected`}
             </span>
