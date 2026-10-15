@@ -84,6 +84,15 @@ class TestRecruitingMapper(unittest.TestCase):
 
         self.assertEqual(dto.name, "Robert Smith")
 
+    def test_to_approver_dto_names_a_person_with_no_name_by_user_id(self):
+        """An email-code account has no name; the picker still shows a label."""
+        user = UsersEntity(first_name="", last_name="", preferred_name=None)
+        user.user_id = 276
+
+        dto = self.mapper.to_approver_dto(user, "r@example.com")
+
+        self.assertEqual(dto.name, "User 276")
+
     def test_to_board_card_dto_names_the_applicant_by_their_legal_name(self):
         """A candidate's preferred name never replaces their legal name.
 

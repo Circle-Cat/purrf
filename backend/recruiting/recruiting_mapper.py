@@ -3,7 +3,7 @@ from backend.entity.application_interview_entity import ApplicationInterviewEnti
 from backend.entity.job_entity import JobEntity
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import display_name_or_id
 from backend.common.recruiting_enums import PUBLICLY_VISIBLE_JOB_STATUSES
 from backend.dto.board_dto import BoardApplicantHitDto, BoardCardDto
 from backend.dto.interview_dto import InterviewDto
@@ -18,7 +18,8 @@ class RecruitingMapper:
         """Map a user to an ApproverDto (display name + contact email).
 
         An approver is an internal colleague, so their name resolves through
-        ``user_display_name``: preferred name first, full name as the fallback.
+        ``display_name_or_id``: preferred name first, full name as the fallback,
+        and ``User <id>`` for a person with no name.
 
         Args:
             user (UsersEntity): The approver row.
@@ -31,11 +32,7 @@ class RecruitingMapper:
         """
         return ApproverDto(
             user_id=user.user_id,
-            name=user_display_name(
-                first_name=user.first_name,
-                last_name=user.last_name,
-                preferred_name=user.preferred_name,
-            ),
+            name=display_name_or_id(user),
             email=email,
         )
 

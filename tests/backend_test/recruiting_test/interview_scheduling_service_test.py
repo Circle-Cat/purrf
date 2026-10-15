@@ -255,6 +255,25 @@ class ScheduleTest(_BaseTest):
         self.assertEqual(result.assignee_name, "Iv")
         self.assertEqual(result.scheduled_by_name, "Ray")
 
+    async def test_names_interview_staff_with_no_name_by_user_id(self):
+        """A colleague with no name reads User <id>, never an empty string."""
+        self._users_by_id({
+            CANDIDATE_ID: self._person("Ana", "Lopez"),
+            ASSIGNEE_ID: SimpleNamespace(
+                user_id=ASSIGNEE_ID, first_name="", last_name="", preferred_name=None
+            ),
+            OWNER_ID: SimpleNamespace(
+                user_id=OWNER_ID, first_name=None, last_name=None, preferred_name=""
+            ),
+        })
+
+        result = await self.service.schedule(
+            self.session, self._ctx(), APPLICATION_ID, self._dto()
+        )
+
+        self.assertEqual(result.assignee_name, f"User {ASSIGNEE_ID}")
+        self.assertEqual(result.scheduled_by_name, f"User {OWNER_ID}")
+
     async def test_calendar_title_uses_the_candidates_legal_first_name(self):
         """The invitation a candidate receives names them legally."""
         self._users_by_id({
