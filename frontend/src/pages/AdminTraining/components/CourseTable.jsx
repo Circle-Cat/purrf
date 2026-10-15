@@ -146,11 +146,14 @@ function PackageCell({ course }) {
     // The version is the natural thing to click when the question is "what
     // exactly are learners on right now" -- so it is the door to the answer
     // rather than a separate button competing with the row's own actions.
+    // Alone it is a bare hash to a screen reader, so the link names what it
+    // opens before it; the visible label stays the version.
     return (
       <Link
         to={ROUTE_PATHS.TRAINING_PREVIEW(course.courseId)}
         className="font-mono text-xs text-primary underline-offset-4 hover:underline"
       >
+        <span className="sr-only">Preview package </span>
         {course.packageVersion}
       </Link>
     );

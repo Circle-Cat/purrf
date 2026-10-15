@@ -45,10 +45,17 @@ def _payload(token):
 
 
 def _sign(key, claims):
-    """Encode and sign a claims dict for real, unlike the forgery tests
-    above which reattach an ORIGINAL signature to a mutated payload -- those
-    die at the signature check and never reach the JSON-parsing branch."""
-    payload = json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    """Encode and sign a claims dict for real, so a malformed-shape test
+    reaches the JSON-parsing branch. Reattaching the original signature to a
+    mutated payload would die at the signature check instead."""
+    return _sign_raw(
+        key,
+        json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+    )
+
+
+def _sign_raw(key, payload):
+    """Sign arbitrary payload bytes, JSON or not."""
     signature = (
         base64.urlsafe_b64encode(
             hmac.new(key.encode("utf-8"), payload, hashlib.sha256).digest()
@@ -81,16 +88,11 @@ class TestIssueAndVerify(unittest.TestCase):
 
     def test_a_token_from_the_old_payload_shape_is_refused(self):
         """A tab that was open across the deploy holds one of these. Refusing
-        it is what stops its stale CMI model from being written back."""
-        token, _ = issue_content_token(
-            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
-        )
-        payload, signature = _split(token)
-        claims = json.loads(_decode_segment(payload))
-        del claims["p"]
-        stale = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+        it is what stops its stale CMI model from being written back. Signed
+        for real, so it is the missing package that refuses it."""
+        stale = _sign(_KEY, {"t": _TRAINING_ID, "u": _USER_ID, "e": _NOW + 100})
 
-        with self.assertRaises(InvalidContentToken):
+        with self.assertRaisesRegex(InvalidContentToken, "^Malformed"):
             verify_content_token(_KEY, stale, now=_NOW)
 
     def test_the_returned_expiry_is_the_one_the_claims_carry(self):
@@ -226,35 +228,28 @@ class TestGarbageInput(unittest.TestCase):
         _, signature = _split(token)
         self._assert_only_invalid_content_token("caf\u00e9." + signature)
 
+    def _assert_refused_as_malformed(self, token):
+        """Refused by the payload parsing, not by the signature check: the
+        two raise different messages, and only a correctly signed token gets
+        as far as parsing."""
+        with self.assertRaisesRegex(InvalidContentToken, "^Malformed"):
+            verify_content_token(_KEY, token, now=_NOW)
+
     def test_base64_that_is_not_the_expected_json_is_refused(self):
-        token, _ = issue_content_token(
-            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
-        )
-        _, signature = _split(token)
-        self._assert_only_invalid_content_token(
-            _encode_segment(b"this is not json") + "." + signature
-        )
+        self._assert_refused_as_malformed(_sign_raw(_KEY, b"this is not json"))
 
     def test_json_of_the_wrong_shape_is_refused(self):
-        token, _ = issue_content_token(
-            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
-        )
-        _, signature = _split(token)
-        self._assert_only_invalid_content_token(
-            _encode_segment(json.dumps(["not", "an", "object"]).encode())
-            + "."
-            + signature
+        self._assert_refused_as_malformed(
+            _sign_raw(_KEY, json.dumps(["not", "an", "object"]).encode())
         )
 
     def test_a_payload_with_no_t_key_at_all_is_refused(self):
         """`t: null` is now legal (a preview), but a payload that never had a
         `t` key -- a token minted before package_id existed -- must still be
-        refused. Signed correctly, so this reaches the parsing branch rather
-        than dying at the signature check like the other malformed-shape
-        tests in this class do."""
+        refused."""
         token = _sign(_KEY, {"p": _PACKAGE_ID, "u": _USER_ID, "e": _NOW + 100})
 
-        self._assert_only_invalid_content_token(token)
+        self._assert_refused_as_malformed(token)
 
     def test_invalid_content_token_is_a_value_error(self):
         self.assertTrue(issubclass(InvalidContentToken, ValueError))

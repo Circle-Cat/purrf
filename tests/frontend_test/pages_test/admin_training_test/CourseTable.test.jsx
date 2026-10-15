@@ -267,10 +267,12 @@ describe("CourseTable", () => {
   it("makes the live version a link into the preview", () => {
     renderTable([{ ...verified, courseId: 9, packageVersion: "qPpo9zHD" }]);
 
-    expect(screen.getByRole("link", { name: "qPpo9zHD" })).toHaveAttribute(
-      "href",
-      "/admin/training/9/preview",
-    );
+    // The version is what shows; a screen reader also hears what it opens.
+    const link = screen.getByRole("link", {
+      name: "Preview package qPpo9zHD",
+    });
+    expect(link).toHaveAttribute("href", "/admin/training/9/preview");
+    expect(screen.getByText("Preview package")).toHaveClass("sr-only");
   });
 
   it("leaves a live course whose package version cannot be read with nothing to click", () => {
