@@ -42,6 +42,7 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.application_email_policy import RecruitingApplicationEmailPolicy
+from backend.recruiting.candidate_names import candidate_name_of, candidate_names
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 _MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
@@ -392,12 +393,16 @@ class BoardService:
                 session, [user.user_id for _, user in rows]
             )
         )
+        names_by_user_id = await candidate_names(
+            session, self.application_submission_repository, [u for _, u in rows]
+        )
         hits = [
             self.recruiting_mapper.to_board_applicant_hit_dto(
                 application,
                 user,
                 jobs_by_id[application.job_id],
                 applicant_email=contact_by_user_id.get(user.user_id, ""),
+                applicant_name=names_by_user_id[user.user_id],
             )
             for application, user in rows
         ]
@@ -879,6 +884,10 @@ class BoardService:
             )
         )
 
+        applicant_names = await candidate_names(
+            session, self.application_submission_repository, [u for _, u in rows]
+        )
+
         cards = []
         for application, user in rows:
             reviewer_name = None
@@ -898,6 +907,7 @@ class BoardService:
                     user,
                     reviewer_name=reviewer_name,
                     applicant_email=contact_by_user_id.get(user.user_id, ""),
+                    applicant_name=applicant_names[user.user_id],
                 )
             )
         return cards
@@ -1157,10 +1167,8 @@ class BoardService:
         )
         return ApplicationDetailDto(
             application=application_dto,
-            applicant_name=(
-                f"{user.first_name} {user.last_name}".strip()
-                if user is not None
-                else ""
+            applicant_name=await candidate_name_of(
+                session, self.application_submission_repository, user
             ),
             applicant_email=applicant_email or "",
             resume_available=bool(

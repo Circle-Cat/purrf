@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
@@ -290,6 +291,47 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
 
         self.assertEqual(
             subject, "Amazing Grace mentioned you: Ada Lovelace (Backend Engineer)"
+        )
+
+    async def test_mentioned_names_a_nameless_candidate_by_what_they_typed(self):
+        """An email-code account has no name; the one they typed stands in."""
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("", "", preferred_name="Addy")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        await self.insert_entities([
+            ApplicationSubmissionEntity(
+                application_id=application.application_id,
+                version=1,
+                submission={"personal": {"firstName": "Typed", "lastName": "Name"}},
+            )
+        ])
+        event = await self._make_event(
+            "recruiting.mentioned", "application", application.application_id, actor
+        )
+
+        subject, _ = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Grace Hopper mentioned you: Typed Name (Backend Engineer)"
+        )
+
+    async def test_mentioned_names_a_candidate_who_typed_nothing_by_user_id(self):
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("", "", preferred_name="Addy")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.mentioned", "application", application.application_id, actor
+        )
+
+        subject, _ = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject,
+            f"Grace Hopper mentioned you: User {candidate.user_id} (Backend Engineer)",
         )
 
     async def test_auto_assigned_reads_as_automatic_when_the_event_has_no_actor(self):

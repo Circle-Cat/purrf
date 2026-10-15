@@ -12,9 +12,10 @@ The product rule is:
   application detail, notifications about them, calendar invitations and the
   emails they receive. Their own preferred name does not override it, because
   those surfaces are records of, or correspondence with, a person outside the
-  organisation.
+  organisation. An account with no legal name is named by what the candidate
+  typed into their latest application, then as ``"User <id>"``.
 
-This module owns the second rule so every surface that names another person
+This module owns the second and third rules so every surface that names another person
 resolves it the same way.
 
 The first rule needs no helper on this side -- the fields travel separately and
@@ -84,3 +85,52 @@ def display_name_or_id(user) -> str:
         str: The resolved display name, or ``"User <id>"`` when it is empty.
     """
     return display_name_of(user) or f"User {user.user_id}"
+
+
+def _typed_name(typed_personal: dict | None) -> str:
+    """The ``"first last"`` a candidate typed into an application form."""
+    if not isinstance(typed_personal, dict):
+        return ""
+    parts = (typed_personal.get("firstName"), typed_personal.get("lastName"))
+    return " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+
+
+def candidate_legal_name(user) -> str:
+    """A candidate's legal ``"first last"`` name from their account.
+
+    Args:
+        user: A ``UsersEntity``, or None when the row could not be loaded.
+
+    Returns:
+        str: ``"first last"`` trimmed, with missing parts treated as empty;
+            "" when ``user`` is None or has no legal name.
+    """
+    if user is None:
+        return ""
+    return f"{user.first_name or ''} {user.last_name or ''}".strip()
+
+
+def candidate_name(user, typed_personal: dict | None = None) -> str:
+    """Name a candidate wherever they appear as the applicant.
+
+    The legal name on the account comes first. An account created by an
+    email-code sign-in has none, so the name the candidate typed into their
+    most recent application stands in for it, and ``"User <id>"`` when they
+    typed nothing either. The preferred name is never used (see the module
+    docstring).
+
+    Args:
+        user: A ``UsersEntity``, or None when the row could not be loaded.
+        typed_personal (dict | None): The ``personal`` block of the
+            candidate's most recent application submission, if any.
+
+    Returns:
+        str: The resolved name, or "" when ``user`` is None.
+    """
+    if user is None:
+        return ""
+    return (
+        candidate_legal_name(user)
+        or _typed_name(typed_personal)
+        or f"User {user.user_id}"
+    )
