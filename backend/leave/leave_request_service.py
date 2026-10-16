@@ -35,12 +35,14 @@ from backend.common.leave_enums import (
     LeaveRequestStatus,
     LeaveRequestType,
 )
-from backend.common.name_utils import user_display_name
 from backend.dto.leave_request_dto import LeaveRequestDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_clock import business_today
-from backend.leave.leave_participants import ldap_from_addresses
+from backend.leave.leave_participants import (
+    ldap_from_addresses,
+    resolve_names_and_ldaps,
+)
 from backend.leave.leave_workdays import (
     request_hours,
     required_notice_workdays,
@@ -520,22 +522,14 @@ class LeaveRequestService:
             session, approver_user_id, list(LeaveRequestStatus)
         )
         user_ids = sorted({request.user_id for request in requests})
-        people = await self.users_repository.get_all_by_ids(session, user_ids)
-        name_by_id = {
-            person.user_id: user_display_name(
-                first_name=person.first_name,
-                last_name=person.last_name,
-                preferred_name=person.preferred_name,
-            )
-            for person in people
-        }
-        addresses_by_id = await self.user_emails_repository.get_emails_by_user_ids(
-            session, user_ids
+
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            session,
+            user_ids,
+            self.users_repository,
+            self.user_emails_repository,
         )
-        ldap_by_id = {
-            user_id: ldap_from_addresses(addresses)
-            for user_id, addresses in addresses_by_id.items()
-        }
+
         # Only for what is still waiting: a decided request has already moved
         # the ledger, so there is no "would" left to answer.
         pending_user_ids = sorted({

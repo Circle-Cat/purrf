@@ -6,15 +6,16 @@ from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.leave.leave_balance_service import LeaveBalanceService
+from backend.common.leave_enums import LeaveEntryType
 
 
 def _ledger_entry(
     leave_ledger_id=812,
     effective_date=datetime.date(2026, 3, 1),
     user_id=1,
-    entry_type="ACCRUAL",
+    entry_type=LeaveEntryType.WEEKLY_ACCRUAL,
     hours=Decimal("8.00"),
-    note="Monthly Accrual",
+    note="Weekly Accrual",
 ):
     """Helper to construct a mock leave ledger entry entity."""
     entry = MagicMock()
@@ -126,12 +127,12 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.session.commit.assert_not_awaited()
 
     async def test_list_ledger_paginates_and_resolves_names_and_ldaps(self):
-        """Verify list_ledger queries entries with pagination, total count, and resolves names and ldaps correctly."""
+        """Verify list_ledger queries entries with pagination, total count, and handles missing names/ldaps gracefully."""
         entry1 = _ledger_entry(
             leave_ledger_id=812,
             effective_date=datetime.date(2026, 7, 1),
             user_id=44,
-            entry_type="level_change",
+            entry_type=LeaveEntryType.LEVEL_CHANGE,
             hours=Decimal("0.00"),
             note="L1 -> L3",
         )
@@ -139,12 +140,20 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
             leave_ledger_id=799,
             effective_date=datetime.date(2026, 5, 6),
             user_id=51,
-            entry_type="leave_deduction",
+            entry_type=LeaveEntryType.LEAVE_DEDUCTION,
             hours=Decimal("-8.00"),
             note=None,
         )
+        entry3 = _ledger_entry(
+            leave_ledger_id=750,
+            effective_date=datetime.date(2026, 4, 1),
+            user_id=60,
+            entry_type=LeaveEntryType.WEEKLY_ACCRUAL,
+            hours=Decimal("8.00"),
+            note="Weekly Accrual",
+        )
 
-        self.repository.list_entries.return_value = [entry1, entry2]
+        self.repository.list_entries.return_value = [entry1, entry2, entry3]
         self.repository.count_entries.return_value = 347
 
         self.users_repository.get_all_by_ids.return_value = [
@@ -156,7 +165,6 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
 
         self.user_emails_repository.get_emails_by_user_ids.return_value = {
             44: ["wen.zhang@circlecat.org"],
-            51: ["li.si@circlecat.org"],
         }
 
         page_dto = await self.service.list_ledger(
@@ -171,7 +179,7 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.assertEqual(page_dto.page, 1)
         self.assertEqual(page_dto.page_size, 50)
         self.assertEqual(page_dto.total_entries, 347)
-        self.assertEqual(len(page_dto.entries), 2)
+        self.assertEqual(len(page_dto.entries), 3)
 
         row1 = page_dto.entries[0]
         self.assertEqual(row1.leave_ledger_id, 812)
@@ -188,10 +196,20 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.assertEqual(row2.effective_date, "2026-05-06")
         self.assertEqual(row2.user_id, 51)
         self.assertEqual(row2.name, "Li Si")
-        self.assertEqual(row2.ldap, "li.si")
+        self.assertIsNone(row2.ldap)
         self.assertEqual(row2.entry_type, "leave_deduction")
         self.assertEqual(row2.hours, "-8.00")
         self.assertIsNone(row2.note)
+
+        row3 = page_dto.entries[2]
+        self.assertEqual(row3.leave_ledger_id, 750)
+        self.assertEqual(row3.effective_date, "2026-04-01")
+        self.assertEqual(row3.user_id, 60)
+        self.assertIsNone(row3.name)
+        self.assertIsNone(row3.ldap)
+        self.assertEqual(row3.entry_type, "weekly_accrual")
+        self.assertEqual(row3.hours, "8.00")
+        self.assertEqual(row3.note, "Weekly Accrual")
 
     async def test_list_ledger_only_resolves_users_on_that_page(self):
         """Verify user details are fetched ONLY for user_ids appearing on the requested page."""

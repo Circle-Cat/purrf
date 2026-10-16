@@ -220,11 +220,13 @@ class LeaveLedgerRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[LeaveLedgerEntity]:
-        """Lists all ledger entries for a single user in reverse chronological order.
+        """Lists ledger entries for all users or a specific user in reverse chronological order.
 
         Args:
             session: Active async session.
-            user_id: Whose ledger entries to retrieve.
+            user_id: Whose ledger entries to retrieve. If None, retrieves entries across all users.
+            limit: Maximum number of entries to return for pagination. If None, retrieves all matching entries.
+            offset: Number of entries to skip before starting to collect the result set.
 
         Returns:
             A list of LeaveLedgerEntity objects ordered by effective_date and id descending.
@@ -233,15 +235,14 @@ class LeaveLedgerRepository:
         if user_id is not None:
             stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
 
-        stmt = stmt.order_by(
-            LeaveLedgerEntity.effective_date.desc(),
-            LeaveLedgerEntity.leave_ledger_id.desc(),
+        stmt = (
+            stmt.order_by(
+                LeaveLedgerEntity.effective_date.desc(),
+                LeaveLedgerEntity.leave_ledger_id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
         )
-
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        if offset > 0:
-            stmt = stmt.offset(offset)
 
         result = await session.execute(stmt)
         return list(result.scalars().all())

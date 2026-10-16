@@ -7,8 +7,9 @@ from backend.dto.leave_balance_dto import (
     LeaveLedgerRowDto,
 )
 
-from backend.leave.leave_participants import ldap_from_addresses
-from backend.common.name_utils import user_display_name
+from backend.leave.leave_participants import (
+    resolve_names_and_ldaps,
+)
 
 
 class LeaveBalanceService:
@@ -89,6 +90,11 @@ class LeaveBalanceService:
         # Calculate database pagination offset
         offset = (page - 1) * page_size
 
+        # Note: total_entries is queried separately from the page entries above.
+        # A concurrent write committed between these two queries (e.g., weekly
+        # accruals or manual adjustments) may cause total_entries to slightly
+        # disagree with the returned page rows. This is acceptable for an admin view.
+
         # Query entries for the current page and total entries matching the filter
         entries_entities = await self.leave_ledger_repository.list_entries(
             session, user_id, limit=page_size, offset=offset
@@ -100,25 +106,12 @@ class LeaveBalanceService:
         # Extract user_ids for the current page only to avoid bulk loading unnecessary accounts
         page_user_ids = sorted({entry.user_id for entry in entries_entities})
 
-        # Batch fetch user records and build display name mapping
-        users = await self.users_repository.get_all_by_ids(session, page_user_ids)
-        name_by_id = {
-            user.user_id: user_display_name(
-                first_name=user.first_name,
-                last_name=user.last_name,
-                preferred_name=user.preferred_name,
-            )
-            for user in users
-        }
-
-        # Batch fetch user emails and resolve ldaps using ldap_from_addresses
-        addresses_by_id = await self.user_emails_repository.get_emails_by_user_ids(
-            session, page_user_ids
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            session,
+            page_user_ids,
+            self.users_repository,
+            self.user_emails_repository,
         )
-        ldap_by_id = {
-            uid: ldap_from_addresses(addresses)
-            for uid, addresses in addresses_by_id.items()
-        }
 
         # Map current page entities into LeaveLedgerRowDto instances
         entry_dtos = [
@@ -128,9 +121,7 @@ class LeaveBalanceService:
                 user_id=entry.user_id,
                 name=name_by_id.get(entry.user_id),
                 ldap=ldap_by_id.get(entry.user_id),
-                entry_type=entry.entry_type.value
-                if hasattr(entry.entry_type, "value")
-                else str(entry.entry_type),
+                entry_type=entry.entry_type.value,
                 hours=f"{entry.hours:.2f}",
                 note=entry.note,
             )
