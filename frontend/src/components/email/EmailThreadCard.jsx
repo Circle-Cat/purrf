@@ -1,7 +1,7 @@
 import { AlertTriangle, Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EMAIL_BODY_BOX_CLASS, sanitizeEmailBody } from "@/utils/emailHtml";
+import EmailBody from "@/components/email/EmailBody";
 import { formatSize } from "@/pages/Inbox/inboxDisplay";
 import { messageTime } from "@/components/email/emailThreads";
 
@@ -35,10 +35,6 @@ export const EmailMessage = ({ message, formatTime, attachmentUrl }) => {
     message.inboundKind ??
     (message.failedRecipients != null ? "bounce" : undefined);
   const tag = KIND_TAGS[kind];
-  const html =
-    message.bodyHtml != null && message.bodyHtml !== ""
-      ? sanitizeEmailBody(message.bodyHtml)
-      : null;
   const when = messageTime(message);
   const attachments = message.attachments ?? [];
   return (
@@ -65,20 +61,11 @@ export const EmailMessage = ({ message, formatTime, attachmentUrl }) => {
         <dt>To</dt>
         <dd className="break-all text-slate-700">{message.toAddresses}</dd>
       </dl>
-      {html != null ? (
-        // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
-        // margins, drops list markers and strips link underlines; without
-        // these hooks a message reads as one dense block whose links look
-        // like plain text.
-        <div
-          className={`max-w-none text-slate-700 ${EMAIL_BODY_BOX_CLASS} [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5`}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <p className="whitespace-pre-wrap text-slate-700">
-          {message.bodyText ?? ""}
-        </p>
-      )}
+      <EmailBody
+        html={message.bodyHtml}
+        text={message.bodyText}
+        className="text-slate-700"
+      />
       {attachments.length > 0 && (
         <ul aria-label="Attachments" className="mt-2 flex flex-wrap gap-2">
           {attachments.map((attachment, index) => {
