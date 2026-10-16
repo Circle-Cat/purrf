@@ -1858,8 +1858,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         dto = ApplicationSubmitDto.model_validate({
             "personal": REQUIRED_PERSONAL,
             "jobId": 1,
-            "resumeObjectKey": "resumes/abc.pdf",
-            "resumeSha256": "abc",
+            "resumeObjectKey": "resumes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf",
+            "resumeSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         })
         await self.service.submit(self.session, self._ctx(), dto)
         created_sub = self.sub_repo.create.call_args.args[1]
@@ -1887,8 +1887,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=current)
         dto = ApplicationEditDto.model_validate({
             "personal": REQUIRED_PERSONAL,
-            "resumeObjectKey": "resumes/abc.pdf",
-            "resumeSha256": "abc",
+            "resumeObjectKey": "resumes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf",
+            "resumeSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         })
         await self.service.edit(self.session, self._ctx(), 100, dto)
         written_sub = self.sub_repo.update.call_args.args[1]
