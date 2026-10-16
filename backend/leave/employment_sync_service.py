@@ -51,6 +51,8 @@ class _EntitlementChange:
     ldap: str
     old_level: str
     new_level: str
+    old_annual_hours: int
+    new_annual_hours: int
 
 
 class EmploymentSyncService:
@@ -178,9 +180,9 @@ class EmploymentSyncService:
     ) -> None:
         """Appends a zero-hour ledger row per entitlement change.
 
-        The row is read for its date, not its amount: carrying no hours is what
-        lets a balance stay the plain sum of every row, with no type filter for
-        a reader to forget. Anyone without a purrf account cannot have a row
+        The row is read for its date and the entitlement on either side, not
+        its amount: carrying no hours is what lets a balance stay the plain sum
+        of every row, with no type filter for a reader to forget. Anyone without a purrf account cannot have a row
         pointing at them, so they are named in a warning instead.
 
         Args:
@@ -200,6 +202,8 @@ class EmploymentSyncService:
                     hours=Decimal("0.00"),
                     effective_date=business_today(),
                     note=f"{change.old_level} -> {change.new_level}",
+                    annual_hours_before=change.old_annual_hours,
+                    annual_hours_after=change.new_annual_hours,
                 )
                 for change in changes
                 if change.ldap in resolved.by_ldap
@@ -345,6 +349,8 @@ def _entitlement_changes(cached: dict, latest: dict) -> list[_EntitlementChange]
                 ldap=ldap,
                 old_level=before["level"],
                 new_level=after["level"],
+                old_annual_hours=int(before.get("annual_hours") or 0),
+                new_annual_hours=int(after.get("annual_hours") or 0),
             )
         )
     return changes

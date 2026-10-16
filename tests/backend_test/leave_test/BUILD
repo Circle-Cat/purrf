@@ -105,6 +105,7 @@ py_test(
     srcs = ["leave_engine_service_test.py"],
     deps = [
         "//backend/common:leave_enums",
+        "//backend/entity:entities",
         "//backend/leave:leave_engine_service",
     ],
 )
