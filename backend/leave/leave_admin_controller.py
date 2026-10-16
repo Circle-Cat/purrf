@@ -13,8 +13,6 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
 from fastapi import APIRouter, Query
 
-print("DEBUG: Query loaded successfully ->", Query)
-
 
 class LeaveAdminController:
     """Admin-only leave routes, gated by ``Permission.LEAVE_ADMIN``.

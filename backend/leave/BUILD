@@ -122,6 +122,7 @@ py_library(
     srcs = ["leave_participants.py"],
     deps = [
         "//backend/common:constants",
+        "//backend/common:name_utils",
         "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
