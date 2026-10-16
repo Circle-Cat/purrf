@@ -25,6 +25,7 @@ vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
     scheduleUnavailableReason,
     canLogPast,
     logPartnerId,
+    logExistingMeetings,
     logUnavailableReason,
     userTimezone,
     onLogged,
@@ -36,6 +37,9 @@ vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
       data-schedule-unavailable={scheduleUnavailableReason ?? ""}
       data-can-log-past={String(canLogPast)}
       data-log-partner-id={String(logPartnerId)}
+      data-log-meeting-ids={(logExistingMeetings || [])
+        .map((m) => m.meetingId)
+        .join(",")}
       data-log-unavailable={logUnavailableReason ?? ""}
       data-user-timezone={userTimezone}
     >
@@ -364,6 +368,35 @@ describe("MentorshipParticipantsCard", () => {
     const dialog = screen.getByTestId("meeting-dialog");
     expect(dialog).toHaveAttribute("data-log-unavailable", "");
     expect(dialog).toHaveAttribute("data-log-partner-id", "1");
+  });
+
+  it("should check a new log against the live pairing's meetings only", () => {
+    const meeting = (meetingId) => ({
+      meetingId,
+      startDatetime: "2026-03-01T02:00:00Z",
+      endDatetime: "2026-03-01T03:00:00Z",
+      meetLink: null,
+    });
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            {
+              ...baseProps.participantDetails.partnerMeetingOverview[0],
+              meetingTimeList: [meeting("live-1")],
+            },
+            { ...endedPairing, meetingTimeList: [meeting("ended-1")] },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-meeting-ids",
+      "live-1",
+    );
   });
 
   it("should render a MeetingOverviewCard for each partner", () => {

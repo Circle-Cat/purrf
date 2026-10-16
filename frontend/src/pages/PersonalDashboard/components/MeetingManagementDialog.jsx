@@ -75,6 +75,7 @@ export default function MeetingManagementDialog({
   scheduleUnavailableReason = null,
   canLogPast = false,
   logPartnerId = null,
+  logExistingMeetings = [],
   logUnavailableReason = null,
   onBooked,
   onLogged,
@@ -568,6 +569,7 @@ export default function MeetingManagementDialog({
                     roundId={roundId}
                     partnerId={logPartnerId}
                     userTimezone={userTimezone}
+                    existingMeetings={logExistingMeetings}
                     onSuccess={async () => {
                       await onLogged?.();
                       closeAndResetDialog();

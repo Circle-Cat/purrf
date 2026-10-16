@@ -37,8 +37,13 @@ vi.mock("@/components/common/TimezoneSelector", () => ({
 
 // The log form is exercised in its own suite; here only its presence matters.
 vi.mock("@/pages/PersonalDashboard/components/MeetingLogForm", () => ({
-  default: ({ roundId, partnerId }) => (
-    <div data-testid="meeting-log-form">
+  default: ({ roundId, partnerId, existingMeetings }) => (
+    <div
+      data-testid="meeting-log-form"
+      data-meeting-ids={(existingMeetings || [])
+        .map((m) => m.meetingId)
+        .join(",")}
+    >
       <span data-testid="log-form-round">{String(roundId)}</span>
       <span data-testid="log-form-partner">{String(partnerId)}</span>
       <button>Log Meeting</button>
@@ -517,6 +522,7 @@ describe("MeetingManagementDialog entry point", () => {
         canSchedule={false}
         canLogPast={true}
         logPartnerId={9}
+        logExistingMeetings={[{ meetingId: "m-9" }]}
       />,
     );
 
@@ -527,6 +533,10 @@ describe("MeetingManagementDialog entry point", () => {
     expect(
       screen.queryByRole("tab", { name: /schedule meeting/i }),
     ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-log-form")).toHaveAttribute(
+      "data-meeting-ids",
+      "m-9",
+    );
     expect(screen.getByTestId("meeting-log-form")).toBeInTheDocument();
     expect(screen.getByTestId("log-form-round")).toHaveTextContent("7");
     expect(screen.getByTestId("log-form-partner")).toHaveTextContent("9");

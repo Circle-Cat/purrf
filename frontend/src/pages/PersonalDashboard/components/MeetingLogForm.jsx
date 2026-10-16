@@ -53,6 +53,8 @@ import { postMyMentorshipMeetingLog } from "@/api/mentorshipApi";
  *   identify which pair the meeting belongs to.
  * @param {string} props.userTimezone - IANA timezone string from the user's profile (e.g. "Asia/Shanghai").
  *   Must be non-null; the parent component is responsible for not mounting this form until the timezone is loaded.
+ * @param {Array<{startDatetime: string, endDatetime: string, meetLink?: string | null}>} [props.existingMeetings]
+ *   Meetings already on this pair, used to refuse an overlapping slot before it reaches the server.
  * @param {() => void} [props.onSuccess] - Called after the meeting is successfully logged.
  * @returns {JSX.Element}
  */
@@ -60,6 +62,7 @@ export default function MeetingLogForm({
   roundId,
   partnerId,
   userTimezone,
+  existingMeetings = [],
   onSuccess,
 }) {
   // Initialize timezone with the user's profile timezone.
@@ -126,14 +129,39 @@ export default function MeetingLogForm({
       return;
     }
 
-    setIsSubmitting(true);
     const isOvernight = endMinutes < startMinutes;
+    const startDatetime = toUtcIso(selectedDate, startTime);
+    const endDatetime = toUtcIso(selectedDate, endTime, isOvernight ? 1 : 0);
+    const start = new Date(startDatetime);
+    const end = new Date(endDatetime);
+
+    // The pickers grey out future slots only for today, so an overnight end
+    // or a time kept from an earlier date can still land after now.
+    if (end > new Date()) {
+      setSlotError("Cannot log a meeting that has not ended yet.");
+      return;
+    }
+
+    // The server compares against manual meetings only. The list carries no
+    // source, and a manual row is the one without a Meet link.
+    const overlapsExisting = existingMeetings.some(
+      (meeting) =>
+        !meeting.meetLink &&
+        start < new Date(meeting.endDatetime) &&
+        end > new Date(meeting.startDatetime),
+    );
+    if (overlapsExisting) {
+      setSlotError("This time slot already exists.");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       await postMyMentorshipMeetingLog({
         roundId: Number(roundId),
         partnerId: Number(partnerId),
-        startDatetime: toUtcIso(selectedDate, startTime),
-        endDatetime: toUtcIso(selectedDate, endTime, isOvernight ? 1 : 0),
+        startDatetime,
+        endDatetime,
         isCompleted: true,
       });
       onSuccess?.();
