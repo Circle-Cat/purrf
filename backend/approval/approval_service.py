@@ -474,6 +474,28 @@ class ApprovalService:
             session, action, handler.target_type, target_id
         )
 
+    async def delete_for_target(self, session, action: str, target_id: str) -> int:
+        """Delete every request about a target that is itself being deleted.
+        Does NOT commit: the caller deletes the target in the same
+        transaction.
+
+        Only for a target nobody can act on any more. The caller has to make
+        sure none is pending, or a reviewer would be left holding a request
+        that vanished.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            action (str): The action.
+            target_id (str): The target.
+
+        Returns:
+            int: How many requests were deleted.
+        """
+        handler = self.handler_for(action)
+        return await self._requests.delete_for_target(
+            session, action, handler.target_type, target_id
+        )
+
     async def list_pending_for_targets(
         self, session, action: str, target_ids: Collection[str]
     ) -> dict[str, ApprovalRequestEntity]:
