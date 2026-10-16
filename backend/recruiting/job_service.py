@@ -7,6 +7,7 @@ from backend.repository.users_repository import UsersRepository
 from backend.recruiting.job_blockers import submit_blockers
 from backend.recruiting.job_review_handler import (
     JOB_REVIEW,
+    JOB_SUBJECT,
     review_kind,
     revalidate_job_config,
 )
@@ -853,6 +854,13 @@ class JobService:
         published (``was_published`` is ``False``). Once a posting has ever
         been published it cannot be deleted regardless of its current status.
 
+        Its reviews and its events go with it, and the notifications about
+        those events with them. Nothing references a posting by foreign key
+        (the request and event tables are generic), so left behind they would
+        point at nothing; a posting that never went public has no history
+        worth that. None of its reviews can be pending: submitting moves a
+        draft to PENDING_REVIEW, which is not deletable.
+
         Args:
             session (AsyncSession): Active database async session.
             job_id (int): Identifier of the posting to delete.
@@ -869,6 +877,8 @@ class JobService:
                 f"Job {job_id} cannot be deleted: only a draft or a "
                 "never-published closed posting may be deleted"
             )
+        await self.approval_service.delete_for_target(session, JOB_REVIEW, str(job_id))
+        await self.event_repository.delete_by_subject(session, JOB_SUBJECT, job_id)
         await self.job_repository.delete_job(session, job)
         await session.commit()
 

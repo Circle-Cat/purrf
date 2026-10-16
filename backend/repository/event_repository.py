@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.event_entity import EventEntity
@@ -80,6 +80,29 @@ class EventRepository:
             .order_by(EventEntity.created_at.desc(), EventEntity.event_id.desc())
         )
         return list(result.scalars().all())
+
+    async def delete_by_subject(
+        self, session: AsyncSession, subject_type: str, subject_id: int
+    ) -> int:
+        """Delete every event about one subject. Does not commit.
+
+        Notifications go with them: ``notification.event_id`` cascades.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            subject_type (str): What the events are about, e.g. ``"job"``.
+            subject_id (int): Primary key of that subject.
+
+        Returns:
+            int: How many events were deleted.
+        """
+        result = await session.execute(
+            delete(EventEntity).where(
+                EventEntity.subject_type == subject_type,
+                EventEntity.subject_id == subject_id,
+            )
+        )
+        return result.rowcount
 
     async def latest_by_subjects(
         self,

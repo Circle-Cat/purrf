@@ -52,6 +52,11 @@ class _FakeApprovalRequestRepository:
         self.rows.append(row)
         return row
 
+    async def delete_for_target(self, session, action, target_type, target_id):
+        doomed = self._matching(action, target_type, target_id)
+        self.rows = [r for r in self.rows if r not in doomed]
+        return len(doomed)
+
     def _matching(self, action, target_type, target_id=None):
         return [
             r
@@ -174,6 +179,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.session = AsyncMock()
         self.event_repo = MagicMock()
         self.event_repo.list_by_subject = AsyncMock(return_value=[])
+        self.event_repo.delete_by_subject = AsyncMock(return_value=0)
 
         async def _record(session, **kwargs):
             self.call_order.append("record")
@@ -2144,6 +2150,51 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         await self.service.delete_job(self.session, job.job_id)
 
         self.repo.delete_job.assert_awaited_once_with(self.session, job)
+
+    async def test_delete_job_takes_its_reviews_and_events_with_it(self):
+        """Nothing references a posting by foreign key, so they would be left
+        pointing at nothing; and it all goes in the one commit."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        mine = self.requests.add(
+            action="job_review",
+            target_type="job",
+            target_id=str(job.job_id),
+            status=ApprovalRequestStatus.REJECTED,
+        )
+        other = self.requests.add(
+            action="job_review",
+            target_type="job",
+            target_id=str(job.job_id + 1),
+            status=ApprovalRequestStatus.REJECTED,
+        )
+
+        await self.service.delete_job(self.session, job.job_id)
+
+        self.assertNotIn(mine, self.requests.rows)
+        self.assertIn(other, self.requests.rows)
+        self.event_repo.delete_by_subject.assert_awaited_once_with(
+            self.session, "job", job.job_id
+        )
+        self.repo.delete_job.assert_awaited_once_with(self.session, job)
+        self.session.commit.assert_awaited_once()
+
+    async def test_a_refused_delete_removes_nothing(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+        review = self.requests.add(
+            action="job_review",
+            target_type="job",
+            target_id=str(job.job_id),
+            status=ApprovalRequestStatus.APPROVED,
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
+
+        self.assertIn(review, self.requests.rows)
+        self.event_repo.delete_by_subject.assert_not_awaited()
 
     async def test_delete_job_ever_published_raises(self):
         """delete_job on a CLOSED posting that was_published raises ValueError."""

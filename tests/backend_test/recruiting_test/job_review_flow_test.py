@@ -16,6 +16,7 @@ from backend.common.recruiting_enums import JobKind, JobStatus
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
+from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.recruiting import notification_renderers  # noqa: F401 (registers)
 from backend.recruiting import recipient_resolvers  # noqa: F401 (registers)
@@ -188,6 +189,66 @@ class JobReviewFlowTest(BaseRepositoryTestLib):
         self.assertIsNone(request.reason)
         events = await self._events()
         self.assertEqual(events[-1][1]["decision"], "withdrawn")
+
+    async def test_deleting_a_rejected_draft_leaves_nothing_pointing_at_it(self):
+        await self._submit()
+        request = await self._request()
+        await self.service.reject(
+            self.session, request.request_id, "Not yet", self.reviewer.user_id
+        )
+        event_ids = (
+            (
+                await self.session.execute(
+                    select(EventEntity.event_id).where(
+                        EventEntity.subject_type == "job",
+                        EventEntity.subject_id == self.job.job_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        self.assertTrue(event_ids)
+        told = (
+            (
+                await self.session.execute(
+                    select(NotificationEntity.notification_id).where(
+                        NotificationEntity.event_id.in_(event_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        self.assertTrue(told, "the rejection should have notified someone")
+
+        await self.service.delete_job(self.session, self.job.job_id)
+
+        requests = (
+            (
+                await self.session.execute(
+                    select(ApprovalRequestEntity).where(
+                        ApprovalRequestEntity.target_id == str(self.job.job_id)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(requests, [])
+        self.assertEqual(await self._events(), [])
+        left = (
+            (
+                await self.session.execute(
+                    select(NotificationEntity.notification_id).where(
+                        NotificationEntity.event_id.in_(event_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(left, [])
 
     async def test_a_second_submission_while_one_waits_is_refused(self):
         # The posting's pending status refuses it first; the one-pending
