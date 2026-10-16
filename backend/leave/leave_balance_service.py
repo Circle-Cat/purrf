@@ -10,6 +10,9 @@ from backend.dto.leave_balance_dto import (
 from backend.leave.leave_participants import (
     resolve_names_and_ldaps,
 )
+from backend.leave.leave_participants import (
+    resolve_names_and_ldaps,
+)
 
 
 class LeaveBalanceService:
@@ -89,12 +92,6 @@ class LeaveBalanceService:
         """
         offset = (page - 1) * page_size
 
-        # Note: total_entries is queried separately from the page entries above.
-        # A concurrent write committed between these two queries (e.g., weekly
-        # accruals or manual adjustments) may cause total_entries to slightly
-        # disagree with the returned page rows. This is acceptable for an admin view.
-
-        # Query entries for the current page and total entries matching the filter
         entries_entities = await self.leave_ledger_repository.list_entries(
             session, user_id, limit=page_size, offset=offset
         )
@@ -116,6 +113,7 @@ class LeaveBalanceService:
             self.user_emails_repository,
         )
 
+        # Map current page entities into LeaveLedgerRowDto instances
         entry_dtos = [
             LeaveLedgerRowDto(
                 leave_ledger_id=entry.leave_ledger_id,
