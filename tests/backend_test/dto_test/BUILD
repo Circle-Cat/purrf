@@ -74,3 +74,9 @@ py_test(
     srcs = ["email_dto_test.py"],
     deps = ["//backend/dto"],
 )
+
+py_test(
+    name = "profile_create_dto_test",
+    srcs = ["profile_create_dto_test.py"],
+    deps = ["//backend/dto"],
+)
