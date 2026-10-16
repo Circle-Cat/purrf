@@ -89,6 +89,11 @@ class LeaveBalanceService:
         """
         offset = (page - 1) * page_size
 
+        # Note: total_entries is queried separately from the page entries above.
+        # A concurrent write committed between these two queries (e.g., weekly
+        # accruals or manual adjustments) may cause total_entries to slightly
+        # disagree with the returned page rows. This is acceptable for an admin view.
+
         entries_entities = await self.leave_ledger_repository.list_entries(
             session, user_id, limit=page_size, offset=offset
         )
