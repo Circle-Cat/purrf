@@ -208,6 +208,11 @@ export default function MentorshipParticipantsCard({
               scheduleUnavailableReason={scheduleUnavailableReason}
               canLogPast={canSubmitMeeting}
               logPartnerId={submissionPartnerId}
+              logExistingMeetings={
+                submissionPartnerId == null
+                  ? []
+                  : livePairings[0].meetingTimeList || []
+              }
               logUnavailableReason={logUnavailableReason}
               userTimezone={userTimezone}
               onBooked={refreshMeetings}
