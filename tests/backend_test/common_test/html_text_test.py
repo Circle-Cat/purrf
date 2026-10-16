@@ -1,6 +1,6 @@
 import unittest
 
-from backend.common.html_text import html_to_text, text_to_html
+from backend.common.html_text import html_has_text, html_to_text, text_to_html
 
 
 def _wrap(inner):
@@ -56,6 +56,18 @@ class TextToHtmlTest(unittest.TestCase):
     def test_round_trip_through_the_plain_fallback_keeps_the_text(self):
         original = "Line one\n\nLine <two> & three"
         self.assertEqual(html_to_text(text_to_html(original)), original)
+
+
+class HtmlHasTextTest(unittest.TestCase):
+    def test_markup_alone_has_no_text(self):
+        for body in ("<p></p>", "<p><br></p>", "<p>&nbsp;</p>", "<ul><li></li></ul>"):
+            with self.subTest(body=body):
+                self.assertFalse(html_has_text(body))
+
+    def test_any_visible_character_counts(self):
+        for body in ("<p>x</p>", "<p>&amp;</p>", '<a href="https://x.test">l</a>'):
+            with self.subTest(body=body):
+                self.assertTrue(html_has_text(body))
 
 
 if __name__ == "__main__":

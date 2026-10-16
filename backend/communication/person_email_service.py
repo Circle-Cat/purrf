@@ -12,7 +12,7 @@ from enum import StrEnum
 
 from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.exceptions import ConflictError, NotFoundError
-from backend.common.html_text import text_to_html
+from backend.common.html_text import html_has_text, text_to_html
 from backend.common.name_utils import display_name_of
 from backend.communication.email_replies import reply_contact, reply_subject
 from backend.dto.email_dto import (
@@ -138,6 +138,8 @@ def _clean_subject(subject: str | None) -> str:
 
 def _check_body(body_format: BodyFormat, body: str | None) -> None:
     if not (body or "").strip():
+        raise ValueError("The message is empty")
+    if body_format == BodyFormat.RICH and not html_has_text(body):
         raise ValueError("The message is empty")
     if body_format == BodyFormat.TEXT and len(body) > TEXT_BODY_MAX_LENGTH:
         raise ValueError(

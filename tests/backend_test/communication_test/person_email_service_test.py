@@ -549,6 +549,41 @@ class ReplyIntoTest(_Fixture):
 
         self.conversation.send.assert_not_awaited()
 
+    async def test_a_rich_body_with_no_text_in_it_is_refused(self):
+        """The composer sends markup, so an untouched editor arrives as an
+        empty paragraph rather than an empty string."""
+        self.messages = {70: [_in(2, 5)]}
+        for body in ("<p></p>", "<p><br></p>", "<p>&nbsp;</p>", "<ul><li></li></ul>"):
+            with self.subTest(body=body):
+                with self.assertRaisesRegex(ValueError, "The message is empty"):
+                    await self.service.reply_into(
+                        self.session,
+                        _thread(70),
+                        body=body,
+                        body_format=BodyFormat.RICH,
+                        last_seen_message_id=2,
+                        sender_address=_ALIAS,
+                        sender_user_id=900,
+                    )
+
+        self.conversation.send.assert_not_awaited()
+
+    async def test_markup_typed_into_a_plain_text_body_is_its_text(self):
+        """In a plain-text message the characters are the message."""
+        self.messages = {70: [_in(2, 5)]}
+
+        await self.service.reply_into(
+            self.session,
+            _thread(70),
+            body="<p></p>",
+            body_format=BodyFormat.TEXT,
+            last_seen_message_id=2,
+            sender_address=_ALIAS,
+            sender_user_id=900,
+        )
+
+        self.conversation.send.assert_awaited_once()
+
 
 class RefreshTest(_Fixture):
     def setUp(self):
