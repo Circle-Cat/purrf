@@ -1,4 +1,6 @@
+import re
 from datetime import datetime
+from pydantic import model_validator
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 from backend.common.recruiting_enums import (
@@ -9,7 +11,34 @@ from backend.common.recruiting_enums import (
 from backend.common.mentorship_enums import ParticipantRole
 
 
-class ApplicationSubmitDto(BaseRequestDto):
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+class _ResumeReferenceDto(BaseRequestDto):
+    """The résumé a submission points at, as the upload endpoint returned it.
+
+    Upload stores the file at ``resumes/<sha256>.pdf`` and hands both values
+    back, so a key is only accepted alongside the hash it was stored under.
+    Anything else would point a reviewer at an object nobody uploaded for this
+    application. Either field may be cleared on its own: the service drops both
+    for a posting that collects no résumé, one assignment at a time.
+    """
+
+    resume_sha256: str | None = None
+    resume_object_key: str | None = None
+
+    @model_validator(mode="after")
+    def check_resume_reference(self):
+        if self.resume_object_key is None:
+            return self
+        if self.resume_sha256 is None or not _SHA256_HEX.fullmatch(self.resume_sha256):
+            raise ValueError("A resume needs the sha256 it was uploaded with")
+        if self.resume_object_key != f"resumes/{self.resume_sha256}.pdf":
+            raise ValueError("The resume key does not match its sha256")
+        return self
+
+
+class ApplicationSubmitDto(_ResumeReferenceDto):
     """Candidate submission payload (profile snapshot + custom answers)."""
 
     job_id: int
@@ -17,20 +46,16 @@ class ApplicationSubmitDto(BaseRequestDto):
     education: list[dict] = []
     experience: list[dict] = []
     answers: dict = {}
-    resume_sha256: str | None = None
-    resume_object_key: str | None = None
     save_to_profile: bool = False
 
 
-class ApplicationEditDto(BaseRequestDto):
+class ApplicationEditDto(_ResumeReferenceDto):
     """Edit payload for an application still in Applied (no job change)."""
 
     personal: dict = {}
     education: list[dict] = []
     experience: list[dict] = []
     answers: dict = {}
-    resume_sha256: str | None = None
-    resume_object_key: str | None = None
     # Frontend-owned, same as on ApplicationSubmitDto above.
     save_to_profile: bool = False
 
