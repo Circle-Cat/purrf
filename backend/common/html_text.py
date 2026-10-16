@@ -60,6 +60,15 @@ def html_to_text(body: str) -> str:
     return text.strip()
 
 
+def html_has_text(body: str) -> bool:
+    """Whether an HTML body has anything to read once its markup is gone.
+
+    An editor left untouched sends markup such as ``<p></p>`` or an empty
+    list, which is not an empty string but says nothing.
+    """
+    return bool(unescape(_TAG_RE.sub("", body)).strip())
+
+
 def text_to_html(text: str) -> str:
     """Escape plain text into an HTML body, one ``<br>`` per line break.
 
