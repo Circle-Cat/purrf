@@ -13,11 +13,22 @@ from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.leave_enums import LeaveEntryType
+from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_participants import ResolvedParticipants
 
 MID_YEAR = datetime.date(2026, 7, 8)
 NEW_YEAR = datetime.date(2027, 1, 1)
+
+
+def _level_change(day, before, after):
+    return LeaveLedgerEntity(
+        entry_type=LeaveEntryType.LEVEL_CHANGE,
+        hours=Decimal("0.00"),
+        effective_date=day,
+        annual_hours_before=before,
+        annual_hours_after=after,
+    )
 
 
 def _profile(
@@ -50,7 +61,7 @@ class LeaveEngineServiceTest(IsolatedAsyncioTestCase):
         self.repository = MagicMock()
         self.repository.add_entries = AsyncMock()
         self.repository.sum_weekly_accrual = AsyncMock(return_value=Decimal("0.00"))
-        self.repository.latest_level_change_date = AsyncMock(return_value=None)
+        self.repository.list_level_changes = AsyncMock(return_value=[])
         self.repository.balance = AsyncMock(return_value=Decimal("0.00"))
         self.session = MagicMock()
         self.session.commit = AsyncMock()
@@ -128,20 +139,17 @@ class TestWeeklyAccrual(LeaveEngineServiceTest):
         self.assertEqual(report.skipped_left, ())
 
     async def test_a_level_change_splits_the_year_for_the_person_it_belongs_to(self):
+        """Promoted on 7/1: by 7/8 one credited day is at 80h, not the half
+        year the current level alone would pay."""
         self._directory({"ann": _profile()})
-        self.repository.latest_level_change_date.return_value = datetime.date(
-            2026, 7, 1
-        )
-        self.repository.sum_weekly_accrual.side_effect = [
-            Decimal("0.00"),
-            Decimal("0.00"),
+        self.repository.list_level_changes.return_value = [
+            _level_change(datetime.date(2026, 7, 1), 0, 80)
         ]
 
         await self.service.run_weekly_accrual(self.session, today=MID_YEAR)
 
-        self.assertEqual(self._written()[0].hours, Decimal("1.54"))
-        bounded = self.repository.latest_level_change_date.await_args.kwargs
-        self.assertEqual(bounded["on_or_before"], MID_YEAR)
+        self.assertEqual(self._written()[0].hours, Decimal("0.22"))
+        self.assertEqual(self.repository.list_level_changes.await_args.args[1], 10)
 
     async def test_somebody_who_has_left_is_skipped(self):
         self._directory({"ann": _profile(leave_date="2026-05-31")})
@@ -384,16 +392,19 @@ class TestAnnualClose(LeaveEngineServiceTest):
         self.assertEqual(self._written(), [])
         self.assertEqual(report.skipped_left, ("ann",))
 
-    async def test_a_level_change_is_read_as_of_the_closing_year(self):
-        """A promotion in the new year must not split the year being closed."""
+    async def test_a_promotion_picked_up_on_new_year_is_not_paid_for_the_old_year(self):
+        """An L1 all year, promoted on 1 January. By the time the close runs
+        the cached profile already reads 80h; the change on record says the
+        year being closed was at 0h."""
         self._directory({"ann": _profile()})
+        self.repository.list_level_changes.return_value = [
+            _level_change(NEW_YEAR, 0, 80)
+        ]
 
-        await self.service.run_annual_close(self.session, today=NEW_YEAR)
+        report = await self.service.run_annual_close(self.session, today=NEW_YEAR)
 
-        self.assertEqual(
-            self.repository.latest_level_change_date.await_args.kwargs["on_or_before"],
-            datetime.date(2026, 12, 31),
-        )
+        self.assertEqual(self._written(), [])
+        self.assertEqual(report.settled, 0)
 
     async def test_a_second_close_of_the_same_year_writes_nothing(self):
         self._directory({"ann": _profile()})

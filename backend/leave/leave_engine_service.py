@@ -27,6 +27,7 @@ from backend.common.leave_enums import LeaveEntryType
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.leave.leave_accrual import (
     NO_HOURS,
+    LevelChange,
     accrual_start_date,
     carryover_effective_date,
     carryover_forfeit_hours,
@@ -474,28 +475,30 @@ class LeaveEngineService:
     ) -> Decimal:
         """What one person is owed for ``year`` as at ``as_of``.
 
-        ``level_since`` is read as at ``as_of`` rather than as it stands now:
-        the annual close is settling a year that has ended, and a promotion
-        made since would otherwise split that year at a date outside it.
+        Every level change on record is passed, including any made after
+        ``as_of``: the annual close settles a year that has ended, and a
+        promotion picked up since says what that year was at, where the cached
+        profile only says what it is now.
         """
         granted = await self.leave_ledger_repository.sum_weekly_accrual(
             session, participant.user_id, year
         )
-        level_since = await self.leave_ledger_repository.latest_level_change_date(
-            session, participant.user_id, on_or_before=as_of
+        rows = await self.leave_ledger_repository.list_level_changes(
+            session, participant.user_id
         )
-        granted_before = NO_HOURS
-        if level_since is not None:
-            granted_before = await self.leave_ledger_repository.sum_weekly_accrual(
-                session, participant.user_id, year, before=level_since
-            )
         return weekly_accrual_hours(
             participant.annual_hours,
             accrual_start_date(year, participant.hire_date),
             as_of,
             granted,
-            level_since=level_since,
-            granted_before_level_since=granted_before,
+            level_changes=[
+                LevelChange(
+                    effective_date=row.effective_date,
+                    annual_hours_before=row.annual_hours_before,
+                    annual_hours_after=row.annual_hours_after,
+                )
+                for row in rows
+            ],
         )
 
     def _entry(
