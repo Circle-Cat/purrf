@@ -94,6 +94,7 @@ class LeaveBalanceService:
         # accruals or manual adjustments) may cause total_entries to slightly
         # disagree with the returned page rows. This is acceptable for an admin view.
 
+        # Query entries for the current page and total entries matching the filter
         entries_entities = await self.leave_ledger_repository.list_entries(
             session, user_id, limit=page_size, offset=offset
         )
