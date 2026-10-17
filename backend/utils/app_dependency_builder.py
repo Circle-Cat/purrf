@@ -588,6 +588,7 @@ class AppDependencyBuilder:
             gerrit_analytics_service=self.gerrit_analytics_service,
             jira_analytics_service=self.jira_analytics_service,
             date_time_util=self.date_time_util,
+            user_emails_repository=self.user_emails_repository,
         )
         self.internal_activity_controller = InternalActivityController(
             ldap_service=self.ldap_service,
@@ -600,6 +601,7 @@ class AppDependencyBuilder:
             google_chat_analytics_service=self.google_chat_analytics_service,
             summary_service=self.summary_service,
             launchdarkly_service=self.launchdarkly_service,
+            database=self.database,
         )
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_permissions_repository = UserPermissionsRepository()

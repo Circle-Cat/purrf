@@ -1,5 +1,5 @@
-from unittest import TestCase, main
-from unittest.mock import Mock
+from unittest import IsolatedAsyncioTestCase, TestCase, main
+from unittest.mock import AsyncMock, Mock
 from backend.internal_activity_service.summary_service import SummaryService
 from backend.dto.user_context_dto import UserContextDto
 
@@ -22,6 +22,7 @@ class TestSummaryService(TestCase):
             gerrit_analytics_service=self.mock_gerrit_service,
             jira_analytics_service=self.mock_jira_service,
             date_time_util=self.mock_date_time_util,
+            user_emails_repository=Mock(),
         )
 
     def test_get_summary_single_user(self):
@@ -213,71 +214,116 @@ class TestSummaryService(TestCase):
         ]
         self.assertEqual(result, expected)
 
-    def test_get_my_summary_no_primary_email(self):
-        user = UserContextDto(sub="user1", primary_email=None)
 
-        with self.assertRaises(ValueError):
-            self.service.get_my_summary(
-                user, start_date="2025-09-01", end_date="2025-09-30"
-            )
+def _email(address, confirmed=True):
+    return Mock(email=address, otp_confirmed=confirmed)
 
-    def test_get_my_summary_correct_ldap_extraction(self):
-        user = UserContextDto(sub="user1", primary_email="user1@example.com")
-        self.service._search_summary_data = Mock(
-            return_value=[
-                {
-                    "ldap": "user1",
-                    "chat_count": 10,
-                    "meeting_hours": 4.5,
-                    "cl_merged": 10,
-                    "loc_merged": 500,
-                    "jira_issue_done": 2,
-                }
-            ]
+
+class TestGetMySummary(IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.session = Mock()
+        self.user_emails_repository = Mock()
+        self.user_emails_repository.list_by_user_id = AsyncMock(return_value=[])
+        self.service = SummaryService(
+            ldap_service=Mock(),
+            microsoft_chat_analytics_service=Mock(),
+            google_calendar_analytics_service=Mock(),
+            google_chat_analytics_service=Mock(),
+            gerrit_analytics_service=Mock(),
+            jira_analytics_service=Mock(),
+            date_time_util=Mock(),
+            user_emails_repository=self.user_emails_repository,
         )
-        result = self.service.get_my_summary(
-            user, start_date="2025-09-01", end_date="2025-09-30"
+        self.service._search_summary_data = Mock(return_value=[])
+
+    async def _get(self, user):
+        return await self.service.get_my_summary(
+            self.session, user, start_date="2025-09-01", end_date="2025-09-30"
         )
-        self.assertEqual(result.ldap, "user1")
+
+    async def test_reads_the_ldap_off_the_confirmed_company_address(self):
+        # Signed in with a personal address; the company address on the same
+        # account is what names them in the activity data.
+        self.user_emails_repository.list_by_user_id.return_value = [
+            _email("alice.personal@gmail.com"),
+            _email("alice@circlecat.org"),
+        ]
+        self.service._search_summary_data.return_value = [
+            {
+                "ldap": "alice",
+                "chat_count": 10,
+                "meeting_hours": 4.5,
+                "cl_merged": 10,
+                "loc_merged": 500,
+                "jira_issue_done": 2,
+            }
+        ]
+        user = UserContextDto(
+            sub="s", primary_email="alice.personal@gmail.com", user_id=7
+        )
+
+        result = await self._get(user)
+
+        self.user_emails_repository.list_by_user_id.assert_awaited_once_with(
+            self.session, 7
+        )
+        self.service._search_summary_data.assert_called_once_with(
+            ["alice"], "2025-09-01", "2025-09-30"
+        )
+        self.assertEqual(result.ldap, "alice")
         self.assertEqual(result.chat_count, 10)
         self.assertEqual(result.meeting_hours, 4.5)
         self.assertEqual(result.cl_merged, 10)
         self.assertEqual(result.loc_merged, 500)
         self.assertEqual(result.jira_issue_done, 2)
 
-    def test_get_my_summary_calls_search_summary_data(self):
-        user = UserContextDto(sub="user1", primary_email="user1@example.com")
-        self.service._search_summary_data = Mock(
-            return_value=[
-                {
-                    "ldap": "user1",
-                    "chat_count": 10,
-                    "meeting_hours": 4.5,
-                    "cl_merged": 10,
-                    "loc_merged": 500,
-                    "jira_issue_done": 2,
-                }
-            ]
-        )
-        self.service.get_my_summary(
-            user, start_date="2025-09-01", end_date="2025-09-30"
-        )
-        self.service._search_summary_data.assert_called_once_with(
-            ["user1"], "2025-09-01", "2025-09-30"
-        )
+    async def test_zero_metrics_when_there_is_no_activity(self):
+        self.user_emails_repository.list_by_user_id.return_value = [
+            _email("alice@circlecat.org")
+        ]
+        user = UserContextDto(sub="s", primary_email="alice@circlecat.org", user_id=7)
 
-    def test_get_my_summary_empty_data(self):
-        user = UserContextDto(sub="user1", primary_email="user1@example.com")
-        self.service._search_summary_data = Mock(return_value=[])
-        result = self.service.get_my_summary(
-            user, start_date="2025-09-01", end_date="2025-09-30"
-        )
-        self.assertEqual(result.ldap, "user1")
+        result = await self._get(user)
+
+        self.assertEqual(result.ldap, "alice")
         self.assertEqual(result.chat_count, 0)
         self.assertEqual(result.meeting_hours, 0)
         self.assertEqual(result.cl_merged, 0)
         self.assertEqual(result.loc_merged, 0)
         self.assertEqual(result.jira_issue_done, 0)
+
+    async def test_refuses_an_account_without_a_company_address(self):
+        # The part before @ of an outside address can equal an employee's
+        # ldap; reading it as one would show that employee's activity.
+        self.user_emails_repository.list_by_user_id.return_value = [
+            _email("alice@gmail.com")
+        ]
+        user = UserContextDto(sub="s", primary_email="alice@gmail.com", user_id=7)
+
+        with self.assertRaises(PermissionError):
+            await self._get(user)
+        self.service._search_summary_data.assert_not_called()
+
+    async def test_refuses_an_unconfirmed_company_address(self):
+        # Anyone can add an address they do not own; only a confirmed one
+        # proves it is theirs.
+        self.user_emails_repository.list_by_user_id.return_value = [
+            _email("mallory@gmail.com"),
+            _email("alice@circlecat.org", confirmed=False),
+        ]
+        user = UserContextDto(sub="s", primary_email="mallory@gmail.com", user_id=7)
+
+        with self.assertRaises(PermissionError):
+            await self._get(user)
+        self.service._search_summary_data.assert_not_called()
+
+    async def test_refuses_a_user_with_no_account(self):
+        user = UserContextDto(sub="s", primary_email="alice@circlecat.org")
+
+        with self.assertRaises(PermissionError):
+            await self._get(user)
+        self.user_emails_repository.list_by_user_id.assert_not_called()
+        self.service._search_summary_data.assert_not_called()
 
 
 if __name__ == "__main__":

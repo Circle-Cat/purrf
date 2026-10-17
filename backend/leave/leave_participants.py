@@ -15,30 +15,11 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.constants import INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+from backend.common.constants import (
+    INTERNAL_GOOGLE_ACCOUNT_DOMAIN,
+    ldap_from_addresses,
+)
 from backend.common.name_utils import user_display_name
-
-
-def ldap_from_addresses(addresses) -> str | None:
-    """The Azure ldap an account carries, or None if it carries none.
-
-    Azure knows people by ldap and purrf knows them by account; the corporate
-    address is the whole of the join, so the ldap is read off it rather than
-    stored a second time. Sorted, so that an account somehow holding two
-    corporate addresses still reads the same way every time -- the directory
-    join says that cannot happen, and if it does the answer must at least not
-    move around between requests.
-
-    Args:
-        addresses: The account's email addresses, in any order.
-
-    Returns:
-        The local part of its corporate address, or None.
-    """
-    for address in sorted(addresses):
-        if address.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
-            return address.split("@")[0]
-    return None
 
 
 async def resolve_names_and_ldaps(
