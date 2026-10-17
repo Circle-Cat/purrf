@@ -94,7 +94,9 @@ class LdapService:
         key_map = {}
         queued = 0
 
-        for group, status in itertools.product(groups, status_list):
+        # A repeated group would queue its keys twice and shift the replies
+        # zipped against the deduplicated key_map below.
+        for group, status in itertools.product(dict.fromkeys(groups), status_list):
             key = LDAP_KEY_TEMPLATE.format(
                 account_status=status.value, group=group.value
             )

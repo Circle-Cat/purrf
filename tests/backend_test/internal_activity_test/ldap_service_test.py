@@ -79,6 +79,38 @@ class TestLdapService(TestCase):
         }
         self.assertEqual(result, expected_output)
 
+    def test_get_ldaps_by_status_and_group_repeated_group_keeps_groups_apart(self):
+        stored = {
+            LDAP_KEY_TEMPLATE.format(account_status="active", group="employees"): {
+                "emp": "Employee"
+            },
+            LDAP_KEY_TEMPLATE.format(account_status="active", group="interns"): {
+                "intern": "Intern"
+            },
+        }
+        pipeline_mock = MagicMock()
+        queued = []
+        pipeline_mock.hgetall.side_effect = queued.append
+        pipeline_mock.execute.side_effect = lambda: [stored[k] for k in queued]
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        result = self.service.get_ldaps_by_status_and_group(
+            MicrosoftAccountStatus.ACTIVE,
+            [
+                MicrosoftGroups.EMPLOYEES,
+                MicrosoftGroups.EMPLOYEES,
+                MicrosoftGroups.INTERNS,
+            ],
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "employees": {"active": {"emp": "Employee"}},
+                "interns": {"active": {"intern": "Intern"}},
+            },
+        )
+
     def test_get_ldaps_by_status_and_group_no_groups(self):
         status = MicrosoftAccountStatus.ACTIVE
         groups = []
