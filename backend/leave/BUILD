@@ -176,7 +176,6 @@ py_library(
         "//backend/common:constants",
         "//backend/common:exceptions",
         "//backend/common:leave_enums",
-        "//backend/common:name_utils",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/repository:repositories",

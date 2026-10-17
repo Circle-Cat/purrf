@@ -89,6 +89,8 @@ py_test(
     srcs = ["leave_admin_controller_test.py"],
     deps = [
         "//backend/leave:leave_admin_controller",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 
