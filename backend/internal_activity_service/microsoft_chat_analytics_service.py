@@ -1,11 +1,27 @@
+from datetime import datetime
+
+from backend.internal_activity_service.activity_query_cache import (
+    MICROSOFT_CHAT_COUNT_QUERY,
+)
 from backend.common.constants import (
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
     MicrosoftChatMessagesChangeType,
 )
+from backend.internal_activity_service.pipeline_results import (
+    checked_pipeline_results,
+)
 
 
 class MicrosoftChatAnalyticsService:
-    def __init__(self, logger, redis_client, date_time_util, ldap_service, retry_utils):
+    def __init__(
+        self,
+        logger,
+        redis_client,
+        date_time_util,
+        ldap_service,
+        retry_utils,
+        activity_query_cache,
+    ):
         """
         Initializes the MicrosoftChatAnalyticsService.
 
@@ -15,12 +31,14 @@ class MicrosoftChatAnalyticsService:
             date_time_util: A DateTimeUtil instance for handling date and time operations.
             ldap_service: A LdapService instance for performing LDAP lookups.
             retry_utils: A RetryUtils for handling retries on transient errors.
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.date_time_util = date_time_util
         self.ldap_service = ldap_service
         self.retry_utils = retry_utils
+        self.activity_query_cache = activity_query_cache
 
     def count_microsoft_chat_messages_in_date_range(
         self,
@@ -86,6 +104,25 @@ class MicrosoftChatAnalyticsService:
         start_dt_utc, end_dt_utc = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
+        cache = self.activity_query_cache
+        return cache.get_or_compute(
+            MICROSOFT_CHAT_COUNT_QUERY,
+            (
+                cache.unordered(ldap_list),
+                start_dt_utc.isoformat(),
+                end_dt_utc.isoformat(),
+            ),
+            end_dt_utc,
+            lambda: self._count_messages(ldap_list, start_dt_utc, end_dt_utc),
+        )
+
+    def _count_messages(
+        self,
+        ldap_list: list[str] | None,
+        start_dt_utc: datetime,
+        end_dt_utc: datetime,
+    ) -> dict:
+        """Uncached body of count_microsoft_chat_messages_in_date_range."""
         start_timestamp = start_dt_utc.timestamp()
         end_timestamp = end_dt_utc.timestamp()
         self.logger.info(f"Date range from {start_dt_utc} to {end_dt_utc}")
@@ -106,7 +143,10 @@ class MicrosoftChatAnalyticsService:
                 f"ZCOUNT key: {redis_key} for timestamp range: {start_timestamp} - {end_timestamp}"
             )
 
-        counts = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        counts = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            len(ldap_list),
+        )
         self.logger.debug(f"Redis pipeline zcount results: {counts}")
 
         result_by_ldap = dict(zip(ldap_list, counts))

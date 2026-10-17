@@ -5,7 +5,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from backend.common.exceptions import ConflictError, NotFoundError, RateLimitedError
+from backend.common.exceptions import (
+    ActivityDataUnavailableError,
+    ConflictError,
+    NotFoundError,
+    RateLimitedError,
+)
 from backend.common.fast_api_error_handler import register_exception_handlers
 
 # Constant definitions
@@ -235,6 +240,25 @@ class TestFastAPIExceptionHandler(TestCase):
 
         # Platform should be "unknown"
         self.assertIn("unknown", args)
+
+    def test_handle_activity_data_unavailable(self):
+        """503 with a message the page can show; the detail is only logged."""
+        route = "/api/summary"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ActivityDataUnavailableError("pipeline returned 2 of 3")
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json().get(ERROR_KEY),
+            "Activity data is temporarily unavailable.",
+        )
+        self.mock_logger.error.assert_called_once()
+        args, _ = self.mock_logger.error.call_args
+        self.assertIn("pipeline returned 2 of 3", args)
 
 
 if __name__ == "__main__":

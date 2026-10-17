@@ -138,6 +138,7 @@ py_library(
         "//backend/historical_data:jira_history_sync_service",
         "//backend/historical_data:microsoft_chat_history_sync_service",
         "//backend/historical_data:microsoft_member_sync_service",
+        "//backend/internal_activity_service:activity_query_cache",
         "//backend/internal_activity_service:gerrit_analytics_service",
         "//backend/internal_activity_service:google_calendar_analytics_service",
         "//backend/internal_activity_service:google_chat_analytics_service",

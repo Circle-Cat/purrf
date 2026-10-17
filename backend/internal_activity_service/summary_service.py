@@ -1,3 +1,6 @@
+from backend.internal_activity_service.activity_query_cache import (
+    SUMMARY_QUERY,
+)
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.constants import JiraIssueStatus, ldap_from_addresses
 from backend.dto.user_context_dto import UserContextDto
@@ -15,6 +18,7 @@ class SummaryService:
         jira_analytics_service,
         date_time_util,
         user_emails_repository,
+        activity_query_cache,
     ):
         """
         Initialize the SummaryService with required dependencies.
@@ -28,6 +32,7 @@ class SummaryService:
             gerrit_analytics_service: GerritAnalyticsService instance.
             date_time_util: DateTimeUtil instance.
             user_emails_repository: UserEmailsRepository instance.
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -37,6 +42,7 @@ class SummaryService:
         self.jira_analytics_service = jira_analytics_service
         self.date_time_util = date_time_util
         self.user_emails_repository = user_emails_repository
+        self.activity_query_cache = activity_query_cache
 
     def _search_summary_data(self, ldaps: list[str], start_date, end_date) -> list:
         """Private method to fetch summary data for given LDAPs"""
@@ -46,7 +52,24 @@ class SummaryService:
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
+        return self.activity_query_cache.get_or_compute(
+            SUMMARY_QUERY,
+            # One row per ldap, in the order given.
+            (
+                self.activity_query_cache.ordered(ldaps),
+                start_dt.isoformat(),
+                end_dt.isoformat(),
+            ),
+            end_dt,
+            lambda: self._compute_summary_data(
+                ldaps, start_date, end_date, start_dt, end_dt
+            ),
+        )
 
+    def _compute_summary_data(
+        self, ldaps: list[str], start_date, end_date, start_dt, end_dt
+    ) -> list:
+        """Uncached body of _search_summary_data."""
         ms_chat_data = self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range(
             ldap_list=ldaps,
             start_date=start_date,

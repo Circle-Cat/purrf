@@ -22,6 +22,8 @@ from backend.common.api_endpoints import (
     SUMMARY_ENDPOINT,
     MY_SUMMARY_ENDPOINT,
 )
+from backend.common.exceptions import ActivityDataUnavailableError
+from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.utils.auth_middleware import AuthMiddleware
 from backend.internal_activity_service.internal_activity_controller import (
     InternalActivityController,
@@ -382,6 +384,44 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.jira_analytics_service.get_all_jira_projects.assert_not_called()
+
+    def _client_with_exception_handlers(self):
+        register_exception_handlers(self.app)
+        return TestClient(self.app, raise_server_exceptions=False)
+
+    def test_get_summary_returns_503_when_redis_answers_short(self):
+        self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
+        self.summary_service.get_summary.side_effect = ActivityDataUnavailableError(
+            "Redis pipeline returned 1 results for 2 commands."
+        )
+        client = self._client_with_exception_handlers()
+
+        response = client.post(
+            SUMMARY_ENDPOINT,
+            json={"startDate": "2023-01-01", "groups": ["employees"]},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json()["message"], "Activity data is temporarily unavailable."
+        )
+
+    def test_get_gerrit_stats_returns_503_when_redis_answers_short(self):
+        self._set_auth([Permission.INTERNAL_ACTIVITY_READ])
+        self.gerrit_analytics_service.get_gerrit_stats.side_effect = (
+            ActivityDataUnavailableError("short")
+        )
+        client = self._client_with_exception_handlers()
+
+        response = client.post(
+            GERRIT_STATS_ENDPOINT, json={"ldaps": ["a"]}, headers=self.headers
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json()["message"], "Activity data is temporarily unavailable."
+        )
 
 
 if __name__ == "__main__":

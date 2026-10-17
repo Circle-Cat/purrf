@@ -2,6 +2,10 @@ from unittest import TestCase, main
 from unittest.mock import Mock
 import json
 from datetime import datetime
+from backend.common.exceptions import ActivityDataUnavailableError
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.internal_activity_service.google_calendar_analytics_service import (
     GoogleCalendarAnalyticsService,
 )
@@ -18,6 +22,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
             redis_client=self.mock_redis,
             retry_utils=self.mock_retry_utils,
             ldap_service=self.mock_ldap_service,
+            activity_query_cache=ActivityQueryCache(logger=Mock()),
         )
 
     def test_get_calendar_name_success(self):
@@ -353,6 +358,114 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         )
 
         self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
+
+    def _event_detail(self):
+        return json.dumps({"summary": "Sync", "is_recurring": False})
+
+    def _attendance(self):
+        return [
+            json.dumps({
+                "join_time": "2025-08-01T10:00:00",
+                "leave_time": "2025-08-01T10:30:00",
+            })
+        ]
+
+    def test_get_all_events_from_calendars_repeated_query_reads_redis_once(self):
+        start_date = datetime.fromisoformat("2025-07-01T00:00:00+00:00")
+        end_date = datetime.fromisoformat("2025-08-02T23:59:59+00:00")
+        self.service.get_all_events = Mock(
+            return_value={"user1": [{"event_id": "e1"}], "user2": []}
+        )
+
+        first = self.service.get_all_events_from_calendars(
+            ["cal1"], ["user1", "user2"], start_date, end_date
+        )
+        second = self.service.get_all_events_from_calendars(
+            ["cal1"], ["user2", "user1"], start_date, end_date
+        )
+
+        self.assertEqual(first, second)
+        self.service.get_all_events.assert_called_once()
+
+    def test_get_all_events_from_calendars_calendar_order_is_part_of_the_key(self):
+        start_date = datetime.fromisoformat("2025-07-01T00:00:00+00:00")
+        end_date = datetime.fromisoformat("2025-08-02T23:59:59+00:00")
+        self.service.get_all_events = Mock(
+            side_effect=lambda cal_id, *_: {"user1": [{"event_id": cal_id}]}
+        )
+
+        self.service.get_all_events_from_calendars(
+            ["cal1", "cal2"], ["user1"], start_date, end_date
+        )
+        second = self.service.get_all_events_from_calendars(
+            ["cal2", "cal1"], ["user1"], start_date, end_date
+        )
+
+        self.assertEqual(
+            [event["event_id"] for event in second["user1"]], ["cal2", "cal1"]
+        )
+        self.assertEqual(self.service.get_all_events.call_count, 4)
+
+    def test_get_all_events_reads_each_ldap_once_when_ldaps_repeat(self):
+        start_date = datetime.fromisoformat("2025-07-01")
+        end_date = datetime.fromisoformat("2025-08-02")
+        self.mock_redis.pipeline.return_value = Mock()
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+            [[], ["event2"]],
+            [self._attendance()],
+            [self._event_detail()],
+            "Personal",
+        ]
+
+        result = self.service.get_all_events(
+            "personal", ["user1", "user1", "user2"], start_date, end_date
+        )
+
+        self.assertEqual(result["user1"], [])
+        self.assertEqual([e["event_id"] for e in result["user2"]], ["event2"])
+
+    def test_get_all_events_short_event_id_result_raises(self):
+        self.mock_redis.pipeline.return_value = Mock()
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [[["event1"]]]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.get_all_events(
+                "personal",
+                ["user1", "user2"],
+                datetime.fromisoformat("2025-07-01"),
+                datetime.fromisoformat("2025-08-02"),
+            )
+
+    def test_get_all_events_short_attendance_result_raises(self):
+        self.mock_redis.pipeline.return_value = Mock()
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+            [["event1", "event2"]],
+            [self._attendance()],
+        ]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.get_all_events(
+                "personal",
+                ["user1"],
+                datetime.fromisoformat("2025-07-01"),
+                datetime.fromisoformat("2025-08-02"),
+            )
+
+    def test_get_all_events_error_in_event_detail_results_raises(self):
+        self.mock_redis.pipeline.return_value = Mock()
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+            [["event1"]],
+            [self._attendance()],
+            [Exception("WRONGTYPE")],
+        ]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.get_all_events(
+                "personal",
+                ["user1"],
+                datetime.fromisoformat("2025-07-01"),
+                datetime.fromisoformat("2025-08-02"),
+            )
 
 
 if __name__ == "__main__":

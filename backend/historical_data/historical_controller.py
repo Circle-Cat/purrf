@@ -41,6 +41,7 @@ class HistoricalController:
         gerrit_sync_service,
         google_chat_history_sync_service,
         employment_sync_service,
+        activity_query_cache,
     ):
         """
         Initialize the HistoricalController with required dependencies.
@@ -55,6 +56,8 @@ class HistoricalController:
             gerrit_sync_service: GerritSyncService instance.
             google_chat_history_sync_service: GoogleChatHistorySyncService instance
             employment_sync_service: EmploymentSyncService instance.
+            activity_query_cache: ActivityQueryCache, cleared after each sync so
+                activity queries show the new data straight away.
         """
         self.logger = logger
         self.microsoft_member_sync_service = microsoft_member_sync_service
@@ -65,6 +68,7 @@ class HistoricalController:
         self.gerrit_sync_service = gerrit_sync_service
         self.google_chat_history_sync_service = google_chat_history_sync_service
         self.employment_sync_service = employment_sync_service
+        self.activity_query_cache = activity_query_cache
 
         self.router = APIRouter(tags=["history"])
 
@@ -137,6 +141,7 @@ class HistoricalController:
         result = await asyncio.to_thread(
             self.google_chat_history_sync_service.sync_history_messages
         )
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Google Chat messages saved successfully.",
@@ -160,6 +165,7 @@ class HistoricalController:
         result = await asyncio.to_thread(
             self.jira_history_sync_service.process_update_jira_issues, hours
         )
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message=f"Incremental Jira issues updated successfully for for the past {hours} hour(s).",
@@ -172,6 +178,7 @@ class HistoricalController:
         result = await asyncio.to_thread(
             self.jira_history_sync_service.backfill_all_jira_issues
         )
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Full Jira issues backfill completed successfully.",
@@ -200,6 +207,7 @@ class HistoricalController:
                 "LDAP sync above succeeded."
             )
 
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Microsoft 365 user LDAP information backfilled successfully.",
@@ -212,6 +220,7 @@ class HistoricalController:
         await self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id(
             chatId
         )
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message=f"Microsoft Teams chat messages for chat ID {chatId} backfilled successfully.",
@@ -224,6 +233,7 @@ class HistoricalController:
         result = await asyncio.to_thread(
             self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping
         )
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Jira projects imported successfully.",
@@ -247,6 +257,7 @@ class HistoricalController:
             self.google_calendar_sync_service.pull_calendar_history, time_min, time_max
         )
 
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message=f"Google Calendar history pulled and cached from {time_min} to {time_max}.",
@@ -261,6 +272,7 @@ class HistoricalController:
             statuses=request_body.statuses,
         )
 
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Gerrit changes backfilled successfully.",
@@ -272,6 +284,7 @@ class HistoricalController:
         """API endpoint to backfill Gerrit projects into Redis."""
         count = await asyncio.to_thread(self.gerrit_sync_service.sync_gerrit_projects)
 
+        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Gerrit projects backfilled successfully.",

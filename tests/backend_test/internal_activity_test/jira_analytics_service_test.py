@@ -1,9 +1,13 @@
 from unittest import TestCase, main
 from unittest.mock import Mock, MagicMock, patch, ANY
+from backend.common.exceptions import ActivityDataUnavailableError
 from backend.common.constants import (
     JIRA_PROJECTS_KEY,
     JiraIssueStatus,
     JIRA_ISSUE_DETAILS_KEY,
+)
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
 )
 from backend.internal_activity_service.jira_analytics_service import (
     JiraAnalyticsService,
@@ -30,6 +34,7 @@ class TestJiraAnalyticsService(TestCase):
             date_time_util=self.mock_date_time_util,
             ldap_service=self.mock_ldap_service,
             retry_utils=self.mock_retry_utils,
+            activity_query_cache=ActivityQueryCache(logger=Mock()),
         )
 
         # Common mock data for date/time
@@ -162,6 +167,8 @@ class TestJiraAnalyticsService(TestCase):
         self.mock_redis.pipeline.return_value = mock_pipeline
 
         mock_pipeline.smembers.return_value = {"issue-1", "issue-2"}
+        # 2 ldaps x 2 statuses x 1 project, then an empty story point pipeline.
+        mock_pipeline.execute.side_effect = [[set(), [], set(), []], []]
 
         mock_get_projects.return_value = ["test_project-1"]
 
@@ -312,6 +319,145 @@ class TestJiraAnalyticsService(TestCase):
         self.mock_redis.pipeline.assert_not_called()
         self.mock_redis.pipeline.return_value.hgetall.assert_not_called()
         self.mock_redis.pipeline.return_value.execute.assert_not_called()
+
+    def test_get_issues_summary_repeated_query_reads_redis_once(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [{"issue-1"}, {"issue-2"}]
+
+        first = self.jira_service.get_issues_summary(
+            status_list=[JiraIssueStatus.IN_PROGRESS],
+            ldaps=["user1", "user2"],
+            project_ids=["p1"],
+            start_date="2023-01-01",
+            end_date="2023-01-31",
+        )
+        second = self.jira_service.get_issues_summary(
+            status_list=[JiraIssueStatus.IN_PROGRESS],
+            ldaps=["user2", "user1"],
+            project_ids=["p1"],
+            start_date="2023-01-01",
+            end_date="2023-01-31",
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(second["user1"]["in_progress"], ["issue-1"])
+        mock_pipeline.execute.assert_called_once()
+
+    def test_get_issues_summary_project_order_is_part_of_the_key(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.side_effect = [[{"a"}, {"b"}], [{"b"}, {"a"}]]
+        self.mock_date_time_util.format_datetime_to_int.side_effect = None
+        self.mock_date_time_util.format_datetime_to_int.return_value = 1
+
+        first = self.jira_service.get_issues_summary(
+            status_list=[JiraIssueStatus.TODO],
+            ldaps=["user1"],
+            project_ids=["p1", "p2"],
+            start_date=None,
+            end_date=None,
+        )
+        second = self.jira_service.get_issues_summary(
+            status_list=[JiraIssueStatus.TODO],
+            ldaps=["user1"],
+            project_ids=["p2", "p1"],
+            start_date=None,
+            end_date=None,
+        )
+
+        self.assertEqual(first["user1"]["todo"], ["a", "b"])
+        self.assertEqual(second["user1"]["todo"], ["b", "a"])
+
+    def test_get_issues_summary_short_first_pipeline_raises(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [set()]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.jira_service.get_issues_summary(
+                status_list=[JiraIssueStatus.TODO],
+                ldaps=["user1", "user2"],
+                project_ids=["p1"],
+                start_date=None,
+                end_date=None,
+            )
+
+    def test_get_issues_summary_short_story_point_pipeline_raises(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.side_effect = [[["done-1", "done-2"]], ["3"]]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.jira_service.get_issues_summary(
+                status_list=[JiraIssueStatus.DONE],
+                ldaps=["user1"],
+                project_ids=["p1"],
+                start_date=None,
+                end_date=None,
+            )
+
+    def test_get_issues_summary_error_in_pipeline_results_raises(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.side_effect = [
+            [["done-1"]],
+            [Exception("WRONGTYPE")],
+        ]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.jira_service.get_issues_summary(
+                status_list=[JiraIssueStatus.DONE],
+                ldaps=["user1"],
+                project_ids=["p1"],
+                start_date=None,
+                end_date=None,
+            )
+
+    def test_process_get_issue_detail_batch_repeated_query_reads_redis_once(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [{"title": "A"}, {"title": "B"}]
+
+        first = self.jira_service.process_get_issue_detail_batch(["1", "2"])
+        first[0]["title"] = "changed by caller"
+        second = self.jira_service.process_get_issue_detail_batch(["1", "2"])
+
+        self.assertEqual(
+            second,
+            [{"issue_id": "1", "title": "A"}, {"issue_id": "2", "title": "B"}],
+        )
+        mock_pipeline.execute.assert_called_once()
+
+    def test_process_get_issue_detail_batch_order_is_part_of_the_key(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.side_effect = [
+            [{"title": "A"}, {"title": "B"}],
+            [{"title": "B"}, {"title": "A"}],
+        ]
+
+        self.jira_service.process_get_issue_detail_batch(["1", "2"])
+        second = self.jira_service.process_get_issue_detail_batch(["2", "1"])
+
+        self.assertEqual([row["issue_id"] for row in second], ["2", "1"])
+        self.assertEqual(mock_pipeline.execute.call_count, 2)
+
+    def test_process_get_issue_detail_batch_short_result_raises(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [{"title": "A"}]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.jira_service.process_get_issue_detail_batch(["1", "2"])
+
+    def test_process_get_issue_detail_batch_error_in_results_raises(self):
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [{"title": "A"}, Exception("OOM")]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.jira_service.process_get_issue_detail_batch(["1", "2"])
 
 
 if __name__ == "__main__":
