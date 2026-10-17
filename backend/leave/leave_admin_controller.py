@@ -73,7 +73,7 @@ class LeaveAdminController:
 
     async def ledger(
         self,
-        user_id: int | None = Query(None, alias="userId"),
+        user_id: int | None = Query(None, ge=1, alias="userId"),
         page: int = Query(1, ge=1),
         page_size: int = Query(50, ge=1, le=200, alias="pageSize"),
     ):

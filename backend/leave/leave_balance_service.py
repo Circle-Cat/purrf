@@ -87,21 +87,18 @@ class LeaveBalanceService:
         Returns:
             Paginated DTO containing detailed ledger rows with resolved user names and ldaps.
         """
-        # Calculate database pagination offset
         offset = (page - 1) * page_size
 
-        # Note: total_entries is queried separately from the page entries above.
-        # A concurrent write committed between these two queries (e.g., weekly
-        # accruals or manual adjustments) may cause total_entries to slightly
-        # disagree with the returned page rows. This is acceptable for an admin view.
-
-        # Query entries for the current page and total entries matching the filter
         entries_entities = await self.leave_ledger_repository.list_entries(
             session, user_id, limit=page_size, offset=offset
         )
         total_entries = await self.leave_ledger_repository.count_entries(
             session, user_id
         )
+        # Note: total_entries is queried separately from the page entries.
+        # A concurrent write committed between these two queries (e.g., weekly
+        # accruals or manual adjustments) may cause total_entries to slightly
+        # disagree with the returned page rows. This is acceptable for an admin view.
 
         # Extract user_ids for the current page only to avoid bulk loading unnecessary accounts
         page_user_ids = sorted({entry.user_id for entry in entries_entities})
@@ -113,7 +110,6 @@ class LeaveBalanceService:
             self.user_emails_repository,
         )
 
-        # Map current page entities into LeaveLedgerRowDto instances
         entry_dtos = [
             LeaveLedgerRowDto(
                 leave_ledger_id=entry.leave_ledger_id,
@@ -128,7 +124,6 @@ class LeaveBalanceService:
             for entry in entries_entities
         ]
 
-        # Assemble and return the paginated DTO
         return LeaveLedgerPageDto(
             entries=entry_dtos,
             page=page,
