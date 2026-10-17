@@ -309,6 +309,21 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.summary_service.get_summary.assert_called_once()
 
+    def test_get_summary_refuses_an_empty_group_list(self):
+        """No group means no members to sum; it used to reach the LDAP lookup
+        and fail there with a 500. The app maps this validation error to 400;
+        this bare test app leaves FastAPI's 422."""
+        self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
+
+        response = self.client.post(
+            SUMMARY_ENDPOINT,
+            json={"startDate": "2023-01-01", "groups": []},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.summary_service.get_summary.assert_not_called()
+
     def test_get_my_summary_success(self):
         """Test MY_SUMMARY_ENDPOINT (POST) returns 200 when LD flag is enabled."""
         self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
