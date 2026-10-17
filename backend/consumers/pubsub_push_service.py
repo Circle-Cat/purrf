@@ -20,6 +20,12 @@ from backend.common.constants import (
     ALL_GOOGLE_CHAT_EVENT_TYPES,
     EXPIRATION_REMINDER_EVENT,
 )
+from backend.internal_activity_service.activity_query_cache import (
+    GERRIT_STATS_QUERY,
+    GOOGLE_CHAT_COUNT_QUERY,
+    MICROSOFT_CHAT_COUNT_QUERY,
+    SUMMARY_QUERY,
+)
 
 
 class PubSubPushOutcome(StrEnum):
@@ -41,6 +47,7 @@ class PubSubPushService:
         google_chat_processor_service,
         gerrit_processor_service,
         microsoft_chat_message_util,
+        activity_query_cache,
     ):
         """
         Args:
@@ -54,6 +61,9 @@ class PubSubPushService:
                 events.
             microsoft_chat_message_util (MicrosoftChatMessageUtil): Fetches a
                 changed Teams message from Graph and stores it.
+            activity_query_cache (ActivityQueryCache): Activity query results;
+                today's results of the pushed source are dropped once a push
+                is stored.
         """
         self.logger = logger
         self.auth_service = auth_service
@@ -61,6 +71,7 @@ class PubSubPushService:
         self.google_chat_processor_service = google_chat_processor_service
         self.gerrit_processor_service = gerrit_processor_service
         self.microsoft_chat_message_util = microsoft_chat_message_util
+        self.activity_query_cache = activity_query_cache
 
     def _refuse(self, reason: str) -> PubSubPushOutcome:
         self.logger.warning("[PubSubPush] %s; refusing", reason)
@@ -90,9 +101,18 @@ class PubSubPushService:
         return None
 
     async def _receive(
-        self, source: str, authorization: str, envelope, process_fn
+        self,
+        source: str,
+        authorization: str,
+        envelope,
+        process_fn,
+        cached_queries: set[str],
     ) -> PubSubPushOutcome:
-        """Await ``process_fn(data, attributes)`` on the message a push envelope carries."""
+        """Await ``process_fn(data, attributes)`` on the message a push envelope carries.
+
+        ``process_fn`` returns whether it stored activity; if so, today's
+        cached results of ``cached_queries`` are dropped.
+        """
         refusal = self._caller_refusal(authorization)
         if refusal is not None:
             return refusal
@@ -106,7 +126,7 @@ class PubSubPushService:
             return PubSubPushOutcome.RETRY
 
         try:
-            await process_fn(data, attributes)
+            stored = await process_fn(data, attributes)
         except Exception:
             self.logger.exception(
                 "[PubSubPush] %s message %s failed",
@@ -114,9 +134,11 @@ class PubSubPushService:
                 message.get("messageId"),
             )
             return PubSubPushOutcome.RETRY
+        if stored:
+            self.activity_query_cache.clear_current(cached_queries)
         return PubSubPushOutcome.ACK
 
-    async def _process_google_chat(self, data: dict, attributes: dict):
+    async def _process_google_chat(self, data: dict, attributes: dict) -> bool:
         message_type = attributes.get("ce-type")
         # An event type nothing handles would fail on every redelivery, so it
         # is dropped here rather than raised.
@@ -128,21 +150,25 @@ class PubSubPushService:
                 "[PubSubPush] Dropping unsupported Google Chat event: %s",
                 message_type,
             )
-            return
+            return False
         # Synchronous Redis and Google API calls; a worker thread keeps the
         # event loop free.
         await asyncio.to_thread(
             self.google_chat_processor_service.process_event, data, attributes
         )
+        # An expiration reminder renews the subscription and stores no message.
+        return message_type != EXPIRATION_REMINDER_EVENT
 
-    async def _process_gerrit(self, data: dict, attributes: dict):
+    async def _process_gerrit(self, data: dict, attributes: dict) -> bool:
         # Synchronous Redis calls, likewise on a worker thread.
         await asyncio.to_thread(self.gerrit_processor_service.store_payload, data)
+        return True
 
-    async def _process_microsoft_chat(self, data: dict, attributes: dict):
+    async def _process_microsoft_chat(self, data: dict, attributes: dict) -> bool:
         await self.microsoft_chat_message_util.sync_near_real_time_message_to_redis(
             data.get("changeType"), data.get("resource")
         )
+        return True
 
     async def receive_google_chat(
         self, authorization: str, envelope
@@ -159,7 +185,11 @@ class PubSubPushService:
                 including for an event type nothing handles.
         """
         return await self._receive(
-            "Google Chat", authorization, envelope, self._process_google_chat
+            "Google Chat",
+            authorization,
+            envelope,
+            self._process_google_chat,
+            {GOOGLE_CHAT_COUNT_QUERY, SUMMARY_QUERY},
         )
 
     async def receive_microsoft_chat(
@@ -177,7 +207,11 @@ class PubSubPushService:
                 nothing handles; ACK otherwise.
         """
         return await self._receive(
-            "Microsoft Teams", authorization, envelope, self._process_microsoft_chat
+            "Microsoft Teams",
+            authorization,
+            envelope,
+            self._process_microsoft_chat,
+            {MICROSOFT_CHAT_COUNT_QUERY, SUMMARY_QUERY},
         )
 
     async def receive_gerrit(self, authorization: str, envelope) -> PubSubPushOutcome:
@@ -192,5 +226,9 @@ class PubSubPushService:
                 message could not be read or processed; ACK otherwise.
         """
         return await self._receive(
-            "Gerrit", authorization, envelope, self._process_gerrit
+            "Gerrit",
+            authorization,
+            envelope,
+            self._process_gerrit,
+            {GERRIT_STATS_QUERY, SUMMARY_QUERY},
         )

@@ -378,6 +378,9 @@ class TestAppDependencyBuilder(TestCase):
         )
         activity_query_cache = builder.activity_query_cache
         self.assertIsInstance(activity_query_cache, ActivityQueryCache)
+        self.assertIs(
+            builder.pubsub_push_service.activity_query_cache, activity_query_cache
+        )
         mock_historical_controller_cls.assert_called_once_with(
             logger=mock_logger,
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,

@@ -7,6 +7,12 @@ from backend.common.constants import (
     ALL_GOOGLE_CHAT_EVENT_TYPES,
     EXPIRATION_REMINDER_EVENT,
 )
+from backend.internal_activity_service.activity_query_cache import (
+    GERRIT_STATS_QUERY,
+    GOOGLE_CHAT_COUNT_QUERY,
+    MICROSOFT_CHAT_COUNT_QUERY,
+    SUMMARY_QUERY,
+)
 from backend.consumers.pubsub_push_service import (
     PubSubPushOutcome,
     PubSubPushService,
@@ -32,6 +38,7 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
         self.gerrit_processor = MagicMock()
         self.microsoft_util = AsyncMock()
         self.logger = MagicMock()
+        self.activity_query_cache = MagicMock()
         self.service = self._service(frozenset({"111-pusher"}))
 
     def _service(self, pusher_subs):
@@ -42,6 +49,7 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
             google_chat_processor_service=self.chat_processor,
             gerrit_processor_service=self.gerrit_processor,
             microsoft_chat_message_util=self.microsoft_util,
+            activity_query_cache=self.activity_query_cache,
         )
 
     def _assert_nothing_processed(self):
@@ -206,6 +214,75 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
 
                     self.assertEqual(outcome, PubSubPushOutcome.RETRY)
         self._assert_nothing_processed()
+
+    async def test_applied_pushes_drop_todays_cached_results_of_their_source(self):
+        cases = [
+            (
+                self.service.receive_google_chat,
+                _envelope({}, {"ce-type": _CHAT_EVENT}),
+                {GOOGLE_CHAT_COUNT_QUERY, SUMMARY_QUERY},
+            ),
+            (
+                self.service.receive_microsoft_chat,
+                _envelope({"changeType": "created", "resource": "r"}),
+                {MICROSOFT_CHAT_COUNT_QUERY, SUMMARY_QUERY},
+            ),
+            (
+                self.service.receive_gerrit,
+                _envelope({"type": "change-merged"}),
+                {GERRIT_STATS_QUERY, SUMMARY_QUERY},
+            ),
+        ]
+        for receive, envelope, methods in cases:
+            with self.subTest(receive=receive.__name__):
+                self.activity_query_cache.reset_mock()
+
+                outcome = await receive(_BEARER, envelope)
+
+                self.assertEqual(outcome, PubSubPushOutcome.ACK)
+                self.activity_query_cache.clear_current.assert_called_once_with(methods)
+
+    async def test_pushes_that_wrote_nothing_leave_the_cache_alone(self):
+        cases = {
+            "expiration reminder": self.service.receive_google_chat(
+                _BEARER,
+                _envelope(
+                    {"subscription": {"name": "subscriptions/x"}},
+                    {"ce-type": EXPIRATION_REMINDER_EVENT},
+                ),
+            ),
+            "unsupported chat event": self.service.receive_google_chat(
+                _BEARER,
+                _envelope({}, {"ce-type": "google.workspace.chat.reaction.v1.created"}),
+            ),
+            "unreadable envelope": self.service.receive_gerrit(_BEARER, None),
+            "refused caller": self.service.receive_gerrit("", _envelope({})),
+        }
+        for name, push in cases.items():
+            with self.subTest(case=name):
+                await push
+
+        self.activity_query_cache.clear_current.assert_not_called()
+
+    async def test_failed_pushes_leave_the_cache_alone(self):
+        self.chat_processor.process_event.side_effect = ValueError("no sender")
+        self.gerrit_processor.store_payload.side_effect = RuntimeError("redis down")
+        self.microsoft_util.sync_near_real_time_message_to_redis.side_effect = (
+            ValueError("Unsupported change type")
+        )
+
+        outcomes = [
+            await self.service.receive_google_chat(
+                _BEARER, _envelope({}, {"ce-type": _CHAT_EVENT})
+            ),
+            await self.service.receive_microsoft_chat(
+                _BEARER, _envelope({"changeType": "moved", "resource": "r"})
+            ),
+            await self.service.receive_gerrit(_BEARER, _envelope({"type": "x"})),
+        ]
+
+        self.assertEqual(outcomes, [PubSubPushOutcome.RETRY] * 3)
+        self.activity_query_cache.clear_current.assert_not_called()
 
 
 if __name__ == "__main__":

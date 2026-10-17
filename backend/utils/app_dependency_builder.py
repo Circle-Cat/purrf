@@ -1204,6 +1204,7 @@ class AppDependencyBuilder:
             google_chat_processor_service=self.google_chat_processor_service,
             gerrit_processor_service=self.gerrit_processor_service,
             microsoft_chat_message_util=self.microsoft_chat_message_util,
+            activity_query_cache=self.activity_query_cache,
         )
         self.pubsub_push_controller = PubSubPushController(
             pubsub_push_service=self.pubsub_push_service,

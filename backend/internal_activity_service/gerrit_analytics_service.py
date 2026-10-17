@@ -1,5 +1,8 @@
 import re
 from datetime import datetime, timezone
+from backend.internal_activity_service.activity_query_cache import (
+    GERRIT_STATS_QUERY,
+)
 from backend.common.constants import (
     GERRIT_STATS_BUCKET_KEY,
     GERRIT_STATS_PROJECT_BUCKET_KEY,
@@ -114,7 +117,7 @@ class GerritAnalyticsService:
             else cache.unordered([p for p in project_list or [] if p])
         )
         return cache.get_or_compute(
-            "gerrit.get_gerrit_stats",
+            GERRIT_STATS_QUERY,
             (
                 cache.unordered(ldap_list),
                 projects_key,

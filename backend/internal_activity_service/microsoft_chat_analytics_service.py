@@ -1,5 +1,8 @@
 from datetime import datetime
 
+from backend.internal_activity_service.activity_query_cache import (
+    MICROSOFT_CHAT_COUNT_QUERY,
+)
 from backend.common.constants import (
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
     MicrosoftChatMessagesChangeType,
@@ -103,7 +106,7 @@ class MicrosoftChatAnalyticsService:
         )
         cache = self.activity_query_cache
         return cache.get_or_compute(
-            "microsoft_chat.count_messages",
+            MICROSOFT_CHAT_COUNT_QUERY,
             (
                 cache.unordered(ldap_list),
                 start_dt_utc.isoformat(),

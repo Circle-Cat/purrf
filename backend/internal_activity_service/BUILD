@@ -22,6 +22,7 @@ py_library(
     name = "google_chat_analytics_service",
     srcs = ["google_chat_analytics_service.py"],
     deps = [
+        ":activity_query_cache",
         ":pipeline_results",
         "//backend/common:constants",
     ],
@@ -42,6 +43,7 @@ py_library(
         "gerrit_analytics_service.py",
     ],
     deps = [
+        ":activity_query_cache",
         ":pipeline_results",
         "//backend/common:constants",
     ],
@@ -53,6 +55,7 @@ py_library(
         "google_calendar_analytics_service.py",
     ],
     deps = [
+        ":activity_query_cache",
         ":pipeline_results",
         "//backend/common:constants",
     ],
@@ -74,6 +77,7 @@ py_library(
         "microsoft_chat_analytics_service.py",
     ],
     deps = [
+        ":activity_query_cache",
         ":pipeline_results",
         "//backend/common:constants",
     ],
@@ -85,6 +89,7 @@ py_library(
         "jira_analytics_service.py",
     ],
     deps = [
+        ":activity_query_cache",
         ":pipeline_results",
         "//backend/common:constants",
     ],
@@ -96,6 +101,7 @@ py_library(
         "summary_service.py",
     ],
     deps = [
+        ":activity_query_cache",
         "//backend/common:constants",
         "//backend/dto",
     ],

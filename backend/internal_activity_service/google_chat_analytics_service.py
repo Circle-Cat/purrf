@@ -1,5 +1,8 @@
 from datetime import datetime
 
+from backend.internal_activity_service.activity_query_cache import (
+    GOOGLE_CHAT_COUNT_QUERY,
+)
 from backend.common.constants import CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY
 from backend.internal_activity_service.pipeline_results import (
     checked_pipeline_results,
@@ -116,7 +119,7 @@ class GoogleChatAnalyticsService:
         )
         cache = self.activity_query_cache
         return cache.get_or_compute(
-            "google_chat.count_messages",
+            GOOGLE_CHAT_COUNT_QUERY,
             (
                 cache.unordered(space_ids),
                 cache.unordered(sender_ldaps),

@@ -155,6 +155,37 @@ class TestActivityQueryCache(TestCase):
 
         self.assertEqual(result, "new")
 
+    def test_clear_current_drops_only_todays_entries_of_the_named_methods(self):
+        self.cache = ActivityQueryCache(logger=MagicMock(), clock=self.clock)
+        self.cache.get_or_compute("chat", ("today",), TODAY_END, lambda: "c1")
+        self.cache.get_or_compute("chat", ("open",), None, lambda: "c2")
+        self.cache.get_or_compute("chat", ("past",), YESTERDAY_END, lambda: "c3")
+        self.cache.get_or_compute("gerrit", ("today",), TODAY_END, lambda: "g1")
+
+        self.cache.clear_current({"chat"})
+
+        self.assertEqual(len(self.cache), 2)
+        self.assertEqual(
+            self.cache.get_or_compute("chat", ("past",), YESTERDAY_END, self.compute),
+            "c3",
+        )
+        self.assertEqual(
+            self.cache.get_or_compute("gerrit", ("today",), TODAY_END, self.compute),
+            "g1",
+        )
+        self.compute.assert_not_called()
+        self.assertEqual(
+            self.cache.get_or_compute("chat", ("today",), TODAY_END, lambda: "new"),
+            "new",
+        )
+
+    def test_clear_current_with_no_matching_method_keeps_everything(self):
+        self.cache.get_or_compute("chat", ("today",), TODAY_END, lambda: "c1")
+
+        self.cache.clear_current(set())
+
+        self.assertEqual(len(self.cache), 1)
+
 
 if __name__ == "__main__":
     main()

@@ -31,6 +31,7 @@ py_library(
     ],
     deps = [
         "//backend/common:constants",
+        "//backend/internal_activity_service:activity_query_cache",
     ],
 )
 

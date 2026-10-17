@@ -1,3 +1,7 @@
+from backend.internal_activity_service.activity_query_cache import (
+    JIRA_ISSUES_SUMMARY_QUERY,
+    JIRA_ISSUE_DETAIL_QUERY,
+)
 from backend.common.constants import (
     JIRA_ISSUE_DETAILS_KEY,
     JIRA_PROJECTS_KEY,
@@ -122,7 +126,7 @@ class JiraAnalyticsService:
         )
         cache = self.activity_query_cache
         return cache.get_or_compute(
-            "jira.get_issues_summary",
+            JIRA_ISSUES_SUMMARY_QUERY,
             (
                 cache.unordered([status.value for status in status_list or []]),
                 cache.unordered(ldaps),
@@ -276,7 +280,7 @@ class JiraAnalyticsService:
             raise ValueError("issue_ids cannot be empty")
 
         return self.activity_query_cache.get_or_compute(
-            "jira.process_get_issue_detail_batch",
+            JIRA_ISSUE_DETAIL_QUERY,
             self.activity_query_cache.ordered(issue_ids),
             None,
             lambda: self._get_issue_detail_batch(issue_ids),

@@ -1,3 +1,6 @@
+from backend.internal_activity_service.activity_query_cache import (
+    CALENDAR_EVENTS_QUERY,
+)
 from backend.common.constants import (
     GOOGLE_CALENDAR_LIST_INDEX_KEY,
     GOOGLE_CALENDAR_USER_EVENTS_KEY,
@@ -225,7 +228,7 @@ class GoogleCalendarAnalyticsService:
         """
         cache = self.activity_query_cache
         return cache.get_or_compute(
-            "google_calendar.get_all_events_from_calendars",
+            CALENDAR_EVENTS_QUERY,
             (
                 # Events are listed calendar by calendar, so order shows.
                 cache.ordered(calendar_ids),

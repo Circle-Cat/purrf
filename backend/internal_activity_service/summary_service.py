@@ -1,3 +1,6 @@
+from backend.internal_activity_service.activity_query_cache import (
+    SUMMARY_QUERY,
+)
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.constants import JiraIssueStatus, ldap_from_addresses
 from backend.dto.user_context_dto import UserContextDto
@@ -50,7 +53,7 @@ class SummaryService:
             start_date, end_date
         )
         return self.activity_query_cache.get_or_compute(
-            "summary.search_summary_data",
+            SUMMARY_QUERY,
             # One row per ldap, in the order given.
             (
                 self.activity_query_cache.ordered(ldaps),
