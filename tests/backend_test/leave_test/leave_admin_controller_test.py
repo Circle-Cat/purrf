@@ -6,6 +6,9 @@ from decimal import Decimal
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from backend.common.permissions import Permission
 from backend.dto.leave_adjustment_dto import (
     LeaveAdjustmentRequestDto,
@@ -131,6 +134,41 @@ class TestLeaveAdminController(unittest.IsolatedAsyncioTestCase):
             page=2,
             page_size=20,
         )
+
+    def _client(self):
+        """The router behind a stand-in for the auth middleware, as a leave admin."""
+        app = FastAPI()
+
+        @app.middleware("http")
+        async def as_leave_admin(request, call_next):
+            request.state.user = UserContextDto(
+                sub="s",
+                primary_email="a@b.com",
+                user_id=2,
+                permissions=frozenset({Permission.LEAVE_ADMIN}),
+            )
+            return await call_next(request)
+
+        app.include_router(self.controller.router)
+        return TestClient(app)
+
+    def test_ledger_accepts_a_real_user_id(self):
+        self.balance_service.list_ledger.return_value = {}
+
+        response = self._client().get("/leave/ledger?userId=7")
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.balance_service.list_ledger.assert_awaited_once()
+
+    def test_ledger_refuses_a_user_id_below_one(self):
+        # Without the bound an id of 0 read as somebody with no history.
+        client = self._client()
+        for user_id in ("0", "-5"):
+            with self.subTest(user_id=user_id):
+                response = client.get(f"/leave/ledger?userId={user_id}")
+
+                self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.balance_service.list_ledger.assert_not_awaited()
 
 
 if __name__ == "__main__":
