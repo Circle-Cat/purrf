@@ -82,7 +82,9 @@ class LeaveRequestFlowTest(BaseRepositoryTestLib):
         # naming a manager, and that manager's account.
         emails = MagicMock()
         emails.list_by_user_id = AsyncMock(
-            return_value=[SimpleNamespace(email="lin@circlecat.org")]
+            return_value=[
+                SimpleNamespace(email="lin@circlecat.org", otp_confirmed=True)
+            ]
         )
         emails.get_emails_by_user_ids = AsyncMock(return_value={})
         redis = MagicMock()
