@@ -141,11 +141,63 @@ describe("FileLeaveDialog", () => {
     expect(onSubmit).toHaveBeenCalled();
   });
 
-  it("shows the server's refusal", () => {
+  /**
+   * Renders the dialog the way its parent drives it: a refused submit comes
+   * back as false, and the refusal then arrives as `saveError`.
+   */
+  const renderRefused = () => {
+    const refusal = "Your Azure record has no manager.";
+    const props = {
+      isSaving: false,
+      onClose: vi.fn(),
+      onSubmit: vi.fn().mockResolvedValue(false),
+    };
+    const view = render(<FileLeaveDialog isOpen saveError={null} {...props} />);
+    const rerenderWith = (overrides) =>
+      view.rerender(
+        <FileLeaveDialog
+          isOpen
+          saveError={refusal}
+          {...props}
+          {...overrides}
+        />,
+      );
+    return { refusal, props, rerenderWith };
+  };
+
+  it("shows the server's refusal of a submit", async () => {
+    const { refusal, props, rerenderWith } = renderRefused();
+    setDates("2026-10-01", "2026-10-01");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => expect(props.onSubmit).toHaveBeenCalled());
+
+    rerenderWith({});
+
+    expect(screen.getByText(refusal)).toBeInTheDocument();
+  });
+
+  it("does not show a refusal left over from before it was opened", () => {
+    // The refusal belongs to the hook the parent shares, and outlives the
+    // dialog that caused it.
     open({ saveError: "Your Azure record has no manager." });
 
     expect(
-      screen.getByText("Your Azure record has no manager."),
-    ).toBeInTheDocument();
+      screen.queryByText("Your Azure record has no manager."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("starts clean when opened again after a refusal", async () => {
+    const { refusal, props, rerenderWith } = renderRefused();
+    setDates("2026-10-01", "2026-10-01");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => expect(props.onSubmit).toHaveBeenCalled());
+    rerenderWith({});
+    expect(screen.getByText(refusal)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    rerenderWith({ isOpen: false });
+    rerenderWith({ isOpen: true });
+
+    expect(screen.queryByText(refusal)).not.toBeInTheDocument();
   });
 });
