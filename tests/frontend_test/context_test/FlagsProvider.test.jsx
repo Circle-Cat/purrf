@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, act, waitFor } from "@testing-library/react";
 import { useContext } from "react";
 import {
   FlagsProvider,
   LDIdentifier,
+  LDUserProvider,
   FlagsContext,
   ldReactContext as LDReactContext,
 } from "@/context/flags";
@@ -215,5 +216,61 @@ describe("LDIdentifier", () => {
     unmount();
 
     expect(mockLDClient.off).toHaveBeenCalledWith("change", registeredHandler);
+  });
+});
+
+describe("LDUserProvider", () => {
+  /** Records the LaunchDarkly client LDUserProvider hands to its subtree. */
+  function ClientTracker({ clientRef }) {
+    clientRef.current = useContext(LDReactContext).ldClient;
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // No client-side ID is configured in tests, so the SDK reports a failed start.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("starts no LaunchDarkly client while nobody is signed in", async () => {
+    useAuth.mockReturnValue({ user: null });
+    const clientRef = { current: null };
+
+    let getByText;
+    await act(async () => {
+      ({ getByText } = render(
+        <LDUserProvider>
+          <span>child</span>
+          <ClientTracker clientRef={clientRef} />
+        </LDUserProvider>,
+      ));
+    });
+
+    expect(getByText("child")).toBeInTheDocument();
+    expect(clientRef.current).toBeUndefined();
+  });
+
+  it("starts the client once a user is signed in", async () => {
+    const user = {
+      sub: "azure|9",
+      userId: 9,
+      email: "nine@example.com",
+      identityType: "internal",
+    };
+    useAuth.mockReturnValue({ user });
+    const clientRef = { current: null };
+
+    render(
+      <LDUserProvider>
+        <ClientTracker clientRef={clientRef} />
+      </LDUserProvider>,
+    );
+
+    await waitFor(() => expect(clientRef.current).toBeDefined());
   });
 });
