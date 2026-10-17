@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.internal_activity_summary_request_dto import MySummaryRequest
 
@@ -76,7 +76,7 @@ class GoogleChatCountRequest(BaseModel):
 class SummaryRequest(BaseModel):
     startDate: str | None = None
     endDate: str | None = None
-    groups: list[str]
+    groups: list[str] = Field(min_length=1)
     includeTerminated: bool | None = False
 
 
