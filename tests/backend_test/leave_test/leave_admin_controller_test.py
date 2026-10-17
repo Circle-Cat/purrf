@@ -41,7 +41,11 @@ class TestLeaveAdminController(unittest.IsolatedAsyncioTestCase):
         )
         self.engine = MagicMock()
         self.engine.overview = AsyncMock()
-        self.controller = LeaveAdminController(self.service, self.engine, self.database)
+        self.balance_service = MagicMock()
+        self.balance_service.list_ledger = AsyncMock()
+        self.controller = LeaveAdminController(
+            self.service, self.engine, self.balance_service, self.database
+        )
 
         patcher = patch("backend.leave.leave_admin_controller.api_response")
         self.mock_api_response = patcher.start()
@@ -107,6 +111,26 @@ class TestLeaveAdminController(unittest.IsolatedAsyncioTestCase):
         route = routes[("/leave/adjustments", "POST")]
 
         self.assertEqual(_route_permissions(route), [Permission.LEAVE_ADMIN])
+
+    def test_reading_ledger_needs_the_leave_admin_permission(self):
+        routes = {
+            (route.path, method): route
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+        route = routes[("/leave/ledger", "GET")]
+
+        self.assertEqual(_route_permissions(route), [Permission.LEAVE_ADMIN])
+
+    async def test_ledger_delegates_to_balance_service(self):
+        await self.controller.ledger(user_id=7, page=2, page_size=20)
+
+        self.balance_service.list_ledger.assert_awaited_once_with(
+            self.session,
+            user_id=7,
+            page=2,
+            page_size=20,
+        )
 
 
 if __name__ == "__main__":

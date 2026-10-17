@@ -16,6 +16,70 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.constants import INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+from backend.common.name_utils import user_display_name
+
+
+def ldap_from_addresses(addresses) -> str | None:
+    """The Azure ldap an account carries, or None if it carries none.
+
+    Azure knows people by ldap and purrf knows them by account; the corporate
+    address is the whole of the join, so the ldap is read off it rather than
+    stored a second time. Sorted, so that an account somehow holding two
+    corporate addresses still reads the same way every time -- the directory
+    join says that cannot happen, and if it does the answer must at least not
+    move around between requests.
+
+    Args:
+        addresses: The account's email addresses, in any order.
+
+    Returns:
+        The local part of its corporate address, or None.
+    """
+    for address in sorted(addresses):
+        if address.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
+            return address.split("@")[0]
+    return None
+
+
+async def resolve_names_and_ldaps(
+    session: AsyncSession,
+    user_ids: list[int] | set[int],
+    users_repository,
+    user_emails_repository,
+) -> tuple[dict[int, str], dict[int, str | None]]:
+    """Resolves display names and LDAP identifiers for a collection of user IDs.
+
+    Args:
+        session: Active async session.
+        user_ids: List or set of user IDs to resolve.
+        users_repository: Repository providing get_all_by_ids.
+        user_emails_repository: Repository providing get_emails_by_user_ids.
+
+    Returns:
+        A tuple of (name_by_id, ldap_by_id) mapping user IDs to their resolved values.
+    """
+    if not user_ids:
+        return {}, {}
+
+    users = await users_repository.get_all_by_ids(session, user_ids)
+    name_by_id = {
+        user.user_id: user_display_name(
+            first_name=user.first_name,
+            last_name=user.last_name,
+            preferred_name=user.preferred_name,
+        )
+        for user in users
+    }
+
+    addresses_by_id = await user_emails_repository.get_emails_by_user_ids(
+        session, user_ids
+    )
+    ldap_by_id = {
+        uid: ldap_from_addresses(addresses)
+        for uid, addresses in addresses_by_id.items()
+    }
+
+    return name_by_id, ldap_by_id
 
 
 @dataclass(frozen=True)

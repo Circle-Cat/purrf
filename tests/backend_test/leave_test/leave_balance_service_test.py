@@ -6,16 +6,21 @@ from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.leave.leave_balance_service import LeaveBalanceService
+from backend.common.leave_enums import LeaveEntryType
 
 
 def _ledger_entry(
+    leave_ledger_id=812,
     effective_date=datetime.date(2026, 3, 1),
-    entry_type="ACCRUAL",
+    user_id=1,
+    entry_type=LeaveEntryType.WEEKLY_ACCRUAL,
     hours=Decimal("8.00"),
-    note="Monthly Accrual",
+    note="Weekly Accrual",
 ):
     """Helper to construct a mock leave ledger entry entity."""
     entry = MagicMock()
+    entry.leave_ledger_id = leave_ledger_id
+    entry.user_id = user_id
     entry.effective_date = effective_date
     entry.entry_type = entry_type
     entry.hours = hours
@@ -29,12 +34,21 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.repository = MagicMock()
         self.repository.balance = AsyncMock(return_value=Decimal("80.00"))
         self.repository.list_entries = AsyncMock(return_value=[])
+        self.repository.count_entries = AsyncMock(return_value=0)
+
+        self.users_repository = MagicMock()
+        self.users_repository.get_all_by_ids = AsyncMock(return_value=[])
+        self.user_emails_repository = MagicMock()
+        self.user_emails_repository.get_emails_by_user_ids = AsyncMock(return_value={})
+
         self.session = MagicMock()
         self.session.commit = AsyncMock()
 
         self.service = LeaveBalanceService(
             logger=self.logger,
             leave_ledger_repository=self.repository,
+            users_repository=self.users_repository,
+            user_emails_repository=self.user_emails_repository,
         )
 
     async def test_get_leave_balance_returns_formatted_dto_with_ledger_entries(self):
@@ -111,6 +125,119 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
             await self.service.get_leave_balance(self.session, user_id=1)
 
         self.session.commit.assert_not_awaited()
+
+    async def test_list_ledger_paginates_and_resolves_names_and_ldaps(self):
+        """Verify list_ledger queries entries with pagination, total count, and handles missing names/ldaps gracefully."""
+        entry1 = _ledger_entry(
+            leave_ledger_id=812,
+            effective_date=datetime.date(2026, 7, 1),
+            user_id=44,
+            entry_type=LeaveEntryType.LEVEL_CHANGE,
+            hours=Decimal("0.00"),
+            note="L1 -> L3",
+        )
+        entry2 = _ledger_entry(
+            leave_ledger_id=799,
+            effective_date=datetime.date(2026, 5, 6),
+            user_id=51,
+            entry_type=LeaveEntryType.LEAVE_DEDUCTION,
+            hours=Decimal("-8.00"),
+            note=None,
+        )
+        entry3 = _ledger_entry(
+            leave_ledger_id=750,
+            effective_date=datetime.date(2026, 4, 1),
+            user_id=60,
+            entry_type=LeaveEntryType.WEEKLY_ACCRUAL,
+            hours=Decimal("8.00"),
+            note="Weekly Accrual",
+        )
+
+        self.repository.list_entries.return_value = [entry1, entry2, entry3]
+        self.repository.count_entries.return_value = 347
+
+        self.users_repository.get_all_by_ids.return_value = [
+            MagicMock(
+                user_id=44, first_name="Wen", last_name="Zhang", preferred_name=None
+            ),
+            MagicMock(user_id=51, first_name="Li", last_name="Si", preferred_name=None),
+        ]
+
+        self.user_emails_repository.get_emails_by_user_ids.return_value = {
+            44: ["wen.zhang@circlecat.org"],
+        }
+
+        page_dto = await self.service.list_ledger(
+            self.session, user_id=None, page=1, page_size=50
+        )
+
+        self.repository.list_entries.assert_awaited_once_with(
+            self.session, None, limit=50, offset=0
+        )
+        self.repository.count_entries.assert_awaited_once_with(self.session, None)
+
+        self.assertEqual(page_dto.page, 1)
+        self.assertEqual(page_dto.page_size, 50)
+        self.assertEqual(page_dto.total_entries, 347)
+        self.assertEqual(len(page_dto.entries), 3)
+
+        row1 = page_dto.entries[0]
+        self.assertEqual(row1.leave_ledger_id, 812)
+        self.assertEqual(row1.effective_date, "2026-07-01")
+        self.assertEqual(row1.user_id, 44)
+        self.assertEqual(row1.name, "Wen Zhang")
+        self.assertEqual(row1.ldap, "wen.zhang")
+        self.assertEqual(row1.entry_type, "level_change")
+        self.assertEqual(row1.hours, "0.00")
+        self.assertEqual(row1.note, "L1 -> L3")
+
+        row2 = page_dto.entries[1]
+        self.assertEqual(row2.leave_ledger_id, 799)
+        self.assertEqual(row2.effective_date, "2026-05-06")
+        self.assertEqual(row2.user_id, 51)
+        self.assertEqual(row2.name, "Li Si")
+        self.assertIsNone(row2.ldap)
+        self.assertEqual(row2.entry_type, "leave_deduction")
+        self.assertEqual(row2.hours, "-8.00")
+        self.assertIsNone(row2.note)
+
+        row3 = page_dto.entries[2]
+        self.assertEqual(row3.leave_ledger_id, 750)
+        self.assertEqual(row3.effective_date, "2026-04-01")
+        self.assertEqual(row3.user_id, 60)
+        self.assertIsNone(row3.name)
+        self.assertIsNone(row3.ldap)
+        self.assertEqual(row3.entry_type, "weekly_accrual")
+        self.assertEqual(row3.hours, "8.00")
+        self.assertEqual(row3.note, "Weekly Accrual")
+
+    async def test_list_ledger_only_resolves_users_on_that_page(self):
+        """Verify user details are fetched ONLY for user_ids appearing on the requested page."""
+        entry = _ledger_entry(user_id=99)
+        self.repository.list_entries.return_value = [entry]
+        self.repository.count_entries.return_value = 100
+
+        self.users_repository.get_all_by_ids.return_value = [
+            MagicMock(
+                user_id=99, first_name="Ann", last_name="Lee", preferred_name=None
+            )
+        ]
+        self.user_emails_repository.get_emails_by_user_ids.return_value = {
+            99: ["ann.lee@circlecat.org"]
+        }
+
+        await self.service.list_ledger(self.session, user_id=10, page=2, page_size=10)
+
+        self.repository.list_entries.assert_awaited_once_with(
+            self.session, 10, limit=10, offset=10
+        )
+
+        self.users_repository.get_all_by_ids.assert_awaited_once_with(
+            self.session, [99]
+        )
+        self.user_emails_repository.get_emails_by_user_ids.assert_awaited_once_with(
+            self.session, [99]
+        )
 
 
 if __name__ == "__main__":

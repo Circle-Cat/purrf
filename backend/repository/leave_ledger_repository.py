@@ -213,24 +213,55 @@ class LeaveLedgerRepository:
         await session.flush()
 
     async def list_entries(
-        self, session: AsyncSession, user_id: int
+        self,
+        session: AsyncSession,
+        user_id: int | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[LeaveLedgerEntity]:
-        """Lists all ledger entries for a single user in reverse chronological order.
+        """Lists ledger entries for all users or a specific user in reverse chronological order.
 
         Args:
             session: Active async session.
-            user_id: Whose ledger entries to retrieve.
+            user_id: Whose ledger entries to retrieve. If None, retrieves entries across all users.
+            limit: Maximum number of entries to return for pagination. If None, retrieves all matching entries.
+            offset: Number of entries to skip before starting to collect the result set.
 
         Returns:
             A list of LeaveLedgerEntity objects ordered by effective_date and id descending.
         """
+        stmt = select(LeaveLedgerEntity)
+        if user_id is not None:
+            stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
+
         stmt = (
-            select(LeaveLedgerEntity)
-            .where(LeaveLedgerEntity.user_id == user_id)
-            .order_by(
+            stmt.order_by(
                 LeaveLedgerEntity.effective_date.desc(),
                 LeaveLedgerEntity.leave_ledger_id.desc(),
             )
+            .limit(limit)
+            .offset(offset)
         )
+
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_entries(
+        self, session: AsyncSession, user_id: int | None = None
+    ) -> int:
+        """Counts total ledger entries for a user or across the whole company.
+
+        Args:
+            session: Active async session.
+            user_id: Whose ledger entries to count. None means everybody.
+
+        Returns:
+            Total count of matching ledger entries.
+        """
+        stmt = select(func.count()).select_from(LeaveLedgerEntity)
+        if user_id is not None:
+            stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
+
+        result = await session.execute(stmt)
+        return result.scalar_one()

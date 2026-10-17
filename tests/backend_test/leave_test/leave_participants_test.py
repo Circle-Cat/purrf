@@ -8,7 +8,11 @@ so the one thing this must never do is fail quietly.
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.leave.leave_participants import LeaveParticipantResolver
+from backend.leave.leave_participants import (
+    LeaveParticipantResolver,
+    ldap_from_addresses,
+    resolve_names_and_ldaps,
+)
 
 
 def _email_row(email, user_id):
@@ -112,6 +116,55 @@ class LeaveParticipantResolverTest(IsolatedAsyncioTestCase):
         resolved = await self.resolver.resolve(self.session, ["zoe", "ann", "mia"])
 
         self.assertEqual(resolved.unresolved, ("ann", "mia", "zoe"))
+
+    def test_ldap_from_addresses_returns_local_part_for_corporate_address(self):
+        """a corporate address -> its local part"""
+        addresses = ["ann@u.circlecat.org", "ann@circlecat.org"]
+        self.assertEqual(ldap_from_addresses(addresses), "ann")
+
+    def test_ldap_from_addresses_returns_none_when_no_corporate_address(self):
+        """none -> None"""
+        addresses = ["ann@u.circlecat.org", "ann@external.com"]
+        self.assertIsNone(ldap_from_addresses(addresses))
+
+    async def test_resolve_names_and_ldaps_empty_user_ids(self):
+        """Should return empty dictionaries immediately without querying repositories when user_ids is empty."""
+
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            self.session,
+            [],
+            self.users_repository,
+            self.user_emails_repository,
+        )
+
+        self.assertEqual(name_by_id, {})
+        self.assertEqual(ldap_by_id, {})
+        self.users_repository.get_all_by_ids.assert_not_called()
+        self.user_emails_repository.get_emails_by_user_ids.assert_not_called()
+
+    async def test_resolve_names_and_ldaps_resolves_correctly(self):
+        """Verify user records and emails correctly resolve into name_by_id and ldap_by_id mappings."""
+
+        user_mock = MagicMock()
+        user_mock.user_id = 44
+        user_mock.first_name = "Wen"
+        user_mock.last_name = "Zhang"
+        user_mock.preferred_name = None
+
+        self.users_repository.get_all_by_ids = AsyncMock(return_value=[user_mock])
+        self.user_emails_repository.get_emails_by_user_ids = AsyncMock(
+            return_value={44: ["wen.zhang@circlecat.org"]}
+        )
+
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            self.session,
+            [44],
+            self.users_repository,
+            self.user_emails_repository,
+        )
+
+        self.assertEqual(name_by_id, {44: "Wen Zhang"})
+        self.assertEqual(ldap_by_id, {44: "wen.zhang"})
 
 
 if __name__ == "__main__":
