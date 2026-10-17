@@ -23,7 +23,9 @@ class TestJiraHistorySyncService(TestCase):
         self.mock_date_time_util = MagicMock()
         self.mock_retry_utils = MagicMock()
 
-        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func()
+        self.mock_retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         self.service = JiraHistorySyncService(
             logger=self.mock_logger,
@@ -197,7 +199,6 @@ class TestJiraHistorySyncService(TestCase):
         self.mock_jira_search_service.fetch_assigned_issues_paginated.return_value = [
             [self.mock_issue_1]
         ]
-        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func
         mock_pipeline.execute.return_value = None
 
         result = self.service.backfill_all_jira_issues()
@@ -208,9 +209,7 @@ class TestJiraHistorySyncService(TestCase):
             JIRA_ISSUE_DETAILS_KEY.format(issue_id=self.mock_issue_1_id),
             mapping=self.expected_detail_info_done,
         )
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            mock_pipeline.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(mock_pipeline)
 
     def test_preprocess_issue_status_valid_status(self):
         """Should return correct JiraIssueStatus for a valid status ID."""
@@ -610,9 +609,7 @@ class TestJiraHistorySyncService(TestCase):
         )
         self.assertEqual(mock_pipeline_1.zadd.call_count, 1)
         self.assertEqual(mock_pipeline_1.sadd.call_count, 1)
-        self.mock_retry_utils.get_retry_on_transient.assert_any_call(
-            mock_pipeline_1.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_any_call(mock_pipeline_1)
 
         expected_detail_info_mock_issue_3 = {
             "issue_key": mock_issue_3_key,
@@ -629,9 +626,7 @@ class TestJiraHistorySyncService(TestCase):
         )
         self.assertEqual(mock_pipeline_2.zadd.call_count, 1)
         self.assertEqual(mock_pipeline_2.sadd.call_count, 0)
-        self.mock_retry_utils.get_retry_on_transient.assert_any_call(
-            mock_pipeline_2.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_any_call(mock_pipeline_2)
 
     def test_process_update_jira_issues_newly_assigned_issue(self):
         """Should store a newly assigned issue that is not in Redis."""
@@ -669,10 +664,10 @@ class TestJiraHistorySyncService(TestCase):
             {self.mock_issue_1_id: self.finish_date},
         )
         expected_calls = [
-            call(search_pipeline_mock.execute),
-            call(updated_pipeline_mock.execute),
+            call(search_pipeline_mock),
+            call(updated_pipeline_mock),
         ]
-        self.mock_retry_utils.get_retry_on_transient.assert_has_calls(expected_calls)
+        self.mock_retry_utils.execute_pipeline.assert_has_calls(expected_calls)
 
     def test_process_update_jira_issues_unassigned_issue(self):
         """Should remove a previously assigned issue that is now unassigned."""
@@ -708,10 +703,10 @@ class TestJiraHistorySyncService(TestCase):
             self.mock_issue_1_id,
         )
         expected_calls = [
-            call(search_pipeline_mock.execute),
-            call(updated_pipeline_mock.execute),
+            call(search_pipeline_mock),
+            call(updated_pipeline_mock),
         ]
-        self.mock_retry_utils.get_retry_on_transient.assert_has_calls(expected_calls)
+        self.mock_retry_utils.execute_pipeline.assert_has_calls(expected_calls)
 
     def test_process_update_jira_issues_updated_assigned_issue(self):
         """Should update an already assigned issue."""
@@ -755,10 +750,10 @@ class TestJiraHistorySyncService(TestCase):
         updated_pipeline_mock.sadd.assert_called_once()
 
         expected_calls = [
-            call(search_pipeline_mock.execute),
-            call(updated_pipeline_mock.execute),
+            call(search_pipeline_mock),
+            call(updated_pipeline_mock),
         ]
-        self.mock_retry_utils.get_retry_on_transient.assert_has_calls(expected_calls)
+        self.mock_retry_utils.execute_pipeline.assert_has_calls(expected_calls)
 
 
 if __name__ == "__main__":

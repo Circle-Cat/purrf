@@ -54,7 +54,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = (
             mock_intern_ldaps + mock_employee_ldaps
         )
-        self.mock_retry_utils.get_retry_on_transient.return_value = [
+        self.mock_retry_utils.execute_pipeline.return_value = [
             10,
             5,
             7,
@@ -145,15 +145,15 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_pipeline.zcount.assert_has_calls(
             expected_zcount_calls, any_order=True
         )
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipeline.execute
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(
+            self.mock_pipeline
         )
 
     def test_count_messages_with_specific_inputs(self):
         """Test with specific space_ids and sender_ldaps provided."""
         space_ids = ["space1", "space2"]
         sender_ldaps = ["userA", "userB"]
-        self.mock_retry_utils.get_retry_on_transient.return_value = [5, 10, 15, 20]
+        self.mock_retry_utils.execute_pipeline.return_value = [5, 10, 15, 20]
 
         expected_result = {
             "start_date": self.start_dt.isoformat(),
@@ -208,8 +208,8 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_pipeline.zcount.assert_has_calls(
             expected_zcount_calls, any_order=True
         )
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipeline.execute
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(
+            self.mock_pipeline
         )
 
     def test_count_messages_with_empty_and_whitespace_inputs(self):
@@ -220,7 +220,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         space_ids_filtered = ["space1", "space2"]
         sender_ldaps_filtered = ["userA", "userB"]
 
-        self.mock_retry_utils.get_retry_on_transient.return_value = [1, 2, 3, 4]
+        self.mock_retry_utils.execute_pipeline.return_value = [1, 2, 3, 4]
 
         expected_result = {
             "start_date": self.start_dt.isoformat(),
@@ -284,7 +284,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         """Test when Redis pipeline returns zero for some or all counts."""
         space_ids = ["spaceX"]
         sender_ldaps = ["userC", "userD"]
-        self.mock_retry_utils.get_retry_on_transient.return_value = [0, 5]
+        self.mock_retry_utils.execute_pipeline.return_value = [0, 5]
 
         expected_result = {
             "start_date": self.start_dt.isoformat(),
@@ -306,7 +306,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
 
     def test_count_messages_date_time_util_called_correctly(self):
         """Test that date_time_util is called with the correct arguments."""
-        self.mock_retry_utils.get_retry_on_transient.return_value = [0]
+        self.mock_retry_utils.execute_pipeline.return_value = [0]
         self.service.count_messages(
             space_ids=["s1"],
             sender_ldaps=["u1"],
@@ -323,7 +323,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
             "u1"
         ]
-        self.mock_retry_utils.get_retry_on_transient.return_value = [10]
+        self.mock_retry_utils.execute_pipeline.return_value = [10]
 
         expected_result = {
             "start_date": self.start_dt.isoformat(),
@@ -346,7 +346,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         """Test case where no messages are found for any sender/space pair."""
         space_ids = ["s1", "s2"]
         sender_ldaps = ["u1", "u2"]
-        self.mock_retry_utils.get_retry_on_transient.return_value = [0, 0, 0, 0]
+        self.mock_retry_utils.execute_pipeline.return_value = [0, 0, 0, 0]
 
         expected_result = {
             "start_date": self.start_dt.isoformat(),
@@ -367,11 +367,11 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.assertEqual(result, expected_result)
         self.assertEqual(self.mock_pipeline.zcount.call_count, 4)
 
-    def test_count_messages_retry_on_transient_called(self):
-        """Ensure get_retry_on_transient is used for pipeline execution."""
+    def test_count_messages_execute_pipeline_called(self):
+        """Ensure execute_pipeline is used for pipeline execution."""
         space_ids = ["s1"]
         sender_ldaps = ["u1"]
-        self.mock_retry_utils.get_retry_on_transient.return_value = [1]
+        self.mock_retry_utils.execute_pipeline.return_value = [1]
 
         self.service.count_messages(
             space_ids=space_ids,
@@ -380,12 +380,12 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
             end_date="2023-01-31",
         )
 
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipeline.execute
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(
+            self.mock_pipeline
         )
 
     def test_count_messages_repeated_query_reads_redis_once(self):
-        self.mock_retry_utils.get_retry_on_transient.return_value = [1, 2]
+        self.mock_retry_utils.execute_pipeline.return_value = [1, 2]
 
         first = self.service.count_messages(
             space_ids=["s1"],
@@ -404,10 +404,10 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(second["result"], {"u1": {"s1": 1}, "u2": {"s1": 2}})
         self.mock_redis_client.pipeline.assert_called_once()
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.mock_retry_utils.execute_pipeline.assert_called_once()
 
     def test_count_messages_different_range_reads_redis_again(self):
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [[1], [7]]
+        self.mock_retry_utils.execute_pipeline.side_effect = [[1], [7]]
         self.mock_date_time_util.get_start_end_timestamps.side_effect = [
             (self.start_dt, self.end_dt),
             (self.start_dt, self.end_dt + datetime.timedelta(days=1)),
@@ -420,13 +420,13 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.assertEqual(second["result"], {"u1": {"s1": 7}})
 
     def test_count_messages_short_pipeline_result_raises(self):
-        self.mock_retry_utils.get_retry_on_transient.return_value = [1]
+        self.mock_retry_utils.execute_pipeline.return_value = [1]
 
         with self.assertRaises(ActivityDataUnavailableError):
             self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1", "u2"])
 
     def test_count_messages_error_in_pipeline_results_raises(self):
-        self.mock_retry_utils.get_retry_on_transient.return_value = [
+        self.mock_retry_utils.execute_pipeline.return_value = [
             1,
             Exception("WRONGTYPE"),
         ]
@@ -435,7 +435,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
             self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1", "u2"])
 
     def test_count_messages_failed_query_is_not_cached(self):
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [[1], [3, 4]]
+        self.mock_retry_utils.execute_pipeline.side_effect = [[1], [3, 4]]
 
         with self.assertRaises(ActivityDataUnavailableError):
             self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1", "u2"])

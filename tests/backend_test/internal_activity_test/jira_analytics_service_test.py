@@ -27,6 +27,9 @@ class TestJiraAnalyticsService(TestCase):
         self.mock_retry_utils.get_retry_on_transient.side_effect = (
             lambda func, *args, **kwargs: func(*args, **kwargs)
         )
+        self.mock_retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         self.jira_service = JiraAnalyticsService(
             logger=self.mock_logger,
@@ -100,9 +103,7 @@ class TestJiraAnalyticsService(TestCase):
 
         self.assertEqual(mock_pipeline.smembers.call_count, 2)
         mock_pipeline.zrange.assert_not_called()
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            mock_pipeline.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(mock_pipeline)
 
         self.assertIn("user1", result)
         self.assertIn("in_progress", result["user1"])
@@ -139,14 +140,10 @@ class TestJiraAnalyticsService(TestCase):
         self.assertEqual(self.mock_redis.pipeline.call_count, 2)
         first_pipeline.zrange.assert_called_once()
         first_pipeline.smembers.assert_called_once()
-        self.mock_retry_utils.get_retry_on_transient.assert_any_call(
-            first_pipeline.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_any_call(first_pipeline)
 
         self.assertEqual(story_point_pipeline.hget.call_count, 2)
-        self.mock_retry_utils.get_retry_on_transient.assert_any_call(
-            story_point_pipeline.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_any_call(story_point_pipeline)
 
         self.assertIn("user1", result)
         self.assertCountEqual(result["user1"]["done"], ["done-issue-1", "done-issue-2"])

@@ -23,6 +23,9 @@ class TestLdapService(TestCase):
         self.retry_utils.get_retry_on_transient.side_effect = (
             lambda fn, *args, **kwargs: fn(*args, **kwargs)
         )
+        self.retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
     def test_get_ldaps_by_status_and_group_single_status_and_group(self):
         status = MicrosoftAccountStatus.ACTIVE
@@ -41,9 +44,7 @@ class TestLdapService(TestCase):
             account_status=status.value, group=groups[0].value
         )
         pipeline_mock.hgetall.assert_called_once_with(key)
-        self.retry_utils.get_retry_on_transient.assert_called_once_with(
-            pipeline_mock.execute
-        )
+        self.retry_utils.execute_pipeline.assert_called_once_with(pipeline_mock)
 
         expected_output = {"employees": {"active": {"alice": "Alice", "bob": "Bob"}}}
         self.assertEqual(result, expected_output)
