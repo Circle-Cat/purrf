@@ -108,6 +108,14 @@ class GerritAnalyticsService:
         start_date_time, end_date_time = self.date_time_util.get_start_end_timestamps(
             start_date_str, end_date_str
         )
+        today = datetime.now(timezone.utc).date()
+        include_under_review = end_date_time.date() == today
+        self.logger.debug(
+            "[get_gerrit_stats] include_under_review=%s (today=%s, end_date=%s)",
+            include_under_review,
+            today,
+            end_date_time.date(),
+        )
         cache = self.activity_query_cache
         # Stats are summed across projects, so project order does not show.
         # Blank names and, with include_all_projects, the whole list are ignored.
@@ -125,6 +133,8 @@ class GerritAnalyticsService:
                 include_all_projects,
                 start_date_time.isoformat(),
                 end_date_time.isoformat(),
+                # The same range stops counting under-review CLs after midnight.
+                include_under_review,
             ),
             end_date_time,
             lambda: self._get_gerrit_stats(
@@ -134,6 +144,7 @@ class GerritAnalyticsService:
                 project_list,
                 include_full_stats,
                 include_all_projects,
+                include_under_review,
             ),
         )
 
@@ -145,6 +156,7 @@ class GerritAnalyticsService:
         project_list: list[str] | None,
         include_full_stats: bool,
         include_all_projects: bool,
+        include_under_review: bool,
     ) -> dict[str, dict]:
         """Uncached body of get_gerrit_stats, over an already resolved range."""
         if not ldap_list:
@@ -166,14 +178,6 @@ class GerritAnalyticsService:
             start=start_date, end=end_date
         )
 
-        today = datetime.now(timezone.utc).date()
-        include_under_review = end_date == today
-        self.logger.debug(
-            "[get_gerrit_stats] include_under_review=%s (today=%s, end_date=%s)",
-            include_under_review,
-            today,
-            end_date,
-        )
         # If include_all_projects is True, we want to aggregate stats across all projects.
         # Setting projects = [None] is a convention used later in the loop: when project is None,
         # the code generates global (non-project-specific) Redis keys instead of project-specific keys.

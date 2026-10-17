@@ -5,6 +5,9 @@ from backend.common.constants import (
     MicrosoftGroups,
     LDAP_KEY_TEMPLATE,
 )
+from backend.internal_activity_service.pipeline_results import (
+    checked_pipeline_results,
+)
 
 
 class LdapService:
@@ -53,6 +56,9 @@ class LdapService:
                     ...
                 }
 
+        Raises:
+            ActivityDataUnavailableError: Redis did not answer every key.
+
         Example:
             >>> service.get_ldaps_by_status_and_group(
                     status=MicrosoftAccountStatus.ACTIVE,
@@ -86,15 +92,21 @@ class LdapService:
 
         pipeline = self.redis_client.pipeline()
         key_map = {}
+        queued = 0
 
-        for group, status in itertools.product(groups, status_list):
+        # A repeated group would queue its keys twice and shift the replies
+        # zipped against the deduplicated key_map below.
+        for group, status in itertools.product(dict.fromkeys(groups), status_list):
             key = LDAP_KEY_TEMPLATE.format(
                 account_status=status.value, group=group.value
             )
             pipeline.hgetall(key)
+            queued += 1
             key_map[key] = (group.value, status.value)
 
-        results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute), queued
+        )
 
         organized_results = {}
         for key, hash_dict in zip(key_map.keys(), results):
@@ -113,6 +125,9 @@ class LdapService:
 
         Returns:
             list[str]: Unique list of LDAP identifiers.
+
+        Raises:
+            ActivityDataUnavailableError: Redis did not answer every key.
         """
         keys: list[str] = []
         for group in MicrosoftGroups:
@@ -131,13 +146,14 @@ class LdapService:
         for k in keys:
             pipeline.hkeys(k)
 
-        results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute), len(keys)
+        )
 
         ldap_set: set[str] = set()
-        if results:
-            for ldaps in results:
-                if ldaps:
-                    ldap_set.update(ldaps)
+        for ldaps in results:
+            if ldaps:
+                ldap_set.update(ldaps)
 
         return list(ldap_set)
 
@@ -163,6 +179,9 @@ class LdapService:
 
         Returns:
             list[str]: List of LDAP identifiers for active interns and employees.
+
+        Raises:
+            ActivityDataUnavailableError: Redis did not answer every key.
         """
         keys: list[str] = []
         for group in [MicrosoftGroups.INTERNS, MicrosoftGroups.EMPLOYEES]:
@@ -177,12 +196,13 @@ class LdapService:
         for k in keys:
             pipeline.hkeys(k)
 
-        results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute), len(keys)
+        )
 
         ldap_set: set[str] = set()
-        if results:
-            for ldaps in results:
-                if ldaps:
-                    ldap_set.update(ldaps)
+        for ldaps in results:
+            if ldaps:
+                ldap_set.update(ldaps)
 
         return list(ldap_set)

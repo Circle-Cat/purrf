@@ -67,6 +67,7 @@ py_library(
         "ldap_service.py",
     ],
     deps = [
+        ":pipeline_results",
         "//backend/common:constants",
     ],
 )

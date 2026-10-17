@@ -10,7 +10,11 @@ py_test(
         "//backend/common:fast_api_error_handler",
         "//backend/common:identity_type",
         "//backend/common:permissions",
+        "//backend/internal_activity_service:activity_query_cache",
+        "//backend/internal_activity_service:gerrit_analytics_service",
         "//backend/internal_activity_service:internal_activity_controller",
+        "//backend/internal_activity_service:ldap_service",
+        "//backend/internal_activity_service:summary_service",
         "//backend/utils:auth_middleware",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -60,6 +64,7 @@ py_test(
     name = "ldap_service_test",
     srcs = ["ldap_service_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/internal_activity_service:ldap_service",
     ],
 )

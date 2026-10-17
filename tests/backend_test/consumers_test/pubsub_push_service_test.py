@@ -1,6 +1,7 @@
 import base64
 import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.constants import (
@@ -8,6 +9,7 @@ from backend.common.constants import (
     EXPIRATION_REMINDER_EVENT,
 )
 from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
     GERRIT_STATS_QUERY,
     GOOGLE_CHAT_COUNT_QUERY,
     MICROSOFT_CHAT_COUNT_QUERY,
@@ -215,7 +217,7 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(outcome, PubSubPushOutcome.RETRY)
         self._assert_nothing_processed()
 
-    async def test_applied_pushes_drop_todays_cached_results_of_their_source(self):
+    async def test_applied_chat_pushes_drop_todays_cached_results_of_their_source(self):
         cases = [
             (
                 self.service.receive_google_chat,
@@ -227,11 +229,6 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
                 _envelope({"changeType": "created", "resource": "r"}),
                 {MICROSOFT_CHAT_COUNT_QUERY, SUMMARY_QUERY},
             ),
-            (
-                self.service.receive_gerrit,
-                _envelope({"type": "change-merged"}),
-                {GERRIT_STATS_QUERY, SUMMARY_QUERY},
-            ),
         ]
         for receive, envelope, methods in cases:
             with self.subTest(receive=receive.__name__):
@@ -241,6 +238,69 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(outcome, PubSubPushOutcome.ACK)
                 self.activity_query_cache.clear_current.assert_called_once_with(methods)
+                self.activity_query_cache.clear_methods.assert_not_called()
+
+    async def test_applied_gerrit_push_drops_every_cached_gerrit_and_summary_result(
+        self,
+    ):
+        outcome = await self.service.receive_gerrit(
+            _BEARER, _envelope({"type": "change-merged"})
+        )
+
+        self.assertEqual(outcome, PubSubPushOutcome.ACK)
+        self.activity_query_cache.clear_methods.assert_called_once_with({
+            GERRIT_STATS_QUERY,
+            SUMMARY_QUERY,
+        })
+        self.activity_query_cache.clear_current.assert_not_called()
+
+    async def test_gerrit_push_drops_past_ranges_but_chat_push_keeps_them(self):
+        # A Gerrit push rewrites this week's bucket, which a range that ended
+        # yesterday also reads; a chat push only adds today's messages.
+        now = datetime(2026, 10, 17, 15, 0, tzinfo=timezone.utc)
+        yesterday_end = datetime(2026, 10, 16, 23, 59, 59, tzinfo=timezone.utc)
+        today_end = datetime(2026, 10, 17, 23, 59, 59, tzinfo=timezone.utc)
+        self.activity_query_cache = ActivityQueryCache(
+            logger=MagicMock(), clock=lambda: now
+        )
+        service = self._service(frozenset({"111-pusher"}))
+        cache = self.activity_query_cache
+        for method in (GERRIT_STATS_QUERY, SUMMARY_QUERY, GOOGLE_CHAT_COUNT_QUERY):
+            cache.get_or_compute(method, ("past",), yesterday_end, lambda: "old")
+            cache.get_or_compute(method, ("today",), today_end, lambda: "old")
+
+        await service.receive_google_chat(
+            _BEARER, _envelope({}, {"ce-type": _CHAT_EVENT})
+        )
+        self.assertEqual(
+            cache.get_or_compute(
+                SUMMARY_QUERY, ("past",), yesterday_end, lambda: "new"
+            ),
+            "old",
+        )
+        self.assertEqual(
+            cache.get_or_compute(
+                GERRIT_STATS_QUERY, ("past",), yesterday_end, lambda: "new"
+            ),
+            "old",
+        )
+
+        await service.receive_gerrit(_BEARER, _envelope({"type": "change-merged"}))
+
+        for method in (GERRIT_STATS_QUERY, SUMMARY_QUERY):
+            with self.subTest(method=method):
+                self.assertEqual(
+                    cache.get_or_compute(
+                        method, ("past",), yesterday_end, lambda: "new"
+                    ),
+                    "new",
+                )
+        self.assertEqual(
+            cache.get_or_compute(
+                GOOGLE_CHAT_COUNT_QUERY, ("past",), yesterday_end, lambda: "new"
+            ),
+            "old",
+        )
 
     async def test_pushes_that_wrote_nothing_leave_the_cache_alone(self):
         cases = {
@@ -263,6 +323,7 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
                 await push
 
         self.activity_query_cache.clear_current.assert_not_called()
+        self.activity_query_cache.clear_methods.assert_not_called()
 
     async def test_failed_pushes_leave_the_cache_alone(self):
         self.chat_processor.process_event.side_effect = ValueError("no sender")
@@ -283,6 +344,7 @@ class PubSubPushServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(outcomes, [PubSubPushOutcome.RETRY] * 3)
         self.activity_query_cache.clear_current.assert_not_called()
+        self.activity_query_cache.clear_methods.assert_not_called()
 
 
 if __name__ == "__main__":

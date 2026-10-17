@@ -134,3 +134,14 @@ class ActivityQueryCache:
             ]
             for key in stale:
                 del self._entries[key]
+
+    def clear_methods(self, methods: set[str]) -> None:
+        """Drop every entry of ``methods``, whatever range it covers.
+
+        For a write that can change results of ranges that already ended, e.g.
+        a Gerrit event updating the week bucket a past range also reads.
+        """
+        with self._lock:
+            stale = [key for key in self._entries if key[0] in methods]
+            for key in stale:
+                del self._entries[key]

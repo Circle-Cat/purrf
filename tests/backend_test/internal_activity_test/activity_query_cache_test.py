@@ -186,6 +186,27 @@ class TestActivityQueryCache(TestCase):
 
         self.assertEqual(len(self.cache), 1)
 
+    def test_clear_methods_drops_every_entry_of_the_named_methods(self):
+        self.cache = ActivityQueryCache(logger=MagicMock(), clock=self.clock)
+        self.cache.get_or_compute("gerrit", ("today",), TODAY_END, lambda: "g1")
+        self.cache.get_or_compute("gerrit", ("past",), YESTERDAY_END, lambda: "g2")
+        self.cache.get_or_compute("chat", ("past",), YESTERDAY_END, lambda: "c1")
+
+        self.cache.clear_methods({"gerrit"})
+
+        self.assertEqual(len(self.cache), 1)
+        self.assertEqual(
+            self.cache.get_or_compute("chat", ("past",), YESTERDAY_END, self.compute),
+            "c1",
+        )
+        self.compute.assert_not_called()
+        self.assertEqual(
+            self.cache.get_or_compute(
+                "gerrit", ("past",), YESTERDAY_END, lambda: "new"
+            ),
+            "new",
+        )
+
 
 if __name__ == "__main__":
     main()
