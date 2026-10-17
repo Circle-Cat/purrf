@@ -95,9 +95,10 @@ def _user(user_id, first_name, last_name, is_active=True):
     return row
 
 
-def _email(address):
+def _email(address, confirmed=True):
     row = MagicMock()
     row.email = address
+    row.otp_confirmed = confirmed
     return row
 
 
@@ -595,6 +596,20 @@ class TestSubmit(LeaveRequestServiceTest):
         """Their Azure profile is found by ldap, and the corporate address is
         the only thing that ties a purrf account to one."""
         self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+
+        with self.assertRaises(ValueError):
+            await self._submit()
+
+        self.assertEqual(self.approval_requests.rows, [])
+        self.requests.add.assert_not_awaited()
+
+    async def test_an_unconfirmed_corporate_address_does_not_count(self):
+        """Anyone can add an address without owning it; read as theirs, they
+        would file against that employee's Azure record and manager."""
+        self.emails.list_by_user_id.return_value = [
+            _email("mallory@gmail.com"),
+            _email("ann@circlecat.org", confirmed=False),
+        ]
 
         with self.assertRaises(ValueError):
             await self._submit()
@@ -1474,6 +1489,17 @@ class TestCoverage(LeaveRequestServiceTest):
         covered = await self.service.coverage(self.session, EMPLOYEE)
 
         self.assertFalse(covered)
+
+    async def test_an_unconfirmed_corporate_address_is_not_covered(self):
+        self.emails.list_by_user_id.return_value = [
+            _email("ann@circlecat.org", confirmed=False)
+        ]
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertFalse(covered)
+        self.redis_client.hgetall.assert_not_called()
 
     async def test_the_cache_is_not_consulted_without_an_ldap(self):
         """There is no key to ask about, so the round trip is skipped."""

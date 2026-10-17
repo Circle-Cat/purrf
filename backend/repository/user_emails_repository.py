@@ -224,13 +224,12 @@ class UserEmailsRepository:
     ) -> list[UserEmailsEntity]:
         """Fetch the rows claiming any of `emails`, confirmed or not.
 
-        One query for a whole directory. The leave accrual job has to try both
-        internal domains for every employee, and per-address lookups would mean
-        two round trips each.
+        One query for a whole directory, where per-address lookups would mean a
+        round trip each.
 
-        Whether an address is proven is left to the caller: a corporate address
-        that arrived through SSO may carry no OTP, and filtering it out here
-        would silently drop that person from accrual.
+        Whether an address is proven is left to the caller, since callers
+        differ: the leave accrual job counts only confirmed rows, while
+        matching an inbound sender takes any row.
 
         Args:
             session (AsyncSession): Active database async session.
