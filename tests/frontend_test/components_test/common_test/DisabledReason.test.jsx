@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import "@testing-library/jest-dom";
 
 import { Button } from "@/components/ui/button";
-import DisabledReason from "@/pages/AdminTraining/components/DisabledReason";
+import DisabledReason from "@/components/common/DisabledReason";
 
 describe("DisabledReason", () => {
   it("renders the control as is when there is no reason", () => {

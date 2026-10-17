@@ -26,7 +26,8 @@ import { Button } from "@/components/ui/button";
  *                                           DataSourceNames.JIRA: Array<string>,
  *                                           DataSourceNames.GERRIT: Array<string>,
  *                                           DataSourceNames.CALENDAR?: Array<{provider: string, id: string, name: string}>,
- *                                         }
+ *                                         },
+ *                                     or null when nothing is ticked.
  * @param {Function} props.onCancel - Callback invoked when the "Cancel" button is clicked or modal is closed.
  *
  * @example
@@ -281,6 +282,10 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
    * into the final structured payload.
    */
   const handleConfirm = useCallback(() => {
+    if (!Object.values(selectedItems).some((items) => items?.length > 0)) {
+      onConfirm(null);
+      return;
+    }
     const finalSelection = {};
     if (selectedItems[DataSourceNames.CHAT]) {
       const chatSelection = selectedItems[DataSourceNames.CHAT].map((item) => ({

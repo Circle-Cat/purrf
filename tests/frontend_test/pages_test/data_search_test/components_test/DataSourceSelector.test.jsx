@@ -157,6 +157,21 @@ describe("DataSourceSelector", () => {
     });
   });
 
+  it("confirms no selection when every ticked item was unticked again", async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    const item = screen.getByLabelText("Microsoft Chat 1");
+    fireEvent.click(item);
+    fireEvent.click(item);
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+
+    await waitFor(() => {
+      expect(onConfirmMock).toHaveBeenCalledWith(null);
+    });
+  });
+
   it('should toggle "Select All" for the active source', async () => {
     renderDataSourceSelector();
     await waitFor(() => screen.getByText("Microsoft Chat 1"));
@@ -333,12 +348,8 @@ describe("DataSourceSelector", () => {
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
 
     await waitFor(() => {
-      expect(onConfirmMock).toHaveBeenCalledWith({
-        Chat: [],
-        Jira: [],
-        Gerrit: { projectList: [], includeAllProjects: false },
-        Calendar: [],
-      });
+      // Nothing ticked anywhere is no selection at all.
+      expect(onConfirmMock).toHaveBeenCalledWith(null);
     });
   });
 

@@ -4,6 +4,18 @@ import DateRangePicker from "@/components/common/DateRangePicker";
 import { DataSourceSelector } from "@/pages/DataSearch/components/DataSourceSelector";
 import DataSourceReportTabs from "@/pages/DataSearch/components/DataSourceReportTabs";
 import { Button } from "@/components/ui/button";
+import DisabledReason from "@/components/common/DisabledReason";
+
+/**
+ * Joins phrases as an English list: "a", "a and b", "a, b and c".
+ *
+ * @param {string[]} items
+ * @returns {string}
+ */
+function joinAsList(items) {
+  if (items.length < 2) return items.join("");
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
 
 /**
  * DataSearch Page
@@ -26,7 +38,8 @@ import { Button } from "@/components/ui/button";
  * - Clicking the LDAP chip opens MemberSelector.
  * - Chip label shows `LDAP (N)` when members are selected.
  * - DateRangePicker calls `onChange` with { startDate, endDate }.
- * - Search button logs the effective filters (you can wire this to an API).
+ * - Search stays disabled, saying what is missing, until members, both dates
+ *   and a data source are picked.
  *
  * @component
  * @returns {JSX.Element}
@@ -79,16 +92,17 @@ export default function DataSearch() {
     setSelectedData(null);
   };
 
+  const missing = [
+    selectedIds.length === 0 && "members",
+    !(selectedStartDate && selectedEndDate) && "a date range",
+    !selectedData && "a data source",
+  ].filter(Boolean);
+  const searchBlockedReason = missing.length
+    ? `Pick ${joinAsList(missing)} first.`
+    : null;
+
   /** Submit handler */
   const handleSearchClick = () => {
-    if (
-      selectedIds.length === 0 ||
-      !selectedStartDate ||
-      !selectedEndDate ||
-      !selectedData
-    ) {
-      return;
-    }
     setCommittedSearchParams({
       ldaps: selectedIds,
       startDate: selectedStartDate,
@@ -125,9 +139,15 @@ export default function DataSearch() {
             onChange={handleDateChange}
           />
         </div>
-        <Button size="sm" onClick={handleSearchClick}>
-          Search
-        </Button>
+        <DisabledReason reason={searchBlockedReason}>
+          <Button
+            size="sm"
+            onClick={handleSearchClick}
+            disabled={Boolean(searchBlockedReason)}
+          >
+            Search
+          </Button>
+        </DisabledReason>
       </div>
 
       {/* MemberSelector modal (controlled) */}
