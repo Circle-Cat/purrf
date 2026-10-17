@@ -95,6 +95,9 @@ const FileLeaveDialog = ({
 }) => {
   const [form, setForm] = useState(EMPTY);
   const [problem, setProblem] = useState(null);
+  // The refusal lives in the hook the parent shares and outlives this dialog,
+  // so it is shown only for a submit made since the dialog was opened.
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   const set = (field) => (event) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
@@ -102,6 +105,7 @@ const FileLeaveDialog = ({
   const close = () => {
     setForm(EMPTY);
     setProblem(null);
+    setHasSubmitted(false);
     onClose();
   };
 
@@ -111,6 +115,7 @@ const FileLeaveDialog = ({
     if (found) return;
 
     const withTimes = takesTimes(form) && form.startTime && form.endTime;
+    setHasSubmitted(true);
     const saved = await onSubmit({
       type: form.type,
       startDate: form.startDate,
@@ -203,7 +208,9 @@ const FileLeaveDialog = ({
           {problem && <p className="text-sm text-red-700">{problem}</p>}
           {/* The server's own wording: each refusal names the fix, and a
               generic message would throw that away. */}
-          {saveError && <p className="text-sm text-red-700">{saveError}</p>}
+          {hasSubmitted && saveError && (
+            <p className="text-sm text-red-700">{saveError}</p>
+          )}
         </div>
 
         <DialogFooter>
