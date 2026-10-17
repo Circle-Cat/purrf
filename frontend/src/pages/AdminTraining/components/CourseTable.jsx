@@ -28,7 +28,7 @@ import {
 } from "@/utils/dateTime";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";
-import DisabledReason from "@/pages/AdminTraining/components/DisabledReason";
+import DisabledReason from "@/components/common/DisabledReason";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
 // Only the two live states with a hosted course get a dot -- External link

@@ -291,7 +291,70 @@ describe("DataSearch page", () => {
     expect(
       screen.queryByTestId("mock-data-source-selector"),
     ).not.toBeInTheDocument();
-    // The effect of selectedData being null will be verified by a failed search attempt.
+  });
+
+  /** Picks one member and a date range, leaving the data source unset. */
+  async function pickMemberAndDates() {
+    await user.click(screen.getByRole("button", { name: /ldap/i }));
+    const ldapDialog = await screen.findByRole("dialog");
+    await user.click(
+      within(ldapDialog).getByRole("button", { name: /add one/i }),
+    );
+    await user.click(within(ldapDialog).getByRole("button", { name: /^ok$/i }));
+    await user.type(screen.getByTestId("start-date-input"), "2024-01-01");
+    await user.type(screen.getByTestId("end-date-input"), "2024-01-31");
+  }
+
+  it("keeps Search disabled and names everything missing before anything is picked", async () => {
+    render(<DataSearch />);
+
+    const search = screen.getByRole("button", { name: /^search$/i });
+    expect(search).toBeDisabled();
+
+    await user.hover(search.parentElement);
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Pick members, a date range and a data source first.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("names only what is still missing", async () => {
+    render(<DataSearch />);
+    await pickMemberAndDates();
+
+    const search = screen.getByRole("button", { name: /^search$/i });
+    expect(search).toBeDisabled();
+
+    await user.hover(search.parentElement);
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Pick a data source first.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Search again when the data source is cancelled", async () => {
+    render(<DataSearch />);
+    await pickMemberAndDates();
+    await user.click(screen.getByRole("button", { name: /data source/i }));
+    await user.click(
+      within(await screen.findByTestId("mock-data-source-selector")).getByRole(
+        "button",
+        { name: /confirm selection/i },
+      ),
+    );
+    expect(screen.getByRole("button", { name: /^search$/i })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /data source/i }));
+    await user.click(
+      within(await screen.findByTestId("mock-data-source-selector")).getByRole(
+        "button",
+        { name: /cancel/i },
+      ),
+    );
+
+    expect(screen.getByRole("button", { name: /^search$/i })).toBeDisabled();
   });
 
   it("Search button shows Tab component with committed params when all fields are present", async () => {

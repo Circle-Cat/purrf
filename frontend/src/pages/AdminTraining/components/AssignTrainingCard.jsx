@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import AudienceTable from "@/pages/AdminTraining/components/AudienceTable";
-import DisabledReason from "@/pages/AdminTraining/components/DisabledReason";
+import DisabledReason from "@/components/common/DisabledReason";
 import { useAudienceSearch } from "@/pages/AdminTraining/hooks/useAudienceSearch";
 import { bulkAssignBlockedReason } from "@/pages/AdminTraining/utils";
 
