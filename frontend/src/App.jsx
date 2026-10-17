@@ -44,7 +44,7 @@ import TrainingPreview from "@/pages/TrainingPreview";
 import AdminTraining from "@/pages/AdminTraining";
 import InboxPage from "@/pages/Inbox";
 import { AuthProvider } from "@/context/auth";
-import { FlagsProvider, LDIdentifier } from "@/context/flags";
+import { FlagsProvider, LDIdentifier, LDUserProvider } from "@/context/flags";
 import { PERMISSIONS, INBOX_PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
@@ -58,7 +58,9 @@ function App() {
   return (
     <FlagsProvider>
       <AuthProvider>
-        <LDIdentifier />
+        <LDUserProvider>
+          <LDIdentifier />
+        </LDUserProvider>
         <Router>
           <div
             className="group flex flex-col"
