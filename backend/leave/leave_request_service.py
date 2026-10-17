@@ -28,7 +28,6 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.constants import INTERNAL_GOOGLE_ACCOUNT_DOMAIN
 from backend.common.exceptions import ConflictError
 from backend.common.leave_enums import (
     LEAVE_APPROVAL,
@@ -36,11 +35,14 @@ from backend.common.leave_enums import (
     LeaveRequestStatus,
     LeaveRequestType,
 )
-from backend.common.name_utils import user_display_name
 from backend.dto.leave_request_dto import LeaveRequestDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_clock import business_today
+from backend.leave.leave_participants import (
+    ldap_from_addresses,
+    resolve_names_and_ldaps,
+)
 from backend.leave.leave_workdays import (
     request_hours,
     required_notice_workdays,
@@ -91,28 +93,6 @@ class LeaveStanding:
     available: Decimal | None
     pending: Decimal | None
     used: Decimal | None
-
-
-def _ldap_from_addresses(addresses) -> str | None:
-    """The Azure ldap an account carries, or None if it carries none.
-
-    Azure knows people by ldap and purrf knows them by account; the corporate
-    address is the whole of the join, so the ldap is read off it rather than
-    stored a second time. Sorted, so that an account somehow holding two
-    corporate addresses still reads the same way every time -- the directory
-    join says that cannot happen, and if it does the answer must at least not
-    move around between requests.
-
-    Args:
-        addresses: The account's email addresses, in any order.
-
-    Returns:
-        The local part of its corporate address, or None.
-    """
-    for address in sorted(addresses):
-        if address.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
-            return address.split("@")[0]
-    return None
 
 
 async def load_calendar(
@@ -542,22 +522,14 @@ class LeaveRequestService:
             session, approver_user_id, list(LeaveRequestStatus)
         )
         user_ids = sorted({request.user_id for request in requests})
-        people = await self.users_repository.get_all_by_ids(session, user_ids)
-        name_by_id = {
-            person.user_id: user_display_name(
-                first_name=person.first_name,
-                last_name=person.last_name,
-                preferred_name=person.preferred_name,
-            )
-            for person in people
-        }
-        addresses_by_id = await self.user_emails_repository.get_emails_by_user_ids(
-            session, user_ids
+
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            session,
+            user_ids,
+            self.users_repository,
+            self.user_emails_repository,
         )
-        ldap_by_id = {
-            user_id: _ldap_from_addresses(addresses)
-            for user_id, addresses in addresses_by_id.items()
-        }
+
         # Only for what is still waiting: a decided request has already moved
         # the ledger, so there is no "would" left to answer.
         pending_user_ids = sorted({
@@ -660,7 +632,7 @@ class LeaveRequestService:
             True when the feature applies to them.
         """
         rows = await self.user_emails_repository.list_by_user_id(session, user_id)
-        ldap = _ldap_from_addresses(row.email for row in rows)
+        ldap = ldap_from_addresses(row.email for row in rows)
         if ldap is not None:
             profiles = self.retry_utils.get_retry_on_transient(
                 self.redis_client.hgetall, LEAVE_EMPLOYMENT_KEY
@@ -913,7 +885,7 @@ class LeaveRequestService:
     async def _ldap_of(self, session: AsyncSession, user_id: int) -> str:
         """This account's Azure ldap, taken from its corporate address."""
         rows = await self.user_emails_repository.list_by_user_id(session, user_id)
-        ldap = _ldap_from_addresses(row.email for row in rows)
+        ldap = ldap_from_addresses(row.email for row in rows)
         if ldap is None:
             raise ValueError(
                 "This account has no corporate address, so its Azure record "

@@ -494,6 +494,145 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(empty_entries, [])
 
+    async def test_list_and_count_entries_no_rows(self):
+        """No rows in DB returns [] and count 0."""
+        entries = await self.repository.list_entries(self.session)
+        count = await self.repository.count_entries(self.session)
+        self.assertEqual(entries, [])
+        self.assertEqual(count, 0)
+
+    async def test_list_entries_unfiltered_returns_all_users_newest_first(self):
+        """user_id=None returns every user's rows, newest first."""
+        third_user = _make_user()
+        await self.insert_entities([third_user])
+
+        e1 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL,
+            "1.54",
+            datetime.date(2026, 1, 1),
+            user=self.user,
+        )
+        e2 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL,
+            "1.54",
+            datetime.date(2026, 2, 1),
+            user=self.other_user,
+        )
+        e3 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL,
+            "1.54",
+            datetime.date(2026, 3, 1),
+            user=third_user,
+        )
+        await self.insert_entities([e1, e2, e3])
+
+        entries = await self.repository.list_entries(self.session, user_id=None)
+        count = await self.repository.count_entries(self.session, user_id=None)
+
+        self.assertEqual(len(entries), 3)
+        self.assertEqual(count, 3)
+        self.assertEqual(entries[0].user_id, third_user.user_id)
+        self.assertEqual(entries[1].user_id, self.other_user.user_id)
+        self.assertEqual(entries[2].user_id, self.user.user_id)
+
+    async def test_list_and_count_entries_filtered_by_user_id(self):
+        """userId specified isolates rows AND filtered count."""
+        third_user = _make_user()
+        await self.insert_entities([third_user])
+
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 1, 1),
+                user=self.user,
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 2, 1),
+                user=self.user,
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 1, 1),
+                user=self.other_user,
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 1, 1),
+                user=third_user,
+            ),
+        ])
+
+        entries = await self.repository.list_entries(
+            self.session, user_id=self.user.user_id
+        )
+        count = await self.repository.count_entries(
+            self.session, user_id=self.user.user_id
+        )
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(count, 2)
+        self.assertTrue(all(e.user_id == self.user.user_id for e in entries))
+
+    async def test_list_entries_stable_secondary_sort_on_same_date(self):
+        """Two rows on same effective_date ordered by leave_ledger_id desc."""
+        e1 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
+        )
+        e2 = self._entry(
+            LeaveEntryType.MANUAL_ADJUSTMENT, "5.00", datetime.date(2026, 3, 1)
+        )
+        await self.insert_entities([e1, e2])
+
+        entries = await self.repository.list_entries(
+            self.session, user_id=self.user.user_id
+        )
+        self.assertEqual(len(entries), 2)
+        self.assertGreater(entries[0].leave_ledger_id, entries[1].leave_ledger_id)
+        self.assertEqual(entries[0].entry_type, LeaveEntryType.MANUAL_ADJUSTMENT)
+
+    async def test_list_entries_pagination_union_has_no_duplicates(self):
+        """5 rows, pageSize=2 -> page 1, 2, 3 cover all 5 rows without overlaps."""
+        rows = [
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.00", datetime.date(2026, 1, i)
+            )
+            for i in range(1, 6)
+        ]
+        await self.insert_entities(rows)
+
+        page1 = await self.repository.list_entries(self.session, limit=2, offset=0)
+        page2 = await self.repository.list_entries(self.session, limit=2, offset=2)
+        page3 = await self.repository.list_entries(self.session, limit=2, offset=4)
+
+        self.assertEqual(len(page1), 2)
+        self.assertEqual(len(page2), 2)
+        self.assertEqual(len(page3), 1)
+
+        all_ids = [e.leave_ledger_id for e in (page1 + page2 + page3)]
+        self.assertEqual(len(all_ids), 5)
+        self.assertEqual(len(set(all_ids)), 5)
+
+    async def test_list_entries_page_beyond_end_returns_empty(self):
+        """Asking for page 4 of a 5-row result returns [] with real count 5."""
+        rows = [
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.00", datetime.date(2026, 1, i)
+            )
+            for i in range(1, 6)
+        ]
+        await self.insert_entities(rows)
+
+        entries = await self.repository.list_entries(self.session, limit=2, offset=6)
+        count = await self.repository.count_entries(self.session)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(count, 5)
+
 
 if __name__ == "__main__":
     import unittest

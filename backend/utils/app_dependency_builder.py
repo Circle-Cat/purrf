@@ -1370,11 +1370,6 @@ class AppDependencyBuilder:
             leave_ledger_repository=self.leave_ledger_repository,
             users_repository=self.users_repository,
         )
-        self.leave_admin_controller = LeaveAdminController(
-            self.leave_adjustment_service,
-            self.leave_engine_service,
-            self.database,
-        )
         self.leave_job_controller = LeaveJobController(
             self.leave_engine_service,
             self.database,
@@ -1479,10 +1474,18 @@ class AppDependencyBuilder:
         self.leave_balance_service = LeaveBalanceService(
             logger=self.logger,
             leave_ledger_repository=self.leave_ledger_repository,
+            users_repository=self.users_repository,
+            user_emails_repository=self.user_emails_repository,
         )
         self.leave_balance_controller = LeaveBalanceController(
             leave_balance_service=self.leave_balance_service,
             database=self.database,
+        )
+        self.leave_admin_controller = LeaveAdminController(
+            self.leave_adjustment_service,
+            self.leave_engine_service,
+            self.leave_balance_service,
+            self.database,
         )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
