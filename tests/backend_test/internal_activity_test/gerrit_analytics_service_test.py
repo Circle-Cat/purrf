@@ -391,6 +391,38 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.assertEqual(full["user1"][GERRIT_CL_ABANDONED_FIELD], 4)
 
     @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
+    def test_same_range_before_and_after_midnight_does_not_share_a_result(
+        self, mock_dt
+    ):
+        # Before midnight the range ends today and counts under-review CLs;
+        # after it, the same request no longer does.
+        mock_dt.now.return_value.date.side_effect = [
+            date(2025, 10, 28),
+            date(2025, 10, 29),
+        ]
+        self.mock_pipeline.execute.side_effect = [
+            [self.default_hgetall_data, self.default_hgetall_data, 2, 3],
+            [self.default_hgetall_data, self.default_hgetall_data, 2],
+        ]
+
+        before = self.service.get_gerrit_stats(
+            ldap_list=["user1"],
+            start_date_str="2025-10-21",
+            end_date_str="2025-10-28",
+            include_full_stats=True,
+        )
+        after = self.service.get_gerrit_stats(
+            ldap_list=["user1"],
+            start_date_str="2025-10-21",
+            end_date_str="2025-10-28",
+            include_full_stats=True,
+        )
+
+        self.assertEqual(before["user1"][GERRIT_CL_UNDER_REVIEW_FIELD], 3)
+        self.assertIsNone(after["user1"][GERRIT_CL_UNDER_REVIEW_FIELD])
+        self.assertEqual(self.mock_pipeline.execute.call_count, 2)
+
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
     def test_short_pipeline_result_raises(self, mock_dt):
         mock_dt.now.return_value.date.return_value = date(2025, 10, 29)
         # Two weekly buckets queued, one answered: this used to be an IndexError.

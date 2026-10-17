@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import contextmanager
 from http import HTTPStatus
 
 from fastapi import APIRouter, Query
@@ -57,7 +58,8 @@ class HistoricalController:
             google_chat_history_sync_service: GoogleChatHistorySyncService instance
             employment_sync_service: EmploymentSyncService instance.
             activity_query_cache: ActivityQueryCache, cleared after each sync so
-                activity queries show the new data straight away.
+                activity queries show the new data straight away -- also when
+                the sync fails, since it may have written part of its data.
         """
         self.logger = logger
         self.microsoft_member_sync_service = microsoft_member_sync_service
@@ -136,12 +138,20 @@ class HistoricalController:
             methods=["POST"],
         )
 
+    @contextmanager
+    def _clearing_activity_cache(self):
+        """Clear the activity query cache once the block ends, even by raising."""
+        try:
+            yield
+        finally:
+            self.activity_query_cache.clear()
+
     async def sync_google_chat_history_messages(self):
         """API endpoint to trigger the fetching of messages for all SPACE type Google chat spaces."""
-        result = await asyncio.to_thread(
-            self.google_chat_history_sync_service.sync_history_messages
-        )
-        self.activity_query_cache.clear()
+        with self._clearing_activity_cache():
+            result = await asyncio.to_thread(
+                self.google_chat_history_sync_service.sync_history_messages
+            )
         return api_response(
             success=True,
             message="Google Chat messages saved successfully.",
@@ -162,10 +172,10 @@ class HistoricalController:
                 status_code=HTTPStatus.BAD_REQUEST,
             )
 
-        result = await asyncio.to_thread(
-            self.jira_history_sync_service.process_update_jira_issues, hours
-        )
-        self.activity_query_cache.clear()
+        with self._clearing_activity_cache():
+            result = await asyncio.to_thread(
+                self.jira_history_sync_service.process_update_jira_issues, hours
+            )
         return api_response(
             success=True,
             message=f"Incremental Jira issues updated successfully for for the past {hours} hour(s).",
@@ -175,10 +185,10 @@ class HistoricalController:
 
     async def backfill_jira_issues(self):
         """Backfill all Jira issues into Redis."""
-        result = await asyncio.to_thread(
-            self.jira_history_sync_service.backfill_all_jira_issues
-        )
-        self.activity_query_cache.clear()
+        with self._clearing_activity_cache():
+            result = await asyncio.to_thread(
+                self.jira_history_sync_service.backfill_all_jira_issues
+            )
         return api_response(
             success=True,
             message="Full Jira issues backfill completed successfully.",
@@ -197,17 +207,17 @@ class HistoricalController:
         leave module; a day-stale leave cache is the cheaper loss. A failing ldap
         sync still fails the request.
         """
-        await self.microsoft_member_sync_service.sync_microsoft_members_to_redis()
+        with self._clearing_activity_cache():
+            await self.microsoft_member_sync_service.sync_microsoft_members_to_redis()
 
-        try:
-            await self.employment_sync_service.sync_employment_profiles_to_redis()
-        except Exception:
-            self.logger.exception(
-                "Employment profile refresh failed; leave data is stale but the "
-                "LDAP sync above succeeded."
-            )
+            try:
+                await self.employment_sync_service.sync_employment_profiles_to_redis()
+            except Exception:
+                self.logger.exception(
+                    "Employment profile refresh failed; leave data is stale but the "
+                    "LDAP sync above succeeded."
+                )
 
-        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Microsoft 365 user LDAP information backfilled successfully.",
@@ -217,10 +227,10 @@ class HistoricalController:
 
     async def backfill_microsoft_chat_messages(self, chatId: str):
         """API endpoint to backfill Microsoft Teams Chat messages into Redis."""
-        await self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id(
-            chatId
-        )
-        self.activity_query_cache.clear()
+        with self._clearing_activity_cache():
+            await self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id(
+                chatId
+            )
         return api_response(
             success=True,
             message=f"Microsoft Teams chat messages for chat ID {chatId} backfilled successfully.",
@@ -230,10 +240,10 @@ class HistoricalController:
 
     async def sync_jira_projects(self):
         """Import all Jira project IDs and their display names into Redis."""
-        result = await asyncio.to_thread(
-            self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping
-        )
-        self.activity_query_cache.clear()
+        with self._clearing_activity_cache():
+            result = await asyncio.to_thread(
+                self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping
+            )
         return api_response(
             success=True,
             message="Jira projects imported successfully.",
@@ -253,11 +263,13 @@ class HistoricalController:
             request_body.start_date, request_body.end_date
         )
 
-        await asyncio.to_thread(
-            self.google_calendar_sync_service.pull_calendar_history, time_min, time_max
-        )
+        with self._clearing_activity_cache():
+            await asyncio.to_thread(
+                self.google_calendar_sync_service.pull_calendar_history,
+                time_min,
+                time_max,
+            )
 
-        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message=f"Google Calendar history pulled and cached from {time_min} to {time_max}.",
@@ -267,12 +279,12 @@ class HistoricalController:
 
     async def backfill_gerrit_changes(self, request_body: GerritBackfillRequest):
         """API endpoint to backfill Gerrit changes into Redis."""
-        await asyncio.to_thread(
-            self.gerrit_sync_service.fetch_and_store_changes,
-            statuses=request_body.statuses,
-        )
+        with self._clearing_activity_cache():
+            await asyncio.to_thread(
+                self.gerrit_sync_service.fetch_and_store_changes,
+                statuses=request_body.statuses,
+            )
 
-        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Gerrit changes backfilled successfully.",
@@ -282,9 +294,11 @@ class HistoricalController:
 
     async def backfill_gerrit_projects(self):
         """API endpoint to backfill Gerrit projects into Redis."""
-        count = await asyncio.to_thread(self.gerrit_sync_service.sync_gerrit_projects)
+        with self._clearing_activity_cache():
+            count = await asyncio.to_thread(
+                self.gerrit_sync_service.sync_gerrit_projects
+            )
 
-        self.activity_query_cache.clear()
         return api_response(
             success=True,
             message="Gerrit projects backfilled successfully.",

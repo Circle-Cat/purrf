@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -29,6 +30,14 @@ from backend.internal_activity_service.internal_activity_controller import (
     InternalActivityController,
 )
 from backend.dto.internal_activity_summary_response_dto import ActivitySummaryDto
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
+from backend.internal_activity_service.gerrit_analytics_service import (
+    GerritAnalyticsService,
+)
+from backend.internal_activity_service.ldap_service import LdapService
+from backend.internal_activity_service.summary_service import SummaryService
 
 
 class TestInternalActivityControllerIntegration(unittest.TestCase):
@@ -422,6 +431,73 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.assertEqual(
             response.json()["message"], "Activity data is temporarily unavailable."
         )
+
+    def _wire_real_ldap_read_failing_with(self, reply):
+        """Real ldap, Gerrit and summary services over a Redis whose pipelines
+        all answer ``reply``."""
+        redis_client = MagicMock()
+        redis_client.pipeline.return_value.execute.return_value = reply
+        retry_utils = MagicMock()
+        retry_utils.get_retry_on_transient.side_effect = lambda fn, *args, **kwargs: fn(
+            *args, **kwargs
+        )
+        date_time_util = MagicMock()
+        date_time_util.get_start_end_timestamps.return_value = (
+            datetime(2025, 10, 21, tzinfo=timezone.utc),
+            datetime(2025, 10, 28, tzinfo=timezone.utc),
+        )
+        cache = ActivityQueryCache(logger=MagicMock())
+        ldap_service = LdapService(
+            logger=MagicMock(), redis_client=redis_client, retry_utils=retry_utils
+        )
+        self.controller.gerrit_analytics_service = GerritAnalyticsService(
+            logger=MagicMock(),
+            redis_client=redis_client,
+            retry_utils=retry_utils,
+            ldap_service=ldap_service,
+            date_time_util=date_time_util,
+            gerrit_client=MagicMock(),
+            activity_query_cache=cache,
+        )
+        self.controller.summary_service = SummaryService(
+            ldap_service=ldap_service,
+            microsoft_chat_analytics_service=MagicMock(),
+            google_calendar_analytics_service=MagicMock(),
+            google_chat_analytics_service=MagicMock(),
+            gerrit_analytics_service=self.controller.gerrit_analytics_service,
+            jira_analytics_service=MagicMock(),
+            date_time_util=date_time_util,
+            user_emails_repository=MagicMock(),
+            activity_query_cache=cache,
+        )
+        return cache
+
+    def test_failed_ldap_read_answers_503_and_caches_nothing(self):
+        # An empty reply is what a retried pipeline gives back after a Redis
+        # error; before, it read as "nobody" and the empty result was cached.
+        self._set_auth([
+            Permission.INTERNAL_ACTIVITY_READ,
+            Permission.DASHBOARD_ACTIVITY_SUMMARY_READ,
+        ])
+        requests = {
+            "gerrit stats": (GERRIT_STATS_ENDPOINT, {}),
+            "summary": (
+                SUMMARY_ENDPOINT,
+                {"startDate": "2025-10-21", "groups": ["employees"]},
+            ),
+        }
+        for name, (url, body) in requests.items():
+            for reply in ([], [Exception("connection reset")]):
+                with self.subTest(request=name, reply=reply):
+                    cache = self._wire_real_ldap_read_failing_with(reply)
+                    client = self._client_with_exception_handlers()
+
+                    response = client.post(url, json=body, headers=self.headers)
+
+                    self.assertEqual(
+                        response.status_code, HTTPStatus.SERVICE_UNAVAILABLE
+                    )
+                    self.assertEqual(len(cache), 0)
 
 
 if __name__ == "__main__":
