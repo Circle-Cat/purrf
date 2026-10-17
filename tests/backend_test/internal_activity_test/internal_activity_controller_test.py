@@ -44,6 +44,17 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.summary_service = MagicMock()
         self.launchdarkly_service = MagicMock()
 
+        self.mock_session = MagicMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=self.mock_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        begin_cm = MagicMock()
+        begin_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        begin_cm.__aexit__ = AsyncMock(return_value=False)
+        self.mock_session.begin = MagicMock(return_value=begin_cm)
+        self.mock_database = MagicMock()
+        self.mock_database.session = MagicMock(return_value=session_cm)
+
         self.controller = InternalActivityController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -55,18 +66,9 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
             gerrit_analytics_service=self.gerrit_analytics_service,
             summary_service=self.summary_service,
             launchdarkly_service=self.launchdarkly_service,
+            database=self.mock_database,
         )
 
-        mock_session = MagicMock()
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-        session_cm.__aexit__ = AsyncMock(return_value=False)
-        begin_cm = MagicMock()
-        begin_cm.__aenter__ = AsyncMock(return_value=MagicMock())
-        begin_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_session.begin = MagicMock(return_value=begin_cm)
-        self.mock_database = MagicMock()
-        self.mock_database.session = MagicMock(return_value=session_cm)
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(
             return_value=MagicMock(
@@ -311,6 +313,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         """Test MY_SUMMARY_ENDPOINT (POST) returns 200 when LD flag is enabled."""
         self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
         self.launchdarkly_service.is_view_personal_summary_enabled.return_value = True
+        self.summary_service.get_my_summary = AsyncMock()
         self.summary_service.get_my_summary.return_value = ActivitySummaryDto(
             ldap="test",
             chat_count=0,
@@ -329,7 +332,10 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.summary_service.get_my_summary.assert_called_once()
+        self.summary_service.get_my_summary.assert_awaited_once()
+        self.assertIs(
+            self.summary_service.get_my_summary.await_args.args[0], self.mock_session
+        )
 
     def test_get_my_summary_when_ld_flag_disabled(self):
         """Test MY_SUMMARY_ENDPOINT (POST) is blocked when LD flag is disabled."""
