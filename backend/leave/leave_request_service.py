@@ -883,9 +883,7 @@ class LeaveRequestService:
         """This account's Azure ldap, or None, from a confirmed corporate address.
 
         Unconfirmed addresses do not count: anyone can add one they do not own,
-        and read as theirs they would act as that employee. The accrual job
-        counts them on purpose, for backfilled employees yet to sign in, and is
-        guarded by ``users.is_internal`` instead.
+        and read as theirs they would act as that employee.
         """
         rows = await self.user_emails_repository.list_by_user_id(session, user_id)
         return ldap_from_addresses(row.email for row in rows if row.otp_confirmed)
