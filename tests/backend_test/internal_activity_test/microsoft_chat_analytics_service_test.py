@@ -2,9 +2,13 @@ from unittest import TestCase, main
 from datetime import datetime, timezone
 from unittest.mock import Mock, call
 
+from backend.common.exceptions import ActivityDataUnavailableError
 from backend.common.constants import (
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
     MicrosoftChatMessagesChangeType,
+)
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
 )
 from backend.internal_activity_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
@@ -27,6 +31,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             date_time_util=self.mock_date_time_util,
             ldap_service=self.mock_ldap_service,
             retry_utils=self.mock_retry_utils,
+            activity_query_cache=ActivityQueryCache(logger=Mock()),
         )
 
         self.start_date_str = "2024-01-01T00:00:00Z"
@@ -127,6 +132,61 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             },
         }
         self.assertEqual(result, expected_result)
+
+    def test_repeated_query_reads_redis_once(self):
+        mock_pipeline = Mock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [10, 20]
+
+        first = self.service.count_microsoft_chat_messages_in_date_range(
+            ldap_list=["user1", "user2"],
+            start_date=self.start_date_str,
+            end_date=self.end_date_str,
+        )
+        second = self.service.count_microsoft_chat_messages_in_date_range(
+            ldap_list=["user2", "user1"],
+            start_date=self.start_date_str,
+            end_date=self.end_date_str,
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(second["result"], {"user1": 10, "user2": 20})
+        mock_pipeline.execute.assert_called_once()
+
+    def test_different_ldaps_do_not_share_a_result(self):
+        mock_pipeline = Mock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.side_effect = [[10], [20]]
+
+        first = self.service.count_microsoft_chat_messages_in_date_range(
+            ldap_list=["user1"]
+        )
+        second = self.service.count_microsoft_chat_messages_in_date_range(
+            ldap_list=["user2"]
+        )
+
+        self.assertEqual(first["result"], {"user1": 10})
+        self.assertEqual(second["result"], {"user2": 20})
+
+    def test_short_pipeline_result_raises(self):
+        mock_pipeline = Mock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [10]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.count_microsoft_chat_messages_in_date_range(
+                ldap_list=["user1", "user2"]
+            )
+
+    def test_error_in_pipeline_results_raises(self):
+        mock_pipeline = Mock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [10, Exception("WRONGTYPE")]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.count_microsoft_chat_messages_in_date_range(
+                ldap_list=["user1", "user2"]
+            )
 
 
 if __name__ == "__main__":

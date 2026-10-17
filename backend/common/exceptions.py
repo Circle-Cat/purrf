@@ -41,3 +41,17 @@ class GmailNotFoundError(RuntimeError):
 
 class HistoryExpiredError(Exception):
     """The history cursor is older than Gmail keeps; only a full resync recovers."""
+
+
+class ActivityDataUnavailableError(Exception):
+    """Redis did not answer every activity query — mapped to HTTP 503.
+
+    The message is the one shown to the caller; ``detail`` says what went
+    wrong and is only logged.
+    """
+
+    MESSAGE = "Activity data is temporarily unavailable."
+
+    def __init__(self, detail: str = ""):
+        super().__init__(self.MESSAGE)
+        self.detail = detail

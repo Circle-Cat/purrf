@@ -65,6 +65,9 @@ from backend.internal_activity_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
 from backend.internal_activity_service.summary_service import SummaryService
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.common.environment_constants import (
     GMAIL_SENDER_RECRUITING,
     GMAIL_SENDER_NOTIFICATION,
@@ -525,6 +528,7 @@ class AppDependencyBuilder:
             google_service=self.google_service,
             google_chat_message_utils=self.google_chat_messages_utils,
         )
+        self.activity_query_cache = ActivityQueryCache(logger=self.logger)
         self.historical_controller = HistoricalController(
             logger=self.logger,
             microsoft_member_sync_service=self.microsoft_member_sync_service,
@@ -535,6 +539,7 @@ class AppDependencyBuilder:
             gerrit_sync_service=self.gerrit_sync_service,
             google_chat_history_sync_service=self.google_chat_history_sync_service,
             employment_sync_service=self.employment_sync_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,
@@ -542,6 +547,7 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             ldap_service=self.ldap_service,
             retry_utils=self.retry_utils,
+            activity_query_cache=self.activity_query_cache,
         )
         self.microsoft_meeting_chat_topic_cache_service = (
             MicrosoftMeetingChatTopicCacheService(
@@ -557,12 +563,14 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
             ldap_service=self.ldap_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.google_calendar_analytics_service = GoogleCalendarAnalyticsService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
             ldap_service=self.ldap_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.gerrit_analytics_service = GerritAnalyticsService(
             logger=self.logger,
@@ -571,6 +579,7 @@ class AppDependencyBuilder:
             ldap_service=self.ldap_service,
             date_time_util=self.date_time_util,
             gerrit_client=self.gerrit_client,
+            activity_query_cache=self.activity_query_cache,
         )
         self.google_chat_analytics_service = GoogleChatAnalyticsService(
             logger=self.logger,
@@ -579,6 +588,7 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             google_service=self.google_service,
             ldap_service=self.ldap_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.summary_service = SummaryService(
             ldap_service=self.ldap_service,
@@ -589,6 +599,7 @@ class AppDependencyBuilder:
             jira_analytics_service=self.jira_analytics_service,
             date_time_util=self.date_time_util,
             user_emails_repository=self.user_emails_repository,
+            activity_query_cache=self.activity_query_cache,
         )
         self.internal_activity_controller = InternalActivityController(
             ldap_service=self.ldap_service,
@@ -1193,6 +1204,7 @@ class AppDependencyBuilder:
             google_chat_processor_service=self.google_chat_processor_service,
             gerrit_processor_service=self.gerrit_processor_service,
             microsoft_chat_message_util=self.microsoft_chat_message_util,
+            activity_query_cache=self.activity_query_cache,
         )
         self.pubsub_push_controller = PubSubPushController(
             pubsub_push_service=self.pubsub_push_service,

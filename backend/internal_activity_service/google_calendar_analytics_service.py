@@ -1,15 +1,23 @@
+from backend.internal_activity_service.activity_query_cache import (
+    CALENDAR_EVENTS_QUERY,
+)
 from backend.common.constants import (
     GOOGLE_CALENDAR_LIST_INDEX_KEY,
     GOOGLE_CALENDAR_USER_EVENTS_KEY,
     GOOGLE_EVENT_ATTENDANCE_KEY,
     GOOGLE_CALENDAR_EVENT_DETAIL_KEY,
 )
+from backend.internal_activity_service.pipeline_results import (
+    checked_pipeline_results,
+)
 import json
 from datetime import datetime
 
 
 class GoogleCalendarAnalyticsService:
-    def __init__(self, logger, redis_client, retry_utils, ldap_service):
+    def __init__(
+        self, logger, redis_client, retry_utils, ldap_service, activity_query_cache
+    ):
         """
         Initialize the GoogleCalendarAnalyticsService with necessary clients and logger.
 
@@ -19,11 +27,13 @@ class GoogleCalendarAnalyticsService:
             retry_utils: A RetryUtils for handling retries on transient errors.
             ldap_service: The LDAP service instance for retrieving LDAP data.
               Missing LDAP data will be backfilled.
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.retry_utils = retry_utils
         self.ldap_service = ldap_service
+        self.activity_query_cache = activity_query_cache
 
         if not logger:
             raise ValueError("Logger not provided.")
@@ -104,8 +114,12 @@ class GoogleCalendarAnalyticsService:
         for events_key in events_key_by_ldap.values():
             pipeline.zrange(events_key, start_ts, end_ts, byscore=True)
 
-        ldap_event_id_lists = self.retry_utils.get_retry_on_transient(pipeline.execute)
-        ldap_event_ids_map = dict(zip(ldaps, ldap_event_id_lists))
+        ldap_event_id_lists = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            len(events_key_by_ldap),
+        )
+        # Keyed by the deduplicated ldaps the commands were queued for.
+        ldap_event_ids_map = dict(zip(events_key_by_ldap, ldap_event_id_lists))
 
         attendance_keys = []
         attendance_key_to_ldap_event = {}
@@ -123,7 +137,10 @@ class GoogleCalendarAnalyticsService:
         for key in attendance_keys:
             pipeline.smembers(key)
 
-        attendance_results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        attendance_results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            len(attendance_keys),
+        )
         attendance_data_map = {}  # (ldap, event_id) -> attendance_record
 
         for key, raw_members in zip(attendance_keys, attendance_results):
@@ -150,7 +167,10 @@ class GoogleCalendarAnalyticsService:
         for key in event_detail_keys:
             pipeline.get(key)
 
-        event_detail_results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        event_detail_results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            len(event_detail_keys),
+        )
         base_event_detail_map = {}
 
         for base_id, raw_data in zip(all_base_event_ids, event_detail_results):
@@ -206,6 +226,30 @@ class GoogleCalendarAnalyticsService:
         Returns:
             Dict[str, list[Dict]]: Each LDAP maps to a list of event dicts.
         """
+        cache = self.activity_query_cache
+        return cache.get_or_compute(
+            CALENDAR_EVENTS_QUERY,
+            (
+                # Events are listed calendar by calendar, so order shows.
+                cache.ordered(calendar_ids),
+                cache.unordered(ldaps),
+                start_date.isoformat(),
+                end_date.isoformat(),
+            ),
+            end_date,
+            lambda: self._get_all_events_from_calendars(
+                calendar_ids, ldaps, start_date, end_date
+            ),
+        )
+
+    def _get_all_events_from_calendars(
+        self,
+        calendar_ids: list[str],
+        ldaps: list[str] | None,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> dict[str, list[dict[str, any]]]:
+        """Uncached body of get_all_events_from_calendars."""
         if not ldaps:
             ldaps = self.ldap_service.get_all_active_interns_and_employees_ldaps()
         combined_result: dict[str, list[dict[str, any]]] = {ldap: [] for ldap in ldaps}
