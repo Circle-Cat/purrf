@@ -62,8 +62,7 @@ class PubSubPushService:
             microsoft_chat_message_util (MicrosoftChatMessageUtil): Fetches a
                 changed Teams message from Graph and stores it.
             activity_query_cache (ActivityQueryCache): Activity query results;
-                today's results of the pushed source are dropped once a push
-                is stored.
+                the pushed source's results are dropped once a push is stored.
         """
         self.logger = logger
         self.auth_service = auth_service
@@ -107,11 +106,13 @@ class PubSubPushService:
         envelope,
         process_fn,
         cached_queries: set[str],
+        clears_past_ranges: bool = False,
     ) -> PubSubPushOutcome:
         """Await ``process_fn(data, attributes)`` on the message a push envelope carries.
 
-        ``process_fn`` returns whether it stored activity; if so, today's
-        cached results of ``cached_queries`` are dropped.
+        ``process_fn`` returns whether it stored activity; if so, the cached
+        results of ``cached_queries`` are dropped: today's only, or every
+        range when ``clears_past_ranges``.
         """
         refusal = self._caller_refusal(authorization)
         if refusal is not None:
@@ -135,7 +136,10 @@ class PubSubPushService:
             )
             return PubSubPushOutcome.RETRY
         if stored:
-            self.activity_query_cache.clear_current(cached_queries)
+            if clears_past_ranges:
+                self.activity_query_cache.clear_methods(cached_queries)
+            else:
+                self.activity_query_cache.clear_current(cached_queries)
         return PubSubPushOutcome.ACK
 
     async def _process_google_chat(self, data: dict, attributes: dict) -> bool:
@@ -231,4 +235,7 @@ class PubSubPushService:
             envelope,
             self._process_gerrit,
             {GERRIT_STATS_QUERY, SUMMARY_QUERY},
+            # Gerrit stats are stored per week, and a range that ended earlier
+            # this week reads the same bucket this event just changed.
+            clears_past_ranges=True,
         )

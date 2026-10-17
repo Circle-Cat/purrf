@@ -1,6 +1,7 @@
 from unittest import TestCase, main
 from unittest.mock import MagicMock
 
+from backend.common.exceptions import ActivityDataUnavailableError
 from backend.common.constants import (
     LDAP_KEY_TEMPLATE,
     MicrosoftAccountStatus,
@@ -78,6 +79,38 @@ class TestLdapService(TestCase):
         }
         self.assertEqual(result, expected_output)
 
+    def test_get_ldaps_by_status_and_group_repeated_group_keeps_groups_apart(self):
+        stored = {
+            LDAP_KEY_TEMPLATE.format(account_status="active", group="employees"): {
+                "emp": "Employee"
+            },
+            LDAP_KEY_TEMPLATE.format(account_status="active", group="interns"): {
+                "intern": "Intern"
+            },
+        }
+        pipeline_mock = MagicMock()
+        queued = []
+        pipeline_mock.hgetall.side_effect = queued.append
+        pipeline_mock.execute.side_effect = lambda: [stored[k] for k in queued]
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        result = self.service.get_ldaps_by_status_and_group(
+            MicrosoftAccountStatus.ACTIVE,
+            [
+                MicrosoftGroups.EMPLOYEES,
+                MicrosoftGroups.EMPLOYEES,
+                MicrosoftGroups.INTERNS,
+            ],
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "employees": {"active": {"emp": "Employee"}},
+                "interns": {"active": {"intern": "Intern"}},
+            },
+        )
+
     def test_get_ldaps_by_status_and_group_no_groups(self):
         status = MicrosoftAccountStatus.ACTIVE
         groups = []
@@ -105,11 +138,24 @@ class TestLdapService(TestCase):
         expected_output = {"employees": {"active": {}}}
         self.assertEqual(result, expected_output)
 
+    def test_get_ldaps_by_status_and_group_raises_when_redis_answers_short(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+        groups = [MicrosoftGroups.EMPLOYEES, MicrosoftGroups.INTERNS]
+        for reply in ([], [{"alice": "Alice"}], [{}, Exception("WRONGTYPE")]):
+            with self.subTest(reply=reply):
+                pipeline_mock.execute.return_value = reply
+
+                with self.assertRaises(ActivityDataUnavailableError):
+                    self.service.get_ldaps_by_status_and_group(
+                        MicrosoftAccountStatus.ACTIVE, groups
+                    )
+
     def test_returns_all_ldaps_from_all_groups_and_statuses(self):
         pipeline = MagicMock()
         self.redis_client.pipeline.return_value = pipeline
         pipeline.hkeys.side_effect = lambda key: None
-        pipeline.execute.return_value = [["ldap1"], ["ldap2"], ["ldap3"], []]
+        pipeline.execute.return_value = [["ldap1"], ["ldap2"], ["ldap3"], [], [], []]
 
         result = self.service.get_all_ldaps()
 
@@ -131,20 +177,21 @@ class TestLdapService(TestCase):
         self.assertEqual(set(result), {"ldap1", "ldap2", "ldap3"})
         self.assertEqual(set(actual_keys), set(expected_keys))
 
-    def test_empty_pipeline_execute_returns_empty_list(self):
+    def test_get_all_ldaps_raises_when_redis_answers_short(self):
         pipeline = MagicMock()
         self.redis_client.pipeline.return_value = pipeline
-        pipeline.hkeys.side_effect = lambda key: None
-        pipeline.execute.return_value = []
+        for reply in ([], [["ldap1"], ["ldap2"]], [[]] * 5 + [Exception("WRONGTYPE")]):
+            with self.subTest(reply=reply):
+                pipeline.execute.return_value = reply
 
-        result = self.service.get_all_ldaps()
-        self.assertEqual(result, [])
+                with self.assertRaises(ActivityDataUnavailableError):
+                    self.service.get_all_ldaps()
 
     def test_pipeline_execute_with_empty_ldaps(self):
         pipeline = MagicMock()
         self.redis_client.pipeline.return_value = pipeline
         pipeline.hkeys.side_effect = lambda key: None
-        pipeline.execute.return_value = [[], []]
+        pipeline.execute.return_value = [[]] * 6
 
         result = self.service.get_all_ldaps()
         self.assertEqual(result, [])
@@ -232,32 +279,17 @@ class TestLdapService(TestCase):
 
         self.assertEqual(result, ["ldap_for_employee"])
 
-    def test_get_all_active_interns_and_employees_ldaps_empty_pipeline_execute_returns_empty_list(
+    def test_get_all_active_interns_and_employees_ldaps_raises_when_redis_answers_short(
         self,
     ):
         pipeline_mock = MagicMock()
         self.redis_client.pipeline.return_value = pipeline_mock
+        for reply in ([], [["ldap1"]], [["ldap1"], Exception("WRONGTYPE")]):
+            with self.subTest(reply=reply):
+                pipeline_mock.execute.return_value = reply
 
-        pipeline_mock.hkeys.side_effect = lambda key: None
-        pipeline_mock.execute.return_value = []
-
-        expected_keys = [
-            LDAP_KEY_TEMPLATE.format(
-                account_status=MicrosoftAccountStatus.ACTIVE.value,
-                group=MicrosoftGroups.INTERNS.value,
-            ),
-            LDAP_KEY_TEMPLATE.format(
-                account_status=MicrosoftAccountStatus.ACTIVE.value,
-                group=MicrosoftGroups.EMPLOYEES.value,
-            ),
-        ]
-
-        result = self.service.get_all_active_interns_and_employees_ldaps()
-
-        for key in expected_keys:
-            pipeline_mock.hkeys.assert_any_call(key)
-
-        self.assertEqual(result, [])
+                with self.assertRaises(ActivityDataUnavailableError):
+                    self.service.get_all_active_interns_and_employees_ldaps()
 
     def test_get_all_active_interns_and_employees_ldaps_pipeline_execute_with_empty_ldaps(
         self,
