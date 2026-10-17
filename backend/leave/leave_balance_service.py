@@ -113,7 +113,6 @@ class LeaveBalanceService:
             self.user_emails_repository,
         )
 
-        # Map current page entities into LeaveLedgerRowDto instances
         entry_dtos = [
             LeaveLedgerRowDto(
                 leave_ledger_id=entry.leave_ledger_id,
