@@ -1,4 +1,9 @@
+from datetime import datetime
+
 from backend.common.constants import CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY
+from backend.internal_activity_service.pipeline_results import (
+    checked_pipeline_results,
+)
 
 
 class GoogleChatAnalyticsService:
@@ -10,6 +15,7 @@ class GoogleChatAnalyticsService:
         date_time_util,
         google_service,
         ldap_service,
+        activity_query_cache,
     ):
         """
         Initialize the GoogleChatAnalyticsService with necessary clients and logger.
@@ -21,6 +27,7 @@ class GoogleChatAnalyticsService:
             date_time_util: A DateTimeUtil instance for date and time manipulations.
             google_service: A GoogleService instance for interacting with Google APIs (e.g., Google Chat).
             ldap_service: An LdapService instance for interacting with LDAP (e.g., retrieving user information).
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.logger = logger
         self.redis_client = redis_client
@@ -28,6 +35,7 @@ class GoogleChatAnalyticsService:
         self.date_time_util = date_time_util
         self.google_service = google_service
         self.ldap_service = ldap_service
+        self.activity_query_cache = activity_query_cache
 
     def get_chat_spaces_by_type(self, space_type):
         """
@@ -106,7 +114,27 @@ class GoogleChatAnalyticsService:
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
+        cache = self.activity_query_cache
+        return cache.get_or_compute(
+            "google_chat.count_messages",
+            (
+                cache.unordered(space_ids),
+                cache.unordered(sender_ldaps),
+                start_dt.isoformat(),
+                end_dt.isoformat(),
+            ),
+            end_dt,
+            lambda: self._count_messages(space_ids, sender_ldaps, start_dt, end_dt),
+        )
 
+    def _count_messages(
+        self,
+        space_ids: list[str],
+        sender_ldaps: list[str],
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> dict:
+        """Uncached body of count_messages, over an already resolved range."""
         if not space_ids:
             self.logger.info("[API] Fetching all space IDs via get_chat_spaces()...")
             space_dict = self.google_service.get_chat_spaces(space_type="SPACE")
@@ -131,7 +159,10 @@ class GoogleChatAnalyticsService:
                 pipeline.zcount(redis_key, start_dt.timestamp(), end_dt.timestamp())
                 query_keys.append((space_id, sender_ldap))
 
-        pipeline_results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        pipeline_results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            len(query_keys),
+        )
         self.logger.debug(
             f"[API] Redis pipeline executed, received {len(pipeline_results)} results."
         )

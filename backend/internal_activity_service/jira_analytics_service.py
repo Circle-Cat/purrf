@@ -4,12 +4,24 @@ from backend.common.constants import (
     JiraIssueStatus,
     JIRA_LDAP_PROJECT_STATUS_INDEX_KEY,
 )
+from backend.internal_activity_service.pipeline_results import (
+    checked_pipeline_results,
+)
+from datetime import datetime
 from itertools import product
 from collections import defaultdict
 
 
 class JiraAnalyticsService:
-    def __init__(self, logger, redis_client, date_time_util, ldap_service, retry_utils):
+    def __init__(
+        self,
+        logger,
+        redis_client,
+        date_time_util,
+        ldap_service,
+        retry_utils,
+        activity_query_cache,
+    ):
         """
         Initializes the MicrosoftChatAnalyticsService.
 
@@ -19,12 +31,14 @@ class JiraAnalyticsService:
             date_time_util: A DateTimeUtil instance for handling date and time operations.
             ldap_service: A LdapService instance for performing LDAP lookups.
             retry_utils: A RetryUtils for handling retries on transient errors.
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.date_time_util = date_time_util
         self.ldap_service = ldap_service
         self.retry_utils = retry_utils
+        self.activity_query_cache = activity_query_cache
 
         if not self.logger:
             raise ValueError("Logger not provided.")
@@ -106,6 +120,32 @@ class JiraAnalyticsService:
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
+        cache = self.activity_query_cache
+        return cache.get_or_compute(
+            "jira.get_issues_summary",
+            (
+                cache.unordered([status.value for status in status_list or []]),
+                cache.unordered(ldaps),
+                # Issues are listed project by project, so order shows.
+                cache.ordered(project_ids),
+                start_dt.isoformat(),
+                end_dt.isoformat(),
+            ),
+            end_dt,
+            lambda: self._get_issues_summary(
+                status_list, ldaps, project_ids, start_dt, end_dt
+            ),
+        )
+
+    def _get_issues_summary(
+        self,
+        status_list: list[JiraIssueStatus] | None,
+        ldaps: list[str] | None,
+        project_ids: list[str] | None,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> dict[str, any]:
+        """Uncached body of get_issues_summary, over an already resolved range."""
         start_score = self.date_time_util.format_datetime_to_int(start_dt)
         end_score = self.date_time_util.format_datetime_to_int(end_dt)
 
@@ -118,12 +158,12 @@ class JiraAnalyticsService:
         project_ids = project_ids or self.get_all_jira_projects()
 
         self.logger.info(
-            "Get jira issues summary with status_list=%s, ldaps=%s, project_ids=%s, start_date=%s, end_date=%s",
+            "Get jira issues summary with status_list=%s, ldaps=%s, project_ids=%s, start_dt=%s, end_dt=%s",
             status_list,
             ldaps,
             project_ids,
-            start_date,
-            end_date,
+            start_dt,
+            end_dt,
         )
 
         final_result: dict[str, dict[str, list[str] | float]] = defaultdict(
@@ -156,7 +196,10 @@ class JiraAnalyticsService:
                 first_pipeline.smembers(redis_key)
             request_keys_and_info.append((ldap, status))
 
-        first_results = self.retry_utils.get_retry_on_transient(first_pipeline.execute)
+        first_results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(first_pipeline.execute),
+            len(request_keys_and_info),
+        )
 
         if not should_calculate_story_points:
             for (ldap, status), result in zip(request_keys_and_info, first_results):
@@ -188,8 +231,9 @@ class JiraAnalyticsService:
                         )
                         issue_info_for_story_point_retrieval.append((issue_id, ldap))
 
-            story_point_results = self.retry_utils.get_retry_on_transient(
-                story_point_pipeline.execute
+            story_point_results = checked_pipeline_results(
+                self.retry_utils.get_retry_on_transient(story_point_pipeline.execute),
+                len(issue_info_for_story_point_retrieval),
             )
 
             for story_point_data, (issue_id, ldap) in zip(
@@ -231,12 +275,24 @@ class JiraAnalyticsService:
         if not issue_ids:
             raise ValueError("issue_ids cannot be empty")
 
+        return self.activity_query_cache.get_or_compute(
+            "jira.process_get_issue_detail_batch",
+            self.activity_query_cache.ordered(issue_ids),
+            None,
+            lambda: self._get_issue_detail_batch(issue_ids),
+        )
+
+    def _get_issue_detail_batch(self, issue_ids: list[str]) -> list[dict]:
+        """Uncached body of process_get_issue_detail_batch."""
         pipeline = self.redis_client.pipeline()
         for issue_id in issue_ids:
             redis_key = JIRA_ISSUE_DETAILS_KEY.format(issue_id=issue_id)
             pipeline.hgetall(redis_key)
 
-        pipeline_results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        pipeline_results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            len(issue_ids),
+        )
 
         all_fields = {
             field

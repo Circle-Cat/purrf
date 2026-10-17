@@ -1,7 +1,15 @@
+import asyncio
+from datetime import datetime, timezone
 from unittest import IsolatedAsyncioTestCase, TestCase, main
 from unittest.mock import AsyncMock, Mock
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.internal_activity_service.summary_service import SummaryService
 from backend.dto.user_context_dto import UserContextDto
+
+SEPT_START = datetime(2025, 9, 1, tzinfo=timezone.utc)
+SEPT_END = datetime(2025, 9, 30, 23, 59, 59, tzinfo=timezone.utc)
 
 
 class TestSummaryService(TestCase):
@@ -23,6 +31,7 @@ class TestSummaryService(TestCase):
             jira_analytics_service=self.mock_jira_service,
             date_time_util=self.mock_date_time_util,
             user_emails_repository=Mock(),
+            activity_query_cache=ActivityQueryCache(logger=Mock()),
         )
 
     def test_get_summary_single_user(self):
@@ -33,8 +42,8 @@ class TestSummaryService(TestCase):
         }
 
         self.mock_date_time_util.get_start_end_timestamps.return_value = (
-            "2025-09-01T00:00:00",
-            "2025-09-30T23:59:59",
+            SEPT_START,
+            SEPT_END,
         )
 
         self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.return_value = {
@@ -102,8 +111,8 @@ class TestSummaryService(TestCase):
         }
 
         self.mock_date_time_util.get_start_end_timestamps.return_value = (
-            "2025-09-01T00:00:00",
-            "2025-09-30T23:59:59",
+            SEPT_START,
+            SEPT_END,
         )
 
         self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.return_value = {
@@ -164,8 +173,8 @@ class TestSummaryService(TestCase):
         self.mock_ldap_service.get_ldaps_by_status_and_group.return_value = {}
         self.mock_calendar_service.get_all_calendars.return_value = []
         self.mock_date_time_util.get_start_end_timestamps.return_value = (
-            "start",
-            "end",
+            SEPT_START,
+            SEPT_END,
         )
 
         result = self.service.get_summary(
@@ -183,8 +192,8 @@ class TestSummaryService(TestCase):
             "interns": {"active": {user: "Alice Doe" for user in users}}
         }
         self.mock_date_time_util.get_start_end_timestamps.return_value = (
-            "start",
-            "end",
+            SEPT_START,
+            SEPT_END,
         )
         self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.return_value = {
             "result": {}
@@ -214,6 +223,74 @@ class TestSummaryService(TestCase):
         ]
         self.assertEqual(result, expected)
 
+    def _stub_empty_analytics(self):
+        self.mock_date_time_util.get_start_end_timestamps.return_value = (
+            SEPT_START,
+            SEPT_END,
+        )
+        self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.return_value = {
+            "result": {"alice": 1, "bob": 2}
+        }
+        self.mock_google_chat_service.count_messages.return_value = {"result": {}}
+        self.mock_calendar_service.get_all_calendars.return_value = []
+        self.mock_calendar_service.get_meeting_hours_for_user.return_value = {}
+        self.mock_gerrit_service.get_gerrit_stats.return_value = {}
+        self.mock_jira_service.get_issues_summary.return_value = {}
+
+    def test_search_summary_data_repeated_query_is_computed_once(self):
+        self._stub_empty_analytics()
+
+        first = self.service._search_summary_data(
+            ["alice", "bob"], "2025-09-01", "2025-09-30"
+        )
+        first[0]["chat_count"] = 999
+        second = self.service._search_summary_data(
+            ["alice", "bob"], "2025-09-01", "2025-09-30"
+        )
+
+        self.assertEqual(second[0]["chat_count"], 1)
+        self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.assert_called_once()
+        self.mock_calendar_service.get_all_calendars.assert_called_once()
+
+    def test_search_summary_data_keeps_rows_in_the_order_asked(self):
+        self._stub_empty_analytics()
+
+        self.service._search_summary_data(["alice", "bob"], None, None)
+        second = self.service._search_summary_data(["bob", "alice"], None, None)
+
+        self.assertEqual([row["ldap"] for row in second], ["bob", "alice"])
+
+    def test_search_summary_data_different_range_is_computed_again(self):
+        self._stub_empty_analytics()
+        october_end = datetime(2025, 10, 31, 23, 59, 59, tzinfo=timezone.utc)
+        self.mock_date_time_util.get_start_end_timestamps.side_effect = [
+            (SEPT_START, SEPT_END),
+            (SEPT_START, october_end),
+        ]
+
+        self.service._search_summary_data(["alice"], "2025-09-01", "2025-09-30")
+        self.service._search_summary_data(["alice"], "2025-09-01", "2025-10-31")
+
+        self.assertEqual(
+            self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.call_count,
+            2,
+        )
+
+    def test_my_summary_is_cached_by_ldap_not_by_user(self):
+        self._stub_empty_analytics()
+        self.service.user_emails_repository.list_by_user_id = AsyncMock(
+            return_value=[Mock(email="alice@circlecat.org", otp_confirmed=True)]
+        )
+        first_account = UserContextDto(user_id=1, sub="a", primary_email="a@x.org")
+        second_account = UserContextDto(user_id=2, sub="b", primary_email="b@x.org")
+
+        first = asyncio.run(self.service.get_my_summary(Mock(), first_account))
+        second = asyncio.run(self.service.get_my_summary(Mock(), second_account))
+
+        self.assertEqual(first.ldap, "alice")
+        self.assertEqual(second.chat_count, 1)
+        self.mock_ms_chat_service.count_microsoft_chat_messages_in_date_range.assert_called_once()
+
 
 def _email(address, confirmed=True):
     return Mock(email=address, otp_confirmed=confirmed)
@@ -233,6 +310,7 @@ class TestGetMySummary(IsolatedAsyncioTestCase):
             jira_analytics_service=Mock(),
             date_time_util=Mock(),
             user_emails_repository=self.user_emails_repository,
+            activity_query_cache=ActivityQueryCache(logger=Mock()),
         )
         self.service._search_summary_data = Mock(return_value=[])
 

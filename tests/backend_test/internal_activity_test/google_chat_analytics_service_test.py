@@ -1,7 +1,11 @@
 import unittest
 from unittest.mock import MagicMock, call
 import datetime
+from backend.common.exceptions import ActivityDataUnavailableError
 from backend.common.constants import CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.internal_activity_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
@@ -24,6 +28,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
             date_time_util=self.mock_date_time_util,
             google_service=self.mock_google_service,
             ldap_service=self.mock_ldap_service,
+            activity_query_cache=ActivityQueryCache(logger=MagicMock()),
         )
 
         self.start_dt = datetime.datetime(2023, 1, 1, tzinfo=datetime.timezone.utc)
@@ -301,6 +306,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
 
     def test_count_messages_date_time_util_called_correctly(self):
         """Test that date_time_util is called with the correct arguments."""
+        self.mock_retry_utils.get_retry_on_transient.return_value = [0]
         self.service.count_messages(
             space_ids=["s1"],
             sender_ldaps=["u1"],
@@ -377,6 +383,67 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
             self.mock_pipeline.execute
         )
+
+    def test_count_messages_repeated_query_reads_redis_once(self):
+        self.mock_retry_utils.get_retry_on_transient.return_value = [1, 2]
+
+        first = self.service.count_messages(
+            space_ids=["s1"],
+            sender_ldaps=["u1", "u2"],
+            start_date="2023-01-01",
+            end_date="2023-01-31",
+        )
+        # Same ldaps in another order: the counts are keyed by ldap.
+        second = self.service.count_messages(
+            space_ids=["s1"],
+            sender_ldaps=["u2", "u1"],
+            start_date="2023-01-01",
+            end_date="2023-01-31",
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(second["result"], {"u1": {"s1": 1}, "u2": {"s1": 2}})
+        self.mock_redis_client.pipeline.assert_called_once()
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+
+    def test_count_messages_different_range_reads_redis_again(self):
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [[1], [7]]
+        self.mock_date_time_util.get_start_end_timestamps.side_effect = [
+            (self.start_dt, self.end_dt),
+            (self.start_dt, self.end_dt + datetime.timedelta(days=1)),
+        ]
+
+        first = self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1"])
+        second = self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1"])
+
+        self.assertEqual(first["result"], {"u1": {"s1": 1}})
+        self.assertEqual(second["result"], {"u1": {"s1": 7}})
+
+    def test_count_messages_short_pipeline_result_raises(self):
+        self.mock_retry_utils.get_retry_on_transient.return_value = [1]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1", "u2"])
+
+    def test_count_messages_error_in_pipeline_results_raises(self):
+        self.mock_retry_utils.get_retry_on_transient.return_value = [
+            1,
+            Exception("WRONGTYPE"),
+        ]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1", "u2"])
+
+    def test_count_messages_failed_query_is_not_cached(self):
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [[1], [3, 4]]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.count_messages(space_ids=["s1"], sender_ldaps=["u1", "u2"])
+        result = self.service.count_messages(
+            space_ids=["s1"], sender_ldaps=["u1", "u2"]
+        )
+
+        self.assertEqual(result["result"], {"u1": {"s1": 3}, "u2": {"s1": 4}})
 
 
 if __name__ == "__main__":

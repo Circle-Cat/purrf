@@ -14,6 +14,9 @@ from backend.common.constants import (
     GERRIT_CL_REVIEWED_FIELD,
     GERRIT_LOC_MERGED_FIELD,
 )
+from backend.internal_activity_service.pipeline_results import (
+    checked_pipeline_results,
+)
 
 
 class GerritAnalyticsService:
@@ -25,6 +28,7 @@ class GerritAnalyticsService:
         ldap_service,
         date_time_util,
         gerrit_client,
+        activity_query_cache,
     ):
         """
         Gerrit Analytics Service to aggregate stats from Redis.
@@ -36,6 +40,7 @@ class GerritAnalyticsService:
             ldap_service: Service that can provide active LDAP users.
             date_time_util: A DateTimeUtil instance for handling date and time operations.
             gerrit_client: A Gerrit Client instance.
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.logger = logger
         self.redis_client = redis_client
@@ -43,6 +48,7 @@ class GerritAnalyticsService:
         self.ldap_service = ldap_service
         self.date_time_util = date_time_util
         self.gerrit_client = gerrit_client
+        self.activity_query_cache = activity_query_cache
         self.LDAP_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
     def get_gerrit_projects(self) -> list[str]:
@@ -96,6 +102,48 @@ class GerritAnalyticsService:
                 GERRIT_CL_UNDER_REVIEW_FIELD: Count of under-review CLs (only if include_full_stats=True
                 and end_date matches today's UTC date; otherwise None)
         """
+        start_date_time, end_date_time = self.date_time_util.get_start_end_timestamps(
+            start_date_str, end_date_str
+        )
+        cache = self.activity_query_cache
+        # Stats are summed across projects, so project order does not show.
+        # Blank names and, with include_all_projects, the whole list are ignored.
+        projects_key = (
+            None
+            if include_all_projects
+            else cache.unordered([p for p in project_list or [] if p])
+        )
+        return cache.get_or_compute(
+            "gerrit.get_gerrit_stats",
+            (
+                cache.unordered(ldap_list),
+                projects_key,
+                include_full_stats,
+                include_all_projects,
+                start_date_time.isoformat(),
+                end_date_time.isoformat(),
+            ),
+            end_date_time,
+            lambda: self._get_gerrit_stats(
+                ldap_list,
+                start_date_time,
+                end_date_time,
+                project_list,
+                include_full_stats,
+                include_all_projects,
+            ),
+        )
+
+    def _get_gerrit_stats(
+        self,
+        ldap_list: list[str] | None,
+        start_date_time: datetime,
+        end_date_time: datetime,
+        project_list: list[str] | None,
+        include_full_stats: bool,
+        include_all_projects: bool,
+    ) -> dict[str, dict]:
+        """Uncached body of get_gerrit_stats, over an already resolved range."""
         if not ldap_list:
             ldap_list = self.ldap_service.get_all_active_interns_and_employees_ldaps()
             if not ldap_list:
@@ -109,9 +157,6 @@ class GerritAnalyticsService:
         if invalid:
             raise ValueError(f"Invalid LDAP(s): {invalid}")
 
-        start_date_time, end_date_time = self.date_time_util.get_start_end_timestamps(
-            start_date_str, end_date_str
-        )
         start_date, end_date = start_date_time.date(), end_date_time.date()
 
         week_buckets = self.date_time_util.get_week_buckets(
@@ -142,6 +187,7 @@ class GerritAnalyticsService:
             )
 
         pipeline = self.redis_client.pipeline()
+        queued = 0
         for ldap in ldap_list:
             for project in projects:
                 # weekly stats key
@@ -154,6 +200,7 @@ class GerritAnalyticsService:
                         else GERRIT_STATS_BUCKET_KEY.format(ldap=ldap, bucket=bucket)
                     )
                     pipeline.hgetall(stats_key)
+                    queued += 1
 
                 if not include_full_stats:
                     continue
@@ -174,6 +221,7 @@ class GerritAnalyticsService:
                     start_date_time.timestamp(),
                     end_date_time.timestamp(),
                 )
+                queued += 1
 
                 if not include_under_review:
                     continue
@@ -195,8 +243,11 @@ class GerritAnalyticsService:
                     ZSET_MIN_SCORE,
                     end_date_time.timestamp(),
                 )
+                queued += 1
 
-        results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+        results = checked_pipeline_results(
+            self.retry_utils.get_retry_on_transient(pipeline.execute), queued
+        )
         self.logger.debug(
             "[get_gerrit_stats] Pipeline executed, got %d results.", len(results)
         )
