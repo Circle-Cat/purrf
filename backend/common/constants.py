@@ -79,8 +79,11 @@ def ldap_from_addresses(addresses) -> str | None:
     """The ldap an account's addresses carry, or None if they carry none.
 
     The activity data and the directory know people by ldap, and the company
-    address is the whole of the join to an account. Sorted, so that an account
-    somehow holding two company addresses reads the same way every time.
+    address is the whole of the join to an account, so the ldap is read off it
+    rather than stored a second time. Sorted, so that an account somehow holding
+    two company addresses still reads the same way every time -- the directory
+    join says that cannot happen, and if it does the answer must at least not
+    move around between requests.
 
     Args:
         addresses: Email addresses, in any order. The caller decides which
