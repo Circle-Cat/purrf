@@ -166,13 +166,19 @@ describe("BalanceHistoryRow", () => {
     expect(screen.getByText("Swapped National Day")).toBeInTheDocument();
   });
 
+<<<<<<< HEAD
   it("renders no person info when entry has no name or userId", () => {
     render(<BalanceHistoryRow entry={entry({ name: null, userId: null })} />);
+=======
+  it("without person nothing extra renders", () => {
+    render(<BalanceHistoryRow entry={entry()} />);
+>>>>>>> 2a07130e ([PUR-612] Show an administrator every leave ledger entry filtered by person)
 
     expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/·/)).not.toBeInTheDocument();
   });
 
+<<<<<<< HEAD
   it("renders person info directly from entry.name and entry.ldap", () => {
     render(
       <BalanceHistoryRow
@@ -182,12 +188,22 @@ describe("BalanceHistoryRow", () => {
         })}
       />,
     );
+=======
+  it("with person the name, a middle dot and the ldap show", () => {
+    const mockPerson = {
+      name: "Alice Smith",
+      ldap: "asmith",
+    };
+
+    render(<BalanceHistoryRow entry={entry()} person={mockPerson} />);
+>>>>>>> 2a07130e ([PUR-612] Show an administrator every leave ledger entry filtered by person)
 
     expect(screen.getByText(/Alice Smith/)).toBeInTheDocument();
     expect(screen.getByText(/asmith/)).toBeInTheDocument();
     expect(screen.getByText(/·/)).toBeInTheDocument();
   });
 
+<<<<<<< HEAD
   it("falls back to User <id> — unavailable when entry.name is null/missing", () => {
     render(
       <BalanceHistoryRow
@@ -196,6 +212,15 @@ describe("BalanceHistoryRow", () => {
           name: null,
           ldap: null,
         })}
+=======
+  it("with an unresolved name it reads User <id> — unavailable", () => {
+    const unresolvedPerson = {};
+
+    render(
+      <BalanceHistoryRow
+        entry={entry({ userId: 42 })}
+        person={unresolvedPerson}
+>>>>>>> 2a07130e ([PUR-612] Show an administrator every leave ledger entry filtered by person)
       />,
     );
 
