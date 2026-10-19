@@ -27,6 +27,15 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  * @property {number} chatMessagesSent - Number of chat messages sent.
  */
 
+const EMPTY_SUMMARY = {
+  totalMembers: 0,
+  totalCompletedTickets: 0,
+  totalMergedCls: 0,
+  totalMergedLoc: 0,
+  totalMeetingHours: 0,
+  totalMessagesSent: 0,
+};
+
 /**
  * Dashboard Component
  *
@@ -65,6 +74,7 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  *
  * Notes:
  * - The `getSummary` API is asynchronous and updates `summaryData` and `tableData` on success.
+ *   On failure both are cleared and the reason is shown instead.
  * - Date values are managed in browser local time to avoid UTC/local date boundary inconsistencies.
  *
  *
@@ -91,15 +101,11 @@ const Dashboard = () => {
   const groupsData = Object.values(Group);
 
   const [error, setError] = useState("");
+  // Why the last query failed. While set, the cards show no figures: the
+  // previous query's numbers under the new filters would read as theirs.
+  const [queryError, setQueryError] = useState("");
 
-  const [summaryData, setSummaryData] = useState({
-    totalMembers: 0,
-    totalCompletedTickets: 0,
-    totalMergedCls: 0,
-    totalMergedLoc: 0,
-    totalMeetingHours: 0,
-    totalMessagesSent: 0,
-  });
+  const [summaryData, setSummaryData] = useState(EMPTY_SUMMARY);
 
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
@@ -220,10 +226,13 @@ const Dashboard = () => {
         totalMeetingHours: finalTotalMeetingHours,
         totalMembers: summaryResult.length,
       });
+      setQueryError("");
     } catch (err) {
-      console.log(err);
-    } finally {
-      console.log(summaryData);
+      setTableData([]);
+      setSummaryData(EMPTY_SUMMARY);
+      setQueryError(
+        err?.response?.data?.message || "Could not load the activity summary.",
+      );
     }
   };
 
@@ -337,7 +346,9 @@ const Dashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-1">
-              <div className="text-lg font-bold">{item.value}</div>
+              <div className="text-lg font-bold">
+                {queryError ? "—" : item.value}
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -400,6 +411,12 @@ const Dashboard = () => {
           Search
         </Button>
       </div>
+
+      {queryError && (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {queryError}
+        </p>
+      )}
 
       <Table
         columns={tableColumns}

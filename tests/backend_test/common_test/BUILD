@@ -1,6 +1,14 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "constants_test",
+    srcs = ["constants_test.py"],
+    deps = [
+        "//backend/common:constants",
+    ],
+)
+
+py_test(
     name = "logger_test",
     srcs = ["logger_test.py"],
     deps = [

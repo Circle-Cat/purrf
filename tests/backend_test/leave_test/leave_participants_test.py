@@ -15,10 +15,11 @@ from backend.leave.leave_participants import (
 )
 
 
-def _email_row(email, user_id):
+def _email_row(email, user_id, confirmed=True):
     row = MagicMock()
     row.email = email
     row.user_id = user_id
+    row.otp_confirmed = confirmed
     return row
 
 
@@ -67,6 +68,20 @@ class LeaveParticipantResolverTest(IsolatedAsyncioTestCase):
         self.user_emails_repository.list_by_emails.return_value = [
             _email_row("ann@u.circlecat.org", 99)
         ]
+
+        resolved = await self.resolver.resolve(self.session, ["ann"])
+
+        self.assertEqual(resolved.by_ldap, {})
+        self.assertEqual(resolved.unresolved, ("ann",))
+
+    async def test_an_unconfirmed_address_is_reported_not_paid(self):
+        """Anyone can add an address without owning it, so an unconfirmed one
+        does not tie an ldap to an account. It is named in the report rather
+        than dropped, so an employee who never confirmed is still seen."""
+        self.user_emails_repository.list_by_emails.return_value = [
+            _email_row("ann@circlecat.org", 11, confirmed=False)
+        ]
+        self.users_repository.get_all_by_ids.return_value = [_user(11)]
 
         resolved = await self.resolver.resolve(self.session, ["ann"])
 

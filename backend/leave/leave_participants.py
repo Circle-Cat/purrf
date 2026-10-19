@@ -121,8 +121,9 @@ class LeaveParticipantResolver:
         Returns:
             The matches, plus a named list for each way of missing:
 
-            * ``unresolved`` -- no account holds their corporate address, or
-              the address points at a user row that is no longer there.
+            * ``unresolved`` -- no account holds their corporate address
+              confirmed, or the address points at a user row that is no
+              longer there.
             * ``not_internal`` -- the account exists but ``users.is_internal``
               is false. That is the third admission condition, and it lives on
               the purrf row rather than in Azure, so it is checked here.
@@ -136,10 +137,12 @@ class LeaveParticipantResolver:
         rows = await self.user_emails_repository.list_by_emails(
             session, sorted(owner_by_ldap)
         )
+        # Unconfirmed addresses do not count: anyone can add one they do not
+        # own. Someone whose address is unconfirmed lands in ``unresolved``.
         account_by_ldap = {
             owner_by_ldap[row.email]: row.user_id
             for row in rows
-            if row.email in owner_by_ldap
+            if row.email in owner_by_ldap and row.otp_confirmed
         }
 
         users = await self.users_repository.get_all_by_ids(

@@ -1,6 +1,9 @@
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock, ANY
 from backend.utils.app_dependency_builder import AppDependencyBuilder
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.common.communication_enums import ContextType
 from backend.communication.inbox_sync_handler import INBOX_CONTEXT_TYPES
 from backend.common.environment_constants import (
@@ -373,6 +376,11 @@ class TestAppDependencyBuilder(TestCase):
             google_service=mock_google_service.return_value,
             google_chat_message_utils=mock_google_chat_messages_utils.return_value,
         )
+        activity_query_cache = builder.activity_query_cache
+        self.assertIsInstance(activity_query_cache, ActivityQueryCache)
+        self.assertIs(
+            builder.pubsub_push_service.activity_query_cache, activity_query_cache
+        )
         mock_historical_controller_cls.assert_called_once_with(
             logger=mock_logger,
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
@@ -383,6 +391,7 @@ class TestAppDependencyBuilder(TestCase):
             gerrit_sync_service=mock_gerrit_sync_service,
             google_chat_history_sync_service=mock_google_chat_history_sync_service,
             employment_sync_service=mock_employment_sync_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -395,6 +404,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
             retry_utils=mock_retry_utils_instance,
+            activity_query_cache=activity_query_cache,
         )
         mock_microsoft_meeting_chat_topic_cache_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -408,12 +418,14 @@ class TestAppDependencyBuilder(TestCase):
             retry_utils=mock_retry_utils_instance,
             date_time_util=mock_date_time_util_cls.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_google_calendar_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_gerrit_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -422,6 +434,7 @@ class TestAppDependencyBuilder(TestCase):
             ldap_service=mock_ldap_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
             gerrit_client=mock_gerrit_client,
+            activity_query_cache=activity_query_cache,
         )
         mock_google_chat_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -430,6 +443,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             google_service=mock_google_service.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_summary_service_cls.assert_called_once_with(
             ldap_service=mock_ldap_service_cls.return_value,
@@ -439,6 +453,8 @@ class TestAppDependencyBuilder(TestCase):
             gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_launchdarkly_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -770,6 +786,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             google_service=mock_google_service.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
 
         mock_internal_activity_controller_cls.assert_called_once_with(
@@ -783,6 +800,7 @@ class TestAppDependencyBuilder(TestCase):
             google_chat_analytics_service=mock_google_chat_analytics_service_cls.return_value,
             summary_service=mock_summary_service_cls.return_value,
             launchdarkly_service=mock_launchdarkly_service_cls.return_value,
+            database=mock_database_cls.return_value,
         )
         mock_users_repo_cls.assert_called_once()
         mock_experience_repo_cls.assert_called_once()

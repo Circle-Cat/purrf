@@ -31,6 +31,7 @@ py_test(
     name = "app_dependency_builder_test",
     srcs = ["app_dependency_builder_test.py"],
     deps = [
+        "//backend/internal_activity_service:activity_query_cache",
         "//backend/utils:app_dependency_builder",
     ],
 )

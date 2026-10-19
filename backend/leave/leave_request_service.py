@@ -631,8 +631,7 @@ class LeaveRequestService:
         Returns:
             True when the feature applies to them.
         """
-        rows = await self.user_emails_repository.list_by_user_id(session, user_id)
-        ldap = ldap_from_addresses(row.email for row in rows)
+        ldap = await self._confirmed_ldap(session, user_id)
         if ldap is not None:
             profiles = self.retry_utils.get_retry_on_transient(
                 self.redis_client.hgetall, LEAVE_EMPLOYMENT_KEY
@@ -882,10 +881,18 @@ class LeaveRequestService:
             )
         return resolved.by_ldap[manager_ldap]
 
-    async def _ldap_of(self, session: AsyncSession, user_id: int) -> str:
-        """This account's Azure ldap, taken from its corporate address."""
+    async def _confirmed_ldap(self, session: AsyncSession, user_id: int) -> str | None:
+        """This account's Azure ldap, or None, from a confirmed corporate address.
+
+        Unconfirmed addresses do not count: anyone can add one they do not own,
+        and read as theirs they would act as that employee.
+        """
         rows = await self.user_emails_repository.list_by_user_id(session, user_id)
-        ldap = ldap_from_addresses(row.email for row in rows)
+        return ldap_from_addresses(row.email for row in rows if row.otp_confirmed)
+
+    async def _ldap_of(self, session: AsyncSession, user_id: int) -> str:
+        """This account's Azure ldap, taken from its confirmed corporate address."""
+        ldap = await self._confirmed_ldap(session, user_id)
         if ldap is None:
             raise ValueError(
                 "This account has no corporate address, so its Azure record "

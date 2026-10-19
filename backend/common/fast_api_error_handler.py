@@ -1,5 +1,10 @@
 from http import HTTPStatus
-from backend.common.exceptions import ConflictError, NotFoundError, RateLimitedError
+from backend.common.exceptions import (
+    ActivityDataUnavailableError,
+    ConflictError,
+    NotFoundError,
+    RateLimitedError,
+)
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.logger import get_logger
 from fastapi import Request, FastAPI
@@ -22,6 +27,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     #   NotFoundError                       → 404 Not Found
     #   ConflictError                       → 409 Conflict
     #   RateLimitedError                    → 429 Too Many Requests
+    #   ActivityDataUnavailableError        → 503 Service Unavailable
     #   RuntimeError                        → 503 Service Unavailable
     #   Everything else                     → 500 Internal Server Error
     match exc:
@@ -35,7 +41,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             status = HTTPStatus.CONFLICT
         case RateLimitedError():
             status = HTTPStatus.TOO_MANY_REQUESTS
-        case RuntimeError():
+        case ActivityDataUnavailableError() | RuntimeError():
             status = HTTPStatus.SERVICE_UNAVAILABLE
         case _:
             status = HTTPStatus.INTERNAL_SERVER_ERROR
@@ -47,11 +53,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 
     # The design separates the "log message" from the "user-facing message".
     # The log message always contains the full raw error details.
-    log_msg = str(exc)
+    log_msg = exc.detail if isinstance(exc, ActivityDataUnavailableError) else str(exc)
 
     # The user-facing message hides sensitive details for server errors,
     # simplifies validation errors, and otherwise displays the original message.
-    if is_server_error:
+    # ActivityDataUnavailableError's message is fixed and safe to show.
+    if isinstance(exc, ActivityDataUnavailableError):
+        user_message = str(exc)
+    elif is_server_error:
         user_message = "Internal Server Error. Please contact support."
     elif isinstance(exc, RequestValidationError):
         first_error = exc.errors()[0]

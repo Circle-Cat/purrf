@@ -1,8 +1,9 @@
-import { useState, useContext, useEffect } from "react";
-import { useLDClient } from "launchdarkly-react-client-sdk";
+import { useState, useContext, useEffect, useMemo } from "react";
+import { LDProvider, useLDClient } from "launchdarkly-react-client-sdk";
 import { useAuth } from "@/context/auth";
 import { FlagsContext } from "./FlagsContext";
 import { ldReactContext } from "./ldReactContext";
+import { toLDContext } from "./ldContext";
 
 /**
  * Provides feature flag state to the component tree.
@@ -21,6 +22,31 @@ export function FlagsProvider({ children }) {
 }
 
 /**
+ * Starts the LaunchDarkly client once the signed-in user is known.
+ *
+ * Starting it earlier would make the SDK evaluate an anonymous context first, and each
+ * anonymous context counts as one more client-side monthly active user.
+ *
+ * Must be placed inside `AuthProvider` and around {@link LDIdentifier}, the only reader of
+ * the client.
+ */
+export function LDUserProvider({ children }) {
+  const { user } = useAuth();
+  const context = useMemo(() => (user ? toLDContext(user) : undefined), [user]);
+
+  return (
+    <LDProvider
+      clientSideID={import.meta.env.VITE_LAUNCHDARKLY_CLIENT_ID}
+      context={context}
+      deferInitialization
+      reactOptions={{ reactContext: ldReactContext }}
+    >
+      {children}
+    </LDProvider>
+  );
+}
+
+/**
  * Identifies the authenticated user with LaunchDarkly and syncs flag values into
  * {@link FlagsContext}.
  *
@@ -31,7 +57,7 @@ export function FlagsProvider({ children }) {
  * on a flag being off can tell "off" apart from "not answered yet".
  *
  * Uses `ldReactContext` explicitly so that `useLDClient` reads from the same context
- * instance that `withLDProvider` writes to, regardless of bundle chunk boundaries.
+ * instance that {@link LDUserProvider} writes to, regardless of bundle chunk boundaries.
  */
 export function LDIdentifier() {
   const ldClient = useLDClient(ldReactContext);
@@ -42,13 +68,7 @@ export function LDIdentifier() {
     if (!ldClient || !user) return;
 
     ldClient
-      .identify({
-        kind: "user",
-        key: user.sub,
-        userId: user.userId,
-        email: user.email,
-        identity_type: user.identityType,
-      })
+      .identify(toLDContext(user))
       .then(() => {
         setFlags(ldClient.allFlags());
       })

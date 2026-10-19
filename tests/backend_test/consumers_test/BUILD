@@ -22,6 +22,7 @@ py_test(
     deps = [
         "//backend/common:constants",
         "//backend/consumers:pubsub_push_service",
+        "//backend/internal_activity_service:activity_query_cache",
     ],
 )
 

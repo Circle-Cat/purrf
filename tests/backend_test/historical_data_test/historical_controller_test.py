@@ -46,6 +46,7 @@ class TestHistoricalController(unittest.TestCase):
         self.mock_gerrit_service = MagicMock()
         self.mock_google_chat_service = MagicMock()
         self.mock_employment_sync_service = AsyncMock()
+        self.mock_activity_query_cache = MagicMock()
 
         # Initialize controller with mocked services
         self.controller = HistoricalController(
@@ -58,6 +59,7 @@ class TestHistoricalController(unittest.TestCase):
             gerrit_sync_service=self.mock_gerrit_service,
             google_chat_history_sync_service=self.mock_google_chat_service,
             employment_sync_service=self.mock_employment_sync_service,
+            activity_query_cache=self.mock_activity_query_cache,
         )
 
         # Assemble FastAPI app. Instead of the real AuthMiddleware (whose
@@ -350,6 +352,89 @@ class TestHistoricalController(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+
+    def test_every_successful_sync_clears_the_activity_query_cache(self):
+        """Freshly synced data must show without waiting out the cache TTL."""
+        self._set_authenticated_user()
+        self.mock_datetime_utils.resolve_start_end_timestamps.return_value = (
+            "ts1",
+            "ts2",
+        )
+        self.mock_jira_service.process_update_jira_issues.return_value = []
+        self.mock_jira_service.backfill_all_jira_issues.return_value = 0
+        self.mock_jira_service.sync_jira_projects_id_and_name_mapping.return_value = 0
+        self.mock_gerrit_service.sync_gerrit_projects.return_value = 0
+        self.mock_google_chat_service.sync_history_messages.return_value = {}
+        requests = [
+            (MICROSOFT_BACKFILL_LDAPS_ENDPOINT, None),
+            (MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT.format(chatId="c1"), None),
+            (JIRA_SYNC_PROJECTS_ENDPOINT, None),
+            (JIRA_BACKFILL_ISSUES_ENDPOINT, None),
+            (f"{JIRA_UPDATE_ISSUES_ENDPOINT}?hours=1", None),
+            (GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT, {}),
+            (GERRIT_BACKFILL_CHANGES_ENDPOINT, {}),
+            (GERRIT_BACKFILL_PROJECTS_ENDPOINT, None),
+            (GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT, None),
+        ]
+
+        for url, body in requests:
+            with self.subTest(url=url):
+                self.mock_activity_query_cache.reset_mock()
+
+                response = self.client.post(url, json=body, headers=self.headers)
+
+                self.assertEqual(response.status_code, HTTPStatus.OK)
+                self.mock_activity_query_cache.clear.assert_called_once()
+
+    def test_every_failed_sync_still_clears_the_activity_query_cache(self):
+        """A sync failing midway may already have written part of its data."""
+        self._set_authenticated_user()
+        self.mock_datetime_utils.resolve_start_end_timestamps.return_value = (
+            "ts1",
+            "ts2",
+        )
+        failure = RuntimeError("source unreachable")
+        self.mock_ms_member_service.sync_microsoft_members_to_redis.side_effect = (
+            failure
+        )
+        self.mock_ms_chat_service.sync_microsoft_chat_messages_by_chat_id.side_effect = failure
+        self.mock_jira_service.process_update_jira_issues.side_effect = failure
+        self.mock_jira_service.backfill_all_jira_issues.side_effect = failure
+        self.mock_jira_service.sync_jira_projects_id_and_name_mapping.side_effect = (
+            failure
+        )
+        self.mock_google_calendar_service.pull_calendar_history.side_effect = failure
+        self.mock_gerrit_service.fetch_and_store_changes.side_effect = failure
+        self.mock_gerrit_service.sync_gerrit_projects.side_effect = failure
+        self.mock_google_chat_service.sync_history_messages.side_effect = failure
+        requests = [
+            (MICROSOFT_BACKFILL_LDAPS_ENDPOINT, None),
+            (MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT.format(chatId="c1"), None),
+            (JIRA_SYNC_PROJECTS_ENDPOINT, None),
+            (JIRA_BACKFILL_ISSUES_ENDPOINT, None),
+            (f"{JIRA_UPDATE_ISSUES_ENDPOINT}?hours=1", None),
+            (GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT, {}),
+            (GERRIT_BACKFILL_CHANGES_ENDPOINT, {}),
+            (GERRIT_BACKFILL_PROJECTS_ENDPOINT, None),
+            (GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT, None),
+        ]
+
+        for url, body in requests:
+            with self.subTest(url=url):
+                self.mock_activity_query_cache.reset_mock()
+
+                with self.assertRaises(RuntimeError):
+                    self.client.post(url, json=body, headers=self.headers)
+
+                self.mock_activity_query_cache.clear.assert_called_once()
+
+    def test_rejected_sync_request_leaves_the_activity_query_cache_alone(self):
+        self._set_authenticated_user()
+
+        response = self.client.post(JIRA_UPDATE_ISSUES_ENDPOINT, headers=self.headers)
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.mock_activity_query_cache.clear.assert_not_called()
 
 
 if __name__ == "__main__":
