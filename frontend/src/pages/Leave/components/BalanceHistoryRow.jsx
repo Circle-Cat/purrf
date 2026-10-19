@@ -9,7 +9,7 @@ import { formatBusinessDate } from "@/pages/Leave/utils/leaveDates";
  * Matches the prototype: title + note on the left, colored hours + date on the right.
  */
 
-const BalanceHistoryRow = ({ entry }) => {
+const BalanceHistoryRow = ({ entry, person }) => {
   const displayType = ENTRY_TYPE_LABELS[entry.entryType] || entry.entryType;
   const formattedDate = formatBusinessDate(entry.effectiveDate);
 
@@ -26,7 +26,15 @@ const BalanceHistoryRow = ({ entry }) => {
   return (
     <li className="flex items-baseline justify-between gap-4 py-2.5 px-4 sm:px-6">
       <div>
-        <span className="text-sm font-medium">{displayType}</span>
+        <span className="text-sm font-medium">
+          {person
+            ? person.name
+              ? `${person.name} · ${person.ldap}`
+              : entry?.userId
+                ? `User ${entry.userId} — unavailable`
+                : displayType
+            : displayType}
+        </span>
         {entry.note && (
           <p className="mt-0.5 text-xs text-muted-foreground">{entry.note}</p>
         )}

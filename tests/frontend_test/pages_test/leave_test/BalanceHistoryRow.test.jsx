@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import BalanceHistoryRow from "@/pages/Leave/BalanceHistoryPage/components/BalanceHistoryRow";
+import BalanceHistoryRow from "@/pages/Leave/components/BalanceHistoryRow";
 import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest";
 
 vi.mock("@/pages/Leave/utils/leaveDates", () => ({
@@ -164,5 +164,38 @@ describe("BalanceHistoryRow", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/\+16\.00\s*h/)).toBeInTheDocument();
     expect(screen.getByText("Swapped National Day")).toBeInTheDocument();
+  });
+
+  it("without person nothing extra renders", () => {
+    render(<BalanceHistoryRow entry={entry()} />);
+
+    expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+  });
+
+  it("with person the name, a middle dot and the ldap show", () => {
+    const mockPerson = {
+      name: "Alice Smith",
+      ldap: "asmith",
+    };
+
+    render(<BalanceHistoryRow entry={entry()} person={mockPerson} />);
+
+    expect(screen.getByText(/Alice Smith/)).toBeInTheDocument();
+    expect(screen.getByText(/asmith/)).toBeInTheDocument();
+    expect(screen.getByText(/·/)).toBeInTheDocument();
+  });
+
+  it("with an unresolved name it reads User <id> — unavailable", () => {
+    const unresolvedPerson = {};
+
+    render(
+      <BalanceHistoryRow
+        entry={entry({ userId: 42 })}
+        person={unresolvedPerson}
+      />,
+    );
+
+    expect(screen.getByText("User 42 — unavailable")).toBeInTheDocument();
   });
 });

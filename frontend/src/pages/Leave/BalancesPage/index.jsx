@@ -54,7 +54,7 @@ const EXCLUSION_GROUPS = [
  *
  * @returns {JSX.Element}
  */
-const LeaveBalancesPage = () => {
+const LeaveBalancesPage = ({ onViewHistory }) => {
   const {
     people,
     excluded,
@@ -147,6 +147,14 @@ const LeaveBalancesPage = () => {
                         >
                           {`${person.balanceHours} h`}
                         </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onViewHistory?.(person.userId)}
+                        >
+                          View history
+                        </Button>
+
                         <Button
                           variant="outline"
                           onClick={() => setAdjusting(person)}
