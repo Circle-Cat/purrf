@@ -179,3 +179,28 @@ export async function adjustLeaveBalance(payload) {
 export async function getMyLeaveLedger() {
   return await request.get(API_ENDPOINTS.LEAVE_ME_LEDGER);
 }
+
+/**
+ * Fetches the company-wide leave ledger entries with optional person filtering and pagination.
+ *
+ * Designed for administrators (requires LEAVE_ADMIN permission).
+ * Hours are returned as server-formatted strings and should not be calculated locally.
+ *
+ * @param {object} params - The query parameters.
+ * @param {number|null} [params.userId] - Optional user ID to filter by. Omitted if null/undefined.
+ * @param {number} [params.page=1] - Page number (1-based).
+ * @param {number} [params.pageSize=50] - Number of items per page.
+ * @returns {Promise<object>} The API envelope; `data` contains `entries`, `page`, `pageSize`, and `totalEntries`.
+ */
+export async function getLeaveLedger({ userId, page = 1, pageSize = 50 } = {}) {
+  const params = {
+    page,
+    pageSize,
+  };
+
+  if (userId !== null && userId !== undefined) {
+    params.userId = userId;
+  }
+
+  return await request.get(API_ENDPOINTS.LEAVE_LEDGER, { params });
+}

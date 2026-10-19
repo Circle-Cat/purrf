@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import * as api from "@/api/leaveApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
 import { FlagsContext } from "@/context/flags";
 
 vi.mock("@/api/leaveApi");
+vi.mock("@/pages/Leave/hooks/useLeaveBalances");
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 
 const envelope = (data) => ({ success: true, message: "ok", data });
@@ -26,6 +28,31 @@ const renderPage = () =>
 describe("LeaveAdminPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    vi.mocked(useLeaveBalances).mockReturnValue({
+      people: [
+        {
+          userId: 42,
+          name: "Alice Smith",
+          ldap: "asmith",
+          annualHours: 160,
+          balanceHours: "40.00",
+          level: "L3",
+          problems: [],
+        },
+      ],
+      excluded: {},
+      profileCount: 1,
+      isLoading: false,
+      loadError: false,
+      isSaving: false,
+      saveError: null,
+      lastResult: null,
+      clearResult: vi.fn(),
+      load: vi.fn(),
+      adjust: vi.fn(),
+    });
+
     useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.LEAVE_MANAGEMENT]: true });
     api.getLeaveBalances.mockResolvedValue(
       envelope({
@@ -45,6 +72,13 @@ describe("LeaveAdminPage", () => {
     );
     api.getLeaveHolidays.mockResolvedValue(
       envelope({ year: 2026, totalDays: 0, segments: [] }),
+    );
+
+    api.getLeaveLedger.mockResolvedValue(
+      envelope({
+        entries: [],
+        totalEntries: 0,
+      }),
     );
   });
 
@@ -90,11 +124,39 @@ describe("LeaveAdminPage", () => {
     expect(
       screen.getByRole("tab", { name: "Yearly setup" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Ledger" })).toBeInTheDocument();
   });
 
   it("opens on the balances, which is what an admin comes to read", async () => {
     renderPage();
 
-    await waitFor(() => expect(api.getLeaveBalances).toHaveBeenCalled());
+    await waitFor(() => expect(useLeaveBalances).toHaveBeenCalled());
+    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+  });
+
+  it("switches to Ledger tab and passes userId when 'View history' is clicked in Balances", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+    });
+
+    const viewHistoryButton = screen.getByRole("button", {
+      name: "View history",
+    });
+    fireEvent.click(viewHistoryButton);
+
+    await waitFor(() => {
+      expect(api.getLeaveLedger).toHaveBeenCalledWith({
+        userId: 42,
+        page: 1,
+        pageSize: 50,
+      });
+    });
+
+    await waitFor(() => {
+      const select = screen.getByLabelText(/Filter by Person/i);
+      expect(select).toHaveValue("42");
+    });
   });
 });

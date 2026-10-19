@@ -1,10 +1,12 @@
 import { Navigate } from "react-router-dom";
-
+import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import LeaveBalancesPanel from "@/pages/Leave/BalancesPage";
 import LeaveCalendarPanel from "@/pages/Leave/CalendarAdminPage";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
+import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
+import LedgerPage from "@/pages/Leave/LedgerPage";
 
 /**
  * LeaveAdminPage
@@ -21,6 +23,11 @@ import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
  */
 const LeaveAdminPage = () => {
   const { isEnabled, isReady } = useLeaveEnabled();
+  const { people } = useLeaveBalances();
+
+  const [tab, setTab] = useState("balances");
+  const [ledgerUserId, setLedgerUserId] = useState(null);
+  const [ledgerPage, setLedgerPage] = useState(1);
 
   if (!isReady) {
     return null;
@@ -30,19 +37,42 @@ const LeaveAdminPage = () => {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
   }
 
+  const handleViewHistory = (userId) => {
+    setLedgerUserId(userId);
+    setLedgerPage(1);
+    setTab("ledger");
+  };
+
+  const handleLedgerUserChange = (userId) => {
+    setLedgerUserId(userId);
+    setLedgerPage(1);
+  };
+
   return (
     <div className="space-y-5">
       <h2 className="m-0 text-lg font-medium">Leave administration</h2>
-      <Tabs defaultValue="balances">
+      <Tabs onValueChange={setTab} value={tab}>
         <TabsList>
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="calendar">Yearly setup</TabsTrigger>
+          <TabsTrigger value="ledger">Ledger</TabsTrigger>
         </TabsList>
+
         <TabsContent value="balances" className="pt-4">
-          <LeaveBalancesPanel />
+          <LeaveBalancesPanel onViewHistory={handleViewHistory} />
         </TabsContent>
+
         <TabsContent value="calendar" className="pt-4">
           <LeaveCalendarPanel />
+        </TabsContent>
+        <TabsContent value="ledger" className="pt-4">
+          <LedgerPage
+            userId={ledgerUserId}
+            page={ledgerPage}
+            onUserChange={handleLedgerUserChange}
+            onPageChange={setLedgerPage}
+            people={people}
+          />
         </TabsContent>
       </Tabs>
     </div>

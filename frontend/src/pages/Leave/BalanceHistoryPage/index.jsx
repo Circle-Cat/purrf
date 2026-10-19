@@ -5,7 +5,7 @@ import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { useMyLeaveLedger } from "@/pages/Leave/hooks/useMyLeaveLedger";
-import BalanceHistoryRow from "@/pages/Leave/BalanceHistoryPage/components/BalanceHistoryRow";
+import BalanceHistoryRow from "@/pages/Leave/components/BalanceHistoryRow";
 import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 
 export default function BalanceHistoryPage() {
