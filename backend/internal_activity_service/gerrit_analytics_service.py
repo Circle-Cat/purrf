@@ -253,7 +253,7 @@ class GerritAnalyticsService:
                 queued += 1
 
         results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute), queued
+            self.retry_utils.execute_pipeline(pipeline), queued
         )
         self.logger.debug(
             "[get_gerrit_stats] Pipeline executed, got %d results.", len(results)

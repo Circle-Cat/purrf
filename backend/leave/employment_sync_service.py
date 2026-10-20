@@ -171,7 +171,7 @@ class EmploymentSyncService:
             self.logger.info(f"Wrote {len(changed)} employment profiles.")
 
         if changes_made:
-            self.retry_utils.get_retry_on_transient(pipe.execute)
+            self.retry_utils.execute_pipeline(pipe)
         else:
             self.logger.info("Employment profiles unchanged, skipping write.")
 

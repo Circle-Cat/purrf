@@ -23,6 +23,7 @@ py_test(
     ],
     deps = [
         "//backend/utils:retry_utils",
+        "@pypi//redis",
         "@pypi//tenacity",
     ],
 )

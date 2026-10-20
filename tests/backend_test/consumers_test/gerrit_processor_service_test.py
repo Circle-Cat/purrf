@@ -33,6 +33,9 @@ class TestStorePayload(unittest.TestCase):
         )
 
         self.mock_retry.get_retry_on_transient.side_effect = lambda func: func()
+        self.mock_retry.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         # Preset date utility to return a fixed weekly bucket for assertion
         self.bucket_value = "2025-W20"

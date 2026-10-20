@@ -144,7 +144,7 @@ class MicrosoftChatAnalyticsService:
             )
 
         counts = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            self.retry_utils.execute_pipeline(pipeline),
             len(ldap_list),
         )
         self.logger.debug(f"Redis pipeline zcount results: {counts}")

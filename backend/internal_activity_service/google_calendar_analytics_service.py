@@ -115,7 +115,7 @@ class GoogleCalendarAnalyticsService:
             pipeline.zrange(events_key, start_ts, end_ts, byscore=True)
 
         ldap_event_id_lists = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            self.retry_utils.execute_pipeline(pipeline),
             len(events_key_by_ldap),
         )
         # Keyed by the deduplicated ldaps the commands were queued for.
@@ -138,7 +138,7 @@ class GoogleCalendarAnalyticsService:
             pipeline.smembers(key)
 
         attendance_results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            self.retry_utils.execute_pipeline(pipeline),
             len(attendance_keys),
         )
         attendance_data_map = {}  # (ldap, event_id) -> attendance_record
@@ -168,7 +168,7 @@ class GoogleCalendarAnalyticsService:
             pipeline.get(key)
 
         event_detail_results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            self.retry_utils.execute_pipeline(pipeline),
             len(event_detail_keys),
         )
         base_event_detail_map = {}

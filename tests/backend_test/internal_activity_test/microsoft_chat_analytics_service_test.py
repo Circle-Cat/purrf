@@ -23,7 +23,9 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         self.mock_ldap_service = Mock()
         self.mock_retry_utils = Mock()
 
-        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func()
+        self.mock_retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         self.service = MicrosoftChatAnalyticsService(
             logger=self.mock_logger,
@@ -77,9 +79,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             )
         mock_pipeline.zcount.assert_has_calls(expected_zcount_calls, any_order=False)
         self.assertEqual(mock_pipeline.zcount.call_count, len(ldap_list))
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            mock_pipeline.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(mock_pipeline)
         mock_pipeline.execute.assert_called_once()
 
         expected_result = {

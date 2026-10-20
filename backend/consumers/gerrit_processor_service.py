@@ -144,7 +144,7 @@ class GerritProcessorService:
         event instead of finding it already claimed and dropping it.
         """
         try:
-            self.retry_utils.get_retry_on_transient(pipeline.execute)
+            self.retry_utils.execute_pipeline(pipeline)
         except Exception:
             try:
                 self.retry_utils.get_retry_on_transient(release)
@@ -340,7 +340,7 @@ class GerritProcessorService:
                 cl_created_unix_timestamp,
             )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
 
     def _handle_change_deleted(self, payload: dict) -> None:
         """
@@ -363,7 +363,7 @@ class GerritProcessorService:
             pipeline, owner_ldap, project, change_number, original_change_status
         )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info("[GerritProcessorService] Deleted CL: %s ", change_number)
 
     def _handle_patchset_created(self, payload: dict) -> None:
@@ -421,7 +421,7 @@ class GerritProcessorService:
             GerritChangeStatus.NEW,
             cl_created_unix_timestamp,
         )
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info(
             "[GerritProcessorService] Tracked new under-review CL: %s (project: %s) as NEW (score: %s).",
             change_number,
@@ -569,7 +569,7 @@ class GerritProcessorService:
             GerritChangeStatus.ABANDONED,
             abandoned_unix_timestamp,
         )
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info(
             "[GerritProcessorService] Abandoned CL %s (project: %s) at %s: moved from NEW to ABANDONED; cleared dedupe key.",
             change_number,
@@ -626,7 +626,7 @@ class GerritProcessorService:
             cl_created_unix_timestamp,
         )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info(
             "[GerritProcessorService] Restored CL %s (project: %s) at %s: moved from ABANDONED to NEW (score: %s).",
             change_number,

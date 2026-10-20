@@ -98,7 +98,7 @@ class MicrosoftMeetingChatTopicCacheService:
                 topics_to_cache[chat.id] = chat.topic
                 pipeline.hset(MICROSOFT_CHAT_TOPICS, chat.id, chat.topic)
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
 
         self.logger.info(f"Cached {len(topics_to_cache)} chat topics to Redis.")
 
