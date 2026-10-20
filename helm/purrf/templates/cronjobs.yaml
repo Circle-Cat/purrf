@@ -24,7 +24,7 @@ spec:
           serviceAccountName: {{ include "purrf.serviceAccountName" $ }}
           containers:
             - name: {{ .name }}
-              image: curlimages/curl:latest
+              image: {{ $.Values.cronjobDefaults.image }}
               command:
                 - /bin/sh
                 - -c
