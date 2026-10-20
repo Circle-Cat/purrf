@@ -46,11 +46,17 @@ _OLDER_RUN = "run-older-tab"
 _NEWER_RUN = "run-newer-tab"
 
 
+# What our player sends: renderCommitCMI(true) always carries total_time.
 _COMMIT = {
     "cmi.core.lesson_status": "incomplete",
     "cmi.core.lesson_location": "Summary",
     "cmi.suspend_data": "x" * 5000,
     "cmi.core.session_time": "00:02:30",
+    "cmi.core.total_time": "00:02:30",
+}
+# A course driving the API without total_time.
+_SESSION_TIME_ONLY_COMMIT = {
+    key: value for key, value in _COMMIT.items() if key != "cmi.core.total_time"
 }
 
 
@@ -122,17 +128,6 @@ class TestNonStringValues(_ProgressServiceCase):
         self.assertEqual(self._saved_columns(), {"lesson_location": "Summary"})
         self.logger.warning.assert_called()
 
-    async def test_a_non_string_session_time_adds_nothing(self):
-        await self.service.save(
-            self.session,
-            _TRAINING_ID,
-            _USER_ID,
-            {"cmi.core.session_time": {"minutes": 3}},
-            session_token=_session_token(),
-        )
-
-        self.assertEqual(self._saved_columns()["session_time_seconds"], 0)
-
     async def test_a_non_string_score_is_dropped_like_an_unstorable_one(self):
         await self.service.save(
             self.session,
@@ -188,11 +183,13 @@ class TestSave(_ProgressServiceCase):
         self.assertEqual(saved["suspend_data"], "")
         self.assertEqual(saved["lesson_location"], "")
 
-    async def test_session_time_falls_back_to_accumulating_when_total_time_is_absent(
+    async def test_session_time_without_total_time_leaves_the_stored_time_alone(
         self,
     ):
-        """The real player always sends total_time; this covers a payload
-        that does not, so the older accumulation rule still has a test."""
+        """session_time is this session so far and is committed many times
+        per session, so adding it would count the same time again. The real
+        player always sends total_time; a payload that does not stores the
+        rest of the commit, keeps the banked time and says so."""
         self.progress_repository.get_by_training_id.return_value = (
             TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=500)
         )
@@ -201,11 +198,15 @@ class TestSave(_ProgressServiceCase):
             self.session,
             _TRAINING_ID,
             _USER_ID,
-            _COMMIT,
+            _SESSION_TIME_ONLY_COMMIT,
             session_token=_session_token(),
         )
 
-        self.assertEqual(self._saved_columns()["session_time_seconds"], 650)
+        saved = self._saved_columns()
+        self.assertNotIn("session_time_seconds", saved)
+        self.assertEqual(saved["lesson_location"], "Summary")
+        self.logger.warning.assert_called()
+        self.assertIn("total_time", self.logger.warning.call_args.args[0])
 
     async def test_session_time_comes_from_total_time_when_present(self):
         """scorm-again's total_time is already seeded-total plus this
@@ -275,12 +276,12 @@ class TestSave(_ProgressServiceCase):
             self.session,
             _TRAINING_ID,
             _USER_ID,
-            {**_COMMIT, "cmi.core.session_time": "not a timespan"},
+            {**_SESSION_TIME_ONLY_COMMIT, "cmi.core.session_time": "not a timespan"},
             session_token=_session_token(),
         )
 
         saved = self._saved_columns()
-        self.assertEqual(saved["session_time_seconds"], 0)
+        self.assertNotIn("session_time_seconds", saved)
         self.assertEqual(saved["lesson_location"], "Summary")
 
     async def test_a_malformed_total_time_leaves_the_stored_value_alone(self):
@@ -690,10 +691,7 @@ class TestSave(_ProgressServiceCase):
     async def test_an_identical_commit_writes_nothing(self):
         """The driver commits every 20 seconds whether anything changed or not.
 
-        Carries cmi.core.total_time, as our own player always does -- the
-        session_time-only fallback below is a different, stateful case that
-        must never be skipped (see
-        test_a_fallback_session_time_commit_is_never_skipped).
+        Carries cmi.core.total_time, as our own player always does.
         """
         self.progress_repository.get_by_training_id.return_value = (
             TrainingProgressEntity(
@@ -886,38 +884,10 @@ class TestSave(_ProgressServiceCase):
 
         self.progress_repository.upsert.assert_awaited()
 
-    async def test_a_fallback_session_time_commit_is_never_skipped(self):
-        """The session_time fallback's delta lives only in this one commit --
-        unlike total_time, which is recomputed fresh from a stable seed on
-        every commit, skipping this write discards the delta permanently
-        rather than merely delaying an accurate figure. Our own player
-        always sends total_time, so this path is dormant in production
-        today, but a dormant trap is exactly the one that fires years later
-        when somebody revives the path."""
-        fallback_commit = {
-            "cmi.core.lesson_status": "incomplete",
-            "cmi.core.lesson_location": "Summary",
-            "cmi.suspend_data": "x" * 5000,
-            "cmi.core.session_time": "00:00:30",
-        }
-        self.progress_repository.get_by_training_id.return_value = (
-            TrainingProgressEntity(
-                training_id=_TRAINING_ID,
-                lesson_status="incomplete",
-                lesson_location="Summary",
-                suspend_data="x" * 5000,
-                session_time_seconds=0,
-            )
-        )
-
-        await self.service.save(
-            self.session,
-            _TRAINING_ID,
-            _USER_ID,
-            fallback_commit,
-            session_token=_session_token(),
-        )
-
+    async def test_a_session_time_only_commit_is_skipped_like_any_other(self):
+        """Without total_time nothing about the time is stored, so an idle
+        tab's repeated session_time-only commit is unchanged content and is
+        not written again."""
         self.progress_repository.get_by_training_id.return_value = (
             TrainingProgressEntity(
                 training_id=_TRAINING_ID,
@@ -932,13 +902,16 @@ class TestSave(_ProgressServiceCase):
             self.session,
             _TRAINING_ID,
             _USER_ID,
-            fallback_commit,
+            {
+                "cmi.core.lesson_status": "incomplete",
+                "cmi.core.lesson_location": "Summary",
+                "cmi.suspend_data": "x" * 5000,
+                "cmi.core.session_time": "00:00:30",
+            },
             session_token=_session_token(),
         )
 
-        self.assertEqual(self.progress_repository.upsert.call_count, 2)
-        second_call = self.progress_repository.upsert.call_args_list[1].kwargs
-        self.assertEqual(second_call["session_time_seconds"], 60)
+        self.progress_repository.upsert.assert_not_awaited()
 
     async def test_the_write_is_committed_after_the_upsert(self):
         order = []
