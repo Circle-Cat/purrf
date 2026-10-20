@@ -105,7 +105,7 @@ class LdapService:
             key_map[key] = (group.value, status.value)
 
         results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute), queued
+            self.retry_utils.execute_pipeline(pipeline), queued
         )
 
         organized_results = {}
@@ -147,7 +147,7 @@ class LdapService:
             pipeline.hkeys(k)
 
         results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute), len(keys)
+            self.retry_utils.execute_pipeline(pipeline), len(keys)
         )
 
         ldap_set: set[str] = set()
@@ -197,7 +197,7 @@ class LdapService:
             pipeline.hkeys(k)
 
         results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute), len(keys)
+            self.retry_utils.execute_pipeline(pipeline), len(keys)
         )
 
         ldap_set: set[str] = set()

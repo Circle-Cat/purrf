@@ -43,6 +43,9 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.retry_utils.get_retry_on_transient.side_effect = (
             lambda func, *args, **kwargs: func(*args, **kwargs)
         )
+        self.retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         self.service = GerritAnalyticsService(
             logger=self.logger,

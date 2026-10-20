@@ -163,7 +163,7 @@ class GoogleChatAnalyticsService:
                 query_keys.append((space_id, sender_ldap))
 
         pipeline_results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            self.retry_utils.execute_pipeline(pipeline),
             len(query_keys),
         )
         self.logger.debug(

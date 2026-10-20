@@ -70,7 +70,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         mock_pipeline = Mock()
         self.mock_redis.pipeline.return_value = mock_pipeline
 
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+        self.mock_retry_utils.execute_pipeline.side_effect = [
             [["event123"]],
             [
                 [
@@ -91,8 +91,8 @@ class TestGoogleCalendarAnalyticsService(TestCase):
                     "is_recurring": True,
                 })
             ],
-            "Personal Calendar",
         ]
+        self.mock_retry_utils.get_retry_on_transient.return_value = "Personal Calendar"
 
         expected_result = {
             "user1": [
@@ -119,7 +119,10 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         self.assertEqual(result, expected_result)
 
         self.assertTrue(self.mock_redis.pipeline.called)
-        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
+        self.assertEqual(self.mock_retry_utils.execute_pipeline.call_count, 3)
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
+            self.mock_redis.hget, "calendarlist", calendar_id
+        )
 
     def test_get_all_events_from_calendars_success(self):
         calendar_ids = ["cal1", "cal2"]
@@ -215,7 +218,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
 
         mock_pipeline = Mock()
         self.mock_redis.pipeline.return_value = mock_pipeline
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+        self.mock_retry_utils.execute_pipeline.side_effect = [
             [["event123"]],  # get event ids
             [
                 [
@@ -236,8 +239,8 @@ class TestGoogleCalendarAnalyticsService(TestCase):
                     "is_recurring": True,
                 })
             ],  # get event details
-            "Personal Calendar",  # get calendar name
         ]
+        self.mock_retry_utils.get_retry_on_transient.return_value = "Personal Calendar"
 
         expected_result = {
             "user1": [
@@ -263,7 +266,10 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         result = self.service.get_all_events(calendar_id, ldaps, start_date, end_date)
         self.assertEqual(result, expected_result)
         self.assertTrue(self.mock_redis.pipeline.called)
-        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
+        self.assertEqual(self.mock_retry_utils.execute_pipeline.call_count, 3)
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
+            self.mock_redis.hget, "calendarlist", calendar_id
+        )
         self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
 
     def test_get_all_events_with_ldaps_empty(self):
@@ -280,7 +286,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
 
         mock_pipeline = Mock()
         self.mock_redis.pipeline.return_value = mock_pipeline
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+        self.mock_retry_utils.execute_pipeline.side_effect = [
             [["event456"]],  # get event ids
             [
                 [
@@ -297,8 +303,8 @@ class TestGoogleCalendarAnalyticsService(TestCase):
                     "is_recurring": False,
                 })
             ],  # get event details
-            "Personal Calendar",  # get calendar name
         ]
+        self.mock_retry_utils.get_retry_on_transient.return_value = "Personal Calendar"
 
         expected_result = {
             "user2": [
@@ -320,7 +326,10 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         result = self.service.get_all_events(calendar_id, ldaps, start_date, end_date)
         self.assertEqual(result, expected_result)
         self.assertTrue(self.mock_redis.pipeline.called)
-        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
+        self.assertEqual(self.mock_retry_utils.execute_pipeline.call_count, 3)
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
+            self.mock_redis.hget, "calendarlist", calendar_id
+        )
         self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
 
     def test_get_all_events_from_calendars_with_ldaps_none(self):
@@ -410,12 +419,12 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         start_date = datetime.fromisoformat("2025-07-01")
         end_date = datetime.fromisoformat("2025-08-02")
         self.mock_redis.pipeline.return_value = Mock()
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+        self.mock_retry_utils.execute_pipeline.side_effect = [
             [[], ["event2"]],
             [self._attendance()],
             [self._event_detail()],
-            "Personal",
         ]
+        self.mock_retry_utils.get_retry_on_transient.return_value = "Personal"
 
         result = self.service.get_all_events(
             "personal", ["user1", "user1", "user2"], start_date, end_date
@@ -426,7 +435,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
 
     def test_get_all_events_short_event_id_result_raises(self):
         self.mock_redis.pipeline.return_value = Mock()
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [[["event1"]]]
+        self.mock_retry_utils.execute_pipeline.side_effect = [[["event1"]]]
 
         with self.assertRaises(ActivityDataUnavailableError):
             self.service.get_all_events(
@@ -438,7 +447,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
 
     def test_get_all_events_short_attendance_result_raises(self):
         self.mock_redis.pipeline.return_value = Mock()
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+        self.mock_retry_utils.execute_pipeline.side_effect = [
             [["event1", "event2"]],
             [self._attendance()],
         ]
@@ -453,7 +462,7 @@ class TestGoogleCalendarAnalyticsService(TestCase):
 
     def test_get_all_events_error_in_event_detail_results_raises(self):
         self.mock_redis.pipeline.return_value = Mock()
-        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+        self.mock_retry_utils.execute_pipeline.side_effect = [
             [["event1"]],
             [self._attendance()],
             [Exception("WRONGTYPE")],

@@ -201,7 +201,7 @@ class JiraAnalyticsService:
             request_keys_and_info.append((ldap, status))
 
         first_results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(first_pipeline.execute),
+            self.retry_utils.execute_pipeline(first_pipeline),
             len(request_keys_and_info),
         )
 
@@ -236,7 +236,7 @@ class JiraAnalyticsService:
                         issue_info_for_story_point_retrieval.append((issue_id, ldap))
 
             story_point_results = checked_pipeline_results(
-                self.retry_utils.get_retry_on_transient(story_point_pipeline.execute),
+                self.retry_utils.execute_pipeline(story_point_pipeline),
                 len(issue_info_for_story_point_retrieval),
             )
 
@@ -294,7 +294,7 @@ class JiraAnalyticsService:
             pipeline.hgetall(redis_key)
 
         pipeline_results = checked_pipeline_results(
-            self.retry_utils.get_retry_on_transient(pipeline.execute),
+            self.retry_utils.execute_pipeline(pipeline),
             len(issue_ids),
         )
 

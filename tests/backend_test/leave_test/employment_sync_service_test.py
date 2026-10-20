@@ -49,6 +49,7 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
         self.microsoft_service = MagicMock()
         self.retry_utils = MagicMock()
         self.retry_utils.get_retry_on_transient = lambda fn, *a, **kw: fn(*a, **kw)
+        self.retry_utils.execute_pipeline = lambda pipeline: pipeline.execute()
         self.session = MagicMock()
         self.session.commit = AsyncMock()
         self.database = MagicMock()
