@@ -55,7 +55,8 @@ module "purrf_instance" {
   gmail_sender_notification = "notification-test@circlecat.org"
   gmail_sender_mentorship   = "mentorship-test@circlecat.org"
   gmail_sender_inquiries    = "inquiries-test@circlecat.org"
-  gmail_inbox_enabled       = true
+  # Staging claims the aliases' mail; see its main.tf.
+  gmail_inbox_enabled = false
 
   # The matcher pipeline is brought up here first. Setting matcher_image_tag
   # to an image pushed to the shared repository is what creates the job. The

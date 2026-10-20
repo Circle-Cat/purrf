@@ -17,6 +17,14 @@ ingress:
   enabled: true
   className: cloudflare2-tunnel
   hosts:
+    # SCORM course files, same pods as staging-api. Not covered by any
+    # Cloudflare Access application, so every request carries a signed path
+    # token. Listed first so the staging branch's own tail of this file, which
+    # promote never carries, does not touch the lines this entry sits between.
+    - host: staging-training-content.purrf.io
+      paths:
+        - path: /
+          pathType: Prefix
     - host: staging-api.purrf.io
       paths:
         - path: /

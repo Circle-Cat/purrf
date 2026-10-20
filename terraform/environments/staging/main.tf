@@ -56,4 +56,19 @@ module "purrf_instance" {
   kit_api_key               = var.kit_api_key
   gmail_sender_recruiting   = "recruiting-test@circlecat.org"
   gmail_sender_notification = "notification-test@circlecat.org"
+  gmail_sender_mentorship   = "mentorship-test@circlecat.org"
+  gmail_sender_inquiries    = "inquiries-test@circlecat.org"
+
+  # The shared mailbox has one watch topic, owned by test. Mail to the aliases
+  # is claimed here rather than on test: only one of the two may claim it, or
+  # each would file the same message.
+  gmail_watch_topic_name  = "purrf-gmail-nonprod"
+  gmail_watch_topic_owner = false
+  gmail_inbox_enabled     = true
+
+  # The same image test runs, in stub mode, so a staging run writes fake scores
+  # and calls no LLM.
+  enable_matcher    = true
+  matcher_image_tag = "a88afa5237a2aabfba6887ad025a33ceee54887b"
+  matcher_llm_stub  = true
 }
