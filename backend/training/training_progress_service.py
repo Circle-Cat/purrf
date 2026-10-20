@@ -270,10 +270,6 @@ class TrainingProgressService:
         )
 
         columns = {}
-        # Set only on the session_time fallback path below, where
-        # session_time_seconds is a delta added to the stored total rather
-        # than a value recomputed fresh -- see the comment there.
-        accumulates_session_time = False
         if _LESSON_STATUS in cmi:
             columns["lesson_status"] = cmi[_LESSON_STATUS]
         if _LESSON_LOCATION in cmi:
@@ -319,27 +315,16 @@ class TrainingProgressService:
                     cmi[_TOTAL_TIME],
                 )
         elif _SESSION_TIME in cmi:
-            # No total_time to trust: fall back to accumulating the raw
-            # session-to-date value onto what was already stored. Unlike
-            # total_time (recomputed fresh from a stable seed every commit),
-            # this is stateful: the delta only exists in this one commit, so
-            # this commit must never be skipped -- a skip here would discard
-            # the delta permanently, not just delay an accurate figure. Our
-            # own player always sends total_time, so this path is dormant in
-            # production today, but a dormant trap is the kind that fires
-            # years later when somebody revives it.
-            accumulates_session_time = True
-            accumulated = getattr(existing, "session_time_seconds", 0) or 0
-            parsed_session = _timespan_seconds(cmi[_SESSION_TIME])
-            if parsed_session is None:
-                self.logger.warning(
-                    "[TrainingProgressService] training %s sent an "
-                    "unparseable cmi.core.session_time %r; adding nothing "
-                    "for this session",
-                    training_id,
-                    cmi[_SESSION_TIME],
-                )
-            columns["session_time_seconds"] = accumulated + (parsed_session or 0)
+            # session_time is this session so far, and a course commits it
+            # many times per session, so adding it on each commit would count
+            # the same time again. Without total_time there is nothing safe to
+            # store; our own player always sends it.
+            self.logger.warning(
+                "[TrainingProgressService] training %s sent "
+                "cmi.core.session_time without cmi.core.total_time; leaving "
+                "the stored value alone",
+                training_id,
+            )
 
         for cmi_key, column in _SCORE_COLUMNS.items():
             if cmi_key not in cmi:
@@ -380,10 +365,7 @@ class TrainingProgressService:
         # a trial answer that question parks it on the skip below, short of
         # the stamp it exists to produce.
         unchanged = (
-            stores_progress
-            and _content_unchanged(existing, columns)
-            and not accumulates_session_time
-            and not final
+            stores_progress and _content_unchanged(existing, columns) and not final
         )
         if unchanged and moved is None:
             # Nothing to store and nothing to decide -- skip the write
