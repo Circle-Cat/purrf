@@ -144,9 +144,12 @@ class MeetAttendanceService:
                   nobody joined. This is the only actionable count; it is
                   also logged at INFO per meeting.
                 - meetings_set_by_admin (int): Meetings skipped because an
-                  admin has set their attendance. The selection query
-                  excludes these, so this stays 0 unless that filter and this
-                  guard ever disagree.
+                  admin has set their attendance -- one the selection query
+                  already excluded never gets here, so in practice this counts
+                  corrections an admin saved while this run was calling Meet.
+                - meetings_changed_meanwhile (int): Meetings not written
+                  because they were moved or deleted while this run was
+                  calling Meet, so the result no longer fits them.
                 - meetings_failed (int): Number of meetings that raised while
                   being processed, plus every meeting a failed round had
                   already selected but not yet classified.
@@ -159,7 +162,7 @@ class MeetAttendanceService:
             The additive invariant holds on the aggregate on every path:
             meetings_selected == meetings_reconciled + meetings_not_yet_due +
             meetings_in_progress + meetings_no_show + meetings_set_by_admin +
-            meetings_failed.
+            meetings_changed_meanwhile + meetings_failed.
             Returns an empty dict when no round is currently selectable.
         """
         # The grace only widens which ROUNDS stay selectable, never which
@@ -223,16 +226,19 @@ class MeetAttendanceService:
             "meetings_in_progress": 0,
             "meetings_no_show": 0,
             "meetings_set_by_admin": 0,
+            "meetings_changed_meanwhile": 0,
             "meetings_failed": 0,
             "rounds_failed": 0,
         }
 
-        # Both accumulate across EVERY round in this sweep. A pair belongs to
-        # exactly one round, but the recompute-once-then-commit-once property
-        # is a property of the run, not of a round: one pass over the union at
-        # the end, one commit, however many rounds contributed to it.
+        # All three accumulate across EVERY round in this sweep. A pair belongs
+        # to exactly one round, but writing, recomputing and committing are a
+        # property of the run, not of a round: one locked write pass and one
+        # recompute pass over the union at the end, one commit, however many
+        # rounds contributed to it.
         pair_by_id = {}
         touched_pair_ids = set()
+        pending_writes = []
 
         for current_round in running_rounds:
             round_id = current_round.round_id
@@ -486,29 +492,17 @@ class MeetAttendanceService:
                             result.model_dump(),
                         )
 
-                        # Write the reconciled result onto this meeting row directly.
-                        # `late_user_ids` is a plain ARRAY(Integer) column, not a
-                        # MutableList -- assigning the whole new list here (never
-                        # `.append`ing to whatever was already there) is what the unit
-                        # of work actually notices; see the caution on
-                        # MentorshipMeetingRepository.
-                        meeting.is_completed = result.is_completed
-                        meeting.absent_user_id = result.absent_user_id
-                        meeting.late_user_ids = result.late_user_id
-                        meeting.has_unknown_absent = result.has_unknown_absent
-                        meeting.has_unknown_late = result.has_unknown_late
-                        meeting.has_insufficient_duration = (
-                            result.has_insufficient_duration
-                        )
-                        meeting.last_sync_at = now
-
-                        summary["meetings_reconciled"] += 1
-                        if result.is_completed:
-                            summary["meetings_completed"] += 1
-                        if result.absent_user_id or result.has_unknown_absent:
-                            summary["meetings_absent"] += 1
-
-                        touched_pair_ids.add(pair.pair_id)
+                        # Written after every round has been through Meet,
+                        # under the pair lock -- see below. The slot is kept as
+                        # it was read, which is what this result was worked out
+                        # against.
+                        pending_writes.append((
+                            meeting,
+                            pair,
+                            result,
+                            scheduled_start,
+                            scheduled_end,
+                        ))
                     except Exception as e:
                         summary["meetings_failed"] += 1
                         self.logger.error(
@@ -544,6 +538,63 @@ class MeetAttendanceService:
                     e,
                     unaccounted,
                 )
+
+        # Every result was worked out from rows read before the Meet calls,
+        # and those take long enough for an admin to correct a meeting, or for
+        # it to be moved or deleted, in the meantime. So the rows are re-read
+        # under the pair locks and only what is unchanged is written. Every
+        # other writer of these rows -- the admin meeting batch, reschedule,
+        # the meeting delete, ending a pair, withdrawal and blocking -- holds
+        # the same pair lock for its whole transaction, so once these locks
+        # are held, whatever it did is visible. Pairs are locked in id order,
+        # before any meeting row, as those writers take them, so none of them
+        # can deadlock with this. The locks are held only from here to the
+        # commit below.
+        if pending_writes:
+            for pair_id in sorted({pair.pair_id for _, pair, *_ in pending_writes}):
+                await self.mentorship_pairs_repository.get_pair_by_id(
+                    session, pair_id, with_lock=True
+                )
+            guards = await self.mentorship_meeting_repository.get_write_guards(
+                session, [meeting.meeting_id for meeting, *_ in pending_writes]
+            )
+            for meeting, pair, result, start, end in pending_writes:
+                guard = guards.get(meeting.meeting_id)
+                if (
+                    guard is None
+                    or guard.start_datetime != start
+                    or guard.end_datetime != end
+                ):
+                    summary["meetings_changed_meanwhile"] += 1
+                    self.logger.info(
+                        "[MeetAttendanceService] meeting_id=%s was moved or "
+                        "deleted while this run was calling Meet; not written",
+                        meeting.meeting_id,
+                    )
+                    continue
+                if guard.attendance_set_by_admin_at is not None:
+                    summary["meetings_set_by_admin"] += 1
+                    continue
+
+                # `late_user_ids` is a plain ARRAY(Integer) column, not a
+                # MutableList -- assigning the whole new list here (never
+                # `.append`ing to whatever was already there) is what the unit
+                # of work actually notices; see the caution on
+                # MentorshipMeetingRepository.
+                meeting.is_completed = result.is_completed
+                meeting.absent_user_id = result.absent_user_id
+                meeting.late_user_ids = result.late_user_id
+                meeting.has_unknown_absent = result.has_unknown_absent
+                meeting.has_unknown_late = result.has_unknown_late
+                meeting.has_insufficient_duration = result.has_insufficient_duration
+                meeting.last_sync_at = now
+
+                summary["meetings_reconciled"] += 1
+                if result.is_completed:
+                    summary["meetings_completed"] += 1
+                if result.absent_user_id or result.has_unknown_absent:
+                    summary["meetings_absent"] += 1
+                touched_pair_ids.add(pair.pair_id)
 
         # One recompute pass over the union of every round's touched pairs, and
         # one commit -- not one of each per round.

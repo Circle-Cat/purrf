@@ -807,12 +807,18 @@ class MeetingService:
                 pair_id_by_meeting_id[mid] for mid in deduped_succeeded_ids
             }
 
-            for pair_id in affected_pair_ids:
+            # Each pair is locked before its meeting rows, as the admin meeting
+            # batch and the attendance sync take them, and pairs in id order,
+            # so no two of those writers can wait on each other in a circle.
+            for pair_id in sorted(affected_pair_ids):
                 ids_for_pair = [
                     mid
                     for mid in deduped_succeeded_ids
                     if pair_id_by_meeting_id[mid] == pair_id
                 ]
+                await self.mentorship_pairs_repository.get_pair_by_id(
+                    session, pair_id, with_lock=True
+                )
                 await self.mentorship_meeting_repository.delete_meetings(
                     session=session, pair_id=pair_id, meeting_ids=ids_for_pair
                 )
@@ -887,6 +893,11 @@ class MeetingService:
         Calendar is asked first and rows are deleted only if every event is
         gone (an event already missing counts as gone); otherwise nothing is
         deleted and the caller's transaction is expected to roll back.
+
+        The caller must already hold the pairs' row locks: this deletes
+        meeting rows without taking them, and a writer that touches meeting
+        rows before their pair deadlocks with the attendance sync, which
+        locks the pair first.
 
         Args:
             session (AsyncSession): The caller's open session.
