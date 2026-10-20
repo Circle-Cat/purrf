@@ -898,7 +898,6 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_test"
   type       = "self_hosted"
   destinations = [
     { type = "public", uri = "${local.environments.test.api_host}/api/notifications/deliver" },
-    # Only test runs the matcher job.
     { type = "public", uri = "${local.environments.test.api_host}/api/mentorship/match-runs/complete" },
     { type = "public", uri = "${local.environments.test.api_host}/api/email/gmail/push" },
     { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/google-chat" },
@@ -962,6 +961,11 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_stagi
   type       = "self_hosted"
   destinations = [
     { type = "public", uri = "${local.environments.staging.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/gerrit" },
   ]
   app_launcher_visible = false
   session_duration     = "0s"
