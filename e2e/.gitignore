@@ -1,0 +1,7 @@
+node_modules/
+.tokens/
+.state/
+playwright-report/
+test-results/
+.flags.json
+e2e.local.json
