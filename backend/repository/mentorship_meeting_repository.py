@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import NamedTuple
 
 from sqlalchemy import delete, func, nullslast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,14 @@ _MEETING_ORDER_BY = (
     MentorshipMeetingEntity.created_datetime.asc(),
     MentorshipMeetingEntity.meeting_id.asc(),
 )
+
+
+class MeetingWriteGuard(NamedTuple):
+    """What a writer re-reads about a meeting before writing over it."""
+
+    attendance_set_by_admin_at: datetime | None
+    start_datetime: datetime | None
+    end_datetime: datetime | None
 
 
 class MentorshipMeetingRepository:
@@ -205,6 +214,43 @@ class MentorshipMeetingRepository:
         )
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_write_guards(
+        self, session: AsyncSession, meeting_ids: list[str]
+    ) -> dict[str, MeetingWriteGuard]:
+        """Re-read, from the database, the columns a stale writer must check.
+
+        Selects columns rather than entities, so the answer is what the
+        database holds now, not what a row loaded earlier in this session
+        still says.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            meeting_ids (list[str]): The meetings to read.
+
+        Returns:
+            dict[str, MeetingWriteGuard]: Keyed by meeting_id. A meeting that
+                no longer exists is absent. Empty for empty input, without
+                touching the database.
+        """
+        if not meeting_ids:
+            return {}
+        result = await session.execute(
+            select(
+                MentorshipMeetingEntity.meeting_id,
+                MentorshipMeetingEntity.attendance_set_by_admin_at,
+                MentorshipMeetingEntity.start_datetime,
+                MentorshipMeetingEntity.end_datetime,
+            ).where(MentorshipMeetingEntity.meeting_id.in_(meeting_ids))
+        )
+        return {
+            row.meeting_id: MeetingWriteGuard(
+                row.attendance_set_by_admin_at,
+                row.start_datetime,
+                row.end_datetime,
+            )
+            for row in result.all()
+        }
 
     async def insert_meeting(
         self, session: AsyncSession, meeting: MentorshipMeetingEntity
