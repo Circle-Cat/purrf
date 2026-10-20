@@ -49,8 +49,10 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
 // model on unload throws for exactly the learners who have the most stored,
 // every time, and the elapsed time this save exists to bank is never written.
 // Under the spec figure because that budget is shared with anything else the
-// closing page still has out. The blob was already stored by the commit that
-// carried it; the time was not, so the blob is what gives way.
+// closing page still has out. When the server already holds the blob, it is
+// what gives way: the time is what this save banks. When it does not -- the
+// save that carried it failed or is still in flight -- dropping it would resume
+// the learner from an older bookmark, so it goes whole without keepalive.
 const KEEPALIVE_BODY_LIMIT = 60 * 1024;
 
 // What the server answers a commit whose run names a package it no longer
@@ -68,11 +70,19 @@ const isSuperseded = (error) =>
   error?.response?.status === HTTP_CONFLICT &&
   error?.response?.data?.data?.code === RUN_SUPERSEDED;
 
-const partingBody = (cmi, sessionToken) => {
+const partingRequest = (cmi, sessionToken, savedSuspendData) => {
   const whole = JSON.stringify({ cmi, final: true, sessionToken });
-  if (new Blob([whole]).size < KEEPALIVE_BODY_LIMIT) return whole;
-  const { "cmi.suspend_data": _blob, ...rest } = cmi ?? {};
-  return JSON.stringify({ cmi: rest, final: true, sessionToken });
+  if (new Blob([whole]).size < KEEPALIVE_BODY_LIMIT) {
+    return { body: whole, keepalive: true };
+  }
+  const { "cmi.suspend_data": blob, ...rest } = cmi ?? {};
+  if (blob === undefined || blob === savedSuspendData) {
+    return {
+      body: JSON.stringify({ cmi: rest, final: true, sessionToken }),
+      keepalive: true,
+    };
+  }
+  return { body: whole, keepalive: false };
 };
 
 export default function useTrainingRuntime(
@@ -105,6 +115,10 @@ export default function useTrainingRuntime(
   // resolves, so being hidden resends the same cmi unconditionally.
   const lastCmiRef = useRef(null);
   const unsavedRef = useRef(false);
+  // The suspend_data the server is known to hold: what the session opened
+  // with, then what each save that landed carried. The parting save may only
+  // leave out a blob that matches it.
+  const savedSuspendRef = useRef(undefined);
   // What the server said the assignment's status was after the last save.
   // Which lesson_status finishes a course is decided there, so nothing here
   // reads the raw value to reach its own answer.
@@ -162,6 +176,7 @@ export default function useTrainingRuntime(
   useEffect(() => {
     if (!session) return undefined;
     const contentOrigin = new URL(session.contentBaseUrl).origin;
+    savedSuspendRef.current = session.progress?.suspendData;
 
     // Every save names the content session it came from. The token is signed,
     // so the server can tell a run of the current package from one reported
@@ -247,6 +262,9 @@ export default function useTrainingRuntime(
         unsavedRef.current = true;
         try {
           const saved = await queueSave(event.data.cmi);
+          if (event.data.cmi && "cmi.suspend_data" in event.data.cmi) {
+            savedSuspendRef.current = event.data.cmi["cmi.suspend_data"];
+          }
           setSaveFailed(false);
           if (saved?.data?.status) setStatus(saved.data.status);
           if (saved?.data?.courseVerified) setCourseVerified(true);
@@ -274,26 +292,34 @@ export default function useTrainingRuntime(
     //
     // An XHR in flight when the tab closes is dropped; fetch with keepalive
     // survives it, so this one save goes around axios. It resends the cmi the
-    // last commit already carried, which is byte-identical to what the server
-    // stored -- `final` is what makes the server write it anyway, and writing
-    // it is the whole point: the elapsed time it carries is exactly what the
-    // server's unchanged-content check leaves out. It is not queued behind
-    // the chain above, because a page being hidden has to issue its request
-    // before the handler returns; the server's row lock orders it against
-    // whatever is still in flight.
+    // last commit carried, which the server usually already stored -- `final`
+    // is what makes the server write it anyway, and writing it is the whole
+    // point: the elapsed time it carries is exactly what the server's
+    // unchanged-content check leaves out. A body too big for keepalive loses
+    // its suspend_data only when the server holds that blob already; one it
+    // never confirmed goes whole as an ordinary fetch, which a page being
+    // hidden still finishes and a page being closed may not. It is not queued
+    // behind the chain above, because a page being hidden has to issue its
+    // request before the handler returns; the server's row lock orders it
+    // against whatever is still in flight.
     const saveOnHide = () => {
       if (!records) return;
       if (supersededRef.current) return;
       if (!unsavedRef.current) return;
       unsavedRef.current = false;
+      const { body, keepalive } = partingRequest(
+        lastCmiRef.current,
+        session.sessionToken,
+        savedSuspendRef.current,
+      );
       fetch(
         `${request.defaults.baseURL}${API_ENDPOINTS.TRAINING_PROGRESS(trainingId)}`,
         {
           method: "POST",
           credentials: "include",
-          keepalive: true,
+          keepalive,
           headers: { "Content-Type": "application/json" },
-          body: partingBody(lastCmiRef.current, session.sessionToken),
+          body,
         },
       ).catch((error) => {
         // Usually nothing is left to notice this. A page that is hidden and

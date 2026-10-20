@@ -52,8 +52,8 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-const renderRuntime = async () => {
-  api.openSession.mockResolvedValue({ data: SESSION });
+const renderRuntime = async (session = SESSION) => {
+  api.openSession.mockResolvedValue({ data: session });
   const rendered = renderHook(() =>
     useTrainingRuntime(TRAINING_ID, { userId: 1, email: "learner@test" }),
   );
@@ -384,10 +384,96 @@ describe("useTrainingRuntime parting save", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect(new Blob([init.body]).size).toBeLessThan(60 * 1024);
+    expect(init.keepalive).toBe(true);
     const body = JSON.parse(init.body);
     expect(body.final).toBe(true);
     expect(body.cmi["cmi.core.total_time"]).toBe("01:00:00");
     expect(body.cmi).not.toHaveProperty("cmi.suspend_data");
+  });
+
+  const bookmark = (char) => ({
+    ...cmiWith("incomplete"),
+    "cmi.suspend_data": char.repeat(65536),
+  });
+
+  it("sends a bookmark the server never confirmed whole, without keepalive, after its save failed", async () => {
+    // The save that carried it failed, so the server still holds the older
+    // bookmark: dropping this one would resume the learner from there.
+    api.saveProgress.mockRejectedValue(new Error("network"));
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(bookmark("f")));
+    });
+
+    unload();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.keepalive).toBe(false);
+    expect(JSON.parse(init.body).cmi["cmi.suspend_data"]).toBe(
+      "f".repeat(65536),
+    );
+  });
+
+  it("sends a bookmark whose save is still in flight whole, without keepalive", async () => {
+    api.saveProgress.mockReturnValue(deferred().promise);
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(bookmark("p")));
+    });
+
+    unload();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.keepalive).toBe(false);
+    expect(JSON.parse(init.body).cmi["cmi.suspend_data"]).toBe(
+      "p".repeat(65536),
+    );
+  });
+
+  it("keeps the newer bookmark when only an older one was confirmed", async () => {
+    api.saveProgress
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("network"));
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(bookmark("a")));
+    });
+    await act(async () => {
+      window.dispatchEvent(commit(bookmark("b")));
+    });
+
+    unload();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.keepalive).toBe(false);
+    expect(JSON.parse(init.body).cmi["cmi.suspend_data"]).toBe(
+      "b".repeat(65536),
+    );
+  });
+
+  it("drops the bookmark the session opened with, which the server already holds", async () => {
+    api.saveProgress.mockRejectedValue(new Error("network"));
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime({
+      ...SESSION,
+      progress: { suspendData: "s".repeat(65536) },
+    });
+    await act(async () => {
+      window.dispatchEvent(commit(bookmark("s")));
+    });
+
+    unload();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body).cmi).not.toHaveProperty("cmi.suspend_data");
   });
 });
 
