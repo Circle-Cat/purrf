@@ -93,7 +93,7 @@ const ACCESSOR_TO_SORT_FIELD = {
 };
 
 const COLUMNS = [
-  { header: "Name", accessor: "name", sortable: true },
+  { header: "Name", accessor: "name" },
   { header: "Role", accessor: "role" },
   { header: "Training", accessor: "training" },
   { header: "Int / ext", accessor: "internal" },
@@ -128,7 +128,7 @@ const HintedHeader = ({ label, hint }) => (
 );
 
 const NOT_REGISTERED_COLUMNS = [
-  { header: "Name", accessor: "name", sortable: true },
+  { header: "Name", accessor: "name" },
   { header: "Admitted as", accessor: "admittedAs" },
   { header: "Int / ext", accessor: "internal" },
   { header: "Account", accessor: "account" },

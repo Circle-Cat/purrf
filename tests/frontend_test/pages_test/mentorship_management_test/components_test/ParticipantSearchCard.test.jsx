@@ -1480,47 +1480,16 @@ describe("ParticipantSearchCard", () => {
   });
 
   describe("sorting", () => {
-    const nameHeader = () => screen.getByRole("columnheader", { name: "Name" });
-
-    it("clicking the Name header sorts ascending, then descending, and keeps it in the URL", async () => {
+    it("clicking the Name header does not re-sort or fetch again", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       await renderCard({ url: SEARCHED_PARTICIPANTS });
       await mounted();
 
-      await userEvent.click(nameHeader());
-      await waitFor(() =>
-        expect(searchParticipants).toHaveBeenLastCalledWith(
-          expect.objectContaining({ sortBy: "user_id", order: "asc" }),
-        ),
-      );
-      expect(urlParams().get("sort")).toBe("user_id");
-
-      await userEvent.click(nameHeader());
-      await waitFor(() =>
-        expect(searchParticipants).toHaveBeenLastCalledWith(
-          expect.objectContaining({ sortBy: "user_id", order: "desc" }),
-        ),
-      );
-      expect(urlParams().get("order")).toBe("desc");
-    });
-
-    it("clicking the Name header a third time clears the sort back to the default order", async () => {
-      searchParticipants.mockResolvedValue({
-        data: { participantRows: [participantRow()], total: 100 },
-      });
-      await renderCard({
-        url: "/?round=7&sort=user_id&order=desc&offset=20",
-      });
-      await mounted();
-
-      await userEvent.click(nameHeader());
-      await waitFor(() =>
-        expect(searchParticipants).toHaveBeenLastCalledWith(
-          expect.objectContaining({ sortBy: undefined, offset: 0 }),
-        ),
-      );
+      const nameHeader = screen.getByRole("columnheader", { name: "Name" });
+      expect(nameHeader).not.toHaveAttribute("aria-sort");
+      await userEvent.click(nameHeader);
+      expect(searchParticipants).toHaveBeenCalledTimes(1);
       expect(urlParams().has("sort")).toBe(false);
-      expect(urlParams().has("offset")).toBe(false);
     });
 
     it("clicking a non-sortable column header does not trigger a new fetch", async () => {
