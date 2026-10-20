@@ -52,16 +52,17 @@ locals {
       name        = "Create Google Meeting"
       description = "Enables the Google Meeting related feature"
       off_in      = ["production"]
-      public_in   = ["test"]
+      public_in   = ["staging", "test"]
     }
-    # Only test has a matcher job to start; elsewhere the endpoint would refuse
-    # anyway, and each press is an hour of a paid job once the stub is off.
+    # Only test and staging have a matcher job to start; in production the
+    # endpoint would refuse anyway, and each press is an hour of a paid job
+    # once the stub is off.
     matching_run = {
       key         = "matching-run"
       name        = "Matching Run"
       description = "Lets an admin start a mentorship matching run"
-      off_in      = ["staging", "production"]
-      public_in   = ["test"]
+      off_in      = ["production"]
+      public_in   = ["staging", "test"]
     }
     # Gates every leave screen. The backend has no flag of its own, so off here
     # hides the feature rather than disabling it.
@@ -77,8 +78,8 @@ locals {
       key         = "mentorship-kit-email"
       name        = "Mentorship Kit Email"
       description = "Lets a mentorship admin send notifications to participants through Kit"
-      off_in      = ["staging", "production"]
-      public_in   = ["test"]
+      off_in      = ["production"]
+      public_in   = ["staging", "test"]
     }
   }
 
