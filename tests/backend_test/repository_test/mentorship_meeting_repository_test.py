@@ -1,6 +1,7 @@
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from backend.common.mentorship_enums import (
     CommunicationMethod,
@@ -445,6 +446,77 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
+
+    # --- get_write_guards ---
+
+    async def test_write_guards_read_the_database_not_the_loaded_rows(self):
+        """What another transaction committed is what counts, so the values
+        are changed behind the loaded entity with a Core UPDATE."""
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        moved = self._google_meeting(
+            pair.pair_id, start_datetime=base, end_datetime=base + timedelta(hours=1)
+        )
+        corrected = self._google_meeting(
+            pair.pair_id, start_datetime=base, end_datetime=base + timedelta(hours=1)
+        )
+        untouched = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base + timedelta(days=1),
+            end_datetime=base + timedelta(days=1, hours=1),
+        )
+        await self.insert_entities([moved, corrected, untouched])
+        marked_at = base + timedelta(hours=2)
+        await self.session.execute(
+            update(MentorshipMeetingEntity)
+            .where(MentorshipMeetingEntity.meeting_id == moved.meeting_id)
+            .values(
+                start_datetime=base + timedelta(hours=5),
+                end_datetime=base + timedelta(hours=6),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.execute(
+            update(MentorshipMeetingEntity)
+            .where(MentorshipMeetingEntity.meeting_id == corrected.meeting_id)
+            .values(attendance_set_by_admin_at=marked_at)
+            .execution_options(synchronize_session=False)
+        )
+
+        guards = await MentorshipMeetingRepository().get_write_guards(
+            self.session,
+            [moved.meeting_id, corrected.meeting_id, untouched.meeting_id, "gone"],
+        )
+
+        self.assertEqual(
+            set(guards), {moved.meeting_id, corrected.meeting_id, untouched.meeting_id}
+        )
+        self.assertEqual(
+            guards[moved.meeting_id].start_datetime, base + timedelta(hours=5)
+        )
+        self.assertIsNone(guards[moved.meeting_id].attendance_set_by_admin_at)
+        self.assertEqual(
+            guards[corrected.meeting_id].attendance_set_by_admin_at, marked_at
+        )
+        self.assertEqual(
+            guards[untouched.meeting_id].end_datetime,
+            base + timedelta(days=1, hours=1),
+        )
+
+    async def test_write_guards_for_no_meetings_skip_the_database(self):
+        async def _no_query(*args, **kwargs):
+            raise AssertionError("queried the database")
+
+        original_execute = self.session.execute
+        self.session.execute = _no_query
+        try:
+            guards = await MentorshipMeetingRepository().get_write_guards(
+                self.session, []
+            )
+        finally:
+            self.session.execute = original_execute
+
+        self.assertEqual(guards, {})
 
     async def test_in_window_boundaries_are_inclusive(self):
         """A meeting whose end lands exactly on ends_after, and one whose start

@@ -602,6 +602,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.mock_pairs_repo = self.mock_mentorship_pairs_repository
         self.mock_pairs_repo.get_pairs_by_user_and_round = AsyncMock()
+        self.mock_pairs_repo.get_pair_by_id = AsyncMock(return_value=MagicMock())
 
         self.mock_mapper = MagicMock()
 
@@ -1185,6 +1186,69 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             self.mock_meeting_repo.recalculate_completed_count.await_count, 2
+        )
+
+    async def test_delete_google_meetings_locks_each_pair_before_its_rows(self):
+        """Pair before meetings, as the admin meeting batch and the attendance
+        sync take them, and pairs in id order, so two writers never wait on
+        each other in a circle. 200 comes out of the set before 9, so this
+        also catches a loop that relies on set order."""
+        pair_low = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=9, mentor_id=2, mentee_id=1
+        )
+        pair_high = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=200, mentor_id=3, mentee_id=1
+        )
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
+            pair_high,
+            pair_low,
+        ]
+
+        def meetings_of(session, pair_id):
+            meeting_id = {9: "low", 200: "high"}[pair_id]
+            return [
+                MagicMock(
+                    spec=MentorshipMeetingEntity,
+                    meeting_id=meeting_id,
+                    source=MeetingSource.GOOGLE,
+                )
+            ]
+
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = meetings_of
+        self.mock_meeting_scheduling_service.cancel.return_value = (
+            ["high", "low"],
+            [],
+        )
+        order = []
+        self.mock_pairs_repo.get_pair_by_id.side_effect = lambda *args, **kwargs: (
+            order.append(("lock", args[1], kwargs)) or MagicMock()
+        )
+        self.mock_meeting_repo.delete_meetings.side_effect = lambda **kwargs: (
+            order.append(("delete", kwargs["pair_id"])) or 1
+        )
+        self.mock_meeting_repo.recalculate_completed_count.side_effect = (
+            lambda **kwargs: order.append(("recount", kwargs["pair_id"])) or 0
+        )
+
+        await self.service.delete_google_meetings(
+            session=self.mock_session,
+            user_context=self.user_context,
+            deletions=[
+                {"round_id": 1, "partner_id": 3, "meeting_ids": ["high"]},
+                {"round_id": 1, "partner_id": 2, "meeting_ids": ["low"]},
+            ],
+        )
+
+        self.assertEqual(
+            order,
+            [
+                ("lock", 9, {"with_lock": True}),
+                ("delete", 9),
+                ("recount", 9),
+                ("lock", 200, {"with_lock": True}),
+                ("delete", 200),
+                ("recount", 200),
+            ],
         )
 
     async def test_delete_google_meetings_partial_cancel_skips_failed_pair(self):
