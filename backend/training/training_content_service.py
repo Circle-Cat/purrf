@@ -118,6 +118,7 @@ class TrainingContentService:
         training_course_package_repository,
         training_progress_repository,
         training_storage,
+        storage_executor=None,
     ):
         """
         Args:
@@ -137,6 +138,10 @@ class TrainingContentService:
             training_progress_repository (TrainingProgressRepository): The
                 learner's stored progress, seeded back into the page.
             training_storage (TrainingStorage): Object storage.
+            storage_executor (concurrent.futures.Executor | None): Runs the
+                synchronous storage reads behind each served file. None uses
+                the event loop's default executor, which on a two-core pod has
+                six threads -- one opened course alone asks for more.
         """
         self.logger = logger
         self.signing_key = signing_key
@@ -146,6 +151,13 @@ class TrainingContentService:
         self.training_course_package_repository = training_course_package_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
+        self.storage_executor = storage_executor
+
+    async def _off_loop(self, read, *args):
+        """Run one synchronous storage call on the storage executor."""
+        return await asyncio.get_running_loop().run_in_executor(
+            self.storage_executor, read, *args
+        )
 
     async def open_session(
         self, session, training_id: int, user_id: int
@@ -516,7 +528,7 @@ class TrainingContentService:
                 claims.training_id, claims.package_id, object_key, byte_range
             )
 
-        found = await asyncio.to_thread(self.training_storage.get, object_key)
+        found = await self._off_loop(self.training_storage.get, object_key)
         if found is None:
             self._no_object(claims.training_id, claims.package_id, object_key)
 
@@ -558,7 +570,7 @@ class TrainingContentService:
             FileNotFoundError: No such object.
             UnsatisfiableRange: The range names no byte of it.
         """
-        described = await asyncio.to_thread(self.training_storage.stat, object_key)
+        described = await self._off_loop(self.training_storage.stat, object_key)
         if described is None:
             self._no_object(training_id, package_id, object_key)
         total_size, content_type = described
@@ -567,7 +579,7 @@ class TrainingContentService:
         if resolved is None:
             raise UnsatisfiableRange(total_size)
 
-        data = await asyncio.to_thread(
+        data = await self._off_loop(
             self.training_storage.get_range, object_key, resolved.start, resolved.end
         )
         if data is None:
