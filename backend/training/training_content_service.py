@@ -5,6 +5,7 @@ import pathlib
 import posixpath
 import secrets
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from backend.common.exceptions import ConflictError
@@ -37,6 +38,17 @@ _PLAYER_DIR = pathlib.Path(__file__).parent / "player"
 # file. The bound only stops a long-lived process collecting dead packages.
 _PREFIX_TTL_SECONDS = 60
 _PREFIX_CACHE_LIMIT = 256
+
+
+# A package's files never change either -- a new upload is a new package under
+# a new prefix -- and a cohort opening the same course asks for the same fifty
+# files at once. Each read from storage holds a thread and pulls the bytes
+# through this process, and enough of those at once starve the event loop, so
+# a file is fetched once and served from memory after that. Only reachable
+# once the prefix above resolves, so a gone package stops being served on the
+# same schedule as before. Large files (videos) stay on ranged storage reads.
+_FILE_CACHE_BYTES = 32 * 1024 * 1024
+_FILE_CACHE_LARGEST = 2 * 1024 * 1024
 
 
 class _ObjectMissing(Exception):
@@ -192,6 +204,11 @@ class TrainingContentService:
         self._clock = clock
         # package_id -> (storage_prefix, monotonic time it is forgotten at)
         self._prefixes: dict[int, tuple[str, float]] = {}
+        # object_key -> (bytes, content type), least recently served first
+        self._files: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+        self._files_size = 0
+        # object_key -> the storage read every request for it is waiting on
+        self._file_reads: dict[str, asyncio.Future] = {}
 
     async def _off_loop(self, timings: _ReadTimings, read, *args):
         """Run one synchronous storage call on the storage executor, adding
@@ -216,6 +233,61 @@ class TrainingContentService:
                 timings.queued += marks["started"] - submitted
                 timings.storage += marks["finished"] - marks["started"]
                 timings.resumed += self._clock() - marks["finished"]
+
+    async def _read_file(self, timings: _ReadTimings, object_key: str):
+        """A whole file, from memory if it was read before.
+
+        Requests for a file that is already being read wait for that read
+        rather than starting their own: the first moments of a cohort opening
+        a course are every learner asking for the same entry page.
+
+        Returns:
+            tuple[bytes, str] | None: Bytes and Content-Type, or None if there
+            is no such object.
+        """
+        found = self._files.get(object_key)
+        if found is not None:
+            self._files.move_to_end(object_key)
+            return found
+
+        pending = self._file_reads.get(object_key)
+        if pending is None:
+
+            async def fetch():
+                read = await self._off_loop(
+                    timings, self.training_storage.get, object_key
+                )
+                if read is not None:
+                    self._remember_file(object_key, read)
+                return read
+
+            def settled(task):
+                self._file_reads.pop(object_key, None)
+                # Retrieved here so a read whose every waiter has gone does
+                # not log "exception was never retrieved"; each waiter that is
+                # still there gets it raised from the await below.
+                if not task.cancelled():
+                    task.exception()
+
+            # A task of its own, so a learner who closes the tab mid-read
+            # does not cancel the read the others are waiting on.
+            pending = asyncio.ensure_future(fetch())
+            self._file_reads[object_key] = pending
+            pending.add_done_callback(settled)
+        return await asyncio.shield(pending)
+
+    def _remember_file(self, object_key: str, found: tuple[bytes, str]) -> None:
+        """Keep a file for the next request, dropping the least recently
+        served ones to stay under the bound.
+        """
+        size = len(found[0])
+        if size > _FILE_CACHE_LARGEST or object_key in self._files:
+            return
+        self._files[object_key] = found
+        self._files_size += size
+        while self._files_size > _FILE_CACHE_BYTES:
+            _, (dropped, _) = self._files.popitem(last=False)
+            self._files_size -= len(dropped)
 
     def _remembered_prefix(self, package_id: int) -> str | None:
         """The package's storage prefix if it was looked up recently."""
@@ -619,9 +691,7 @@ class TrainingContentService:
                     timings, claims.training_id, object_key, byte_range
                 )
             else:
-                found = await self._off_loop(
-                    timings, self.training_storage.get, object_key
-                )
+                found = await self._read_file(timings, object_key)
                 if found is None:
                     raise _ObjectMissing()
                 data, content_type = found
