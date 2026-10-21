@@ -4,6 +4,7 @@ import asyncio
 import pathlib
 import posixpath
 import secrets
+import time
 from dataclasses import dataclass
 
 from backend.common.exceptions import ConflictError
@@ -28,6 +29,19 @@ from backend.training.training_content_token import (
 PLAYER_PATH = "__player.html"
 
 _PLAYER_DIR = pathlib.Path(__file__).parent / "player"
+
+# A package's storage prefix is fixed when the package is created, so serving
+# a file needs the database only to learn it -- once, not once per file. The
+# one thing a remembered prefix can get wrong is whether the package still
+# exists, and read_asset asks again whenever a remembered prefix turns up no
+# file. The bound only stops a long-lived process collecting dead packages.
+_PREFIX_TTL_SECONDS = 60
+_PREFIX_CACHE_LIMIT = 256
+
+
+class _ObjectMissing(Exception):
+    """Storage has no object at the key a read resolved to."""
+
 
 # Ours to serve, by exact name. Everything else under the reserved prefix is
 # refused: the reservation exists so a package can never answer for one of
@@ -119,6 +133,7 @@ class TrainingContentService:
         training_progress_repository,
         training_storage,
         storage_executor=None,
+        clock=time.monotonic,
     ):
         """
         Args:
@@ -142,6 +157,8 @@ class TrainingContentService:
                 synchronous storage reads behind each served file. None uses
                 the event loop's default executor, which on a two-core pod has
                 six threads -- one opened course alone asks for more.
+            clock (Callable[[], float]): Monotonic seconds, for how long a
+                package's storage prefix is remembered.
         """
         self.logger = logger
         self.signing_key = signing_key
@@ -152,12 +169,53 @@ class TrainingContentService:
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
         self.storage_executor = storage_executor
+        self._clock = clock
+        # package_id -> (storage_prefix, monotonic time it is forgotten at)
+        self._prefixes: dict[int, tuple[str, float]] = {}
 
     async def _off_loop(self, read, *args):
         """Run one synchronous storage call on the storage executor."""
         return await asyncio.get_running_loop().run_in_executor(
             self.storage_executor, read, *args
         )
+
+    def _remembered_prefix(self, package_id: int) -> str | None:
+        """The package's storage prefix if it was looked up recently."""
+        entry = self._prefixes.get(package_id)
+        if entry is None:
+            return None
+        prefix, forget_at = entry
+        if self._clock() >= forget_at:
+            del self._prefixes[package_id]
+            return None
+        return prefix
+
+    async def _look_up_prefix(self, session, claims) -> str:
+        """Read the token's package from the database and remember its prefix.
+
+        Raises:
+            FileNotFoundError: The package is gone.
+        """
+        package = await self.training_course_package_repository.get_by_id(
+            session, claims.package_id
+        )
+        if package is None:
+            # Info, not warning: every file an open tab still asks for after a
+            # replacement produces one of these, and the fix is a reload.
+            self.logger.info(
+                "[TrainingContentService] package %s behind training %s is "
+                "gone; the tab holding this token needs to reload",
+                claims.package_id,
+                claims.training_id,
+            )
+            raise FileNotFoundError("This package is no longer served.")
+        if len(self._prefixes) >= _PREFIX_CACHE_LIMIT:
+            self._prefixes.clear()
+        self._prefixes[claims.package_id] = (
+            package.storage_prefix,
+            self._clock() + _PREFIX_TTL_SECONDS,
+        )
+        return package.storage_prefix
 
     async def open_session(
         self, session, training_id: int, user_id: int
@@ -508,28 +566,29 @@ class TrainingContentService:
                 _PLAYER_ASSET_BYTES[normalised], content_type, byte_range
             )
 
-        package = await self.training_course_package_repository.get_by_id(
-            session, claims.package_id
-        )
-        if package is None:
-            # Info, not warning: every file an open tab still asks for after a
-            # replacement produces one of these, and the fix is a reload.
-            self.logger.info(
-                "[TrainingContentService] package %s behind training %s is "
-                "gone; the tab holding this token needs to reload",
-                claims.package_id,
-                claims.training_id,
-            )
-            raise FileNotFoundError("This package is no longer served.")
+        prefix = self._remembered_prefix(claims.package_id)
+        remembered = prefix is not None
+        if not remembered:
+            prefix = await self._look_up_prefix(session, claims)
 
-        object_key = posixpath.join(package.storage_prefix, normalised)
-        if byte_range is not None:
-            return await self._read_range(
-                claims.training_id, claims.package_id, object_key, byte_range
-            )
-
-        found = await self._off_loop(self.training_storage.get, object_key)
-        if found is None:
+        object_key = posixpath.join(prefix, normalised)
+        try:
+            if byte_range is not None:
+                return await self._read_range(
+                    claims.training_id, object_key, byte_range
+                )
+            found = await self._off_loop(self.training_storage.get, object_key)
+            if found is None:
+                raise _ObjectMissing()
+        except _ObjectMissing:
+            if remembered:
+                # Publishing a replacement deletes the old package's row and
+                # then its files, so a remembered prefix outlives both. Ask
+                # the database before calling this a missing file: a package
+                # that is gone is the reload message, not a warning. pop: a
+                # read that missed alongside this one may have forgotten it.
+                self._prefixes.pop(claims.package_id, None)
+                await self._look_up_prefix(session, claims)
             self._no_object(claims.training_id, claims.package_id, object_key)
 
         data, content_type = found
@@ -546,7 +605,6 @@ class TrainingContentService:
     async def _read_range(
         self,
         training_id: int | None,
-        package_id: int,
         object_key: str,
         byte_range: RangeSpec,
     ) -> ContentAsset:
@@ -560,19 +618,16 @@ class TrainingContentService:
         Args:
             training_id (int | None): The run this read is on behalf of, for
                 the log line only. None when the run is a preview.
-            package_id (int): The package this read is on behalf of, for the
-                log line only -- unlike training_id, never None, so it is
-                what still names a preview's run.
             object_key (str): The storage key to read from.
             byte_range (RangeSpec): The range asked for.
 
         Raises:
-            FileNotFoundError: No such object.
+            _ObjectMissing: No such object.
             UnsatisfiableRange: The range names no byte of it.
         """
         described = await self._off_loop(self.training_storage.stat, object_key)
         if described is None:
-            self._no_object(training_id, package_id, object_key)
+            raise _ObjectMissing()
         total_size, content_type = described
 
         resolved = resolve_range(byte_range, total_size)
@@ -585,7 +640,7 @@ class TrainingContentService:
         if data is None:
             # Gone between the two calls, which is what an upload replacing the
             # package underneath an open course looks like from here.
-            self._no_object(training_id, package_id, object_key)
+            raise _ObjectMissing()
 
         self.logger.debug(
             "[TrainingContentService] training %s: served %r bytes %s-%s of %s (%s)",
