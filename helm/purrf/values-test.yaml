@@ -10,7 +10,7 @@ image:
   # [skip ci]); the purrf-test ArgoCD Application syncs it. The "main" value
   # here is just the bootstrap before the first deploy-test run pins a SHA.
   repository: ghcr.io/circle-cat/purrf
-  tag: "41defe967d310e77a9d86b364af4040de6647ff5"
+  tag: "cdad0b3712dd430e19a5b7bbbb344bb90df39651"
 # The PreSync migration hook runs `alembic upgrade head` against this
 # environment's database before the Deployment is applied. A failed migration
 # fails the sync, so the pods already running keep serving the old schema.
