@@ -7,13 +7,14 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.byte_range import RangeSpec, UnsatisfiableRange
+import backend.training.training_content_service as content_service_module
 from backend.training.training_content_service import (
     PLAYER_PATH,
     TrainingContentService,
@@ -1269,6 +1270,99 @@ class TestSlowCourseFilesSayWhereTheTimeWent(_ContentServiceCase):
 
         (line,) = self.slow_lines()
         self.assertAlmostEqual(line.args[7], 700)
+
+
+class TestReadAssetKeepsCourseFilesInMemory(_ContentServiceCase):
+    """A cohort opening one course asks for the same files over and over;
+    after the first read they come from memory, not storage.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.now = 1000.0
+        self.service._clock = lambda: self.now
+        self.token = self.valid_token()
+
+    async def test_a_file_read_twice_comes_from_storage_once(self):
+        first = await self.service.read_asset(self.session, self.token, "a.css")
+        second = await self.service.read_asset(self.session, self.token, "a.css")
+
+        self.assertEqual(self.storage.get.call_count, 1)
+        self.assertEqual(second.data, first.data)
+        self.assertEqual(second.content_type, first.content_type)
+
+    async def test_a_large_file_is_read_from_storage_every_time(self):
+        self.storage.get = MagicMock(return_value=(b"x" * 11, "video/mp4"))
+
+        with patch.object(content_service_module, "_FILE_CACHE_LARGEST", 10):
+            for _ in range(2):
+                await self.service.read_asset(self.session, self.token, "big.mp4")
+
+        self.assertEqual(self.storage.get.call_count, 2)
+
+    async def test_the_least_recently_served_file_goes_first(self):
+        self.storage.get = MagicMock(return_value=(b"x" * 4, "text/css"))
+
+        with patch.object(content_service_module, "_FILE_CACHE_BYTES", 8):
+            for name in ("a.css", "b.css", "a.css", "c.css"):
+                await self.service.read_asset(self.session, self.token, name)
+            self.storage.get.reset_mock()
+            for name in ("a.css", "c.css", "b.css"):
+                await self.service.read_asset(self.session, self.token, name)
+
+        # a was served again before c arrived, so b was the one dropped.
+        self.assertEqual(self.fetched_keys(), [_OLD_PREFIX + "b.css"])
+
+    async def test_requests_for_a_file_being_read_share_that_read(self):
+        both_asked = threading.Event()
+
+        def get(object_key):
+            both_asked.wait(timeout=5)
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        reads = [
+            asyncio.create_task(
+                self.service.read_asset(self.session, self.token, "a.css")
+            )
+            for _ in range(2)
+        ]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        both_asked.set()
+        first, second = await asyncio.gather(*reads)
+
+        self.assertEqual(self.storage.get.call_count, 1)
+        self.assertEqual(first.data, second.data)
+
+    async def test_a_missing_file_is_not_remembered(self):
+        self.storage.get = MagicMock(return_value=None)
+
+        for _ in range(2):
+            with self.assertRaises(FileNotFoundError):
+                await self.service.read_asset(self.session, self.token, "gone.css")
+
+        self.assertEqual(self.storage.get.call_count, 2)
+
+    async def test_a_gone_package_stops_being_served_once_its_prefix_expires(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        self.now += 60
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            await self.service.read_asset(self.session, self.token, "a.css")
+
+        self.assertEqual(str(caught.exception), "This package is no longer served.")
+        self.assertEqual(self.storage.get.call_count, 1)
+
+    async def test_a_range_read_still_goes_to_storage(self):
+        for _ in range(2):
+            await self.service.read_asset(
+                self.session, self.token, _VIDEO_PATH, RangeSpec(0, 15)
+            )
+
+        self.assertEqual(self.storage.get_range.call_count, 2)
 
 
 class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
