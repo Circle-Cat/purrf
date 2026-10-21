@@ -1173,6 +1173,104 @@ class TestReadAssetRemembersThePackagePrefix(_ContentServiceCase):
         self.package_repository.get_by_id.assert_not_awaited()
 
 
+class TestSlowCourseFilesSayWhereTheTimeWent(_ContentServiceCase):
+    """One line per slow file, split by stage, so a queueing course load can
+    be pinned on the database, the thread pool, storage or the event loop.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.now = 1000.0
+        self.service._clock = lambda: self.now
+        self.token = self.valid_token()
+
+    def advance(self, seconds, result):
+        def step(*args):
+            self.now += seconds
+            return result
+
+        return step
+
+    def slow_lines(self):
+        return [
+            call
+            for call in self.logger.info.call_args_list
+            if "slow course file" in call.args[0]
+        ]
+
+    async def test_a_slow_file_logs_each_stage(self):
+        self.package_repository.get_by_id = AsyncMock(
+            side_effect=self.advance(0.1, self.package)
+        )
+        self.storage.get = MagicMock(
+            side_effect=self.advance(0.7, (b"x" * 5, "text/css"))
+        )
+
+        await self.service.read_asset(self.session, self.token, "a.css")
+
+        (line,) = self.slow_lines()
+        _, package_id, path, size, total, lookup, queued, storage, resumed = line.args
+        self.assertEqual((package_id, path, size), (_PACKAGE_ID, "a.css", 5))
+        self.assertAlmostEqual(total, 800)
+        self.assertAlmostEqual(lookup, 100)
+        self.assertAlmostEqual(storage, 700)
+        self.assertAlmostEqual(queued, 0)
+        self.assertAlmostEqual(resumed, 0)
+
+    async def test_a_fast_file_logs_nothing(self):
+        self.storage.get = MagicMock(side_effect=self.advance(0.4, (b"x", "text/css")))
+
+        await self.service.read_asset(self.session, self.token, "a.css")
+
+        self.assertEqual(self.slow_lines(), [])
+
+    async def test_waiting_for_a_busy_thread_counts_as_queued(self):
+        executor = ThreadPoolExecutor(max_workers=1)
+        self.addCleanup(executor.shutdown)
+        self.service.storage_executor = executor
+        # The first read holds the only thread until both have been handed to
+        # the executor; otherwise it can finish before the second is queued.
+        both_submitted = threading.Event()
+
+        def get(object_key):
+            both_submitted.wait(timeout=5)
+            self.now += 0.6
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        reads = [
+            asyncio.create_task(self.service.read_asset(self.session, self.token, name))
+            for name in ("a.css", "b.css")
+        ]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        both_submitted.set()
+        await asyncio.gather(*reads)
+
+        queued = sorted(line.args[6] for line in self.slow_lines())
+        self.assertEqual(len(queued), 2)
+        self.assertAlmostEqual(queued[0], 0)
+        self.assertAlmostEqual(queued[1], 600)
+
+    async def test_both_storage_calls_of_a_range_read_count(self):
+        self.storage.stat = MagicMock(
+            side_effect=self.advance(0.3, (len(_VIDEO), "video/mp4"))
+        )
+        self.storage.get_range = MagicMock(
+            side_effect=lambda key, start, end: self.advance(
+                0.4, _VIDEO[start : end + 1]
+            )()
+        )
+
+        await self.service.read_asset(
+            self.session, self.token, _VIDEO_PATH, RangeSpec(0, 15)
+        )
+
+        (line,) = self.slow_lines()
+        self.assertAlmostEqual(line.args[7], 700)
+
+
 class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
     """The token names the package outright, so serving a file asks the
     database one question instead of two -- and a course load asks for
