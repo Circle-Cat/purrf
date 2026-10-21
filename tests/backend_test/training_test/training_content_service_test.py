@@ -506,13 +506,20 @@ class TestReadAssetResolvesTheTokensOwnPackage(_ContentServiceCase):
 
         self.storage.get.assert_not_called()
 
-    async def test_the_package_is_re_read_on_every_asset_request(self):
+    async def test_the_package_is_read_once_for_the_files_of_one_course_load(self):
         token = self.valid_token()
 
         await self.service.read_asset(self.session, token, "scormcontent/index.html")
         await self.service.read_asset(self.session, token, "scormcontent/styles.css")
 
-        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+        self.assertEqual(self.package_repository.get_by_id.await_count, 1)
+        self.assertEqual(
+            self.fetched_keys(),
+            [
+                _OLD_PREFIX + "scormcontent/index.html",
+                _OLD_PREFIX + "scormcontent/styles.css",
+            ],
+        )
 
 
 class TestReadAssetRejections(_ContentServiceCase):
@@ -1049,6 +1056,123 @@ class TestReadAssetUsesTheStorageExecutor(_ContentServiceCase):
             self.assertTrue(name.startswith("storage-under-test"), msg=seen)
 
 
+class TestReadAssetRemembersThePackagePrefix(_ContentServiceCase):
+    """A course load is fifty files from one package; the database is asked
+    for its prefix once, so serving them holds no pooled connection.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.now = 1000.0
+        self.service._clock = lambda: self.now
+        self.token = self.valid_token()
+
+    async def test_the_prefix_is_looked_up_again_once_it_is_a_minute_old(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.now += 59
+        await self.service.read_asset(self.session, self.token, "b.css")
+        self.assertEqual(self.package_repository.get_by_id.await_count, 1)
+
+        self.now += 1
+        await self.service.read_asset(self.session, self.token, "c.css")
+
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+
+    async def test_a_package_that_is_gone_is_not_remembered(self):
+        self.package_repository.get_by_id.return_value = None
+
+        for name in ("a.css", "b.css"):
+            with self.assertRaises(FileNotFoundError):
+                await self.service.read_asset(self.session, self.token, name)
+
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+        self.storage.get.assert_not_called()
+
+    async def test_each_package_has_its_own_prefix(self):
+        other = MagicMock(
+            package_id=_PENDING_PACKAGE_ID, storage_prefix="training/9/other/"
+        )
+        self.package_repository.get_by_id.side_effect = lambda session, package_id: (
+            self.package if package_id == _PACKAGE_ID else other
+        )
+        other_token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PENDING_PACKAGE_ID
+        )
+
+        await self.service.read_asset(self.session, self.token, "a.css")
+        await self.service.read_asset(self.session, other_token, "a.css")
+
+        self.assertEqual(
+            self.fetched_keys(), [_OLD_PREFIX + "a.css", "training/9/other/a.css"]
+        )
+
+    async def test_a_replaced_package_reads_as_gone_not_as_a_missing_file(self):
+        """Publishing deletes the old row and then its files; a tab still on
+        the old token must get the reload message, not a storage warning.
+        """
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        self.storage.get = MagicMock(return_value=None)
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            await self.service.read_asset(self.session, self.token, "b.css")
+
+        self.assertEqual(str(caught.exception), "This package is no longer served.")
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+        self.logger.warning.assert_not_called()
+
+    async def test_a_missing_file_in_a_live_package_still_warns(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.storage.get = MagicMock(return_value=None)
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(self.session, self.token, "missing.css")
+
+        self.logger.warning.assert_called_once()
+        self.assertIn("no object", self.logger.warning.call_args.args[0])
+
+    async def test_two_reads_that_find_a_replaced_package_together_both_say_gone(self):
+        # Both find their file missing before either asks the database, so
+        # the second goes to forget a prefix the first already forgot.
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        both_missed = asyncio.Barrier(2)
+
+        async def missing(*args):
+            await both_missed.wait()
+            return None
+
+        self.service._off_loop = missing
+
+        results = await asyncio.gather(
+            self.service.read_asset(self.session, self.token, "b.css"),
+            self.service.read_asset(self.session, self.token, "c.css"),
+            return_exceptions=True,
+        )
+
+        for result in results:
+            self.assertIsInstance(result, FileNotFoundError)
+            self.assertEqual(str(result), "This package is no longer served.")
+
+    async def test_a_range_read_from_a_replaced_package_reads_as_gone(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        self.storage.stat = MagicMock(return_value=None)
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            await self.service.read_asset(
+                self.session, self.token, _VIDEO_PATH, RangeSpec(0, 15)
+            )
+
+        self.assertEqual(str(caught.exception), "This package is no longer served.")
+        self.logger.warning.assert_not_called()
+
+    async def test_the_player_files_never_ask_for_the_package(self):
+        await self.service.read_asset(self.session, self.token, PLAYER_PATH)
+
+        self.package_repository.get_by_id.assert_not_awaited()
+
+
 class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
     """The token names the package outright, so serving a file asks the
     database one question instead of two -- and a course load asks for
@@ -1063,13 +1187,13 @@ class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
 
         self.training_repository.get_training_by_id.assert_not_awaited()
 
-    async def test_one_package_read_per_file_and_nothing_else(self):
+    async def test_one_package_read_for_the_whole_load_and_nothing_else(self):
         token = self.valid_token()
 
         for name in ("a.css", "b.css", "c.js"):
             await self.service.read_asset(self.session, token, name)
 
-        self.assertEqual(self.package_repository.get_by_id.await_count, 3)
+        self.assertEqual(self.package_repository.get_by_id.await_count, 1)
 
 
 if __name__ == "__main__":
