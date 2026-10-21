@@ -14,13 +14,64 @@ import {
   dismissNotification,
   listNotifications,
 } from "@/api/recruitingApi";
+import { LEAVE_TYPE_LABELS } from "@/constants/LeaveRequest";
+import { serviceOf } from "@/pages/Inbox/inboxDisplay";
+import { formatBusinessRange } from "@/pages/Leave/utils/leaveDates";
+import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
+
+/**
+ * What a mentorship approval asks for, from its event's details.
+ * @param {{action?: string, roundName?: string, personName?: string,
+ *          mentorName?: string, menteeName?: string}} details
+ * @returns {string}
+ */
+const approvalAsk = (details) => {
+  const round = details?.roundName?.trim();
+  if (details?.action === "exempt_matching") {
+    const person = details?.personName?.trim() || "someone";
+    return `exempt ${person} from the matching history check${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "withdraw_participant") {
+    const person = details?.personName?.trim() || "someone";
+    return `withdraw ${person} from ${round || "their round"}`;
+  }
+  if (details?.action === "mark_no_show") {
+    const person = details?.personName?.trim() || "someone";
+    return `mark ${person} as a no show${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "mark_red_flag") {
+    const person = details?.personName?.trim() || "someone";
+    return `raise a red flag on ${person}${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "end_pair") {
+    const mentor = details?.mentorName?.trim() || "someone";
+    const mentee = details?.menteeName?.trim() || "someone";
+    return `end the pair of mentor ${mentor} and mentee ${mentee}${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "publish_matching") {
+    return `publish the matching result${round ? ` for ${round}` : ""}`;
+  }
+  return "a mentorship change";
+};
+
+/**
+ * What a leave request was for, from its event's details: "paid leave, Nov 3
+ * – Nov 5, 2026".
+ * @param {{leaveType?: string, startDate?: string, endDate?: string}} details
+ * @returns {string}
+ */
+const leaveAsk = (details) => {
+  const what = (LEAVE_TYPE_LABELS[details?.leaveType] ?? "leave").toLowerCase();
+  const when = formatBusinessRange(details?.startDate, details?.endDate);
+  return when ? `${what}, ${when}` : what;
+};
 
 /**
  * Compose a notification's display text from its event type and details.
  *
  * Two audiences share this switch. Every recruiting line is written from
  * staff's point of view, about someone else ("{actor} moved {applicant}");
- * the mentorship line below is written to the person it happened to. Match
+ * the mentorship lines below are written to the person they are about. Match
  * the case you are adding, not the surrounding voice.
  */
 const describe = (n) => {
@@ -32,15 +83,123 @@ const describe = (n) => {
   switch (n.eventType) {
     case "mentorship.mentor_admitted":
       return `You were admitted to ${n.jobTitle}`;
+    // Told to the admin who started the run. The round is a mentorship round,
+    // not a posting, so the name comes from details and jobTitle is blank.
+    case "mentorship.matching_run_completed": {
+      const round = n.details?.roundName?.trim();
+      const started = `The matching run you started${round ? ` for ${round}` : ""}`;
+      return n.details?.status === "failed"
+        ? `${started} did not finish`
+        : `${started} has finished`;
+    }
+    // Told to the admin who created a Kit send, once Kit has it scheduled or
+    // preparing gave up. Subject type is the send, so everything is in details.
+    case "mentorship.email_send_prepared": {
+      const what = [
+        n.details?.stage ? stageLabel(n.details.stage) : "",
+        n.details?.roundName?.trim() ?? "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (n.details?.status === "scheduled") {
+        return `Kit email scheduled${what ? `: ${what}` : ""}`;
+      }
+      return `Kit email not scheduled${what ? `: ${what}` : ""} — ${
+        n.details?.mayStillBeScheduled
+          ? "check Kit, it may still be sent"
+          : "no email was sent"
+      }`;
+    }
+    // Mentorship approval requests: told to the reviewer named, the new one
+    // on a handover, the raiser when it is decided and the reviewer when it is
+    // withdrawn. What is asked for comes from details.
+    case "mentorship.approval_requested":
+      return `${actor} asked you to approve: ${approvalAsk(n.details)}`;
+    case "mentorship.approval_reassigned":
+      return `${actor} moved to you a request to approve: ${approvalAsk(n.details)}`;
+    case "mentorship.approval_decided": {
+      const ask = approvalAsk(n.details);
+      switch (n.details?.decision) {
+        case "approved":
+          return `${actor} approved your request: ${ask}`;
+        case "rejected":
+          return `${actor} rejected your request: ${ask}`;
+        case "withdrawn":
+          return `${actor} withdrew the request: ${ask}`;
+        default:
+          return "";
+      }
+    }
+    // Leave requests: the manager is told one was filed or withdrawn, the
+    // employee how it was decided. What it was for comes from details.
+    case "leave.request_submitted":
+      return `${actor} asked for ${leaveAsk(n.details)}`;
+    case "leave.request_decided":
+      switch (n.details?.decision) {
+        case "approved":
+          return `${actor} approved your ${leaveAsk(n.details)}`;
+        case "rejected":
+          return `${actor} rejected your ${leaveAsk(n.details)}`;
+        case "withdrawn":
+          return `${actor} withdrew their request for ${leaveAsk(n.details)}`;
+        default:
+          return "";
+      }
+    // Told to ops.maintain holders; the kind comes from details.
+    case "ops.gmail_sync_alert":
+      return `Gmail sync needs attention: ${(n.details?.kind ?? "unknown").replaceAll("_", " ")}`;
+    // Told to whoever can handle that service's Inbox threads, for new mail
+    // or for a thread moved in from another service.
+    case "inbox.needs_reply": {
+      const subject = n.details?.subject || "(no subject)";
+      return n.details?.movedFrom
+        ? `${actor} transferred an email from ${serviceOf(n.details.movedFrom).label} that needs a reply: ${subject}`
+        : `New email needs a reply: ${subject}`;
+    }
+    // Told to the person who sent the email that bounced.
+    case "inbox.bounced":
+      return n.details?.bouncedTo
+        ? `Your email to ${n.details.bouncedTo} was not delivered`
+        : "Your email was not delivered";
+    // Told to whoever wrote into the thread through Purrf, else every
+    // mentorship admin writer.
+    case "mentorship.email_received": {
+      const who = n.details?.personName?.trim() || "A participant";
+      const round = n.details?.roundName?.trim();
+      const subject = n.details?.subject || "(no subject)";
+      return `${who} replied by email${round ? ` (${round})` : ""}: ${subject}`;
+    }
+    // Told to whoever wrote into the thread.
+    case "mentorship.email_bounced": {
+      const subject = n.details?.subject || "(no subject)";
+      return n.details?.bouncedTo
+        ? `Your email to ${n.details.bouncedTo} about ${subject} was not delivered`
+        : `Your email about ${subject} was not delivered`;
+    }
+    // Told to the posting owners as well as the evaluator, so it cannot say
+    // "you".
     case "recruiting.reassigned":
-      return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
+      return `${actor} assigned an evaluator for ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":
       return `You were auto-assigned to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.mentioned":
       return `${actor} mentioned you in a comment on ${n.applicantName} — ${n.jobTitle}`;
+    // Goes to whoever sent into the thread, or the job owners when nobody has.
+    // The reply may come from someone on CC, so the line names the application
+    // rather than who wrote.
+    case "recruiting.email_received":
+      return `New reply on the email thread about ${n.applicantName} — ${n.jobTitle}`;
+    // Told to the same people as a reply: it is their message that failed.
+    case "recruiting.email_bounced":
+      return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
     case "recruiting.review_opened":
       return `${actor} submitted "${n.jobTitle}" for your review`;
     case "recruiting.review_decided":
+      // Withdrawn is told to the reviewer it was waiting on; the other two
+      // to the submitter.
+      if (n.details?.decision === "withdrawn") {
+        return `${actor} withdrew the review of "${n.jobTitle}"`;
+      }
       return n.details?.decision === "approved"
         ? `${actor} approved "${n.jobTitle}"`
         : `${actor} rejected "${n.jobTitle}"`;
@@ -68,6 +227,28 @@ const describe = (n) => {
       return `${actor} changed the interview with ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.interview_cancelled":
       return `${actor} cancelled the interview with ${n.applicantName} — ${n.jobTitle}`;
+    // The block-request lines are about a person, not an application, so they
+    // read subjectName and never jobTitle/applicantName, which are always
+    // blank here. Their audiences differ per case: the reviewer is told a
+    // request arrived, the raiser is told how it ended.
+    case "user.block_requested":
+      return `${actor} asked you to block ${n.subjectName}`;
+    case "user.block_request_reassigned":
+      // One line for two audiences -- the reviewer it left and the one it
+      // reached. Neither is named, because the row carries only the actor.
+      return `${actor} reassigned the block request about ${n.subjectName}`;
+    case "user.block_request_decided":
+      // The raiser is told a decision; the reviewer is told a withdrawal;
+      // both are told when a direct block closed it undecided.
+      if (n.details?.decision === "withdrawn") {
+        return `${actor} withdrew the block request about ${n.subjectName}`;
+      }
+      if (n.details?.decision === "superseded") {
+        return `${actor} blocked ${n.subjectName} directly, closing the block request about them`;
+      }
+      return n.details?.decision === "approved"
+        ? `${actor} approved the block request you raised about ${n.subjectName}`
+        : `${actor} rejected the block request you raised about ${n.subjectName}`;
     default:
       return "";
   }

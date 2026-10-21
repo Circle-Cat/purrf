@@ -9,12 +9,24 @@ from backend.common.permissions import (
 
 
 class TestPermissions(unittest.TestCase):
-    def test_catalog_has_twenty_unique_dotted_values(self):
-        self.assertEqual(len(Permission), 20)
+    # The count is a tripwire: a new permission also needs an entry in
+    # permission_descriptions.py. Bump it and write the description.
+    def test_catalog_values_are_unique_and_dotted(self):
+        self.assertEqual(len(Permission), 24)
         values = [p.value for p in Permission]
         self.assertEqual(len(values), len(set(values)))
         for value in values:
             self.assertRegex(value, r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
+
+    def test_ops_maintain_is_a_human_permission(self):
+        self.assertEqual(Permission.OPS_MAINTAIN.value, "ops.maintain")
+        self.assertNotIn(Permission.OPS_MAINTAIN, SERVICE_ACCOUNT_PERMISSIONS)
+        self.assertNotIn(Permission.OPS_MAINTAIN, INTERNAL_EMPLOYEE_PERMISSIONS)
+
+    def test_inquiries_manage_is_a_human_permission(self):
+        self.assertEqual(Permission.INQUIRIES_MANAGE.value, "inquiries.manage")
+        self.assertNotIn(Permission.INQUIRIES_MANAGE, SERVICE_ACCOUNT_PERMISSIONS)
+        self.assertNotIn(Permission.INQUIRIES_MANAGE, INTERNAL_EMPLOYEE_PERMISSIONS)
 
     def test_str_enum_value_equals_string(self):
         # StrEnum members compare/serialize as their dotted string.
@@ -32,7 +44,6 @@ class TestPermissions(unittest.TestCase):
         self.assertEqual(
             INTERNAL_EMPLOYEE_PERMISSIONS,
             frozenset({
-                Permission.DIRECTORY_MICROSOFT_LDAP_READ,
                 Permission.DASHBOARD_ACTIVITY_SUMMARY_READ,
             }),
         )
@@ -45,6 +56,27 @@ class TestPermissions(unittest.TestCase):
                 Permission.SYSTEM_SYNC,
             }),
         )
+
+    def test_user_admin_is_not_in_internal_employee_bundle(self):
+        """USER_ADMIN must never be auto-granted on corp sign-in.
+
+        INTERNAL_EMPLOYEE_PERMISSIONS is granted by internal_lifecycle on first
+        corp-email login; putting the account console in it would hand every
+        employee the power to deactivate and block colleagues.
+        """
+        self.assertNotIn(Permission.USER_ADMIN, INTERNAL_EMPLOYEE_PERMISSIONS)
+
+    def test_user_admin_is_not_implied_by_permission_manage(self):
+        """PERMISSION_MANAGE is not a bundle -- only is_super_admin expands."""
+        self.assertIn(Permission.USER_ADMIN, SUPER_ADMIN_PERMISSIONS)
+
+
+class TestRetiredPermissions(unittest.TestCase):
+    def test_blacklist_write_permission_is_gone(self):
+        """Blocking moved behind a request-and-approval flow; the permission
+        that used to guard the one-click version has no gate left to guard."""
+        self.assertFalse(hasattr(Permission, "RECRUITING_BLACKLIST_WRITE"))
+        self.assertNotIn("recruiting.blacklist.write", {str(p) for p in Permission})
 
 
 if __name__ == "__main__":

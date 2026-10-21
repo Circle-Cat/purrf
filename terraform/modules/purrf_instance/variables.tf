@@ -180,6 +180,24 @@ variable "gmail_sender_notification" {
   type        = string
 }
 
+variable "gmail_sender_mentorship" {
+  description = "From address of the mentorship Inbox: its replies are sent from it, and with gmail_inbox_enabled new mail to it is claimed. Must be a verified Send-As on the mailbox. Empty: no mentorship Inbox in this environment."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_sender_inquiries" {
+  description = "From address of the inquiries Inbox: its replies are sent from it, and with gmail_inbox_enabled new mail to it is claimed. Must be a verified Send-As on the mailbox. Empty: no inquiries Inbox in this environment."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_inbox_enabled" {
+  description = "Claim new mail sent to the mentorship, recruiting and inquiries senders for this environment's Inbox. Environments sharing a mailbox and its aliases (test and staging) must not both turn it on, or each would file the same mail."
+  type        = bool
+  default     = false
+}
+
 variable "mentorship_calendar_id" {
   description = "Secondary calendar under user_email that mentorship meetings are created on and deleted from. MUST differ between prod and non-prod: Calendar event ids are scoped per calendar, so sharing one calendar let a delete driven by restored prod data remove the real prod event. The calendar must be OWNED by user_email -- the DWD grant is calendar.events.owned, so a calendar merely shared in will 403 at runtime. No default on purpose: a wrong or missing value costs real meetings, so it must fail at apply time."
   type        = string
@@ -188,4 +206,53 @@ variable "mentorship_calendar_id" {
 variable "interview_calendar_id" {
   description = "Secondary calendar under user_email that recruiting interview meetings are created on, patched on and deleted from. Same per-environment and ownership requirements as mentorship_calendar_id. Cancellation here is automation-driven (advance / reject / blacklist, and the blacklist sweep covers every application), so a shared calendar lets one environment delete another's real interviews in bulk."
   type        = string
+}
+
+variable "enable_matcher" {
+  description = "Provision the mentorship matcher: its secrets, service account, image pull access and Cloud Run job. Off by default while the pipeline is being brought up on test."
+  type        = bool
+  default     = false
+}
+
+variable "matcher_image_tag" {
+  description = "Tag of the matcher image in the shared purrf-matcher repository in the project's us-west1 Artifact Registry. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated -- Cloud Run rejects a job whose image does not exist."
+  type        = string
+  default     = ""
+}
+
+variable "matcher_llm_stub" {
+  description = "Run the matcher with no LLM: it writes fake scores and marks its output +llm-stub, and the LLM key secret gets a placeholder so the job can be created without a real key. For wiring the pipeline end to end; turn off before a real round, after adding the real key by hand."
+  type        = bool
+  default     = false
+}
+
+variable "matcher_llm_concurrency" {
+  description = "How many scoring calls the matcher has in flight at once."
+  type        = number
+  default     = 4
+}
+
+variable "gmail_watch_topic_name" {
+  description = "Pub/Sub topic the mailbox's Gmail watch publishes to, shared by every environment on that mailbox. Empty disables Gmail push for this environment."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_watch_topic_owner" {
+  description = "Whether this environment creates the shared topic and grants Gmail publish on it. Exactly one environment per mailbox sets this."
+  type        = bool
+  default     = false
+}
+
+variable "pubsub_event_push_enabled" {
+  description = "Deliver Google Chat, Microsoft Teams and Gerrit events by Pub/Sub push through the gateway Worker instead of leaving them for the hourly sync pull. The Worker route, the Access application destination and the backend endpoint must all be live in this environment before it is turned on."
+  type        = bool
+  default     = false
+}
+
+variable "kit_api_key" {
+  description = "Kit v4 API key for mentorship notifications. Empty leaves sending unavailable."
+  type        = string
+  sensitive   = true
+  default     = ""
 }

@@ -1,5 +1,8 @@
+from backend.internal_activity_service.activity_query_cache import (
+    SUMMARY_QUERY,
+)
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
-from backend.common.constants import JiraIssueStatus
+from backend.common.constants import JiraIssueStatus, ldap_from_addresses
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.internal_activity_summary_response_dto import ActivitySummaryDto
 
@@ -14,6 +17,8 @@ class SummaryService:
         gerrit_analytics_service,
         jira_analytics_service,
         date_time_util,
+        user_emails_repository,
+        activity_query_cache,
     ):
         """
         Initialize the SummaryService with required dependencies.
@@ -26,6 +31,8 @@ class SummaryService:
             date_time_util: DateTimeUtil instance.
             gerrit_analytics_service: GerritAnalyticsService instance.
             date_time_util: DateTimeUtil instance.
+            user_emails_repository: UserEmailsRepository instance.
+            activity_query_cache: ActivityQueryCache shared by the activity read paths.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -34,6 +41,8 @@ class SummaryService:
         self.gerrit_analytics_service = gerrit_analytics_service
         self.jira_analytics_service = jira_analytics_service
         self.date_time_util = date_time_util
+        self.user_emails_repository = user_emails_repository
+        self.activity_query_cache = activity_query_cache
 
     def _search_summary_data(self, ldaps: list[str], start_date, end_date) -> list:
         """Private method to fetch summary data for given LDAPs"""
@@ -43,7 +52,24 @@ class SummaryService:
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
+        return self.activity_query_cache.get_or_compute(
+            SUMMARY_QUERY,
+            # One row per ldap, in the order given.
+            (
+                self.activity_query_cache.ordered(ldaps),
+                start_dt.isoformat(),
+                end_dt.isoformat(),
+            ),
+            end_dt,
+            lambda: self._compute_summary_data(
+                ldaps, start_date, end_date, start_dt, end_dt
+            ),
+        )
 
+    def _compute_summary_data(
+        self, ldaps: list[str], start_date, end_date, start_dt, end_dt
+    ) -> list:
+        """Uncached body of _search_summary_data."""
         ms_chat_data = self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range(
             ldap_list=ldaps,
             start_date=start_date,
@@ -159,25 +185,39 @@ class SummaryService:
         # Call private method to aggregate summary data
         return self._search_summary_data(user_ldaps, start_date, end_date)
 
-    def get_my_summary(
-        self, user: UserContextDto, start_date=None, end_date=None
+    async def get_my_summary(
+        self, session, user: UserContextDto, start_date=None, end_date=None
     ) -> ActivitySummaryDto:
         """
-        Get summary data for the current user based on their primary email.
+        Get summary data for the current user.
+
+        The ldap comes from a confirmed company address on the user's account,
+        whichever address they signed in with. The address they signed in with
+        is not read as one: an outside address's local part could equal an
+        employee's ldap and show that employee's activity.
 
         Args:
+            session (AsyncSession): The active async database session.
             user (UserContextDto): The current user's context.
             start_date (str | None): Optional start date.
             end_date (str | None): Optional end date.
 
         Returns:
             ActivitySummaryDto: Activity summary for the current user. Metrics default to zero when no activity data is found.
-        """
-        primary_email = getattr(user, "primary_email", None)
-        if not primary_email:
-            raise ValueError("primary_email is missing from the user context.")
 
-        ldap = primary_email.split("@")[0]
+        Raises:
+            PermissionError: The account holds no confirmed company address.
+        """
+        rows = (
+            await self.user_emails_repository.list_by_user_id(session, user.user_id)
+            if user.user_id is not None
+            else []
+        )
+        ldap = ldap_from_addresses(row.email for row in rows if row.otp_confirmed)
+        if ldap is None:
+            raise PermissionError(
+                "The activity summary needs a confirmed CircleCat address on the account."
+            )
 
         data = self._search_summary_data([ldap], start_date, end_date)
 

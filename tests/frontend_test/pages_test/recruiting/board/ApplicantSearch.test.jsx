@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import ApplicantSearch from "@/pages/Recruiting/board/ApplicantSearch";
@@ -392,6 +392,29 @@ describe("ApplicantSearch", () => {
     expect(screen.getByPlaceholderText("Search by name or email")).toHaveValue(
       "",
     );
+  });
+
+  it("drops a search that answers after the job changed", async () => {
+    const user = userEvent.setup();
+    let answer;
+    api.searchBoardApplicants.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const { rerender } = renderSearch();
+
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    rerender(<ApplicantSearch selectedJobId={2} onSelect={vi.fn()} />);
+    await act(async () => {
+      answer({ data: { hits: [hit()], truncated: false } });
+    });
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    await typeTerm(user, "li");
+    expect(screen.getByRole("button", { name: "Search" })).toBeEnabled();
   });
 });
 

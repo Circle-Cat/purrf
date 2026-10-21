@@ -24,11 +24,17 @@ def _dto(**overrides):
         applicant_name="Ada Lovelace",
         applicant_email="ada@example.com",
         actor_name="Grace Hopper",
+        assignee_name="Linus Torvalds",
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
         # Read only by the templates that mention them; harmless elsewhere.
         reason="Not a fit",
         to_sub_status="scheduled",
         start_at=datetime(2026, 8, 5, 21, tzinfo=timezone.utc),
+        auto_assignee_name=None,
+        unavailable_default_assignee_id=None,
+        email_from="Ada <ada@example.com>",
+        email_subject="Re: Interview",
+        email_failed_recipients="bad@example.com",
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -95,11 +101,28 @@ class TestRender(unittest.TestCase):
             subject, "Evaluation assigned: Ada Lovelace (Backend Engineer)"
         )
         self.assertIn(
-            "Grace Hopper assigned you to evaluate Ada Lovelace for Backend Engineer.",
+            "Grace Hopper assigned Linus Torvalds to evaluate Ada Lovelace for "
+            "Backend Engineer.",
             body,
         )
         self.assertIn("Stage: Tech.", body)
-        self.assertIn("Open My Interview Evaluations in Purrf", body)
+        self.assertIn("open My Interview Evaluations in Purrf", body)
+
+    def test_assigned_to_evaluate_never_says_you_when_someone_assigned_it(self):
+        """The posting owners get this email too, so it must be true for them."""
+        _, body = notification_email_copy._assigned_to_evaluate(
+            _dto(), ApplicationStage.TECH
+        )
+
+        self.assertNotIn("assigned you", body)
+        self.assertIn("If you are the evaluator", body)
+
+    def test_assigned_to_evaluate_without_a_resolved_evaluator(self):
+        _, body = notification_email_copy._assigned_to_evaluate(
+            _dto(assignee_name=""), ApplicationStage.TECH
+        )
+
+        self.assertIn("Grace Hopper assigned someone to evaluate", body)
 
     def test_assigned_to_evaluate_appends_the_round_only_past_the_first(self):
         _, body = notification_email_copy._assigned_to_evaluate(
@@ -128,10 +151,17 @@ class TestRender(unittest.TestCase):
 
         self.assertEqual(subject, "Posting review requested: Backend Engineer")
         self.assertIn("waiting on your decision", body)
-        self.assertIn("Open My Posting Reviews in Purrf", body)
+        self.assertIn("Open Job Postings in Purrf", body)
         # A CLOSE or REOPEN review is not about publishing, so the copy must
         # not promise anything about publication.
         self.assertNotIn("publish", body.lower())
+
+    def test_job_review_withdrawn_tells_the_reviewer_nothing_waits(self):
+        subject, body = notification_email_copy._job_review_withdrawn(_dto(), None)
+
+        self.assertTrue(subject.startswith("Posting review withdrawn:"))
+        self.assertIn("withdrew their request to review the posting", body)
+        self.assertIn("Nothing is waiting on you any more.", body)
 
     def test_job_review_approved_and_rejected_name_the_actor(self):
         _, approved = notification_email_copy._job_review_approved(_dto(), None)
@@ -154,6 +184,42 @@ class TestRender(unittest.TestCase):
         self.assertIn("waiting for review at the Recruiter screening stage", body)
         self.assertIn("because you own this posting", body)
         self.assertIn("Open the Applications Board in Purrf", body)
+
+    def test_application_submitted_names_the_auto_assignee(self):
+        _, body = notification_email_copy._application_submitted(
+            _dto(auto_assignee_name="Grace Hopper"),
+            ApplicationStage.RECRUITER_SCREENING,
+        )
+
+        self.assertIn(
+            "It was assigned to Grace Hopper automatically, the stage's default "
+            "interviewer.",
+            body,
+        )
+        self.assertNotIn("unavailable", body)
+
+    def test_application_submitted_says_the_default_could_not_be_assigned(self):
+        _, body = notification_email_copy._application_submitted(
+            _dto(unavailable_default_assignee_id=42),
+            ApplicationStage.RECRUITER_SCREENING,
+        )
+
+        self.assertIn(
+            "The stage's default interviewer (User 42 — unavailable) can no "
+            "longer be assigned, so it is unassigned. Assign someone from the "
+            "Applications Board, and update the default on the posting so later "
+            "applications are not affected.",
+            body,
+        )
+        self.assertNotIn("automatically", body)
+
+    def test_application_submitted_without_a_default_adds_nothing(self):
+        _, body = notification_email_copy._application_submitted(
+            _dto(), ApplicationStage.RECRUITER_SCREENING
+        )
+
+        self.assertNotIn("default interviewer", body)
+        self.assertTrue(body.endswith("Applications Board in Purrf to review it.</p>"))
 
     def test_application_auto_rejected_says_no_human_review(self):
         subject, body = notification_email_copy._application_auto_rejected(_dto(), None)
@@ -219,12 +285,14 @@ class TestCandidateLine(unittest.TestCase):
     address is the handle they can paste into the board's search.
     """
 
-    # The three job-scoped templates: a posting under review has no
+    # The four job-scoped templates: a posting under review has no
     # candidate, so there is no address to print.
     _NO_CANDIDATE = {
         "_job_review_requested",
+        "_job_review_reassigned",
         "_job_review_approved",
         "_job_review_rejected",
+        "_job_review_withdrawn",
     }
 
     def test_names_the_candidate_and_the_address(self):
@@ -276,6 +344,132 @@ class TestCandidateLine(unittest.TestCase):
                     _dto(), ApplicationStage.TECH
                 )
                 self.assertNotIn("Candidate:", body)
+
+
+class TestEscaping(unittest.TestCase):
+    """Bodies are HTML; subjects are not.
+
+    Every value these templates interpolate is written by a person: a
+    blacklist reason a recruiter typed, a name a candidate chose, a posting
+    title. Recipients never saw the form it was typed into, so a body has to
+    carry that text as text -- while the subject, which a mail client shows
+    as plain text, has to carry it verbatim or the reader sees "&amp;".
+    """
+
+    _MARKUP = '<script>alert("xss")</script>'
+    _ESCAPED = "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;"
+
+    def test_a_reason_containing_markup_is_escaped_in_the_body(self):
+        """The reachable path: the reason travels from a block request into
+        mail sent to every owner of every posting the target applied to."""
+        _, body = notification_email_copy._blacklisted(_dto(reason=self._MARKUP), None)
+
+        self.assertIn(self._ESCAPED, body)
+        self.assertNotIn("<script", body)
+
+    def test_an_applicant_name_containing_markup_is_escaped_in_the_body(self):
+        """A candidate types their own name, so it is attacker-controlled."""
+        _, body = notification_email_copy._application_submitted(
+            _dto(applicant_name=self._MARKUP), ApplicationStage.RECRUITER_SCREENING
+        )
+
+        self.assertIn(self._ESCAPED, body)
+        self.assertNotIn("<script", body)
+
+    def test_an_auto_assignee_name_containing_markup_is_escaped_in_the_body(self):
+        subject, body = notification_email_copy._application_submitted(
+            _dto(auto_assignee_name=self._MARKUP), ApplicationStage.RECRUITER_SCREENING
+        )
+
+        self.assertIn(f"assigned to {self._ESCAPED} automatically", body)
+        self.assertNotIn("<script", body)
+        self.assertNotIn("script", subject)
+
+    def test_an_actor_name_containing_markup_is_escaped_in_the_body(self):
+        _, body = notification_email_copy._mentioned(
+            _dto(actor_name=self._MARKUP), None
+        )
+
+        self.assertIn(self._ESCAPED, body)
+        self.assertNotIn("<script", body)
+
+    def test_the_candidate_line_escapes_the_name_and_the_address(self):
+        """A helper that interpolates a field is a body site like any other."""
+        _, body = notification_email_copy._stage_changed(
+            _dto(applicant_name=self._MARKUP, applicant_email="<b>a@b.c</b>"),
+            ApplicationStage.TECH,
+        )
+
+        self.assertIn(f"Candidate: {self._ESCAPED} (&lt;b&gt;a@b.c&lt;/b&gt;)", body)
+        self.assertNotIn("<b>", body)
+
+    def test_the_subject_keeps_an_ampersand_as_typed(self):
+        """Escaping a subject would show "&amp;" in the mail client's list."""
+        subject, body = notification_email_copy._blacklisted(
+            _dto(applicant_name="Ada & Co", job_title="Tools & Dies"), None
+        )
+
+        self.assertEqual(subject, "Application blacklisted: Ada & Co (Tools & Dies)")
+        self.assertNotIn("&amp;", subject)
+        self.assertIn("Ada &amp; Co", body)
+
+    def test_no_subject_is_escaped(self):
+        """Swept, so a template added later cannot escape its subject either."""
+        for name, template in _every_template():
+            with self.subTest(template=name):
+                subject, _ = template(
+                    _dto(job_title="Tools & Dies"), ApplicationStage.TECH
+                )
+                self.assertIn("Tools & Dies", subject)
+                self.assertNotIn("&amp;", subject)
+
+    def test_no_body_carries_markup_a_person_wrote(self):
+        """Swept, so a template added later cannot forget to escape.
+
+        A template that interpolated a raw field would deliver whatever a
+        recruiter or a candidate typed as live markup, and nothing else here
+        would notice.
+        """
+        hostile = _dto(
+            job_title=self._MARKUP,
+            applicant_name=self._MARKUP,
+            applicant_email=self._MARKUP,
+            actor_name=self._MARKUP,
+            reason=self._MARKUP,
+            email_from=self._MARKUP,
+            email_subject=self._MARKUP,
+            to_sub_status=self._MARKUP,
+        )
+
+        for name, template in _every_template():
+            with self.subTest(template=name):
+                _, body = template(hostile, ApplicationStage.TECH)
+                self.assertNotIn("<script", body)
+                self.assertIn("&lt;script&gt;", body)
+                # The markup the module writes itself stays markup.
+                self.assertIn("<p>", body)
+
+    def test_ordinary_text_renders_exactly_as_before(self):
+        """The change has to be invisible to every normal notification."""
+        subject, body = notification_email_copy._blacklisted(_dto(), None)
+
+        self.assertEqual(
+            subject, "Application blacklisted: Ada Lovelace (Backend Engineer)"
+        )
+        self.assertEqual(
+            body,
+            "<p>Grace Hopper blacklisted Ada Lovelace and rejected their "
+            'application for Backend Engineer, with the reason: "Not a fit".</p>'
+            "<p>Candidate: Ada Lovelace (ada@example.com)</p>",
+        )
+
+    def test_a_missing_name_still_falls_back_to_its_placeholder(self):
+        """The fallbacks moved onto the escaped view, so they are tested there."""
+        _, body = notification_email_copy._blacklisted(
+            _dto(actor_name="", applicant_name=""), None
+        )
+
+        self.assertIn("<p>Someone blacklisted A candidate", body)
 
 
 if __name__ == "__main__":

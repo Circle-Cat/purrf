@@ -12,15 +12,15 @@ from backend.recruiting.email_sync_service import EmailSyncService
 RECEIVED_AT = datetime(2023, 5, 6, 7, 8, tzinfo=timezone.utc)
 
 
-def _message(direction, subject="Re: Hello"):
+def _message(direction, subject="Re: Hello", failed_recipients=None):
     return SimpleNamespace(
         direction=direction,
         subject=subject,
         from_address="cand@x",
         to_addresses="recruiting@corp.com",
-        cc_addresses="boss@x",
         thread_id=10,
         gmail_internal_date=RECEIVED_AT,
+        failed_recipients=failed_recipients,
     )
 
 
@@ -65,10 +65,6 @@ def _wire_expiring_application_scenario(
 ):
     """Wire the given doubles to reproduce the ``MissingGreenlet`` trap.
 
-    Shared by the reconcile-side and delta-side regression tests: both drive
-    the same ``_sweep`` loop, so both must be protected by the exact same
-    scenario rather than by copies that could drift apart.
-
     The first ``sync_context`` call raises, which triggers
     ``session.rollback()``. That flips the shared ``expired`` flag, so the
     two remaining ``_ExpiringApplication`` doubles left in ``due`` raise
@@ -89,7 +85,7 @@ def _wire_expiring_application_scenario(
     return applications
 
 
-class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
+class TestSyncTrackedThread(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.conversation_service = AsyncMock()
         self.conversation_service.sync_context = AsyncMock(return_value=[])
@@ -100,18 +96,17 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
         self.record_event = recorder.start()
         self.addCleanup(recorder.stop)
         self.session = Mock()
-        self.gmail = Mock()
-        self.gmail.list_recent_message_thread_ids = Mock(return_value=set())
         self.service = EmailSyncService(
-            gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
             application_repository=AsyncMock(),
             logger=Mock(),
         )
-        self.application = SimpleNamespace(application_id=7, user_id=5)
+        self.thread = Mock(
+            user_id=5, context_type=ContextType.APPLICATION, context_id=7
+        )
 
     async def test_syncs_the_application_context(self):
-        await self.service.sync_application(self.session, self.application)
+        await self.service.sync_tracked_thread(self.session, self.thread)
         self.conversation_service.sync_context.assert_awaited_once_with(
             self.session, ContextType.APPLICATION, 7
         )
@@ -122,7 +117,7 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
             _message(EmailDirection.OUTBOUND, subject="Hello"),
         ]
 
-        await self.service.sync_application(self.session, self.application)
+        await self.service.sync_tracked_thread(self.session, self.thread)
 
         self.record_event.assert_awaited_once()
         _args, kwargs = self.record_event.await_args
@@ -133,30 +128,110 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["details"]["subject"], "Re: Hello")
         self.assertEqual(kwargs["details"]["from"], "cand@x")
         self.assertEqual(kwargs["details"]["to"], "recruiting@corp.com")
-        self.assertEqual(kwargs["details"]["cc"], "boss@x")
         self.assertEqual(kwargs["details"]["threadId"], 10)
         self.assertEqual(kwargs["details"]["direction"], "inbound")
         # Backdated to when the mail actually arrived, not to now.
         self.assertEqual(kwargs["created_at"], RECEIVED_AT)
 
+    async def test_a_bounce_is_recorded_as_email_bounced_not_a_reply(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(
+                EmailDirection.INBOUND,
+                subject="Delivery Status Notification (Failure)",
+                failed_recipients="bad@x",
+            ),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.await_args
+        self.assertEqual(kwargs["subject_id"], 7)
+        # Nobody acted: the candidate did not write, the mail system did.
+        self.assertIsNone(kwargs["actor_id"])
+        self.assertEqual(kwargs["event_type"], "recruiting.email_bounced")
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "subject": "Delivery Status Notification (Failure)",
+                "failedRecipients": ["bad@x"],
+                "threadId": 10,
+                "direction": "inbound",
+            },
+        )
+        self.assertEqual(kwargs["created_at"], RECEIVED_AT)
+
+    async def test_a_bounce_lists_each_failed_address(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(
+                EmailDirection.INBOUND,
+                failed_recipients="a@x, Bee <b@y>,c@z",
+            ),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        details = self.record_event.await_args.kwargs["details"]
+        self.assertEqual(details["failedRecipients"], ["a@x", "b@y", "c@z"])
+
+    async def test_a_bounce_that_names_nobody_is_still_a_bounce(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(EmailDirection.INBOUND, failed_recipients=""),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], "recruiting.email_bounced")
+        self.assertEqual(kwargs["details"]["failedRecipients"], [])
+
     async def test_no_new_messages_writes_no_activity(self):
-        await self.service.sync_application(self.session, self.application)
+        await self.service.sync_tracked_thread(self.session, self.thread)
         self.record_event.assert_not_awaited()
 
-    async def test_returns_the_new_messages(self):
+    async def test_returns_the_new_message_count(self):
         messages = [_message(EmailDirection.INBOUND)]
         self.conversation_service.sync_context.return_value = messages
-        result = await self.service.sync_application(self.session, self.application)
-        self.assertEqual(result, messages)
+        result = await self.service.sync_tracked_thread(self.session, self.thread)
+        self.assertEqual(result, 1)
 
     async def test_does_not_commit(self):
-        # The caller owns the transaction boundary: manual Refresh commits once,
-        # the nightly sweep commits per application.
+        # The caller owns the transaction boundary.
         self.conversation_service.sync_context.return_value = [
             _message(EmailDirection.INBOUND)
         ]
-        await self.service.sync_application(self.session, self.application)
+        await self.service.sync_tracked_thread(self.session, self.thread)
         self.session.commit.assert_not_called()
+
+    async def test_sync_tracked_thread_writes_the_timeline_like_every_other_entry_point(
+        self,
+    ):
+        thread = Mock(
+            thread_id=7,
+            user_id=42,
+            context_type=ContextType.APPLICATION,
+            context_id=300,
+        )
+        self.conversation_service.sync_context.return_value = [
+            _message(EmailDirection.INBOUND, "Re: interview"),
+            _message(EmailDirection.OUTBOUND, "sent from the Gmail UI"),
+        ]
+        count = await self.service.sync_tracked_thread(self.session, thread)
+        self.assertEqual(count, 2)
+        self.conversation_service.sync_context.assert_awaited_once_with(
+            self.session, ContextType.APPLICATION, 300
+        )
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], "recruiting.email_received")
+        self.assertEqual(kwargs["subject_id"], 300)
+        self.assertEqual(kwargs["actor_id"], 42)
+
+    async def test_sync_tracked_thread_refuses_a_foreign_context(self):
+        thread = Mock(context_type=ContextType.ACTIVITY, context_id=9, user_id=1)
+        with self.assertRaises(ValueError):
+            await self.service.sync_tracked_thread(self.session, thread)
+        self.conversation_service.sync_context.assert_not_awaited()
 
 
 class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
@@ -172,10 +247,7 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         self.application_repo = AsyncMock()
         self.logger = Mock()
         self.session = AsyncMock()
-        self.gmail = Mock()
-        self.gmail.list_recent_message_thread_ids = Mock(return_value=set())
         self.service = EmailSyncService(
-            gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
             application_repository=self.application_repo,
             logger=self.logger,
@@ -201,6 +273,12 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         # The summary must be logged even on an empty sweep — it is the only
         # signal the job ran at all, since the endpoint always returns 200.
         self.logger.log.assert_called_once()
+
+    async def test_resync_all_delegates_to_the_reconcile(self):
+        summary = {"scanned": 2, "synced": 2, "failed": 0, "newMessages": 3}
+        self.service.sync_due_applications = AsyncMock(return_value=summary)
+        self.assertIs(await self.service.resync_all(self.session), summary)
+        self.service.sync_due_applications.assert_awaited_once_with(self.session)
 
     async def test_syncs_every_due_application_and_commits_each(self):
         self._due(1, 2, 3)
@@ -245,7 +323,7 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_failure_does_not_stop_the_others(self):
         # The whole point of the sweep's error handling: a single bad thread
-        # must not silently cost every later application its nightly sync.
+        # must not silently cost every later application its sync.
         self._due(1, 2, 3)
         self.conversation_service.sync_context.side_effect = [
             [],
@@ -280,7 +358,7 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         # *inside* the except block, where nothing catches it. That escapes
         # sync_due_applications entirely: the first bad application (a Gmail
         # rate limit, a message deleted between listing and fetch, an expired
-        # refresh token) would kill the whole nightly sweep - exactly the
+        # refresh token) would kill the whole sweep - exactly the
         # outcome per-application isolation exists to prevent.
         #
         # The 13 pre-existing tests use AsyncMock()/SimpleNamespace doubles:
@@ -319,19 +397,16 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.logger.log.call_args.args[0], logging.INFO)
 
     async def test_summary_logged_at_warning_when_any_failed(self):
-        # The endpoint always returns 200 and the k8s job is always green, so a
-        # grep-able WARNING is the only signal that something went wrong.
+        # Failures are isolated, so a grep-able WARNING is the only signal.
         self._due(1)
         self.conversation_service.sync_context.side_effect = RuntimeError("boom")
         await self.service.sync_due_applications(self.session)
         self.logger.log.assert_called_once()
         self.assertEqual(self.logger.log.call_args.args[0], logging.WARNING)
 
-    async def test_reconcile_passes_no_thread_filter_and_is_labelled(self):
+    async def test_summary_line_is_labelled_as_the_reconcile_sweep(self):
         self._due(1)
         await self.service.sync_due_applications(self.session)
-        call = self.application_repo.list_due_email_sync_applications.await_args
-        self.assertIsNone(call.kwargs.get("gmail_thread_ids"))
         # Render the message rather than reading the raw template: the
         # requirement is about the line that gets emitted, so the test should
         # be agnostic to whether the label is interpolated eagerly or lazily.
@@ -339,176 +414,6 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         message = call.args[1] % call.args[2:]
         self.assertIn("reconcile", message)
         self.assertIn("sweep finished", message)
-
-
-class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.conversation_service = AsyncMock()
-        self.conversation_service.sync_context = AsyncMock(return_value=[])
-        recorder = patch(
-            "backend.recruiting.email_sync_service.record_event",
-            new_callable=AsyncMock,
-        )
-        self.record_event = recorder.start()
-        self.addCleanup(recorder.stop)
-        self.application_repo = AsyncMock()
-        self.application_repo.list_due_email_sync_applications = AsyncMock(
-            return_value=[]
-        )
-        self.gmail = Mock()
-        self.logger = Mock()
-        self.session = AsyncMock()
-        self.service = EmailSyncService(
-            gmail_client=self.gmail,
-            email_conversation_service=self.conversation_service,
-            application_repository=self.application_repo,
-            logger=self.logger,
-        )
-
-    def _flagged(self, *thread_ids):
-        self.gmail.list_recent_message_thread_ids = Mock(return_value=set(thread_ids))
-
-    def _due(self, *application_ids):
-        applications = [
-            SimpleNamespace(application_id=i, user_id=100 + i) for i in application_ids
-        ]
-        self.application_repo.list_due_email_sync_applications = AsyncMock(
-            return_value=applications
-        )
-        return applications
-
-    async def test_asks_gmail_for_a_two_day_window(self):
-        # Day-granular operator, so the window carries a day of slack on
-        # purpose — see the design note in GmailClient.
-        self._flagged()
-        await self.service.sync_recent_applications(self.session)
-        self.gmail.list_recent_message_thread_ids.assert_called_once_with(2)
-
-    async def test_passes_the_flagged_threads_to_the_eligibility_query(self):
-        self._flagged("T1", "T2")
-        self._due(1)
-
-        await self.service.sync_recent_applications(self.session)
-
-        call = self.application_repo.list_due_email_sync_applications.await_args
-        self.assertIs(call.args[0], self.session)
-        self.assertEqual(call.kwargs["gmail_thread_ids"], {"T1", "T2"})
-
-    async def test_sweeps_the_terminal_window_like_the_reconcile_does(self):
-        # Same seven-day cutoff as the weekly job: the delta narrows *which*
-        # applications are looked at, never *whether* they are eligible.
-        self._flagged("T1")
-        self._due(1)
-        before = datetime.now(timezone.utc)
-
-        await self.service.sync_recent_applications(self.session)
-
-        cutoff = self.application_repo.list_due_email_sync_applications.await_args.args[
-            1
-        ]
-        self.assertAlmostEqual((before - cutoff).total_seconds(), 7 * 86400, delta=5)
-
-    async def test_nothing_flagged_skips_the_query_entirely(self):
-        self._flagged()
-
-        summary = await self.service.sync_recent_applications(self.session)
-
-        self.application_repo.list_due_email_sync_applications.assert_not_awaited()
-        self.conversation_service.sync_context.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
-        self.assertEqual(
-            summary, {"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0}
-        )
-
-    async def test_nothing_flagged_still_logs_a_summary(self):
-        # The endpoint always returns 200 and the job is always green, so the
-        # log is the only evidence the run happened at all.
-        self._flagged()
-        await self.service.sync_recent_applications(self.session)
-        self.logger.log.assert_called_once()
-
-    async def test_isolates_failures_like_the_reconcile_does(self):
-        self._flagged("T1")
-        self._due(1, 2, 3)
-        self.conversation_service.sync_context.side_effect = [
-            [],
-            RuntimeError("Gmail API error"),
-            [],
-        ]
-
-        summary = await self.service.sync_recent_applications(self.session)
-
-        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
-        self.assertEqual(
-            summary, {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 0}
-        )
-        self.assertEqual(self.session.commit.await_count, 2)
-        self.session.rollback.assert_awaited_once()
-
-    async def test_summary_log_names_the_delta_job(self):
-        # One log stream carries both jobs; they must be distinguishable.
-        self._flagged("T1")
-        self._due(1)
-        await self.service.sync_recent_applications(self.session)
-        call = self.logger.log.call_args
-        message = call.args[1] % call.args[2:]
-        self.assertIn("delta", message)
-        self.assertIn("sweep finished", message)
-
-    async def test_summary_reports_the_flagged_count_when_none_are_due(self):
-        # This is the exact combination that, without a flagged count in the
-        # summary, is indistinguishable from a quiet mailbox: Gmail returned
-        # real thread ids, but the eligibility join matched none of them —
-        # which is also what a silently-broken lookup (wrong mailbox, a
-        # search-index problem, a future edit to the `q`/`fields` strings)
-        # would look like every single night.
-        self._flagged("T1", "T2")
-        self._due()
-
-        await self.service.sync_recent_applications(self.session)
-
-        call = self.logger.log.call_args
-        message = call.args[1] % call.args[2:]
-        self.assertIn("flagged=2", message)
-        self.assertIn("scanned=0", message)
-
-    async def test_rollback_expiring_the_application_does_not_crash_the_sweep(self):
-        # Same MissingGreenlet trap as the reconcile-side test in
-        # TestSyncDueApplications, but driven through sync_recent_applications
-        # instead. Today there is one _sweep loop shared by both entry
-        # points, so this looks redundant — but it pins the guarantee per
-        # entry point rather than per loop. A future edit that gives the
-        # delta its own loop (instead of calling _sweep) would leave every
-        # other delta test green while silently reintroducing this crash;
-        # only this test would catch it.
-        self._flagged("T1")
-        _wire_expiring_application_scenario(
-            self.session, self.application_repo, self.conversation_service
-        )
-
-        summary = await self.service.sync_recent_applications(self.session)
-
-        self.assertEqual(
-            summary,
-            {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 0},
-        )
-        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
-
-    async def test_a_failed_gmail_lookup_is_not_isolated(self):
-        # Per-application failures are caught and counted; this one is not.
-        # Without the flagged set there is no sweep to run, so it propagates
-        # and the endpoint 500s rather than reporting a misleading all-zero
-        # summary.
-        self.gmail.list_recent_message_thread_ids = Mock(
-            side_effect=RuntimeError("Gmail API error")
-        )
-
-        with self.assertRaises(RuntimeError):
-            await self.service.sync_recent_applications(self.session)
-
-        self.application_repo.list_due_email_sync_applications.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
-        self.logger.log.assert_not_called()
 
 
 if __name__ == "__main__":

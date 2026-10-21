@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
-from dateutil.parser import isoparse
-from dateutil.relativedelta import relativedelta
 from backend.dto.partner_dto import PartnerDto
+from backend.mentorship.round_windows import feedback_window
 from backend.dto.matches_dto import MatchesDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
@@ -249,13 +248,14 @@ class ParticipationService:
         determines the user's participation and matching status for the given
         mentorship round, and returns the corresponding match result.
 
-        A `rejected` status is reported with its pairings too, when there are
-        any: the same status is stored for an application that was turned down
-        and for someone who took part and then left, and only the pairing
-        tells them apart.
+        A `rejected` or `withdrawn` status is reported with its pairings too,
+        when there are any: `rejected` is stored both for an application that
+        was turned down and for someone who took part and then left, and only
+        the pairing tells them apart; `withdrawn` is an approved withdrawal.
 
-        If the user is not in a MATCHED state, an empty partners list is returned
-        along with the current match status. If the user is MATCHED, this method
+        If the user is not MATCHED, UNMATCHED, REJECTED or WITHDRAWN, an empty
+        partners list is returned along with the current match status. For those
+        four statuses, this method
         retrieves the user's mentorship pairs for the round and constructs
         partner details for each counterpart. A pairing that has since ended is
         still who the user was matched with, so it is reported with
@@ -286,6 +286,7 @@ class ParticipationService:
             ApprovalStatus.UN_MATCHED: MatchStatus.UNMATCHED,
             ApprovalStatus.REJECTED: MatchStatus.REJECTED,
             ApprovalStatus.MATCHED: MatchStatus.MATCHED,
+            ApprovalStatus.WITHDRAWN: MatchStatus.WITHDRAWN,
         }
         current_status = (
             status_map.get(participant.approval_status, MatchStatus.UNKNOWN)
@@ -295,12 +296,18 @@ class ParticipationService:
 
         partners: list[PartnerDto] = []
 
-        # A pairing is reported for the two statuses that can have produced
-        # one: the user is matched, or they took part and left -- `rejected`
-        # covers quitting, being removed, and a mentor being suspended. The
-        # remaining statuses never had a pairing, so the pairs table is not
-        # touched for them.
-        if current_status not in (MatchStatus.MATCHED, MatchStatus.REJECTED):
+        # A pairing is reported for the statuses that can have produced one:
+        # the user is matched; was matched and their pair ended, leaving them
+        # un_matched; or took part and left -- `rejected` covers quitting,
+        # being removed, and a mentor being suspended; `withdrawn` is an
+        # approved withdrawal. Signed-up and unregistered never had one, so the
+        # pairs table is not touched for them.
+        if current_status not in (
+            MatchStatus.MATCHED,
+            MatchStatus.UNMATCHED,
+            MatchStatus.REJECTED,
+            MatchStatus.WITHDRAWN,
+        ):
             return MatchesDto(
                 round_id=round_id, current_status=current_status, partners=partners
             )
@@ -317,7 +324,7 @@ class ParticipationService:
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, live_partner_ids
             )
-            if live_partner_ids
+            if live_partner_ids and current_status == MatchStatus.MATCHED
             else {}
         )
 
@@ -405,63 +412,76 @@ class ParticipationService:
             partner_feedback=partner_feedback,
         )
 
-    async def _feedback_closes_at(
-        self, session: AsyncSession, round_id: int
-    ) -> datetime | None:
-        """
-        Resolve the moment feedback stops being editable for a round.
-
-        `feedback_deadline_at` is optional in the round form, so it falls back to
-        a month past the (required) meetings deadline -- the same rule the
-        dashboard uses to decide when to stop offering the form. A round with
-        neither date configured has no cutoff at all rather than an immediate
-        one, so a half-filled timeline cannot lock participants out.
-
-        Args:
-            session (AsyncSession): Active async database session.
-            round_id (int): The mentorship round ID.
-
-        Returns:
-            datetime | None: The UTC cutoff, or None when the round sets no dates.
-        """
-        round_entity = await self.mentorship_round_repository.get_by_round_id(
-            session, round_id
-        )
-        timeline = getattr(round_entity, "description", None) or {}
-
-        raw = timeline.get("feedback_deadline_at")
-        offset = relativedelta()
-        if not raw:
-            raw = timeline.get("meetings_completion_deadline_at")
-            offset = relativedelta(months=1)
-        if not raw:
-            return None
-
-        closes_at = isoparse(raw) + offset
-        # Timelines predating timezone-aware storage are recorded in UTC.
-        if closes_at.tzinfo is None:
-            closes_at = closes_at.replace(tzinfo=timezone.utc)
-        return closes_at
-
     async def _assert_feedback_open(self, session: AsyncSession, round_id: int) -> None:
         """
-        Reject writes once the round's feedback window has closed.
+        Reject writes outside the round's feedback window.
+
+        The window is ``round_windows.feedback_window``, the same one the
+        round list reports to the participant card. A bound the round's
+        timeline cannot supply does not restrict.
 
         Args:
             session (AsyncSession): Active async database session.
             round_id (int): The mentorship round ID.
 
         Raises:
-            ValueError: If the round's feedback window has already closed.
+            ValueError: If the window has not opened yet or has already closed.
         """
-        closes_at = await self._feedback_closes_at(session=session, round_id=round_id)
-        if closes_at and datetime.now(timezone.utc) > closes_at:
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, round_id
+        )
+        if round_entity is None:
+            return
+        opens_at, closes_at = feedback_window(round_entity)
+        now = datetime.now(timezone.utc)
+        if opens_at and now < opens_at:
+            self.logger.warning(
+                "[ParticipationService] feedback window not open yet for round_id=%s, opens_at=%s",
+                round_id,
+                opens_at.isoformat(),
+            )
+            raise ValueError("Feedback for this round has not opened yet.")
+        if closes_at and now > closes_at:
             self.logger.warning(
                 "[ParticipationService] feedback window closed for round_id=%s, closed_at=%s",
                 round_id,
                 closes_at.isoformat(),
             )
             raise ValueError("The feedback deadline for this round has passed.")
+
+    async def _assert_feedback_partners(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        round_id: int,
+        partner_ids: list[int],
+    ) -> None:
+        """Raise ValueError unless each partner is someone the user was paired
+        with in the round, ended pairs included, and appears only once."""
+        if not partner_ids:
+            return
+        seen = set()
+        for partner_id in partner_ids:
+            if partner_id in seen:
+                raise ValueError(
+                    f"Feedback on partner {partner_id} is given more than once."
+                )
+            seen.add(partner_id)
+        pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
+            session=session, user_id=user_id, round_id=round_id
+        )
+        partners = {p_user.user_id for _, p_user in pairs_data}
+        for partner_id in partner_ids:
+            if partner_id not in partners:
+                self.logger.warning(
+                    "[ParticipationService] feedback on non-partner user_id=%s from user_id=%s, round_id=%s",
+                    partner_id,
+                    user_id,
+                    round_id,
+                )
+                raise ValueError(
+                    f"User {partner_id} is not your partner in this round."
+                )
 
     async def upsert_program_feedback(
         self,
@@ -487,8 +507,10 @@ class ParticipationService:
             FeedbackDto: The saved feedback DTO.
 
         Raises:
-            ValueError: If the user has no participant record for this round, or
-                if the round's feedback window has already closed.
+            ValueError: If the user has no participant record for this round,
+                if the round's feedback window has not opened yet or has
+                already closed, or if partner feedback names someone who was
+                not their partner in the round or names one partner twice.
         """
 
         self.logger.debug(
@@ -512,6 +534,12 @@ class ParticipationService:
             )
 
         await self._assert_feedback_open(session=session, round_id=round_id)
+        await self._assert_feedback_partners(
+            session=session,
+            user_id=user_context.user_id,
+            round_id=round_id,
+            partner_ids=[p.partner_id for p in feedback_data.partner_feedback],
+        )
 
         feedback_dump = feedback_data.model_dump(
             mode="json", by_alias=False, exclude_unset=False

@@ -28,6 +28,10 @@
 
 set -o errexit -o pipefail -o nounset
 
+# CI raises this: with 10s, the server can be mid-shutdown when the next
+# step's bazel connects after a `bazel run` tool that took about 10s.
+bazel_startup=(--max_idle_secs="${BAZEL_MAX_IDLE_SECS:-10}")
+
 if [ "$#" -eq 0 ]; then
 	echo "No targets specified. You can use 'all_files' to lint all default targets."
     echo "Example usages:"
@@ -61,7 +65,7 @@ done
 # If "all_files" was requested, query all Bazel targets
 if [ "$need_all" = true ]; then
     echo "Querying all files..."
-    readarray -t all_targets < <(bazel --max_idle_secs=10 query "kind($TARGET_KINDS, $TARGET_PATHS)" | sort -u)
+    readarray -t all_targets < <(bazel "${bazel_startup[@]}" query "kind($TARGET_KINDS, $TARGET_PATHS)" | sort -u)
     if [ "${#all_targets[@]}" -eq 0 ]; then
         echo "No targets found with the query. Exiting."
         exit 1
@@ -110,7 +114,7 @@ if [ $1 == "--fix" ]; then
 	shift
 fi
 # Run linters
-bazel --max_idle_secs=10 build ${args[@]} $@
+bazel "${bazel_startup[@]}" build ${args[@]} $@
 JQ_URL="https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64"
 JQ_CHECKSUM="af986793a515d500ab2d35f8d2aecd656e764504b789b66d7e1a0b727a124c44"
 JQ_BIN=$(mktemp)
@@ -166,10 +170,10 @@ echo "--- Summary: ${passed} passed, ${failed} failed, ${total} total ---"
 echo ""
 if [ -n "$fix" ]; then
 	echo "Applying formatters..."
-	bazel --max_idle_secs=10 run //:format || has_failure=1
+	bazel "${bazel_startup[@]}" run //:format || has_failure=1
 else
 	echo "Checking formatting..."
-	bazel --max_idle_secs=10 run //tools/format:format.check || has_failure=1
+	bazel "${bazel_startup[@]}" run //tools/format:format.check || has_failure=1
 fi
 
 if [ -n "$fix" ]; then

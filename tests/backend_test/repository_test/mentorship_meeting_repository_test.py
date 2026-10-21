@@ -1,6 +1,7 @@
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from backend.common.mentorship_enums import (
     CommunicationMethod,
@@ -41,7 +42,11 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         Returns:
             MentorshipPairsEntity: The seeded pair.
         """
-        round_ = MentorshipRoundEntity(name="round", required_meetings=5)
+        round_ = MentorshipRoundEntity(
+            name="round",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
         mentor = _make_user()
         mentee = _make_user()
         await self.insert_entities([round_, mentor, mentee])
@@ -411,6 +416,108 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
         self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
 
+    async def test_in_window_excludes_rows_whose_attendance_an_admin_set(self):
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        admin_set = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="admin-set",
+            absent_user_id=pair.mentee_id,
+            attendance_set_by_admin_at=base + timedelta(hours=2),
+        )
+        keeper = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="keep-aaaa",
+        )
+        await self.insert_entities([admin_set, keeper])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base - timedelta(hours=7),
+            starts_before=base + timedelta(hours=3),
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
+
+    # --- get_write_guards ---
+
+    async def test_write_guards_read_the_database_not_the_loaded_rows(self):
+        """What another transaction committed is what counts, so the values
+        are changed behind the loaded entity with a Core UPDATE."""
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        moved = self._google_meeting(
+            pair.pair_id, start_datetime=base, end_datetime=base + timedelta(hours=1)
+        )
+        corrected = self._google_meeting(
+            pair.pair_id, start_datetime=base, end_datetime=base + timedelta(hours=1)
+        )
+        untouched = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base + timedelta(days=1),
+            end_datetime=base + timedelta(days=1, hours=1),
+        )
+        await self.insert_entities([moved, corrected, untouched])
+        marked_at = base + timedelta(hours=2)
+        await self.session.execute(
+            update(MentorshipMeetingEntity)
+            .where(MentorshipMeetingEntity.meeting_id == moved.meeting_id)
+            .values(
+                start_datetime=base + timedelta(hours=5),
+                end_datetime=base + timedelta(hours=6),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.execute(
+            update(MentorshipMeetingEntity)
+            .where(MentorshipMeetingEntity.meeting_id == corrected.meeting_id)
+            .values(attendance_set_by_admin_at=marked_at)
+            .execution_options(synchronize_session=False)
+        )
+
+        guards = await MentorshipMeetingRepository().get_write_guards(
+            self.session,
+            [moved.meeting_id, corrected.meeting_id, untouched.meeting_id, "gone"],
+        )
+
+        self.assertEqual(
+            set(guards), {moved.meeting_id, corrected.meeting_id, untouched.meeting_id}
+        )
+        self.assertEqual(
+            guards[moved.meeting_id].start_datetime, base + timedelta(hours=5)
+        )
+        self.assertIsNone(guards[moved.meeting_id].attendance_set_by_admin_at)
+        self.assertEqual(
+            guards[corrected.meeting_id].attendance_set_by_admin_at, marked_at
+        )
+        self.assertEqual(
+            guards[untouched.meeting_id].end_datetime,
+            base + timedelta(days=1, hours=1),
+        )
+
+    async def test_write_guards_for_no_meetings_skip_the_database(self):
+        async def _no_query(*args, **kwargs):
+            raise AssertionError("queried the database")
+
+        original_execute = self.session.execute
+        self.session.execute = _no_query
+        try:
+            guards = await MentorshipMeetingRepository().get_write_guards(
+                self.session, []
+            )
+        finally:
+            self.session.execute = original_execute
+
+        self.assertEqual(guards, {})
+
     async def test_in_window_boundaries_are_inclusive(self):
         """A meeting whose end lands exactly on ends_after, and one whose start
         lands exactly on starts_before, both stay in -- the window is closed on
@@ -735,6 +842,55 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         result = await repo.insert_meeting(self.session, meeting)
 
         self.assertEqual(result.meeting_id, meeting.meeting_id)
+
+    # --- update_schedule ---
+
+    async def test_update_schedule_moves_only_the_two_time_columns(self):
+        """A reschedule must not disturb the row's identity or its Meet data.
+
+        `created_datetime` is Google's own event-creation time and the
+        ordering tiebreaker; `meet_link` survives because the Meet space is
+        never re-opened by a Calendar patch.
+        """
+        pair = await self._seed_pair()
+        original_created = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        meeting = self._google_meeting(
+            pair.pair_id,
+            meeting_id="google-event-1",
+            start_datetime=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 5, 1, 10, 30, tzinfo=timezone.utc),
+            meet_link="https://meet.google.com/abc-defg-hij",
+            created_datetime=original_created,
+        )
+        await self.insert_entities([meeting])
+        repo = MentorshipMeetingRepository()
+
+        new_start = datetime(2026, 5, 8, 14, 0, tzinfo=timezone.utc)
+        new_end = datetime(2026, 5, 8, 15, 0, tzinfo=timezone.utc)
+        await repo.update_schedule(
+            session=self.session,
+            meeting=meeting,
+            start_datetime=new_start,
+            end_datetime=new_end,
+        )
+
+        # Expire the identity-mapped object so the readback below reloads
+        # from the database instead of handing back the same Python object
+        # `update_schedule` just mutated -- otherwise the assertions on
+        # `meeting_id` / `created_datetime` / `meet_link` would only prove
+        # those attributes were untouched in memory, not that the SQL left
+        # those columns alone.
+        self.session.expire(meeting)
+
+        rows = await repo.get_meetings_by_pair(self.session, pair.pair_id)
+        self.assertEqual(len(rows), 1)
+        moved = rows[0]
+        self.assertEqual(moved.start_datetime, new_start)
+        self.assertEqual(moved.end_datetime, new_end)
+        self.assertEqual(moved.meeting_id, "google-event-1")
+        self.assertEqual(moved.created_datetime, original_created)
+        self.assertEqual(moved.meet_link, "https://meet.google.com/abc-defg-hij")
+        self.assertFalse(moved.is_completed)
 
     # --- delete_meetings ---
 

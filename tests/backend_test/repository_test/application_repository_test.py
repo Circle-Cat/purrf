@@ -60,6 +60,22 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             entity.stage_entered_at = stage_entered_at
         return await self.repo.create(self.session, entity)
 
+    async def test_get_by_ids_returns_every_application_asked_for(self):
+        first = await self._make_application()
+        second = await self._make_application()
+
+        found = await self.repo.get_by_ids(
+            self.session, [first.application_id, second.application_id, 999_999]
+        )
+
+        self.assertEqual(
+            {app.application_id for app in found},
+            {first.application_id, second.application_id},
+        )
+
+    async def test_get_by_ids_with_no_ids_returns_an_empty_list(self):
+        self.assertEqual(await self.repo.get_by_ids(self.session, []), [])
+
     async def test_create_and_get_latest_by_job_and_user(self):
         job, user = await self._seed_job_and_user()
         repo = ApplicationRepository()
@@ -184,6 +200,93 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         self.assertEqual(current.version, 2)
         versions = await sub_repo.list_by_application(self.session, app.application_id)
         self.assertEqual([v.version for v in versions], [1, 2])
+
+    async def _submit(self, application, submitted_at, personal, version=1):
+        return await ApplicationSubmissionRepository().create(
+            self.session,
+            ApplicationSubmissionEntity(
+                application_id=application.application_id,
+                version=version,
+                submission=None if personal is None else {"personal": personal},
+                submitted_at=submitted_at,
+            ),
+        )
+
+    async def test_get_latest_personal_by_user_ids_reads_each_users_latest_across_jobs(
+        self,
+    ):
+        """Latest by submitted_at across every job, not by insertion or job."""
+        job_a, user = await self._seed_job_and_user()
+        job_b, other = await self._seed_job_and_user()
+        _, never_submitted = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        on_a = await repo.create(
+            self.session, ApplicationEntity(job_id=job_a.job_id, user_id=user.user_id)
+        )
+        on_b = await repo.create(
+            self.session, ApplicationEntity(job_id=job_b.job_id, user_id=user.user_id)
+        )
+        others = await repo.create(
+            self.session, ApplicationEntity(job_id=job_b.job_id, user_id=other.user_id)
+        )
+        t0 = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        # Inserted first but submitted last: a submission_id order would miss it.
+        await self._submit(on_b, t0 + timedelta(days=2), {"firstName": "Newest"})
+        await self._submit(on_a, t0, {"firstName": "Oldest"}, version=1)
+        await self._submit(on_a, t0 + timedelta(days=1), {"firstName": "Middle"}, 2)
+        await self._submit(others, t0, {"firstName": "Other"})
+
+        found = await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+            self.session,
+            [user.user_id, other.user_id, never_submitted.user_id],
+        )
+
+        self.assertEqual(
+            found,
+            {
+                user.user_id: {"firstName": "Newest"},
+                other.user_id: {"firstName": "Other"},
+            },
+        )
+
+    async def test_get_latest_personal_by_user_ids_breaks_a_tie_by_submission_id(
+        self,
+    ):
+        job, user = await self._seed_job_and_user()
+        application = await ApplicationRepository().create(
+            self.session, ApplicationEntity(job_id=job.job_id, user_id=user.user_id)
+        )
+        same_instant = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        await self._submit(application, same_instant, {"firstName": "First"}, 1)
+        await self._submit(application, same_instant, {"firstName": "Second"}, 2)
+
+        found = await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+            self.session, [user.user_id]
+        )
+
+        self.assertEqual(found, {user.user_id: {"firstName": "Second"}})
+
+    async def test_get_latest_personal_by_user_ids_without_a_personal_block(self):
+        """A latest submission with no personal block reads as {}, not absent."""
+        job, user = await self._seed_job_and_user()
+        application = await ApplicationRepository().create(
+            self.session, ApplicationEntity(job_id=job.job_id, user_id=user.user_id)
+        )
+        await self._submit(application, datetime.now(timezone.utc), None)
+
+        found = await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+            self.session, [user.user_id]
+        )
+
+        self.assertEqual(found, {user.user_id: {}})
+
+    async def test_get_latest_personal_by_user_ids_with_no_ids_skips_the_query(self):
+        self.assertEqual(
+            await ApplicationSubmissionRepository().get_latest_personal_by_user_ids(
+                self.session, []
+            ),
+            {},
+        )
 
     async def test_list_by_job_returns_joined_rows_ordered_excluding_other_jobs(self):
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
@@ -600,6 +703,76 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
         self.assertEqual([], roles)
 
+    async def test_list_hired_activity_roles_by_user_ids_groups_per_user(self):
+        """Each user gets their own set, repeats collapse, and what is not a
+        HIRED activity admission -- or belongs to someone not asked about --
+        is left out."""
+        mentee_jobs = [
+            JobEntity(
+                kind=JobKind.ACTIVITY,
+                mentorship_role=ParticipantRole.MENTEE,
+                title=f"Mentee Activity {i}",
+                status=JobStatus.PUBLISHED,
+            )
+            for i in range(2)
+        ]
+        mentor_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        employment_job = JobEntity(
+            kind=JobKind.EMPLOYMENT, title="Some Job", status=JobStatus.PUBLISHED
+        )
+        both = _make_user("Bo", "Th", "batch-both@b.com")
+        mentor = _make_user("Me", "Nt", "batch-mentor@b.com")
+        none = _make_user("No", "Ne", "batch-none@b.com")
+        not_asked = _make_user("Na", "Sk", "batch-not-asked@b.com")
+        await self.insert_entities([
+            *mentee_jobs,
+            mentor_job,
+            employment_job,
+            both,
+            mentor,
+            none,
+            not_asked,
+        ])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        for job, user, stage in (
+            (mentee_jobs[0], both, ApplicationStage.HIRED),
+            (mentee_jobs[1], both, ApplicationStage.HIRED),
+            (mentor_job, both, ApplicationStage.HIRED),
+            (mentor_job, mentor, ApplicationStage.HIRED),
+            (mentee_jobs[0], mentor, ApplicationStage.RECRUITER_SCREENING),
+            (employment_job, none, ApplicationStage.HIRED),
+            (mentee_jobs[0], not_asked, ApplicationStage.HIRED),
+        ):
+            await repo.create(
+                self.session,
+                ApplicationEntity(job_id=job.job_id, user_id=user.user_id, stage=stage),
+            )
+
+        roles = await repo.list_hired_activity_roles_by_user_ids(
+            self.session, [both.user_id, mentor.user_id, none.user_id]
+        )
+
+        self.assertEqual(
+            roles,
+            {
+                both.user_id: {ParticipantRole.MENTOR, ParticipantRole.MENTEE},
+                mentor.user_id: {ParticipantRole.MENTOR},
+            },
+        )
+
+    async def test_list_hired_activity_roles_by_user_ids_empty_input(self):
+        repo = ApplicationRepository()
+        self.assertEqual(
+            await repo.list_hired_activity_roles_by_user_ids(self.session, []), {}
+        )
+
     async def test_get_hired_activity_application_returns_none_when_not_hired(self):
         job = JobEntity(
             kind=JobKind.ACTIVITY,
@@ -953,71 +1126,6 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         matching = [a for a in due if a.application_id == app.application_id]
         self.assertEqual(len(matching), 1)
 
-    # ---- list_due_email_sync_applications: thread filter ---------------
-
-    async def test_thread_filter_narrows_to_the_given_threads(self):
-        wanted = await self._make_application(stage=ApplicationStage.TECH)
-        other = await self._make_application(stage=ApplicationStage.TECH)
-        await self._thread_for(wanted, "gt-wanted")
-        await self._thread_for(other, "gt-other")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-
-        due = await self.repo.list_due_email_sync_applications(
-            self.session, cutoff, gmail_thread_ids={"gt-wanted"}
-        )
-
-        ids = [a.application_id for a in due]
-        self.assertIn(wanted.application_id, ids)
-        self.assertNotIn(other.application_id, ids)
-
-    async def test_thread_filter_still_applies_the_terminal_window(self):
-        # A flagged thread does not override eligibility: an application that
-        # went terminal long ago stays out even when new mail arrives.
-        app = await self._make_application(
-            stage=ApplicationStage.REJECTED,
-            stage_entered_at=datetime.now(timezone.utc) - timedelta(days=30),
-        )
-        await self._thread_for(app, "gt-old-reject")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-
-        due = await self.repo.list_due_email_sync_applications(
-            self.session, cutoff, gmail_thread_ids={"gt-old-reject"}
-        )
-
-        self.assertNotIn(app.application_id, [a.application_id for a in due])
-
-    async def test_thread_filter_unknown_thread_matches_nothing(self):
-        app = await self._make_application(stage=ApplicationStage.TECH)
-        await self._thread_for(app, "gt-known")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-
-        due = await self.repo.list_due_email_sync_applications(
-            self.session, cutoff, gmail_thread_ids={"gt-never-seen"}
-        )
-
-        self.assertEqual(due, [])
-
-    async def test_omitting_the_thread_filter_is_unchanged_behaviour(self):
-        # Regression guard: the weekly reconcile passes no filter and must keep
-        # seeing exactly what it saw before this parameter existed. If the two
-        # call shapes ever diverge, the two jobs disagree about eligibility.
-        app = await self._make_application(stage=ApplicationStage.TECH)
-        await self._thread_for(app, "gt-unfiltered")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-
-        with_default = await self.repo.list_due_email_sync_applications(
-            self.session, cutoff
-        )
-        with_explicit_none = await self.repo.list_due_email_sync_applications(
-            self.session, cutoff, gmail_thread_ids=None
-        )
-
-        self.assertIn(app.application_id, [a.application_id for a in with_default])
-        self.assertEqual(
-            [a.application_id for a in with_default],
-            [a.application_id for a in with_explicit_none],
-        )
-
     # ---- search_latest_by_jobs -----------------------------------------
 
     async def _seed_applicant(self, job, first_name, last_name, emails=()):
@@ -1297,6 +1405,31 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(len(rows), 2)
+
+    async def test_get_with_job_returns_the_application_and_its_job(self):
+        """One statement: the notification renderers read both together."""
+        job, user = await self._seed_job_and_user()
+        job.title = "Backend Engineer"
+        application = ApplicationEntity(
+            job_id=job.job_id,
+            user_id=user.user_id,
+            stage=ApplicationStage.APPLIED,
+        )
+        await self.insert_entities([application])
+
+        found = await self.repo.get_with_job(self.session, application.application_id)
+
+        self.assertIsNotNone(found)
+        got_application, got_job = found
+        self.assertEqual(got_application.application_id, application.application_id)
+        self.assertEqual(got_application.user_id, user.user_id)
+        self.assertEqual(got_job.job_id, job.job_id)
+        self.assertEqual(got_job.title, "Backend Engineer")
+        self.assertEqual(got_job.kind, JobKind.ACTIVITY)
+
+    async def test_get_with_job_returns_none_for_an_application_that_is_gone(self):
+        """The renderers fall back to empty display fields on this."""
+        self.assertIsNone(await self.repo.get_with_job(self.session, 999_999))
 
 
 if __name__ == "__main__":

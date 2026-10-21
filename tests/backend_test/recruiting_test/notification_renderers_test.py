@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
@@ -86,6 +87,54 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
 
         self.assertEqual(subject, "New application: Ada Lovelace for Backend Engineer")
         self.assertIn("Recruiter screening stage", body)
+
+    async def test_application_submitted_names_the_auto_assignee(self):
+        """The assignee is a colleague, so their preferred name is used."""
+        candidate = _make_user("Ada", "Lovelace")
+        assignee = _make_user("Grace", "Hopper", preferred_name="<b>Amazing</b>")
+        await self.insert_entities([candidate, assignee])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            candidate,
+            details={
+                "stage": ApplicationStage.RECRUITER_SCREENING.value,
+                "autoAssigneeId": assignee.user_id,
+            },
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "It was assigned to &lt;b&gt;Amazing&lt;/b&gt; automatically", body
+        )
+
+    async def test_application_submitted_labels_an_unavailable_default_by_id(self):
+        """Only the id: the reason the default dropped out is not the
+        owners' to read, and a name would suggest the person is still there."""
+        candidate = _make_user("Ada", "Lovelace")
+        stale = _make_user("Grace", "Hopper")
+        await self.insert_entities([candidate, stale])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            candidate,
+            details={
+                "stage": ApplicationStage.RECRUITER_SCREENING.value,
+                "unavailableDefaultAssigneeId": stale.user_id,
+            },
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(f"(User {stale.user_id} — unavailable)", body)
+        self.assertNotIn("Grace", body)
 
     async def test_base_dto_resolves_the_candidate_primary_address(self):
         """The primary address wins over an older claim.
@@ -244,6 +293,47 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
             subject, "Amazing Grace mentioned you: Ada Lovelace (Backend Engineer)"
         )
 
+    async def test_mentioned_names_a_nameless_candidate_by_what_they_typed(self):
+        """An email-code account has no name; the one they typed stands in."""
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("", "", preferred_name="Addy")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        await self.insert_entities([
+            ApplicationSubmissionEntity(
+                application_id=application.application_id,
+                version=1,
+                submission={"personal": {"firstName": "Typed", "lastName": "Name"}},
+            )
+        ])
+        event = await self._make_event(
+            "recruiting.mentioned", "application", application.application_id, actor
+        )
+
+        subject, _ = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Grace Hopper mentioned you: Typed Name (Backend Engineer)"
+        )
+
+    async def test_mentioned_names_a_candidate_who_typed_nothing_by_user_id(self):
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("", "", preferred_name="Addy")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.mentioned", "application", application.application_id, actor
+        )
+
+        subject, _ = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject,
+            f"Grace Hopper mentioned you: User {candidate.user_id} (Backend Engineer)",
+        )
+
     async def test_auto_assigned_reads_as_automatic_when_the_event_has_no_actor(self):
         """A null actor must reach the "nobody did this" branch of the copy.
 
@@ -300,9 +390,98 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertIn("Grace Hopper approved your submission", approved_body)
         self.assertEqual(rejected_subject, "Posting rejected: Backend Engineer")
 
-    async def test_blacklisted_carries_the_reason_and_points_at_the_blacklist_page(
-        self,
-    ):
+    async def test_review_decided_by_withdrawal_tells_the_reviewer_it_is_off(self):
+        """A withdrawal is no verdict: it must not read as a rejection, which
+        is where any decision other than approval used to land."""
+        actor = _make_user("Grace", "Hopper")
+        await self.insert_entities([actor])
+        job = await self._make_job()
+        event = await self._make_event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            actor,
+            details={"kind": "initial", "decision": "withdrawn", "comment": None},
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "Posting review withdrawn: Backend Engineer")
+        self.assertIn("Grace Hopper withdrew their request", body)
+        self.assertIn("Backend Engineer", body)
+        self.assertNotIn("rejected", body)
+
+    async def test_review_reassigned_tells_the_new_reviewer_it_is_theirs_now(self):
+        """Its own copy, not review_opened's.
+
+        The recipient did not receive the original request, so "submitted the
+        posting for your review" would be their first news of a posting that
+        has been waiting elsewhere. The line has to say a handover happened.
+        """
+        actor = _make_user("Grace", "Hopper")
+        await self.insert_entities([actor])
+        job = await self._make_job()
+        event = await self._make_event(
+            "recruiting.review_reassigned",
+            "job",
+            job.job_id,
+            actor,
+            details={"kind": "initial", "reviewId": 1, "previousReviewerId": 9},
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "Posting review reassigned: Backend Engineer")
+        self.assertIn("Grace Hopper", body)
+        self.assertIn("Backend Engineer", body)
+
+    async def test_reassigned_names_the_evaluator_rather_than_you(self):
+        """The posting owners get this email too, so it names the evaluator."""
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("Ada", "Lovelace")
+        evaluator = _make_user("Linus", "Torvalds")
+        await self.insert_entities([actor, candidate, evaluator])
+        job = await self._make_job()
+        application = await self._make_application(
+            job.job_id, candidate, stage=ApplicationStage.TECH
+        )
+        event = await self._make_event(
+            "recruiting.reassigned",
+            "application",
+            application.application_id,
+            actor,
+            details={"stage": "tech", "assigneeId": evaluator.user_id, "round": 1},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "Grace Hopper assigned Linus Torvalds to evaluate Ada Lovelace", body
+        )
+        self.assertNotIn("assigned you", body)
+
+    async def test_reassigned_names_a_nameless_evaluator_by_user_id(self):
+        actor = _make_user("Grace", "Hopper")
+        candidate = _make_user("Ada", "Lovelace")
+        evaluator = _make_user("", "")
+        await self.insert_entities([actor, candidate, evaluator])
+        job = await self._make_job()
+        application = await self._make_application(
+            job.job_id, candidate, stage=ApplicationStage.TECH
+        )
+        event = await self._make_event(
+            "recruiting.reassigned",
+            "application",
+            application.application_id,
+            actor,
+            details={"stage": "tech", "assigneeId": evaluator.user_id, "round": 1},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(f"Grace Hopper assigned User {evaluator.user_id} to", body)
+
+    async def test_blacklisted_carries_the_reason_and_names_no_page(self):
         actor, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
         await self.insert_entities([actor, candidate])
         job = await self._make_job()
@@ -321,7 +500,136 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
             subject, "Application blacklisted: Ada Lovelace (Backend Engineer)"
         )
         self.assertIn("fabricated credentials", body)
-        self.assertIn("Blacklist", body)
+        # The Blacklist page this used to point at is being retired, and its
+        # replacement needs a permission these recipients do not hold.
+        self.assertNotIn("Blacklist page", body)
+
+    async def test_blacklisted_escapes_the_reason_and_the_names_it_resolves(self):
+        """The whole path, end to end: whoever requested the block typed the
+        reason, the candidate typed their own name, and the body goes to every
+        owner of every posting the candidate applied to. The subject is not
+        HTML, so it keeps the name as typed."""
+        actor, candidate = _make_user("Grace", "Hopper"), _make_user("<b>Ada", "&Co")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.blacklisted",
+            "application",
+            application.application_id,
+            actor,
+            details={"fromStage": "tech", "reason": "<script>alert(1)</script>"},
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Application blacklisted: <b>Ada &Co (Backend Engineer)"
+        )
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", body)
+        self.assertIn("&lt;b&gt;Ada &amp;Co", body)
+        self.assertNotIn("<script", body)
+        self.assertNotIn("<b>", body)
+
+    async def test_email_received_names_the_application_and_who_wrote(self):
+        """From and subject are the candidate's own text, so they are escaped."""
+        sender, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
+        await self.insert_entities([sender, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_received",
+            "application",
+            application.application_id,
+            candidate,
+            details={
+                "threadId": 1,
+                "from": "Ada <ada@example.com>",
+                "subject": "Re: <b>Interview</b>",
+            },
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "New email reply: Ada Lovelace (Backend Engineer)")
+        self.assertIn(
+            "A candidate replied to an email about Ada Lovelace's "
+            "application for Backend Engineer.",
+            body,
+        )
+        # Job owners who sent nothing get this too, so it must not say "you sent".
+        self.assertNotIn("you sent", body)
+        self.assertIn("<p>From: Ada &lt;ada@example.com&gt;</p>", body)
+        self.assertIn("<p>Subject: Re: &lt;b&gt;Interview&lt;/b&gt;</p>", body)
+        self.assertIn("Emails tab", body)
+
+    async def test_email_received_leaves_out_what_the_message_did_not_carry(self):
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_received",
+            "application",
+            application.application_id,
+            candidate,
+            details={"threadId": 1, "from": None, "subject": None},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertNotIn("From:", body)
+        self.assertNotIn("Subject:", body)
+
+    async def test_email_bounced_names_the_application_and_the_failed_addresses(self):
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_bounced",
+            "application",
+            application.application_id,
+            None,
+            details={
+                "threadId": 1,
+                "failedRecipients": ["bad@example.com", "<b>@example.com"],
+            },
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Email not delivered: Ada Lovelace (Backend Engineer)"
+        )
+        self.assertIn(
+            "An email you sent about Ada Lovelace's application for Backend "
+            "Engineer could not be delivered to bad@example.com, "
+            "&lt;b&gt;@example.com.",
+            body,
+        )
+        self.assertIn("Emails tab", body)
+
+    async def test_email_bounced_without_addresses_names_nobody(self):
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_bounced",
+            "application",
+            application.application_id,
+            None,
+            details={"threadId": 1, "failedRecipients": []},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "An email you sent about Ada Lovelace's application for Backend "
+            "Engineer could not be delivered.",
+            body,
+        )
 
     async def test_rendered_emails_carry_the_automated_footer(self):
         """Each renderer appends the footer itself -- nothing downstream of

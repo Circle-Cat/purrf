@@ -4,7 +4,11 @@ from backend.utils.permission_decorators import authenticate
 from backend.common.permissions import Permission
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.job_dto import JobCreateDto
-from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
+from backend.dto.job_review_dto import (
+    JobReviewDecisionDto,
+    JobReviewReassignDto,
+    JobSubmitDto,
+)
 from backend.common.api_endpoints import (
     RECRUITING_JOBS_ENDPOINT,
     RECRUITING_JOB_ENDPOINT,
@@ -16,29 +20,25 @@ from backend.common.api_endpoints import (
     RECRUITING_APPROVERS_ENDPOINT,
     RECRUITING_REVIEWS_ENDPOINT,
     RECRUITING_REVIEW_ENDPOINT,
+    RECRUITING_JOB_REVIEW_REVIEWER_ENDPOINT,
+    RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT,
     RECRUITING_INTERVIEW_POOL_ENDPOINT,
     RECRUITING_JOB_OWNERS_ENDPOINT,
-    RECRUITING_EMAIL_SYNC_ENDPOINT,
-    RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT,
 )
 
 
 class RecruitingController:
-    """FastAPI routes for recruiting job postings (publishing side), plus the two
-    scheduled candidate-email syncs the CronJobs call — a nightly delta and a
-    weekly reconcile."""
+    """FastAPI routes for recruiting job postings (publishing side)."""
 
-    def __init__(self, job_service, email_sync_service, database):
+    def __init__(self, job_service, database):
         """
         Initialize the RecruitingController and register its routes.
 
         Args:
             job_service: JobService instance for posting lifecycle operations.
-            email_sync_service: EmailSyncService for the scheduled email sweep.
             database: Database access object providing async session management.
         """
         self.job_service = job_service
-        self.email_sync_service = email_sync_service
         self.database = database
         self.router = APIRouter(tags=["recruiting"])
 
@@ -130,6 +130,7 @@ class RecruitingController:
                     Permission.RECRUITING_JOB_READ,
                     Permission.RECRUITING_JOB_WRITE,
                     Permission.RECRUITING_JOB_APPROVE,
+                    Permission.RECRUITING_APPLICATION_READ_ALL,
                 ]
             )(self.list_interview_pool),
             methods=["GET"],
@@ -164,6 +165,27 @@ class RecruitingController:
             response_model=None,
         )
         self.router.add_api_route(
+            RECRUITING_JOB_REVIEW_REVIEWER_ENDPOINT,
+            # JOB_WRITE, not JOB_APPROVE: the caller is the submitter, who
+            # need not be an approver at all. The submitter-only rule itself
+            # is enforced in the service, against the review row.
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.reassign_review
+            ),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT,
+            # The submitter's, like reassigning: JOB_WRITE here, and the
+            # submitter-only rule in the approval flow.
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.withdraw_review
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             RECRUITING_JOB_ENDPOINT,
             endpoint=authenticate(
                 permissions=[
@@ -186,22 +208,6 @@ class RecruitingController:
                 ]
             )(self.get_job_activity),
             methods=["GET"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_EMAIL_SYNC_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
-                self.sync_recruiting_emails
-            ),
-            methods=["POST"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
-                self.sync_recent_recruiting_emails
-            ),
-            methods=["POST"],
             response_model=None,
         )
 
@@ -338,6 +344,31 @@ class RecruitingController:
                 message = "Review rejected."
         return api_response(message=message, data=result)
 
+    async def reassign_review(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        reassign_data: JobReviewReassignDto,
+    ):
+        """Move a posting's open review to a different approver."""
+        async with self.database.session() as session:
+            result = await self.job_service.reassign_review(
+                session,
+                job_id,
+                acting_user_id=current_user.user_id,
+                reviewer_id=reassign_data.reviewer_id,
+            )
+        return api_response(message="Review reassigned.", data=result)
+
+    async def withdraw_review(self, current_user: UserContextDto, job_id: int):
+        """Take back a posting's open review; the posting returns to where it
+        was."""
+        async with self.database.session() as session:
+            result = await self.job_service.withdraw_review(
+                session, job_id, acting_user_id=current_user.user_id
+            )
+        return api_response(message="Review withdrawn.", data=result)
+
     async def get_job(self, current_user: UserContextDto, job_id: int):
         """Fetch one posting."""
         async with self.database.session() as session:
@@ -349,36 +380,3 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.get_job_activity(session, job_id)
         return api_response(message="Job activity fetched.", data=result)
-
-    async def sync_recruiting_emails(self, current_user: UserContextDto):
-        """Reconcile candidate email threads for every application in scope.
-
-        Called by the weekly CronJob, not by a person: ``current_user`` is the
-        service account and is deliberately unused — the sweep has no owner
-        gate, which is why it lives here rather than in ``board_controller``.
-
-        Succeeds with the counts even when individual applications failed. The
-        CronJob runs ``curl -f`` under ``restartPolicy: OnFailure``, so a 5xx
-        would make k8s re-run the entire sweep; one permanently-broken thread
-        would then retry every week. Failures are reported in the body and,
-        more importantly, in the log — see ``EmailSyncService``.
-        """
-        async with self.database.session() as session:
-            summary = await self.email_sync_service.sync_due_applications(session)
-        return api_response(message="Recruiting emails synced.", data=summary)
-
-    async def sync_recent_recruiting_emails(self, current_user: UserContextDto):
-        """Sync only the applications whose email threads just received mail.
-
-        The nightly CronJob's entry point. One mailbox-wide Gmail lookup names
-        the threads that changed, so this costs the same whether we track ten
-        conversations or a thousand — unlike the full reconcile behind
-        ``sync_recruiting_emails``, which the weekly CronJob calls.
-
-        ``current_user`` is the service account and is deliberately unused.
-        Succeeds with the counts even when individual applications failed, for
-        the same reason as the reconcile endpoint — see ``EmailSyncService``.
-        """
-        async with self.database.session() as session:
-            summary = await self.email_sync_service.sync_recent_applications(session)
-        return api_response(message="Recent recruiting emails synced.", data=summary)

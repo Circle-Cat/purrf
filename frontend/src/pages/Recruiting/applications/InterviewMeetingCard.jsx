@@ -26,9 +26,13 @@ import { formatDateTimeRangeWithZone } from "@/utils/dateTime";
  * `canReassign`/`detail.isOwner` on `ApplicationDetailPage`): the same
  * information, none of the controls.
  *
+ * An owner who cannot act (`disabledHint` set) keeps the buttons, disabled and
+ * titled with the hint, so the missing grant is visible before a click.
+ *
  * @param {{interview: object|null, round: number, timezone: string,
  *          isTerminal?: boolean, isOwner?: boolean, busy?: boolean,
- *          onSchedule?: function, onEdit?: function, onCancel?: function}} props
+ *          disabledHint?: string, onSchedule?: function, onEdit?: function,
+ *          onCancel?: function}} props
  */
 const InterviewMeetingCard = ({
   interview,
@@ -37,10 +41,12 @@ const InterviewMeetingCard = ({
   isTerminal = false,
   isOwner = true,
   busy = false,
+  disabledHint,
   onSchedule,
   onEdit,
   onCancel,
 }) => {
+  const disabled = busy || Boolean(disabledHint);
   if (!interview) {
     return (
       <Card>
@@ -53,7 +59,8 @@ const InterviewMeetingCard = ({
             <Button
               type="button"
               size="sm"
-              disabled={busy}
+              disabled={disabled}
+              title={disabledHint}
               onClick={() => onSchedule?.()}
             >
               Schedule meeting
@@ -113,7 +120,8 @@ const InterviewMeetingCard = ({
               type="button"
               size="sm"
               variant="outline"
-              disabled={busy}
+              disabled={disabled}
+              title={disabledHint}
               onClick={() => onEdit?.()}
             >
               Edit
@@ -123,7 +131,8 @@ const InterviewMeetingCard = ({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={disabled}
+            title={disabledHint}
             onClick={() => onCancel?.()}
           >
             Cancel

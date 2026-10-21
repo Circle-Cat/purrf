@@ -16,6 +16,8 @@ class LaunchDarklyService:
     FLAG_MANUAL_SUBMIT_MEETING = "manual-submit-meeting"
     FLAG_CREATE_GOOGLE_MEETING = "create-google-meeting"
     FLAG_VIEW_PERSONAL_SUMMARY = "view-personal-summary"
+    FLAG_MATCHING_RUN = "matching-run"
+    FLAG_KIT_EMAIL = "mentorship-kit-email"
 
     def __init__(self, logger: Logger, launchdarkly_client: LaunchDarklyClient) -> None:
         self.logger = logger
@@ -38,6 +40,19 @@ class LaunchDarklyService:
     ) -> bool:
         """Check if the create Google meeting feature is enabled."""
         return self._is_enabled(self.FLAG_CREATE_GOOGLE_MEETING, user_context_dto)
+
+    def is_matching_run_enabled(self, user_context_dto: UserContextDto) -> bool:
+        """Check whether this admin may start a matching run.
+
+        Off by default, like every flag here, and that default matters more for
+        this one: a run costs an hour of a paid job per press, so an unreachable
+        LaunchDarkly should leave the button shut rather than open.
+        """
+        return self._is_enabled(self.FLAG_MATCHING_RUN, user_context_dto)
+
+    def is_kit_email_enabled(self, user_context_dto: UserContextDto) -> bool:
+        """Check whether this admin may use mentorship sends through Kit."""
+        return self._is_enabled(self.FLAG_KIT_EMAIL, user_context_dto)
 
     def is_view_personal_summary_enabled(
         self, user_context_dto: UserContextDto

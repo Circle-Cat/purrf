@@ -1,7 +1,7 @@
 import datetime
 from decimal import Decimal
 
-from backend.common.leave_enums import LeaveRequestType
+from backend.common.leave_enums import LeaveRequestStatus, LeaveRequestType
 from backend.dto.base_dto import BaseDto
 
 
@@ -32,9 +32,11 @@ class LeaveRequestSubmitDto(BaseDto):
 
 
 class LeaveDecisionDto(BaseDto):
-    """A manager's answer to one request."""
+    """A manager's answer to one request. The comment is required to reject:
+    the employee is told why."""
 
     approve: bool
+    comment: str | None = None
 
 
 class LeaveRequestDto(BaseDto):
@@ -50,8 +52,11 @@ class LeaveRequestDto(BaseDto):
     own: a name comes from the account and an ldap from its corporate address,
     and one can be missing while the other is not.
 
-    ``decided_by`` empty on an approved request means nobody decided it: that
-    is sick leave of three days or less, approved on submission.
+    ``decided_by``, ``decided_at`` and ``decision_comment`` come from the
+    approval behind the request. ``decided_by`` empty on an approved request
+    means nobody decided it: that is sick leave of three days or less,
+    approved on submission, which has no approval and was decided when it was
+    filed.
 
     ``required_notice_workdays`` is the notice the rule asked of this request,
     in working days. The late-notice flag says only that it fell short; the
@@ -83,6 +88,7 @@ class LeaveRequestDto(BaseDto):
     approver_user_id: int
     decided_by: int | None
     decided_at: datetime.datetime | None
+    decision_comment: str | None
     required_notice_workdays: int | None
     balance_before: str | None
     balance_after: str | None
@@ -91,16 +97,20 @@ class LeaveRequestDto(BaseDto):
     def of(
         cls,
         request,
+        approval=None,
         employee_name: str | None = None,
         employee_ldap: str | None = None,
         required_notice_workdays: int | None = None,
         balance_before: Decimal | None = None,
         balance_after: Decimal | None = None,
+        is_overdraft: bool | None = None,
     ) -> "LeaveRequestDto":
         """Builds one from a stored request.
 
         Args:
             request (LeaveRequestEntity): The stored row.
+            approval (ApprovalRequestEntity | None): The approval behind it,
+                or None for sick leave approved on submission.
             employee_name: Whose request it is, when the reader is somebody
                 else.
             employee_ldap: That person's Azure ldap, when known.
@@ -108,10 +118,16 @@ class LeaveRequestDto(BaseDto):
                 of it, or None where none was owed.
             balance_before: Their balance now, for a request still waiting.
             balance_after: Where approving it would leave that balance.
+            is_overdraft: The overdraft mark to show, when it has been worked
+                out again; the stored one otherwise.
 
         Returns:
             The read model.
         """
+        decided = approval is not None and approval.decided_at is not None
+        auto_approved = (
+            approval is None and request.status is LeaveRequestStatus.APPROVED
+        )
         return cls(
             request_id=request.leave_request_id,
             user_id=request.user_id,
@@ -124,12 +140,19 @@ class LeaveRequestDto(BaseDto):
             start_time=request.start_time,
             end_time=request.end_time,
             hours=f"{Decimal(request.hours):.2f}",
-            is_overdraft=request.is_overdraft,
+            is_overdraft=(
+                request.is_overdraft if is_overdraft is None else is_overdraft
+            ),
             is_late_notice=request.is_late_notice,
             reason=request.reason,
             approver_user_id=request.approver_user_id,
-            decided_by=request.decided_by,
-            decided_at=request.decided_at,
+            decided_by=approval.decided_by if decided else None,
+            decided_at=(
+                approval.decided_at
+                if decided
+                else (request.created_timestamp if auto_approved else None)
+            ),
+            decision_comment=approval.decision_comment if decided else None,
             required_notice_workdays=required_notice_workdays,
             balance_before=_hours(balance_before),
             balance_after=_hours(balance_after),

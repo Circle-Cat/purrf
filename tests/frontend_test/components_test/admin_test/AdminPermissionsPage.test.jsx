@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import AdminPermissions from "@/pages/AdminPermissions";
 import { useAuth } from "@/context/auth";
 import * as api from "@/api/adminPermissionsApi";
@@ -44,18 +45,27 @@ beforeEach(() => {
 });
 
 describe("AdminPermissions page", () => {
-  it("renders the three tab triggers and loads the catalog", async () => {
-    render(<AdminPermissions />);
+  it("renders the two tab triggers and loads the catalog", async () => {
+    render(
+      <MemoryRouter>
+        <AdminPermissions />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
     expect(screen.getByRole("tab", { name: "Users" })).toBeInTheDocument();
+    // PUR-626: the holders tab folded into Users as a permission filter.
     expect(
-      screen.getByRole("tab", { name: "Permission Holders" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("tab", { name: "Permission Holders" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Audit Log" })).toBeInTheDocument();
   });
 
   it("does not fetch users on mount; the Users tab waits for Search", async () => {
-    render(<AdminPermissions />);
+    render(
+      <MemoryRouter>
+        <AdminPermissions />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
 
     expect(api.getUsers).not.toHaveBeenCalled();
@@ -66,7 +76,11 @@ describe("AdminPermissions page", () => {
 
   it("searches by exact User ID and sends the user_id param on Search", async () => {
     const user = userEvent.setup();
-    render(<AdminPermissions />);
+    render(
+      <MemoryRouter>
+        <AdminPermissions />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
 
     await user.type(screen.getByPlaceholderText("User ID"), "42");
@@ -82,7 +96,11 @@ describe("AdminPermissions page", () => {
 
   it("strips non-digits from the User ID field", async () => {
     const user = userEvent.setup();
-    render(<AdminPermissions />);
+    render(
+      <MemoryRouter>
+        <AdminPermissions />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
 
     const idInput = screen.getByPlaceholderText("User ID");
@@ -91,7 +109,11 @@ describe("AdminPermissions page", () => {
   });
 
   it("renders the Understand permissions panel trigger", async () => {
-    render(<AdminPermissions />);
+    render(
+      <MemoryRouter>
+        <AdminPermissions />
+      </MemoryRouter>,
+    );
     await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
     expect(
       screen.getByRole("button", { name: "Understand permissions" }),

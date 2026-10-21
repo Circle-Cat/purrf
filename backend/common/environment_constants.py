@@ -32,11 +32,6 @@ MICROSOFT_USER_LDAP = "MICROSOFT_USER_LDAP"
 
 LAUNCHDARKLY_SDK_KEY = "LAUNCHDARKLY_SDK_KEY"
 
-PUBSUB_PROJECT_ID = "PUBSUB_PROJECT_ID"
-MICROSOFT_SUBSCRIPTION_ID = "MICROSOFT_SUBSCRIPTION_ID"
-GOOGLE_CHAT_SUBSCRIPTION_ID = "GOOGLE_CHAT_SUBSCRIPTION_ID"
-GERRIT_SUBSCRIPTION_ID = "GERRIT_SUBSCRIPTION_ID"
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 CF_TEAM_DOMAIN = os.getenv("CF_TEAM_DOMAIN")
@@ -114,14 +109,27 @@ GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
 # own alias so a non-prod message can never look like a prod one.
 GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"
 
+# From addresses of the Inbox-only services. Optional: a service without one
+# has no Inbox in this environment.
+GMAIL_SENDER_MENTORSHIP = "GMAIL_SENDER_MENTORSHIP"
+GMAIL_SENDER_INQUIRIES = "GMAIL_SENDER_INQUIRIES"
+
+# "true" makes this environment claim new mail sent to the mentorship,
+# recruiting and inquiries senders for its Inbox. Environments sharing a
+# mailbox and its aliases must not both turn it on, or each would file the
+# same mail.
+GMAIL_INBOX_ENABLED = "GMAIL_INBOX_ENABLED"
+
+# Fully qualified Pub/Sub topic that Gmail users.watch publishes this
+# mailbox's changes to. One topic per mailbox: environments sharing a mailbox
+# must pass the same topic, or each watch call replaces the other's.
+GMAIL_WATCH_TOPIC = "GMAIL_WATCH_TOPIC"
+
 # Fully qualified Pub/Sub topic (``projects/<p>/topics/<t>``) that
 # publish_on_commit.install_publish_listener() publishes to once a
 # notification-creating transaction commits. Holds the whole path, not just
-# a bare topic id, so the app never has to know which project it is in --
-# matching how GOOGLE_CHAT_SUBSCRIPTION_ID/GERRIT_SUBSCRIPTION_ID are ids
-# combined with PUBSUB_PROJECT_ID elsewhere, this is its own env var instead
-# because it is a topic, not a subscription, and is consumed as a complete
-# path by a single call site rather than built up per-client.
+# a bare topic id, so the app never has to know which project it is in. A
+# single call site consumes it as a complete path.
 NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 
 # Comma-separated `sub` claims of the service accounts allowed to POST the
@@ -129,3 +137,28 @@ NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 # NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
 # crash-looping the whole API over one variable.
 NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"
+# Numeric unique_id of the matcher job's service account. Its token is what
+# the completion callback carries; an email can be recycled onto a new
+# account, a unique_id cannot.
+MATCHER_JOB_SUBS = "MATCHER_JOB_SUBS"
+
+
+# Every origin the app itself answers on, comma-separated, e.g.
+# "https://purrf.io,https://api.purrf.io" -- the same values the Cloudflare
+# ruleset allows as CORS origins. Read at startup only, to assert that course
+# content is served from a hostname that is none of them; a course served from
+# an app origin would be same-origin with the API and the Access cookie.
+APP_ORIGINS = "APP_ORIGINS"
+
+# SCORM training. The bucket holding course packages, the hostname they are
+# served from, and the HMAC key signing the tokens in their URLs. All three are
+# absent in local development; the code that needs them raises when used rather
+# than at startup, so the app still boots.
+TRAINING_BUCKET = "TRAINING_BUCKET"
+
+# The whole resource name -- projects/<p>/locations/<l>/jobs/<j> -- rather than
+# three variables that only mean anything together.
+MATCHER_JOB_RESOURCE = "MATCHER_JOB_RESOURCE"
+TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
+TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"
+KIT_API_KEY = "KIT_API_KEY"

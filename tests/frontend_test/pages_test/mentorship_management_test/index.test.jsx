@@ -5,6 +5,9 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useMentorshipManagement";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useMyMentorshipApprovals } from "@/pages/MentorshipManagement/hooks/useMyMentorshipApprovals";
 
 vi.mock("@/pages/MentorshipManagement/hooks/useMentorshipManagement", () => ({
   useMentorshipManagement: vi.fn(),
@@ -14,9 +17,29 @@ vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
+
+vi.mock("@/pages/MentorshipManagement/hooks/useMyMentorshipApprovals", () => ({
+  useMyMentorshipApprovals: vi.fn(),
+}));
+
+vi.mock("@/pages/MentorshipManagement/components/PendingApprovalsCard", () => ({
+  default: vi.fn(({ requests }) => (
+    <div data-testid="mock-pending-approvals">{requests.length}</div>
+  )),
+}));
+
 vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
   default: vi.fn(
-    ({ rounds, totals, isLoading, openCreate, openEdit, canWriteRounds }) => (
+    ({
+      rounds,
+      totals,
+      isLoading,
+      openCreate,
+      openEdit,
+      canWriteRounds,
+      canReadFeedback,
+    }) => (
       <div data-testid="mock-rounds-management-card">
         <span data-testid="rounds-count">{rounds.length}</span>
         <span data-testid="is-loading">{String(isLoading)}</span>
@@ -24,6 +47,7 @@ vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
           {totals?.totalCompletedRounds}
         </span>
         <span data-testid="can-write">{String(canWriteRounds)}</span>
+        <span data-testid="can-read-feedback">{String(canReadFeedback)}</span>
         <button onClick={openCreate}>Create</button>
         <button onClick={() => openEdit(rounds[0])}>Edit</button>
       </div>
@@ -62,12 +86,44 @@ describe("MentorshipManagement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useMentorshipManagement.mockReturnValue(defaultHookData);
+    useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+    useMyMentorshipApprovals.mockReturnValue({ requests: [] });
     useAuth.mockReturnValue({
       permissions: [
         PERMISSIONS.MENTORSHIP_ADMIN_READ,
         PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
       ],
     });
+  });
+
+  it("leads with the requests waiting on an approver", () => {
+    useAuth.mockReturnValue({
+      permissions: [
+        PERMISSIONS.MENTORSHIP_ADMIN_READ,
+        PERMISSIONS.MENTORSHIP_APPROVE,
+      ],
+    });
+    useMyMentorshipApprovals.mockReturnValue({
+      requests: [{ requestId: 31 }, { requestId: 32 }],
+    });
+
+    render(<MentorshipManagement />);
+
+    expect(useMyMentorshipApprovals).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId("mock-pending-approvals").textContent).toBe("2");
+  });
+
+  it("asks for no approvals without mentorship.approve or the flag", () => {
+    render(<MentorshipManagement />);
+    expect(useMyMentorshipApprovals).toHaveBeenLastCalledWith(false);
+
+    useAuth.mockReturnValue({ permissions: [PERMISSIONS.MENTORSHIP_APPROVE] });
+    useFeatureFlags.mockReturnValue({});
+    render(<MentorshipManagement />);
+    expect(useMyMentorshipApprovals).toHaveBeenLastCalledWith(false);
+    expect(
+      screen.queryByTestId("mock-pending-approvals"),
+    ).not.toBeInTheDocument();
   });
 
   it("passes rounds and totals to RoundsManagementCard", () => {
@@ -121,6 +177,7 @@ describe("MentorshipManagement", () => {
       screen.getByTestId("mock-rounds-management-card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("can-write").textContent).toBe("false");
+    expect(screen.getByTestId("can-read-feedback").textContent).toBe("true");
   });
 
   it("renders ParticipantSearchCard when the user has admin-read permission", () => {
@@ -142,6 +199,8 @@ describe("MentorshipManagement", () => {
       screen.getByTestId("mock-rounds-management-card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("can-write").textContent).toBe("true");
+    // Feedback is read-only data: write alone does not show it.
+    expect(screen.getByTestId("can-read-feedback").textContent).toBe("false");
     expect(
       screen.queryByTestId("mock-participant-search-card"),
     ).not.toBeInTheDocument();

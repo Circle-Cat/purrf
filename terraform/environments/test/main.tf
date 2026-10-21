@@ -21,6 +21,11 @@ module "purrf_instance" {
   cloudflare_account_id = "0fc5fc1f83592f6c1bdc89b240469324"
   cloudflare_zone_id    = "9a0308ba411ef3466582881dcd274f18"
 
+  gmail_watch_topic_name  = "purrf-gmail-nonprod"
+  gmail_watch_topic_owner = true
+
+  pubsub_event_push_enabled = true
+
   microsoft_chat_code_dir    = "../../../backend/producers/microsoft_chat_producer"
   microsoft_chat_entry_point = "notification_webhook"
 
@@ -45,7 +50,19 @@ module "purrf_instance" {
   gmail_client_id           = var.gmail_client_id
   gmail_client_secret       = var.gmail_client_secret
   gmail_refresh_token       = var.gmail_refresh_token
+  kit_api_key               = var.kit_api_key
   gmail_sender_recruiting   = "recruiting-test@circlecat.org"
   gmail_sender_notification = "notification-test@circlecat.org"
+  gmail_sender_mentorship   = "mentorship-test@circlecat.org"
+  gmail_sender_inquiries    = "inquiries-test@circlecat.org"
+  # Staging claims the aliases' mail; see its main.tf.
+  gmail_inbox_enabled = false
+
+  # The matcher pipeline is brought up here first. Setting matcher_image_tag
+  # to an image pushed to the shared repository is what creates the job. The
+  # tag is the purrf-matcher commit the image was built from.
+  enable_matcher    = true
+  matcher_image_tag = "a88afa5237a2aabfba6887ad025a33ceee54887b"
+  matcher_llm_stub  = true
 }
 

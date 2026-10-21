@@ -1,15 +1,19 @@
 import unittest
 from datetime import datetime, timezone
 
+from backend.common.mentorship_email_enums import MentorshipEmailSendStatus
 from backend.common.mentorship_enums import CommunicationMethod, ParticipantRole
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
+from backend.entity.mentorship_email_send_entity import MentorshipEmailSendEntity
+from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.users_entity import UsersEntity
 from backend.mentorship import notification_renderers  # noqa: F401 (registers)
 from backend.mentorship import recipient_resolvers  # noqa: F401 (registers)
 from backend.notification_management import recipient_registry, render_registry
+from backend.notification_management.event_recorder import record_event
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -69,6 +73,44 @@ class MentorAdmittedRecipientsTest(BaseRepositoryTestLib):
 
         with self.assertRaises(ValueError):
             await recipient_registry.resolve_recipients(self.session, event)
+
+
+class EmailSendPreparedRecipientsTest(BaseRepositoryTestLib):
+    async def test_the_send_creator_gets_the_bell(self):
+        """Recorded by the background job with no actor, so the creator is
+        not subtracted and is the only one notified."""
+        creator, other = _make_user("Cat", "Admin"), _make_user("Grace", "Hopper")
+        mentorship_round = MentorshipRoundEntity(
+            name="Fall 2026",
+            onboarding_deadline_at=datetime(2026, 9, 15, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([creator, other, mentorship_round])
+        send = MentorshipEmailSendEntity(
+            round_id=mentorship_round.round_id,
+            stage="match_result",
+            kit_draft_id=11,
+            kit_draft_subject="Your match",
+            created_by=creator.user_id,
+            status=MentorshipEmailSendStatus.SCHEDULED,
+            sender_address="notification-test@circlecat.org",
+            kit_tag_name="purrf · Fall 2026",
+        )
+        await self.insert_entities([send])
+
+        event, notifications = await record_event(
+            self.session,
+            subject_type="mentorship_email_send",
+            subject_id=send.send_id,
+            actor_id=None,
+            event_type="mentorship.email_send_prepared",
+            details={"status": "scheduled"},
+        )
+
+        self.assertEqual([n.user_id for n in notifications], [creator.user_id])
+        self.assertEqual(
+            await recipient_registry.resolve_recipients(self.session, event),
+            {creator.user_id},
+        )
 
 
 class MentorshipRegistryExhaustivenessTest(unittest.TestCase):

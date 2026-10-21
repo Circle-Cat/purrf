@@ -14,18 +14,27 @@ Importing this module registers the renderer. ``fast_app_factory`` imports it
 once at startup for that side effect, alongside ``recipient_resolvers``.
 """
 
+import html
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.mentorship_email_enums import MentorshipEmailSendStatus
 from backend.common.mentorship_enums import MentorshipEvent
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.users_entity import UsersEntity
 from backend.mentorship import notification_email_copy as copy
+from backend.mentorship.mentorship_email_service import PACIFIC
 from backend.notification_management.render_registry import register_render
+from backend.common.name_utils import user_display_name
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
+from backend.repository.users_repository import UsersRepository
+
+# Stateless, so these module-level instances serve every render.
+_users_repository = UsersRepository()
+_approval_request_repository = ApprovalRequestRepository()
 
 # Where a recipient with no usable timezone on file is assumed to be. Most
 # mentors are in North America, and ``users.timezone`` is a free-form string
@@ -125,22 +134,12 @@ async def _recipient(session: AsyncSession, application_id: int):
         tuple[str, str | None]: Greeting name ("" when nothing resolves, which
             greets without a name) and the raw ``users.timezone``.
     """
-    result = await session.execute(
-        select(
-            UsersEntity.first_name,
-            UsersEntity.preferred_name,
-            UsersEntity.timezone,
-        )
-        .join(ApplicationEntity, ApplicationEntity.user_id == UsersEntity.user_id)
-        .where(ApplicationEntity.application_id == application_id)
-    )
-    row = result.first()
-    if row is None:
+    user = await _users_repository.get_by_application_id(session, application_id)
+    if user is None:
         return "", None
-    first_name, preferred_name, timezone_name = row
-    if preferred_name and preferred_name.strip():
-        return preferred_name.strip(), timezone_name
-    return (first_name or "").strip(), timezone_name
+    if user.preferred_name and user.preferred_name.strip():
+        return user.preferred_name.strip(), user.timezone
+    return (user.first_name or "").strip(), user.timezone
 
 
 @register_render(MentorshipEvent.MENTOR_ADMITTED)
@@ -165,4 +164,178 @@ async def _render_mentor_admitted(session: AsyncSession, event: EventEntity):
         event.details.get("roundName"),
         _format_deadline(deadline, zone),
         _format_matching_date(matching, zone),
+    )
+
+
+def _elapsed(started_at: str | None, finished_at: str | None) -> int | None:
+    """Seconds between two reported instants, or None when they do not parse.
+
+    The matcher reports both; neither is trusted to be an instant, because a
+    body that says a run took -3 minutes reads as our bug rather than its
+    clock's.
+    """
+    started, finished = _instant(started_at), _instant(finished_at)
+    if started is None or finished is None:
+        return None
+    return int((finished - started).total_seconds())
+
+
+@register_render(MentorshipEvent.MATCHING_RUN_COMPLETED)
+async def _render_matching_run_completed(session: AsyncSession, event: EventEntity):
+    """What the administrator who started a run is told about how it went.
+
+    Everything rendered comes from ``event.details``, snapshotted when the
+    callback arrived. The run's own Redis keys expire, and an email explaining
+    a run has to keep making sense after they do.
+    """
+    del session
+    details = event.details
+    round_name = details.get("roundName")
+    seconds = _elapsed(details.get("startedAt"), details.get("finishedAt"))
+
+    if details.get("status") == "failed":
+        return copy.matching_run_failed(round_name, details.get("error"))
+
+    return copy.matching_run_succeeded(
+        round_name,
+        int(details.get("menteeCount") or 0),
+        int(details.get("mentorCount") or 0),
+        seconds,
+    )
+
+
+async def _approval_parts(session: AsyncSession, event: EventEntity):
+    """What every approval email names: the action, the round, who acted, and
+    the request row.
+
+    The round's name is the snapshot taken when the event was recorded. The
+    reason and the decision comment are read from the request, which never
+    changes them once written, so a redelivery renders the same email.
+    """
+    details = event.details
+    row = await _approval_request_repository.get(session, int(details["requestId"]))
+    actor = "A colleague"
+    if event.actor_id is not None:
+        people = await _users_repository.get_all_by_ids(session, [event.actor_id])
+        if people:
+            person = people[0]
+            actor = (
+                user_display_name(
+                    first_name=person.first_name,
+                    last_name=person.last_name,
+                    preferred_name=person.preferred_name,
+                )
+                or actor
+            )
+    return details.get("action", ""), details.get("roundName"), html.escape(actor), row
+
+
+@register_render(MentorshipEvent.APPROVAL_REQUESTED)
+async def _render_approval_requested(session: AsyncSession, event: EventEntity):
+    """Tell the reviewer a mentorship request is waiting on them."""
+    action, round_name, actor, row = await _approval_parts(session, event)
+    return copy.approval_requested(
+        action,
+        round_name,
+        actor,
+        row.reason if row else None,
+        event.details.get("personName"),
+    )
+
+
+@register_render(MentorshipEvent.APPROVAL_REASSIGNED)
+async def _render_approval_reassigned(session: AsyncSession, event: EventEntity):
+    """Tell the new reviewer a mentorship request was handed to them."""
+    action, round_name, actor, row = await _approval_parts(session, event)
+    return copy.approval_reassigned(
+        action,
+        round_name,
+        actor,
+        row.reason if row else None,
+        event.details.get("personName"),
+    )
+
+
+@register_render(MentorshipEvent.APPROVAL_DECIDED)
+async def _render_approval_decided(session: AsyncSession, event: EventEntity):
+    """Tell the other side a mentorship request was approved, rejected or
+    withdrawn."""
+    action, round_name, actor, row = await _approval_parts(session, event)
+    return copy.approval_decided(
+        action,
+        round_name,
+        actor,
+        event.details.get("decision", ""),
+        row.decision_comment if row else None,
+        event.details.get("personName"),
+    )
+
+
+@register_render(MentorshipEvent.EMAIL_SEND_PREPARED)
+async def _render_email_send_prepared(session: AsyncSession, event: EventEntity):
+    """What the admin who created a Kit send is told once preparing ends.
+
+    Everything comes from ``event.details``, snapshotted when the outcome was
+    recorded. Times are in Pacific, as the send dialog states them.
+    """
+    del session
+    details = event.details
+    round_name, stage, subject = (
+        details.get("roundName"),
+        details.get("stage"),
+        details.get("subject"),
+    )
+    if details.get("status") != MentorshipEmailSendStatus.SCHEDULED:
+        return copy.email_send_failed(
+            round_name,
+            stage,
+            subject,
+            details.get("failureCode"),
+            details.get("errorMessage"),
+            bool(details.get("mayStillBeScheduled")),
+        )
+    send_at = _instant(details.get("sendAt"))
+    return copy.email_send_scheduled(
+        round_name,
+        stage,
+        subject,
+        send_at.astimezone(PACIFIC).strftime("%Y-%m-%d %H:%M Pacific")
+        if send_at
+        else None,
+        int(details.get("handedCount") or 0),
+        [
+            (
+                person.get("name") or "",
+                copy.unreached_reason(
+                    person.get("result"), person.get("failureReason")
+                ),
+            )
+            for person in details.get("notHanded") or []
+        ],
+    )
+
+
+@register_render(MentorshipEvent.EMAIL_RECEIVED)
+async def _render_participant_email_received(session: AsyncSession, event: EventEntity):
+    """What staff are told when a participant's reply needs an answer."""
+    del session
+    details = event.details
+    return copy.participant_email_received(
+        details.get("personName"),
+        details.get("subject"),
+        details.get("from"),
+        details.get("roundName"),
+    )
+
+
+@register_render(MentorshipEvent.EMAIL_BOUNCED)
+async def _render_participant_email_bounced(session: AsyncSession, event: EventEntity):
+    """What the sender is told when their email to a participant bounced."""
+    del session
+    details = event.details
+    return copy.participant_email_bounced(
+        details.get("personName"),
+        details.get("subject"),
+        details.get("bouncedTo"),
+        details.get("roundName"),
     )

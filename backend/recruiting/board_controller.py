@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Response
 
+from backend.communication.attachment_download import attachment_response
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
 from backend.utils.permission_decorators import authenticate
 from backend.dto.board_dto import (
-    BlacklistDto,
     CommentCreateDto,
     ReassignDto,
     RoundChangeDto,
@@ -16,6 +16,7 @@ from backend.dto.interview_dto import InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.email_dto import EmailSendRequestDto
 from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT,
     RECRUITING_APPLICATION_EMAILS_ENDPOINT,
     RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
     RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
@@ -33,8 +34,6 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
     RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
     RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
-    RECRUITING_BLACKLIST_ENDPOINT,
-    RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
 )
 
 
@@ -47,10 +46,9 @@ class BoardController:
     configured owner ids, not an enum permission. The decision routes
     (stage/sub-status/reassign/round) are double-gated:
     ``Permission.RECRUITING_APPLICATION_ADVANCE`` at the route, and the same
-    row-level owner check in ``BoardService``. The blacklist route is
-    permission-gated only (``Permission.RECRUITING_BLACKLIST_WRITE``):
-    ``BoardService.blacklist`` deliberately performs no job-ownership check,
-    since it's an org-level sanction rather than a per-posting decision.
+    row-level owner check in ``BoardService``. Blocking a candidate is no
+    longer one of these routes at all: it is an org-level sanction, so it
+    moved to the account console and the request flow behind it (PUR-638).
 
     The comments routes (list/add) are also plain login-gated: like the
     reads above, access is a row-level owner-or-current-assignee check
@@ -147,6 +145,13 @@ class BoardController:
             methods=["GET"],
             response_model=None,
         )
+        # Attachments of the Emails tab: the same gate as reading it.
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT,
+            endpoint=authenticate()(self.get_application_email_attachment),
+            methods=["GET"],
+            response_model=None,
+        )
         self.router.add_api_route(
             RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
             endpoint=authenticate()(self.list_comments),
@@ -195,22 +200,6 @@ class BoardController:
                 permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
             )(self.set_round),
             methods=["PATCH"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_BLACKLIST_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
-                self.blacklist
-            ),
-            methods=["POST"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
-                self.list_blacklist_upcoming_interviews
-            ),
-            methods=["GET"],
             response_model=None,
         )
         # Interview scheduling reuses the advance permission: booking a
@@ -320,15 +309,12 @@ class BoardController:
         return api_response(message="Application activity fetched.", data=result)
 
     async def get_application_emails(
-        self, current_user: UserContextDto, application_id: int, refresh: bool = False
+        self, current_user: UserContextDto, application_id: int
     ):
-        """Return an application's email conversation.
-
-        Pure DB read by default; ``?refresh=true`` syncs from Gmail first.
-        """
+        """Return an application's email conversation (a pure DB read)."""
         async with self.database.session() as session:
             result = await self.board_service.get_application_conversation(
-                session, current_user, application_id, refresh=refresh
+                session, current_user, application_id
             )
         return api_response(message="Emails fetched.", data=result)
 
@@ -354,6 +340,20 @@ class BoardController:
                 session, current_user, application_id
             )
         return api_response(message="Email templates fetched.", data=result)
+
+    async def get_application_email_attachment(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        message_id: int,
+        index: int,
+    ):
+        """One attachment of an Emails-tab message, as a download."""
+        async with self.database.session() as session:
+            content, name = await self.board_service.get_application_email_attachment(
+                session, current_user, application_id, message_id, index
+            )
+        return attachment_response(content, name)
 
     async def get_other_applications(
         self, current_user: UserContextDto, application_id: int
@@ -450,30 +450,6 @@ class BoardController:
                 session, current_user, application_id, round_data
             )
         return api_response(message="Application session updated.", data=result)
-
-    async def blacklist(
-        self,
-        current_user: UserContextDto,
-        blacklist_data: BlacklistDto,
-    ):
-        """Block a user org-wide and close out the triggering application."""
-        async with self.database.session() as session:
-            result = await self.board_service.blacklist(
-                session, current_user, blacklist_data
-            )
-        return api_response(message="User blacklisted.", data=result)
-
-    async def list_blacklist_upcoming_interviews(
-        self,
-        current_user: UserContextDto,
-        user_id: int,
-    ):
-        """List the interview meetings a blacklist of this user would cancel."""
-        async with self.database.session() as session:
-            result = await self.board_service.list_upcoming_interviews_for_user(
-                session, user_id
-            )
-        return api_response(message="Upcoming interviews fetched.", data=result)
 
     async def schedule_interview(
         self,

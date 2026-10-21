@@ -68,6 +68,24 @@ describe("UserList", () => {
     expect(screen.getByText("External")).toBeInTheDocument();
   });
 
+  it("shows a blocked account as blocked rather than active", () => {
+    // Blocking deliberately leaves is_active true, so a status read off that
+    // flag alone calls somebody who cannot sign in at all "Active".
+    render(
+      <UserList {...baseProps} users={[{ ...users[0], isBlocked: true }]} />,
+    );
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
+  });
+
+  it("shows both states for an account that is blocked and deactivated", () => {
+    render(
+      <UserList {...baseProps} users={[{ ...users[1], isBlocked: true }]} />,
+    );
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Deactivated")).toBeInTheDocument();
+  });
+
   it("shows 'Active' badge and 'Deactivated' badge for status", () => {
     render(<UserList {...baseProps} />);
     expect(screen.getByText("Active")).toBeInTheDocument();
@@ -156,5 +174,21 @@ describe("UserList", () => {
     render(<UserList {...baseProps} />);
     await user.click(screen.getByRole("button", { name: "Search" }));
     expect(baseProps.onSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the holds-permission filter from the catalog", () => {
+    // The dropdown itself is Radix and not driveable in jsdom, so this pins
+    // that the control is wired and labelled; the hook and api tests cover the
+    // value reaching the request.
+    render(
+      <UserList
+        {...baseProps}
+        catalog={[{ name: "permission.manage", description: "d" }]}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Holds permission" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Any permission")).toBeInTheDocument();
   });
 });

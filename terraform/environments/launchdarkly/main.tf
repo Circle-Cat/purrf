@@ -7,7 +7,7 @@ locals {
       beta_user_rule = {
         attribute = "email"
         op        = "in"
-        values    = ["yuji@u.circlecat.org", "yhuang@u.circlecat.org"]
+        values    = ["yuji@u.circlecat.org"]
       }
     }
     staging = {
@@ -17,7 +17,7 @@ locals {
       beta_user_rule = {
         attribute = "email"
         op        = "in"
-        values    = ["yuji@u.circlecat.org", "yhuang@u.circlecat.org"]
+        values    = ["yuji@u.circlecat.org"]
       }
     }
     production = {
@@ -38,21 +38,48 @@ locals {
       name        = "Manual Submit Meeting"
       description = "Enables the manual meeting submit flow"
       off_in      = []
-      public_in   = ["production", "staging"]
+      public_in   = ["production", "staging", "test"]
     }
     view_personal_summary = {
       key         = "view-personal-summary"
       name        = "View Personal Summary"
       description = "Enables the view personal summary feature"
       off_in      = []
-      public_in   = ["production", "staging"]
+      public_in   = ["production", "staging", "test"]
     }
     create_google_meeting = {
       key         = "create-google-meeting"
       name        = "Create Google Meeting"
       description = "Enables the Google Meeting related feature"
       off_in      = ["production"]
-      public_in   = []
+      public_in   = ["staging", "test"]
+    }
+    # Only test and staging have a matcher job to start; in production the
+    # endpoint would refuse anyway, and each press is an hour of a paid job
+    # once the stub is off.
+    matching_run = {
+      key         = "matching-run"
+      name        = "Matching Run"
+      description = "Lets an admin start a mentorship matching run"
+      off_in      = ["production"]
+      public_in   = ["staging", "test"]
+    }
+    # Gates every leave screen. The backend has no flag of its own, so off here
+    # hides the feature rather than disabling it.
+    leave_management = {
+      key         = "leave-management"
+      name        = "Leave Management"
+      description = "Shows the leave screens: requests, approvals, balances and administration"
+      off_in      = ["staging", "production"]
+      public_in   = ["test"]
+    }
+    # Gates sending mentorship notifications through Kit, backend and frontend.
+    mentorship_kit_email = {
+      key         = "mentorship-kit-email"
+      name        = "Mentorship Kit Email"
+      description = "Lets a mentorship admin send notifications to participants through Kit"
+      off_in      = ["production"]
+      public_in   = ["staging", "test"]
     }
   }
 

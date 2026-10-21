@@ -25,7 +25,19 @@ assignee being materialised) -- there is genuinely nobody to name.
 ``""`` means there was an actor, but their user row is gone or otherwise
 unresolvable -- claiming the event was automatic would be a lie, so this
 case falls back to ``_MISSING_ACTOR``. A real string names them.
+
+A body is HTML and a subject is not, so the two readings of the same
+field differ: templates read ``dto.job_title`` for the body, which comes
+back HTML-escaped, and ``dto.plain.job_title`` for the subject, which
+does not. Every value here is written by a person -- a blacklist reason
+typed by a recruiter, a name a candidate chose, a posting title -- and
+these bodies are delivered to people who never saw the form it was typed
+into, so an unescaped one would carry that person's markup into their
+mail. See ``_Escaped``.
 """
+
+import functools
+import html
 
 from backend.common.recruiting_enums import (
     ApplicationStage,
@@ -39,6 +51,79 @@ _FOOTER = (
 
 _MISSING_ACTOR = "Someone"
 _MISSING_APPLICANT = "A candidate"
+
+
+class _Fields:
+    """The display fields, with the two "nobody to name" fallbacks applied.
+
+    ``actor`` and ``applicant`` are the readings a sentence can be built
+    around; the resolved-to-nothing case is answered once here rather than
+    at the top of every template. Everything else passes straight through
+    to the dto the renderer resolved.
+    """
+
+    def __init__(self, dto):
+        self._dto = dto
+
+    def __getattr__(self, name):
+        return getattr(self._dto, name)
+
+    @property
+    def actor(self) -> str:
+        """Who acted, or ``_MISSING_ACTOR`` when their row no longer resolves."""
+        return self._dto.actor_name or _MISSING_ACTOR
+
+    @property
+    def applicant(self) -> str:
+        """The candidate, or ``_MISSING_APPLICANT`` when nothing resolved."""
+        return self._dto.applicant_name or _MISSING_APPLICANT
+
+
+class _Escaped:
+    """An HTML-safe reading of ``_Fields``: every string comes back escaped.
+
+    This is what a template's ``dto`` is, so a body is safe by
+    construction. The alternative -- one ``html.escape`` call per
+    interpolation, at the 60-odd of them below -- is one omission away
+    from an injection, and the omission is invisible in review because
+    escaped and unescaped sites read almost the same.
+
+    Values that are not strings (a datetime, a round number, a JobKind)
+    pass through untouched, so ``_format_utc`` and ``stage_label`` still
+    receive what they expect.
+
+    ``plain`` reaches the unescaped fields, for the subject line: a mail
+    client renders a subject as text, where "&amp;" would be read out
+    literally instead of as the ampersand somebody typed.
+    """
+
+    def __init__(self, fields: _Fields):
+        self.plain = fields
+
+    def __getattr__(self, name):
+        value = getattr(self.plain, name)
+        return html.escape(value) if isinstance(value, str) else value
+
+
+def _html_body(template):
+    """Hands ``template`` an escaped view of the dto it was called with.
+
+    Callers keep passing the plain dto the renderer resolved, so this is
+    invisible from ``notification_renderers``; inside the template, ``dto``
+    reads escaped and ``dto.plain`` reads raw.
+
+    Args:
+        template (Callable): A ``(dto, stage) -> (subject, body)`` template.
+
+    Returns:
+        Callable: The same, reading its fields through ``_Escaped``.
+    """
+
+    @functools.wraps(template)
+    def render(dto, stage):
+        return template(_Escaped(_Fields(dto)), stage)
+
+    return render
 
 
 def stage_label(stage: ApplicationStage | None, kind: JobKind | None) -> str:
@@ -87,7 +172,10 @@ def _candidate_line(dto) -> str:
     "Ada Lovelace (ada@example.com)'s interview".
 
     Args:
-        dto: The display fields, carrying applicant_name and applicant_email.
+        dto (_Escaped): The escaped view a template holds, carrying
+            applicant_name and applicant_email. This returns HTML, so it has
+            to be read through that view like any other body site -- both
+            fields are the candidate's own text.
 
     Returns:
         str: "<p>Candidate: Name (address)</p>", "<p>Candidate: address</p>"
@@ -101,39 +189,49 @@ def _candidate_line(dto) -> str:
     return f"<p>Candidate: {dto.applicant_name} ({dto.applicant_email})</p>"
 
 
+@_html_body
 def _assigned_to_evaluate(dto, stage):
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     if dto.actor_name is None:
         # actor_user_id was NULL: the row was written by the system when a
         # stage's configured default assignee was materialised, so there is
         # genuinely nobody to name.
         opening = (
-            f"You were automatically assigned to evaluate {applicant} for "
+            f"You were automatically assigned to evaluate {dto.applicant} for "
             f"{dto.job_title}, as the posting's default assignee for this stage."
         )
+        closing = "Open My Interview Evaluations in Purrf to submit your evaluation."
     else:
         # Someone did assign it; their name is just unresolvable (a deleted
         # user row resolves to ""). "Someone" is truer than claiming the
         # assignment was automatic.
-        actor = dto.actor_name or _MISSING_ACTOR
-        opening = f"{actor} assigned you to evaluate {applicant} for {dto.job_title}."
+        # The posting owners get this email as well as the evaluator, and it
+        # is rendered once for all of them, so it names the evaluator instead
+        # of saying "you".
+        evaluator = dto.assignee_name or "someone"
+        opening = (
+            f"{dto.actor} assigned {evaluator} to evaluate {dto.applicant} for "
+            f"{dto.job_title}."
+        )
+        closing = (
+            "If you are the evaluator, open My Interview Evaluations in Purrf "
+            "to submit your evaluation."
+        )
     return (
-        f"Evaluation assigned: {applicant} ({dto.job_title})",
+        f"Evaluation assigned: {dto.plain.applicant} ({dto.plain.job_title})",
         f"<p>{opening}</p>"
         f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}"
         f"{_round_suffix(dto.round)}.</p>"
-        "<p>Open My Interview Evaluations in Purrf to submit your "
-        "evaluation.</p>",
+        f"<p>{closing}</p>",
     )
 
 
+@_html_body
 def _mentioned(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"{actor} mentioned you: {applicant} ({dto.job_title})",
-        f"<p>{actor} mentioned you in a comment on {applicant}'s "
+        f"{dto.plain.actor} mentioned you: "
+        f"{dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} mentioned you in a comment on {dto.applicant}'s "
         f"application for {dto.job_title}.</p>"
         f"{_candidate_line(dto)}"
         "<p>Open the application in Purrf and go to its Comments tab to "
@@ -141,55 +239,161 @@ def _mentioned(dto, stage):
     )
 
 
-def _job_review_requested(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
+@_html_body
+def _email_received(dto, stage):
+    # Inbound only means "not from our sender", so the reply may come from
+    # someone on CC rather than the candidate; the From line says who.
+    from_line = f"<p>From: {dto.email_from}</p>" if dto.email_from else ""
+    subject_line = f"<p>Subject: {dto.email_subject}</p>" if dto.email_subject else ""
     return (
-        f"Posting review requested: {dto.job_title}",
-        f'<p>{actor} submitted the posting "{dto.job_title}" for your '
-        "review. It is waiting on your decision.</p>"
-        "<p>Open My Posting Reviews in Purrf to approve or reject it.</p>",
+        f"New email reply: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>A candidate replied to an email about {dto.applicant}'s "
+        f"application for {dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
+        f"{from_line}"
+        f"{subject_line}"
+        "<p>Open the application in Purrf and go to its Emails tab to read "
+        "it and reply.</p>",
     )
 
 
-def _job_review_approved(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
+@_html_body
+def _email_bounced(dto, stage):
+    # A report can name nobody (no X-Failed-Recipients header); the sentence
+    # still stands without the address list.
+    to_whom = (
+        f" to {dto.email_failed_recipients}" if dto.email_failed_recipients else ""
+    )
     return (
-        f"Posting approved: {dto.job_title}",
-        f"<p>{actor} approved your submission for the posting "
+        f"Email not delivered: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>An email you sent about {dto.applicant}'s application for "
+        f"{dto.job_title} could not be delivered{to_whom}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the application in Purrf and go to its Emails tab to check "
+        "the address and send it again.</p>",
+    )
+
+
+@_html_body
+def _job_review_requested(dto, stage):
+    return (
+        f"Posting review requested: {dto.plain.job_title}",
+        f'<p>{dto.actor} submitted the posting "{dto.job_title}" for your '
+        "review. It is waiting on your decision.</p>"
+        "<p>Open Job Postings in Purrf to approve or reject it.</p>",
+    )
+
+
+@_html_body
+def _job_review_reassigned(dto, stage):
+    # Not _job_review_requested's line: the recipient never saw the original
+    # request, so "submitted the posting for your review" would be their first
+    # news of something that has been waiting on somebody else. The copy has
+    # to say a handover happened. It does not say why -- the usual reason is
+    # that the previous reviewer's account was turned off, which is not this
+    # recipient's to know.
+    return (
+        f"Posting review reassigned: {dto.plain.job_title}",
+        f'<p>{dto.actor} moved the review of the posting "{dto.job_title}" '
+        "to you. It is waiting on your decision.</p>"
+        "<p>Open Job Postings in Purrf to approve or reject it.</p>",
+    )
+
+
+@_html_body
+def _job_review_approved(dto, stage):
+    return (
+        f"Posting approved: {dto.plain.job_title}",
+        f"<p>{dto.actor} approved your submission for the posting "
         f'"{dto.job_title}".</p>'
         "<p>Open Job Postings in Purrf to see its current state.</p>",
     )
 
 
+@_html_body
 def _job_review_rejected(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
     return (
-        f"Posting rejected: {dto.job_title}",
-        f"<p>{actor} rejected your submission for the posting "
+        f"Posting rejected: {dto.plain.job_title}",
+        f"<p>{dto.actor} rejected your submission for the posting "
         f'"{dto.job_title}".</p>'
         "<p>Open Job Postings in Purrf to see the outcome and any comment "
         "the reviewer left.</p>",
     )
 
 
-def _application_submitted(dto, stage):
-    applicant = dto.applicant_name or _MISSING_APPLICANT
+@_html_body
+def _job_review_withdrawn(dto, stage):
+    # Told to the reviewer the review was waiting on: nothing is left for
+    # them to do.
     return (
-        f"New application: {applicant} for {dto.job_title}",
-        f"<p>{applicant} applied to {dto.job_title}. The application is "
+        f"Posting review withdrawn: {dto.plain.job_title}",
+        f"<p>{dto.actor} withdrew their request to review the posting "
+        f'"{dto.job_title}". Nothing is waiting on you any more.</p>',
+    )
+
+
+def unavailable_person_label(user_id: int) -> str:
+    """How copy names a person it must not name: ``User {id} — unavailable``.
+
+    Mirrors ``personLabel.js`` on the frontend (PUR-639): the id alone, with
+    no name and no reason, so the reader learns nothing about why the person
+    dropped out.
+
+    Args:
+        user_id (int): The person's user id.
+
+    Returns:
+        str: The label.
+    """
+    return f"User {user_id} — unavailable"
+
+
+def _default_assignee_line(dto) -> str:
+    """What became of the stage's default interviewer, or "" if none is set.
+
+    Args:
+        dto (_Escaped): The escaped view a template holds, carrying
+            auto_assignee_name (set when the default was assigned) and
+            unavailable_default_assignee_id (set when it could not be).
+
+    Returns:
+        str: One HTML paragraph, or "".
+    """
+    if dto.auto_assignee_name is not None:
+        return (
+            f"<p>It was assigned to {dto.auto_assignee_name} automatically, "
+            "the stage's default interviewer.</p>"
+        )
+    if dto.unavailable_default_assignee_id is not None:
+        label = unavailable_person_label(dto.unavailable_default_assignee_id)
+        return (
+            f"<p>The stage's default interviewer ({label}) can no longer be "
+            "assigned, so it is unassigned. Assign someone from the "
+            "Applications Board, and update the default on the posting so "
+            "later applications are not affected.</p>"
+        )
+    return ""
+
+
+@_html_body
+def _application_submitted(dto, stage):
+    return (
+        f"New application: {dto.plain.applicant} for {dto.plain.job_title}",
+        f"<p>{dto.applicant} applied to {dto.job_title}. The application is "
         f"waiting for review at the {stage_label(stage, dto.job_kind)} "
         "stage.</p>"
         f"{_candidate_line(dto)}"
         "<p>You're receiving this because you own this posting. Open the "
-        "Applications Board in Purrf to review it.</p>",
+        "Applications Board in Purrf to review it.</p>"
+        f"{_default_assignee_line(dto)}",
     )
 
 
+@_html_body
 def _application_auto_rejected(dto, stage):
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Application auto-rejected: {applicant} ({dto.job_title})",
-        f"<p>{applicant} applied to {dto.job_title} and was rejected "
+        f"Application auto-rejected: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.applicant} applied to {dto.job_title} and was rejected "
         "automatically, with no human review.</p>"
         f"{_candidate_line(dto)}"
         "<p>The reason is recorded on the application's timeline in Purrf. "
@@ -197,14 +401,14 @@ def _application_auto_rejected(dto, stage):
     )
 
 
+@_html_body
 def _application_auto_hired(dto, stage):
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     # Same display-only rename as stage_label: an activity posting admits,
     # it does not hire.
     verb = "admitted" if dto.job_kind == JobKind.ACTIVITY else "hired"
     return (
-        f"Application auto-{verb}: {applicant} ({dto.job_title})",
-        f"<p>{applicant} applied to {dto.job_title} and was {verb} "
+        f"Application auto-{verb}: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.applicant} applied to {dto.job_title} and was {verb} "
         "automatically, with no human review.</p>"
         f"{_candidate_line(dto)}"
         "<p>The matching screening rule is recorded on the application's "
@@ -256,60 +460,56 @@ def _format_utc(instant) -> str:
     return instant.strftime("%Y-%m-%d %H:%M UTC")
 
 
+@_html_body
 def _blacklisted(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Application blacklisted: {applicant} ({dto.job_title})",
-        f"<p>{actor} blacklisted {applicant} and rejected their application "
-        f'for {dto.job_title}, with the reason: "{dto.reason}".</p>'
-        f"{_candidate_line(dto)}"
-        "<p>Open the Blacklist page in Purrf to review the block.</p>",
+        f"Application blacklisted: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} blacklisted {dto.applicant} and rejected their "
+        f'application for {dto.job_title}, with the reason: "{dto.reason}".</p>'
+        f"{_candidate_line(dto)}",
     )
 
 
+@_html_body
 def _stage_changed(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Stage changed: {applicant} ({dto.job_title})",
-        f"<p>{actor} moved {applicant}'s application for {dto.job_title} to "
-        f"the {stage_label(stage, dto.job_kind)} stage.</p>"
+        f"Stage changed: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} moved {dto.applicant}'s application for "
+        f"{dto.job_title} to the {stage_label(stage, dto.job_kind)} stage.</p>"
         f"{_candidate_line(dto)}"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
 
+@_html_body
 def _round_advanced(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Round advanced: {applicant} ({dto.job_title})",
-        f"<p>{actor} advanced {applicant}'s {stage_label(stage, dto.job_kind)} "
-        f"round for {dto.job_title} to round {dto.round}.</p>"
+        f"Round advanced: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} advanced {dto.applicant}'s "
+        f"{stage_label(stage, dto.job_kind)} round for {dto.job_title} to "
+        f"round {dto.round}.</p>"
         f"{_candidate_line(dto)}"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
 
+@_html_body
 def _sub_status_changed(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Status changed: {applicant} ({dto.job_title})",
-        f"<p>{actor} moved {applicant}'s {stage_label(stage, dto.job_kind)} "
-        f"status for {dto.job_title} to {_humanize(dto.to_sub_status)}.</p>"
+        f"Status changed: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} moved {dto.applicant}'s "
+        f"{stage_label(stage, dto.job_kind)} status for {dto.job_title} to "
+        f"{_humanize(dto.to_sub_status)}.</p>"
         f"{_candidate_line(dto)}"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
 
+@_html_body
 def _evaluation_confirmed(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Evaluation submitted: {applicant} ({dto.job_title})",
-        f"<p>{actor} submitted their evaluation of {applicant} for "
+        f"Evaluation submitted: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} submitted their evaluation of {dto.applicant} for "
         f"{dto.job_title}.</p>"
         f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
@@ -317,12 +517,11 @@ def _evaluation_confirmed(dto, stage):
     )
 
 
+@_html_body
 def _interview_scheduled(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Interview scheduled: {applicant} ({dto.job_title})",
-        f"<p>{actor} scheduled an interview with {applicant} for "
+        f"Interview scheduled: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} scheduled an interview with {dto.applicant} for "
         f"{dto.job_title}, on {_format_utc(dto.start_at)}.</p>"
         f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
@@ -330,26 +529,24 @@ def _interview_scheduled(dto, stage):
     )
 
 
+@_html_body
 def _interview_updated(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Interview rescheduled: {applicant} ({dto.job_title})",
-        f"<p>{actor} rescheduled {applicant}'s interview for {dto.job_title} "
-        f"to {_format_utc(dto.start_at)}.</p>"
+        f"Interview rescheduled: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} rescheduled {dto.applicant}'s interview for "
+        f"{dto.job_title} to {_format_utc(dto.start_at)}.</p>"
         f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
 
+@_html_body
 def _interview_cancelled(dto, stage):
-    actor = dto.actor_name or _MISSING_ACTOR
-    applicant = dto.applicant_name or _MISSING_APPLICANT
     return (
-        f"Interview cancelled: {applicant} ({dto.job_title})",
-        f"<p>{actor} cancelled {applicant}'s interview for {dto.job_title}, "
-        f"which was set for {_format_utc(dto.start_at)}.</p>"
+        f"Interview cancelled: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} cancelled {dto.applicant}'s interview for "
+        f"{dto.job_title}, which was set for {_format_utc(dto.start_at)}.</p>"
         f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
         "<p>Open the Applications Board in Purrf to see it.</p>",

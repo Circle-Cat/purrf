@@ -123,7 +123,7 @@ describe("useLeaveApprovals", () => {
 
     await result.current.decide(1, true);
 
-    expect(api.decideLeaveRequest).toHaveBeenCalledWith(1, true);
+    expect(api.decideLeaveRequest).toHaveBeenCalledWith(1, true, null);
     expect(api.getLeaveApprovals).toHaveBeenCalledTimes(2);
   });
 
@@ -161,7 +161,50 @@ describe("useLeaveApprovals", () => {
 
     await result.current.decide(1, true);
 
-    await waitFor(() => expect(result.current.decideError).toBe(true));
+    await waitFor(() =>
+      expect(result.current.decideError).toMatch(/Nothing was recorded/),
+    );
     expect(result.current.decidingId).toBe(null);
+  });
+
+  it("passes the reason a rejection gives along", async () => {
+    api.getLeaveApprovals.mockResolvedValue(envelope([row()]));
+    api.decideLeaveRequest.mockResolvedValue(
+      envelope(row({ status: "rejected" })),
+    );
+
+    const { result } = renderHook(() => useLeaveApprovals());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.decide(1, false, "Team is short that week");
+
+    expect(api.decideLeaveRequest).toHaveBeenCalledWith(
+      1,
+      false,
+      "Team is short that week",
+    );
+  });
+
+  it("repeats why the server refused an approval", async () => {
+    // A refusal because the leave has started or its hours changed is
+    // something the manager acts on; "try again" would not help.
+    api.getLeaveApprovals.mockResolvedValue(envelope([row()]));
+    api.decideLeaveRequest.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { message: "This leave has already started." },
+      },
+    });
+
+    const { result } = renderHook(() => useLeaveApprovals());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.decide(1, true);
+
+    await waitFor(() =>
+      expect(result.current.decideError).toBe(
+        "This leave has already started.",
+      ),
+    );
   });
 });

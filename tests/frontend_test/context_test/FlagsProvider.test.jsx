@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, act, waitFor } from "@testing-library/react";
 import { useContext } from "react";
 import {
   FlagsProvider,
   LDIdentifier,
+  LDUserProvider,
   FlagsContext,
   ldReactContext as LDReactContext,
 } from "@/context/flags";
@@ -14,9 +15,10 @@ vi.mock("@/context/auth", () => ({
 }));
 
 /** Reads flags out of FlagsContext on each render and stores into a ref. */
-function FlagTracker({ flagsRef }) {
-  const { flags } = useContext(FlagsContext);
+function FlagTracker({ flagsRef, readyRef }) {
+  const { flags, ready } = useContext(FlagsContext);
   flagsRef.current = flags;
+  if (readyRef) readyRef.current = ready;
   return null;
 }
 
@@ -42,6 +44,17 @@ describe("FlagsProvider", () => {
       </FlagsProvider>,
     );
     expect(flagsRef.current).toEqual({});
+  });
+
+  it("is not ready before LaunchDarkly has answered", () => {
+    const flagsRef = { current: null };
+    const readyRef = { current: null };
+    render(
+      <FlagsProvider>
+        <FlagTracker flagsRef={flagsRef} readyRef={readyRef} />
+      </FlagsProvider>,
+    );
+    expect(readyRef.current).toBe(false);
   });
 });
 
@@ -72,17 +85,18 @@ describe("LDIdentifier", () => {
    */
   function renderLDIdentifier(ldClientValue) {
     const flagsRef = { current: {} };
+    const readyRef = { current: null };
     const utils = render(
       <LDReactContext.Provider
         value={{ ldClient: ldClientValue, flags: {}, flagKeyMap: {} }}
       >
         <FlagsProvider>
-          <FlagTracker flagsRef={flagsRef} />
+          <FlagTracker flagsRef={flagsRef} readyRef={readyRef} />
           <LDIdentifier />
         </FlagsProvider>
       </LDReactContext.Provider>,
     );
-    return { ...utils, flagsRef };
+    return { ...utils, flagsRef, readyRef };
   }
 
   it("does nothing when ldClient is undefined", () => {
@@ -131,6 +145,43 @@ describe("LDIdentifier", () => {
     expect(flagsRef.current).toEqual({ "manual-submit-meeting": true });
   });
 
+  it("is ready once identify resolves", async () => {
+    let resolveIdentify;
+    mockLDClient.identify.mockReturnValue(
+      new Promise((resolve) => {
+        resolveIdentify = resolve;
+      }),
+    );
+    let readyRef;
+    await act(async () => {
+      ({ readyRef } = renderLDIdentifier(mockLDClient));
+    });
+    expect(readyRef.current).toBe(false);
+
+    await act(async () => resolveIdentify());
+
+    expect(readyRef.current).toBe(true);
+  });
+
+  it("is ready with no flags when identify fails, and logs the failure", async () => {
+    // Without settling on failure every flag-gated page would wait forever.
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const failure = new Error("LaunchDarkly unreachable");
+    mockLDClient.identify.mockRejectedValue(failure);
+
+    let flagsRef, readyRef;
+    await act(async () => {
+      ({ flagsRef, readyRef } = renderLDIdentifier(mockLDClient));
+    });
+
+    expect(readyRef.current).toBe(true);
+    expect(flagsRef.current).toEqual({});
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), failure);
+    consoleError.mockRestore();
+  });
+
   it("subscribes to LD change events after identify", async () => {
     await act(async () => {
       renderLDIdentifier(mockLDClient);
@@ -165,5 +216,61 @@ describe("LDIdentifier", () => {
     unmount();
 
     expect(mockLDClient.off).toHaveBeenCalledWith("change", registeredHandler);
+  });
+});
+
+describe("LDUserProvider", () => {
+  /** Records the LaunchDarkly client LDUserProvider hands to its subtree. */
+  function ClientTracker({ clientRef }) {
+    clientRef.current = useContext(LDReactContext).ldClient;
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // No client-side ID is configured in tests, so the SDK reports a failed start.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("starts no LaunchDarkly client while nobody is signed in", async () => {
+    useAuth.mockReturnValue({ user: null });
+    const clientRef = { current: null };
+
+    let getByText;
+    await act(async () => {
+      ({ getByText } = render(
+        <LDUserProvider>
+          <span>child</span>
+          <ClientTracker clientRef={clientRef} />
+        </LDUserProvider>,
+      ));
+    });
+
+    expect(getByText("child")).toBeInTheDocument();
+    expect(clientRef.current).toBeUndefined();
+  });
+
+  it("starts the client once a user is signed in", async () => {
+    const user = {
+      sub: "azure|9",
+      userId: 9,
+      email: "nine@example.com",
+      identityType: "internal",
+    };
+    useAuth.mockReturnValue({ user });
+    const clientRef = { current: null };
+
+    render(
+      <LDUserProvider>
+        <ClientTracker clientRef={clientRef} />
+      </LDUserProvider>,
+    );
+
+    await waitFor(() => expect(clientRef.current).toBeDefined());
   });
 });

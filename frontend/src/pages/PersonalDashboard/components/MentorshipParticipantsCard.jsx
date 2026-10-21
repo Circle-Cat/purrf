@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { addDays, addMonths, isAfter, isBefore, subMonths } from "date-fns";
 import { formatInTz, formatDateTimeWithZone } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User } from "lucide-react";
+import { toast } from "sonner";
+import { deleteMeeting, rescheduleMeeting } from "@/api/meetingApi";
 import {
   Select,
   SelectContent,
@@ -15,6 +17,7 @@ import {
 import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 import { userDisplayName } from "@/utils/userName";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
+import MeetingRescheduleDialog from "@/pages/PersonalDashboard/components/MeetingRescheduleDialog";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -49,6 +52,15 @@ export default function MentorshipParticipantsCard({
   refreshMeetings,
   userTimezone,
 }) {
+  // The meeting awaiting a new slot, and which partner's row it came from.
+  // `meetingToReschedule` is a `meetingTimeList` entry, which carries only
+  // `meetingId`, `startDatetime`, `endDatetime`, `isCompleted`, and
+  // `meetLink` -- no partner id -- so the partner has to be remembered
+  // separately from whichever row's "Reschedule" was clicked.
+  const [meetingToReschedule, setMeetingToReschedule] = useState(null);
+  const [reschedulePartnerId, setReschedulePartnerId] = useState(null);
+  const [isReschedulingMeeting, setIsReschedulingMeeting] = useState(false);
+
   const { roundInfo, partnerMeetingOverview, participantRole } =
     participantDetails || {};
   const {
@@ -82,15 +94,15 @@ export default function MentorshipParticipantsCard({
   const submissionPartnerId =
     livePairings.length === 1 ? livePairings[0].partnerId : null;
 
-  // Logging stays open for a day past the meetings deadline, so meetings held
-  // right up against it can still be recorded. Booking a new meeting needs a
-  // round that is still running, which is a different question -- keeping the
-  // two reasons apart is what lets the entry point stay reachable for one
-  // while the other is closed.
-  const deadline = roundInfo?.timeline?.meetingsCompletionDeadlineAt;
-  const isLoggingClosed = deadline
-    ? isAfter(new Date(), addDays(new Date(deadline), 1))
-    : roundInfo?.status === MentorshipRoundStatus.COMPLETED;
+  // Logging stays open a little past the meetings deadline; booking a new
+  // meeting needs a round that is still running, which is a different
+  // question -- keeping the two reasons apart is what lets the entry point
+  // stay reachable for one while the other is closed. The server decides
+  // and enforces the logging cutoff on its own clock; booking is gated here
+  // only. A round list without the verdict (before a round is loaded, or
+  // from a backend that predates it) closes nothing and leaves the server
+  // to refuse.
+  const isLoggingClosed = roundInfo?.isMeetingLogOpen === false;
   const logUnavailableReason = isLoggingClosed
     ? "Logging meetings for this round has closed."
     : !hasParticipation || submissionPartnerId == null
@@ -105,34 +117,75 @@ export default function MentorshipParticipantsCard({
       ? null
       : "No active mentorship round";
 
-  // Feedback opens halfway through the round rather than after all meetings are
-  // done, so participants can write it while the round is still fresh. Both
-  // anchors are optional in the round form, so each falls back to a month
-  // either side of the (required) meetings deadline.
-  const meetingsEnd = deadline ? new Date(deadline) : null;
-  const feedbackOpensAt = roundInfo?.timeline?.meetingLogReminderAt
-    ? new Date(roundInfo.timeline.meetingLogReminderAt)
-    : meetingsEnd
-      ? subMonths(meetingsEnd, 1)
-      : null;
-  const feedbackClosesAt = roundInfo?.timeline?.feedbackDeadlineAt
-    ? new Date(roundInfo.timeline.feedbackDeadlineAt)
-    : meetingsEnd
-      ? addMonths(meetingsEnd, 1)
-      : null;
-
   // Past the closing date the dialog stays reachable but read-only, so people
-  // can still look back at what they submitted.
+  // can still look back at what they submitted. As with logging, a missing
+  // verdict hides and locks nothing.
   const showFeedback = Boolean(
-    hasParticipation &&
-    feedbackOpensAt &&
-    !isBefore(new Date(), feedbackOpensAt),
+    hasParticipation && roundInfo && roundInfo.isFeedbackOpen !== false,
   );
-  const isFeedbackEditable =
-    !feedbackClosesAt || !isAfter(new Date(), feedbackClosesAt);
-  const feedbackDeadlineText = feedbackClosesAt
-    ? formatDateTimeWithZone(feedbackClosesAt.toISOString(), userTimezone)
+  const isFeedbackEditable = roundInfo?.isFeedbackEditable !== false;
+  const feedbackDeadlineText = roundInfo?.feedbackClosesAt
+    ? formatDateTimeWithZone(roundInfo.feedbackClosesAt, userTimezone)
     : null;
+
+  // Cancelling and rescheduling are offered on the same terms as booking: all
+  // three go through Google, so the flag that gates creating a meeting gates
+  // managing one.
+  const canManageMeetings = Boolean(createGoogleMeeting);
+
+  /**
+   * Cancel one meeting held with a partner, then refresh the round's meetings
+   * so the list reflects what is left.
+   *
+   * @param {string | number} partnerId - Partner the meeting was booked with.
+   * @param {{meetingId: string}} meeting - Meeting to cancel.
+   * @returns {Promise<void>}
+   */
+  const handleCancelMeeting = async (partnerId, meeting) => {
+    try {
+      await deleteMeeting(meeting.meetingId, selectedRoundId, partnerId);
+      toast.success("Meeting cancelled successfully!");
+      await refreshMeetings?.();
+    } catch (error) {
+      console.error("Failed to cancel meeting:", error);
+      toast.error("Failed to cancel the meeting.");
+    }
+  };
+
+  /**
+   * Move the pending meeting to the slot collected by the reschedule dialog,
+   * then refresh the round's meetings so the list reflects the new time.
+   *
+   * @param {{date: string, startTime: string, durationMinutes: number,
+   *   timezone: string}} slot - Wall-clock slot chosen in the dialog.
+   * @returns {Promise<void>}
+   */
+  const handleRescheduleMeeting = async ({
+    date,
+    startTime,
+    durationMinutes,
+    timezone,
+  }) => {
+    setIsReschedulingMeeting(true);
+    try {
+      await rescheduleMeeting(meetingToReschedule.meetingId, {
+        round_id: selectedRoundId,
+        partner_id: reschedulePartnerId,
+        timezone,
+        start_date: date,
+        start_time: startTime,
+        duration_minutes: durationMinutes,
+      });
+      toast.success("Meeting rescheduled successfully!");
+      setMeetingToReschedule(null);
+      await refreshMeetings?.();
+    } catch (error) {
+      console.error("Failed to reschedule meeting:", error);
+      toast.error("Failed to reschedule the meeting.");
+    } finally {
+      setIsReschedulingMeeting(false);
+    }
+  };
 
   const getRoleIcon = (participantRole) => {
     return participantRole?.toLowerCase() ===
@@ -155,6 +208,11 @@ export default function MentorshipParticipantsCard({
               scheduleUnavailableReason={scheduleUnavailableReason}
               canLogPast={canSubmitMeeting}
               logPartnerId={submissionPartnerId}
+              logExistingMeetings={
+                submissionPartnerId == null
+                  ? []
+                  : livePairings[0].meetingTimeList || []
+              }
               logUnavailableReason={logUnavailableReason}
               userTimezone={userTimezone}
               onBooked={refreshMeetings}
@@ -282,6 +340,14 @@ export default function MentorshipParticipantsCard({
                     showMeetingList={
                       roundInfo?.status === MentorshipRoundStatus.ACTIVE
                     }
+                    canManageMeetings={canManageMeetings}
+                    onDeleteMeeting={(meeting) =>
+                      handleCancelMeeting(overview.partnerId, meeting)
+                    }
+                    onRescheduleMeeting={(meeting) => {
+                      setMeetingToReschedule(meeting);
+                      setReschedulePartnerId(overview.partnerId);
+                    }}
                   />
                 </div>
               ))}
@@ -289,6 +355,16 @@ export default function MentorshipParticipantsCard({
           </>
         )}
       </CardContent>
+      <MeetingRescheduleDialog
+        open={Boolean(meetingToReschedule)}
+        onOpenChange={(open) => {
+          if (!open) setMeetingToReschedule(null);
+        }}
+        meeting={meetingToReschedule}
+        userTimezone={userTimezone}
+        onSubmit={handleRescheduleMeeting}
+        submitting={isReschedulingMeeting}
+      />
     </Card>
   );
 }

@@ -9,6 +9,10 @@ class AdminUserDto(BaseDto):
     first_name: str
     last_name: str
     is_active: bool
+    # Travels beside is_active rather than folded into it: blocking never
+    # writes is_active, so a view holding only that flag shows somebody who is
+    # locked out of Purrf as a perfectly ordinary active account.
+    is_blocked: bool
     is_super_admin: bool
     preferred_name: str | None = None
     user_type: str
@@ -17,6 +21,21 @@ class AdminUserDto(BaseDto):
 class UserListDto(BaseDto):
     users: list[AdminUserDto]
     total: int
+
+
+class GrantPersonDto(BaseDto):
+    """Who a user id on a grant row refers to.
+
+    The three name fields travel separately and are rendered that way, which is
+    the product rule ``backend/common/name_utils`` states for admin and audit
+    views: substituting one for another loses the identity such a view exists to
+    confirm. No display name is composed here.
+    """
+
+    user_id: int
+    first_name: str
+    last_name: str
+    preferred_name: str | None = None
 
 
 class GrantDto(BaseDto):
@@ -33,6 +52,12 @@ class GrantDto(BaseDto):
     # True when the holder is currently a super admin (so they hold this
     # permission by super-admin derivation, in addition to any real grant).
     is_super_admin: bool = False
+    # The three ids above, resolved to people in one batched lookup so no view
+    # has to render a bare integer. None when the id has no users row -- a
+    # deleted account, or a derived row that has no actor at all.
+    user: GrantPersonDto | None = None
+    granted_by_user: GrantPersonDto | None = None
+    revoked_by_user: GrantPersonDto | None = None
 
 
 class PermissionCatalogEntryDto(BaseDto):

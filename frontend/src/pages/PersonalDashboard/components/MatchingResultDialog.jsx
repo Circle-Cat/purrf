@@ -50,6 +50,17 @@ export default function MatchingResultDialog({
   const isMatched = currentStatus === MatchStatus.MATCHED;
   const isDisabled = !canViewMatch && !isMatched;
 
+  // Someone moved to unmatched when their pairing ended was matched first.
+  const wasPaired =
+    currentStatus === MatchStatus.UNMATCHED && partners.length > 0;
+
+  const participationEnded = {
+    title: "Participation Ended",
+    description:
+      "You took part in this round, and your participation has since ended.",
+    color: "text-amber-600",
+  };
+
   /**
    * Status message configuration
    */
@@ -71,6 +82,7 @@ export default function MatchingResultDialog({
         "Thank you for applying. Unfortunately, you are not eligible for this round.",
       color: "text-destructive",
     },
+    [MatchStatus.WITHDRAWN]: participationEnded,
     [MatchStatus.PENDING]: {
       title: "Matching Has Not Started",
       description: "The matching process for this round hasn't started yet.",
@@ -85,10 +97,10 @@ export default function MatchingResultDialog({
   };
 
   // Being matched and having a current partner are two different facts: a
-  // pairing ends when the counterpart leaves the round, and the user stays
-  // matched. The round's own copy only fits while one of them is live.
+  // pairing ends when the counterpart leaves the round or the pair is ended.
+  // The round's own copy only fits while one of them is live.
   const isEveryPairingEnded =
-    isMatched &&
+    (isMatched || wasPaired) &&
     partners.length > 0 &&
     partners.every((partner) => partner.isActive === false);
 
@@ -106,12 +118,7 @@ export default function MatchingResultDialog({
         color: "text-amber-600",
       }
     : hasLeftTheRound
-      ? {
-          title: "Participation Ended",
-          description:
-            "You took part in this round, and your participation has since ended.",
-          color: "text-amber-600",
-        }
+      ? participationEnded
       : statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
 
   return (

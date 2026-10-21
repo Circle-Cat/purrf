@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   getUsers,
@@ -9,11 +10,16 @@ import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 const LIMIT = 20;
 
+// The account console deep-links here per person. Same name and same meaning
+// as on that page: user_id opens somebody, it does not merely ring their row.
+const LINKED_USER_PARAM = "user_id";
+
 /**
  * Owns the admin user list. Search/filter inputs are staged as draft state and
  * only take effect when submitSearch() runs (the Search button) — nothing is
- * fetched on mount. Sorting and pagination apply immediately to the committed
- * query. Also owns the selected user and the super-admin mutations (which
+ * fetched on mount, unless the URL arrived naming one person, which commits a
+ * query for them and opens them. Sorting and pagination apply immediately to
+ * the committed query. Also owns the selected user and the super-admin mutations (which
  * change AdminUser.isSuperAdmin and therefore belong with the list).
  */
 export const useUserAdmin = () => {
@@ -27,6 +33,8 @@ export const useUserAdmin = () => {
   const [userId, setUserId] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [userType, setUserType] = useState("");
+  // A permission is a filter on this population, not a separate view of it.
+  const [permissionName, setPermissionName] = useState("");
 
   // Committed query: null until the user runs a search. A new object reference
   // is set on every submit so re-submitting the same criteria still refetches.
@@ -37,6 +45,12 @@ export const useUserAdmin = () => {
   const [sortBy, setSortBy] = useState(null);
   const [order, setOrder] = useState("asc");
   const { begin, isCurrent } = useRequestGuard();
+
+  const [searchParams] = useSearchParams();
+  const linkedUserId = searchParams.get(LINKED_USER_PARAM);
+  // Cleared once they have been opened, so closing the dialog does not reopen
+  // it and a later search is left alone.
+  const [pendingSelectionId, setPendingSelectionId] = useState(linkedUserId);
 
   const fetchUsers = useCallback(async () => {
     if (!query) return;
@@ -52,6 +66,7 @@ export const useUserAdmin = () => {
         order,
         isSuperAdmin: query.isSuperAdmin || undefined,
         userType: query.userType || undefined,
+        permissionName: query.permissionName || undefined,
       });
       // Ignore a superseded response so rapid sort/page changes can't land an
       // earlier query's rows under the newer query's sort/page state.
@@ -73,10 +88,37 @@ export const useUserAdmin = () => {
     fetchUsers();
   }, [fetchUsers]);
 
+  // Arriving with an id is the one case that fetches without the Search
+  // button: the link already said who to show, and this page would otherwise
+  // greet it with an empty list that gives no sign anyone was named.
+  useEffect(() => {
+    if (!linkedUserId) return;
+    setUserId(linkedUserId);
+    setOffset(0);
+    setQuery({
+      search: "",
+      userId: linkedUserId,
+      isSuperAdmin: false,
+      userType: "",
+      permissionName: "",
+    });
+  }, [linkedUserId]);
+
+  useEffect(() => {
+    if (!pendingSelectionId) return;
+    const linked = users.find(
+      (candidate) => String(candidate.userId) === pendingSelectionId,
+    );
+    if (linked) {
+      setSelectedUser(linked);
+      setPendingSelectionId(null);
+    }
+  }, [users, pendingSelectionId]);
+
   /** Commit the current draft inputs as the active query and load page 1. */
   const submitSearch = () => {
     setOffset(0);
-    setQuery({ search, userId, isSuperAdmin, userType });
+    setQuery({ search, userId, isSuperAdmin, userType, permissionName });
   };
 
   const nextPage = () => {
@@ -133,6 +175,8 @@ export const useUserAdmin = () => {
     isSuperAdmin,
     setIsSuperAdmin,
     userType,
+    permissionName,
+    setPermissionName,
     setUserType,
     submitSearch,
     // Pagination

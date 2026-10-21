@@ -15,80 +15,35 @@ Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.
 """
 
-from sqlalchemy import ScalarSelect, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import RecruitingEvent
-from backend.entity.application_assignment_entity import (
-    ApplicationAssignmentEntity,
+from backend.communication.thread_recipients import (
+    thread_senders,
+    thread_senders_else,
 )
-from backend.entity.application_comment_mention_entity import (
-    ApplicationCommentMentionEntity,
-)
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import JobReviewEntity
-from backend.entity.users_entity import UsersEntity
 from backend.notification_management.recipient_registry import (
     Resolver,
     register_recipients,
 )
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+from backend.repository.application_assignment_repository import (
+    ApplicationAssignmentRepository,
+)
+from backend.repository.application_comment_mention_repository import (
+    ApplicationCommentMentionRepository,
+)
+from backend.repository.job_repository import JobRepository
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
 
-
-def _job_id_of_application(application_id: int) -> ScalarSelect:
-    """Subquery selecting the job an application belongs to.
-
-    Args:
-        application_id (int): The application whose job is wanted.
-
-    Returns:
-        ScalarSelect: Yields the job id, NULL if there is no such application.
-    """
-    return (
-        select(ApplicationEntity.job_id)
-        .where(ApplicationEntity.application_id == application_id)
-        .scalar_subquery()
-    )
-
-
-def _current_assignee_ids_query(application_id: int) -> Select:
-    """Statement aggregating who is responsible for an application right now.
-
-    Scoped to the application's current stage and round, and to active users.
-    ``application_assignment`` keeps one row per (application, stage, round)
-    and reassignment only overwrites within that key, so the rows accumulate
-    as an application walks the pipeline -- unscoped, a round-1 screener stays
-    a recipient for every later event, and an offboarded interviewer keeps
-    accruing notifications.
-
-    Args:
-        application_id (int): The application whose assignees are wanted.
-
-    Returns:
-        Select: Statement yielding one row: an array of assignee ids, NULL
-            when nobody active is assigned to the current stage and round.
-    """
-    return (
-        select(func.array_agg(ApplicationAssignmentEntity.assignee_id))
-        .select_from(ApplicationAssignmentEntity)
-        .join(
-            ApplicationEntity,
-            ApplicationEntity.application_id
-            == ApplicationAssignmentEntity.application_id,
-        )
-        .join(
-            UsersEntity,
-            UsersEntity.user_id == ApplicationAssignmentEntity.assignee_id,
-        )
-        .where(
-            ApplicationAssignmentEntity.application_id == application_id,
-            ApplicationAssignmentEntity.stage == ApplicationEntity.stage,
-            ApplicationAssignmentEntity.round == ApplicationEntity.current_round,
-            UsersEntity.is_active,
-        )
-    )
+# Stateless, so one module-level instance serves every resolver.
+_assignment_repository = ApplicationAssignmentRepository()
+_job_repository = JobRepository()
+_approval_request_repository = ApprovalRequestRepository()
+_mention_repository = ApplicationCommentMentionRepository()
 
 
 def _required_id(event: EventEntity, key: str) -> int:
@@ -115,7 +70,7 @@ def _required_id(event: EventEntity, key: str) -> int:
 
 
 async def _review_participant(
-    session: AsyncSession, event: EventEntity, column
+    session: AsyncSession, event: EventEntity, field: str
 ) -> set[int]:
     """Resolve one participant of the review the event names.
 
@@ -126,66 +81,21 @@ async def _review_participant(
         session (AsyncSession): Session inside the caller's open transaction.
         event (EventEntity): The event being recorded; ``details["reviewId"]``
             names the review.
-        column: The ``JobReviewEntity`` column holding the user id wanted.
+        field (str): The approval request attribute holding the user id
+            wanted -- ``"reviewer_id"`` or ``"raised_by"``.
 
     Returns:
-        set[int]: The single user id in that column.
+        set[int]: The single user id in that field.
 
     Raises:
         ValueError: If the event carries no review id, or names a review that
             does not exist.
     """
     review_id = _required_id(event, "reviewId")
-    result = await session.execute(
-        select(column).where(JobReviewEntity.review_id == review_id)
-    )
-    user_id = result.scalar_one_or_none()
-    if user_id is None:
+    review = await _approval_request_repository.get(session, review_id)
+    if review is None:
         raise ValueError(f"{event.event_type!r} names unknown review {review_id}")
-    return {user_id}
-
-
-async def _job_owners(
-    session: AsyncSession,
-    job_id: int | ScalarSelect,
-    *,
-    assignees_of: int | None = None,
-) -> set[int]:
-    """Owner ids of a job, plus one application's assignees when asked.
-
-    Owners are not a column: they live in the job's ``pipeline_config`` JSONB,
-    under ``ownerIds`` on new configs and a scalar ``ownerId`` on ones saved
-    before multi-owner. ``normalized_owner_ids`` is the single reader every
-    consumer goes through, so both shapes keep working.
-
-    One round trip either way -- with ``assignees_of`` the assignee ids ride
-    along as an aggregated subquery on the same statement.
-
-    Args:
-        session (AsyncSession): Session inside the caller's open transaction.
-        job_id (int | ScalarSelect): The job, as an id or as a subquery
-            selecting one -- see ``_job_id_of_application``.
-        assignees_of (int | None): Application whose assignees join the owners.
-            Omit to resolve owners alone.
-
-    Returns:
-        set[int]: Owner user ids, unioned with the assignee ids when asked
-            (empty if the job has no owners configured).
-    """
-    statement = select(JobEntity.pipeline_config).where(JobEntity.job_id == job_id)
-    if assignees_of is not None:
-        statement = statement.add_columns(
-            _current_assignee_ids_query(assignees_of).scalar_subquery()
-        )
-
-    row = (await session.execute(statement)).first()
-    if row is None:
-        return set()
-
-    owners = set(normalized_owner_ids(row[0]))
-    if assignees_of is None:
-        return owners
-    return owners | set(row[1] or ())
+    return {getattr(review, field)}
 
 
 async def _owners_only(session: AsyncSession, event: EventEntity) -> set[int]:
@@ -199,7 +109,8 @@ async def _owners_only(session: AsyncSession, event: EventEntity) -> set[int]:
     Returns:
         set[int]: The job's owner user ids.
     """
-    return await _job_owners(session, _job_id_of_application(event.subject_id))
+    job = await _job_repository.get_by_application_id(session, event.subject_id)
+    return set() if job is None else set(normalized_owner_ids(job.pipeline_config))
 
 
 async def _owners_and_assignees(session: AsyncSession, event: EventEntity) -> set[int]:
@@ -210,14 +121,18 @@ async def _owners_and_assignees(session: AsyncSession, event: EventEntity) -> se
         event (EventEntity): The event being recorded; ``subject_id`` is an
             application id.
 
+    Two reads rather than one. They were a single statement once, the
+    assignee ids riding along as a subquery on the owners' select, which
+    saved a round trip at the cost of one query that no repository owns --
+    it spanned job, application, application_assignment and users. Each half
+    is now a plain read of the table it is about. This runs once per event
+    recorded, immediately before an email leaves the process, so the second
+    round trip buys the boundary for nothing that can be measured.
+
     Returns:
         set[int]: Union of owner user ids and current assignee user ids.
     """
-    return await _job_owners(
-        session,
-        _job_id_of_application(event.subject_id),
-        assignees_of=event.subject_id,
-    )
+    return await _owners_only(session, event) | await _assignees_only(session, event)
 
 
 async def _assignees_only(session: AsyncSession, event: EventEntity) -> set[int]:
@@ -235,8 +150,9 @@ async def _assignees_only(session: AsyncSession, event: EventEntity) -> set[int]
     Returns:
         set[int]: Current assignee user ids (empty if nobody active holds it).
     """
-    result = await session.execute(_current_assignee_ids_query(event.subject_id))
-    return set(result.scalar_one_or_none() or ())
+    return await _assignment_repository.get_current_assignee_ids(
+        session, event.subject_id
+    )
 
 
 @register_recipients(RecruitingEvent.REVIEW_OPENED, subject_type="job")
@@ -254,12 +170,39 @@ async def _review_opened(session: AsyncSession, event: EventEntity) -> set[int]:
     Raises:
         ValueError: If the event carries no review id, or names no review.
     """
-    return await _review_participant(session, event, JobReviewEntity.reviewer_id)
+    return await _review_participant(session, event, "reviewer_id")
+
+
+@register_recipients(RecruitingEvent.REVIEW_REASSIGNED, subject_type="job")
+async def _review_reassigned(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever the review now waits on, read off the row it was just moved on.
+
+    The same column ``_review_opened`` reads, because the question is the
+    same: who has to decide this. The previous reviewer is not told -- the
+    reassignment exists for the case where they can no longer sign in, and
+    this is the submitter redirecting their own question rather than anybody
+    being relieved of a duty. ``details["previousReviewerId"]`` is there for
+    the timeline, not for the fan-out.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being recorded; ``subject_id`` is a job
+            id and ``details["reviewId"]`` names the review.
+
+    Returns:
+        set[int]: The new reviewer's user id.
+
+    Raises:
+        ValueError: If the event carries no review id, or names no review.
+    """
+    return await _review_participant(session, event, "reviewer_id")
 
 
 @register_recipients(RecruitingEvent.REVIEW_DECIDED, subject_type="job")
 async def _review_decided(session: AsyncSession, event: EventEntity) -> set[int]:
-    """Whoever submitted the review and is waiting on the verdict.
+    """Whoever the closing of the review is news to: the submitter waiting on
+    the verdict, or, when the submitter withdrew it, the reviewer it was
+    waiting on.
 
     Not the job's owners: submitting for review is gated on permission rather
     than ownership, so the person waiting need not be an owner of the posting
@@ -271,12 +214,14 @@ async def _review_decided(session: AsyncSession, event: EventEntity) -> set[int]
             id and ``details["reviewId"]`` names the review.
 
     Returns:
-        set[int]: The submitter's user id.
+        set[int]: The submitter's user id, or the reviewer's for a withdrawal.
 
     Raises:
         ValueError: If the event carries no review id, or names no review.
     """
-    return await _review_participant(session, event, JobReviewEntity.submitted_by)
+    if event.details.get("decision") == "withdrawn":
+        return await _review_participant(session, event, "reviewer_id")
+    return await _review_participant(session, event, "raised_by")
 
 
 @register_recipients(RecruitingEvent.MENTIONED, subject_type="application")
@@ -302,17 +247,67 @@ async def _mentioned(session: AsyncSession, event: EventEntity) -> set[int]:
             site bug, not a state worth recording silently.
     """
     comment_id = _required_id(event, "commentId")
-    result = await session.execute(
-        select(ApplicationCommentMentionEntity.mentioned_user_id).where(
-            ApplicationCommentMentionEntity.comment_id == comment_id
-        )
-    )
-    mentioned = set(result.scalars().all())
+    rows = await _mention_repository.get_by_comment_ids(session, [comment_id])
+    mentioned = {row.mentioned_user_id for row in rows}
     if not mentioned:
         raise ValueError(
             f"{event.event_type!r} names comment {comment_id}, which mentions nobody"
         )
     return mentioned
+
+
+@register_recipients(RecruitingEvent.EMAIL_BOUNCED, subject_type="application")
+async def _email_senders(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever sent a message in the thread the reply arrived on, through Purrf.
+
+    Told because they are the one waiting on the answer, whether or not they
+    still own the posting. A bounce goes to the same people: it is their
+    message that did not arrive. Nobody when every message in the thread was sent
+    from the Gmail web UI, which records no sender -- that is a state, not a
+    write-site bug.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being recorded; ``subject_id`` is an
+            application id and ``details["threadId"]`` names the thread.
+
+    Returns:
+        set[int]: The senders' user ids.
+
+    Raises:
+        ValueError: If the event carries no thread id.
+    """
+    return await thread_senders(session, _required_id(event, "threadId"))
+
+
+@register_recipients(RecruitingEvent.EMAIL_RECEIVED, subject_type="application")
+async def _email_senders_else_owners(
+    session: AsyncSession, event: EventEntity
+) -> set[int]:
+    """Whoever sent into the thread through Purrf, else the job's owners.
+
+    A thread nobody has written into through Purrf -- an Inbox inquiry
+    assigned to the application before anyone replied, or one answered only
+    from the Gmail web UI -- has no one waiting on the reply, so the owners
+    are told instead of nobody.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being recorded; ``subject_id`` is an
+            application id and ``details["threadId"]`` names the thread.
+
+    Returns:
+        set[int]: The senders' user ids, or the job's owner user ids (empty
+            when the application has no job or the job no owners).
+
+    Raises:
+        ValueError: If the event carries no thread id.
+    """
+    return await thread_senders_else(
+        session,
+        _required_id(event, "threadId"),
+        lambda: _owners_only(session, event),
+    )
 
 
 _APPLICATION_RESOLVERS: dict[str, Resolver] = {

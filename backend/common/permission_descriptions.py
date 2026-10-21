@@ -35,19 +35,28 @@ PERMISSION_DESCRIPTIONS: dict[Permission, str] = _validate_complete({
     Permission.SYSTEM_SYNC: "Trigger a data sync job with external systems (Jira incremental update, Calendar history pull, meeting-attendance sync, Pub/Sub consumer).",
     Permission.SYSTEM_SUBSCRIBE: "Register webhook subscriptions with Microsoft Teams/Google Chat so Purrf receives their chat event notifications.",
     Permission.INTERNAL_ACTIVITY_READ: "View internal employee activity records (MS chat, Jira, Calendar, Gerrit, Google Chat summaries).",
-    Permission.DIRECTORY_MICROSOFT_LDAP_READ: "Read user directory data from Microsoft/LDAP.",
     Permission.DASHBOARD_ACTIVITY_SUMMARY_READ: "View the activity summary dashboard.",
     Permission.MENTORSHIP_ADMIN_READ: "Mentorship admin read access: the management page, per-round participant and completed-meeting counts, participant records with pair meeting logs, and cross-participant detail in meeting-log views (the basic round list needs no permission).",
     Permission.MENTORSHIP_ADMIN_WRITE: "Mentorship admin write access: create or edit mentorship rounds and edit mentorship meeting logs.",
+    Permission.MENTORSHIP_APPROVE: "Decide a mentorship approval request (publishing a matching result, a matching exemption) when you are the reviewer it names; also, as an eligibility marker, appear in the list of reviewers a request can be sent to.",
     Permission.RECRUITING_JOB_READ: "View recruiting job postings, and access job-authoring helper lists (approvers, interview pool, owners).",
     Permission.RECRUITING_JOB_WRITE: "Create, edit, submit, close/reopen, or delete a job posting, and access job-authoring helper lists (approvers, interview pool, owners).",
     Permission.RECRUITING_JOB_APPROVE: "Approve or reject a submitted job posting, view your own review queue, and access job-authoring helper lists (approvers, interview pool, owners) — also, as an eligibility marker, appear in the 'approvers' helper list itself.",
     Permission.RECRUITING_INTERVIEW_EVALUATE: "Marks a user as eligible to be assigned as an interview evaluator on a job's pipeline stages; evaluation submission itself is enforced by a separate row-level assignee check, not directly by this permission.",
     Permission.RECRUITING_APPLICATION_ADVANCE: "Advance/reject an application's stage, reassign its interviewer, or adjust its round/sub-status; also the eligibility marker for who can own a job posting.",
     Permission.RECRUITING_APPLICATION_READ_ALL: "Org-wide override: view any job, board, application, evaluation, résumé, or activity/comment thread regardless of ownership or assignment; can also post comments — the one write action bundled into this otherwise read-only override (but does not make the holder @-mentionable).",
-    Permission.RECRUITING_BLACKLIST_WRITE: "View, add to, or remove from the org-wide recruiting blacklist (one permission covers both read and write — there's no separate read grant).",
     Permission.RECRUITING_AUDIT_READ: "View the cross-posting recruiting audit page — open positions, per-job stage breakdown, and daily application trend across every posting, regardless of ownership.",
     Permission.LEAVE_ADMIN: "Enter the company holiday calendar for a year and adjust individual leave balances by hand. Reading the calendar and the leave policy needs no permission; a manager's view of their reports follows the Azure manager relationship rather than a grant.",
+    Permission.TRAINING_ADMIN_READ: "View the training course catalogue: what courses exist, whether each has a package, whether it has been proven completable, and how many people are assigned to it. Also lets the holder search people and see which courses each of them holds, and open a course's live package to look at it, via a pasteable link good for twelve hours.",
+    Permission.TRAINING_ADMIN_WRITE: "Create, rename, deactivate and upload packages for training courses, run the trial that unlocks a course for assignment, and assign a course to somebody. Learning a course you have been assigned needs no permission.",
+    Permission.USER_ADMIN: (
+        "Open the account console: browse every account, see its state and "
+        "sign-in methods, and deactivate, reactivate or unblock one. Also "
+        "block someone outright, which locks them out of all of Purrf, and "
+        "decide the block requests other people raise."
+    ),
     Permission.PERMISSION_MANAGE: "View/grant/revoke user permissions, browse users and the permission catalog, view the permission-change audit log, and grant (but not revoke) super-admin status.",
     Permission.SUPER_ADMIN_REVOKE: "Revoke another user's super-admin status.",
+    Permission.OPS_MAINTAIN: "System maintenance: receive operations alerts (for example, the Gmail sync losing its watch or falling back to a full resync) and trigger a full Gmail resync.",
+    Permission.INQUIRIES_MANAGE: "Inquiries inbox: read and reply to general inquiries, archive them, and move them to the Mentorship or Recruiting inbox.",
 })

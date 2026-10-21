@@ -1,8 +1,8 @@
 import copy
 import unittest
 import uuid
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from backend.mentorship.meeting_service import MeetingService
 from backend.dto.user_context_dto import UserContextDto
@@ -14,8 +14,10 @@ from backend.dto.google_meeting_response_detail_dto import (
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
+from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.common.mentorship_enums import MeetingSource, PairStatus
 from backend.common.permissions import Permission
+from backend.common.exceptions import ConflictError, MeetingGoneError
 
 
 class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
@@ -39,6 +41,16 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
 
         self.mock_meeting_scheduling_service = AsyncMock()
+        self.mock_round_repo = MagicMock()
+        # A round with no meetings deadline leaves logging open.
+        self.mock_round_repo.get_by_round_id = AsyncMock(
+            return_value=MentorshipRoundEntity(
+                round_id=10,
+                name="2026 Spring",
+                required_meetings=5,
+                onboarding_deadline_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
+            )
+        )
         self.meeting_service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_pairs_repo,
@@ -47,6 +59,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=self.mock_round_repo,
         )
 
         self.user_id = 1
@@ -394,6 +407,103 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
+    MEETINGS_DEADLINE = datetime(2025, 10, 31, 6, 59, 59, tzinfo=timezone.utc)
+    LOG_CLOSES_AT = datetime(2025, 11, 1, 6, 59, 59, tzinfo=timezone.utc)
+
+    def _with_meetings_deadline(self, deadline):
+        """A round whose other dates all differ from the logging cutoff."""
+        self.mock_round_repo.get_by_round_id.return_value = MentorshipRoundEntity(
+            round_id=self.round_id,
+            name="2025 Fall",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2025, 8, 10, tzinfo=timezone.utc),
+            meeting_log_reminder_at=datetime(2025, 9, 20, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=deadline,
+            feedback_start_at=datetime(2025, 11, 5, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2025, 11, 20, tzinfo=timezone.utc),
+        )
+
+    async def _log_at(self, now):
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
+            self.mock_pair_entity
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[], []]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 4
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            partner_id=self.partner_id,
+            start_datetime=datetime(2025, 10, 30, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 30, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+        with patch("backend.mentorship.meeting_service.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            return await self.meeting_service.upsert_meetings(
+                self.mock_session, self.user_context, payload
+            )
+
+    async def test_upsert_meetings_accepted_at_the_logging_cutoff(self):
+        """Logging stays open a day past the meetings deadline, inclusive."""
+        self._with_meetings_deadline(self.MEETINGS_DEADLINE)
+
+        await self._log_at(self.LOG_CLOSES_AT)
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+        self.mock_session.commit.assert_awaited_once()
+        self.mock_round_repo.get_by_round_id.assert_awaited_once_with(
+            self.mock_session, self.round_id
+        )
+
+    async def test_upsert_meetings_rejected_just_after_the_logging_cutoff(self):
+        self._with_meetings_deadline(self.MEETINGS_DEADLINE)
+
+        with self.assertRaisesRegex(
+            ValueError, "^Logging meetings for this round has closed.$"
+        ):
+            await self._log_at(self.LOG_CLOSES_AT + timedelta(microseconds=1))
+
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
+        self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
+        self.assertEqual(self.mock_pair_entity.completed_count, 3)
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_upsert_meetings_accepted_without_a_meetings_deadline(self):
+        self._with_meetings_deadline(None)
+
+        await self._log_at(datetime(2030, 1, 1, tzinfo=timezone.utc))
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+
+    async def test_upsert_meetings_accepted_when_the_round_is_missing(self):
+        self.mock_round_repo.get_by_round_id.return_value = None
+
+        await self._log_at(datetime(2030, 1, 1, tzinfo=timezone.utc))
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+
+    async def test_upsert_meetings_checks_the_pair_before_the_round(self):
+        """A user with no active pair gets the pair error even when logging
+        for the round has closed."""
+        self._with_meetings_deadline(self.MEETINGS_DEADLINE)
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = None
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            partner_id=self.partner_id,
+            start_datetime=datetime(2025, 10, 30, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 30, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+
+        with patch("backend.mentorship.meeting_service.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2030, 1, 1, tzinfo=timezone.utc)
+            with self.assertRaisesRegex(ValueError, "not actively matched"):
+                await self.meeting_service.upsert_meetings(
+                    self.mock_session, self.user_context, payload
+                )
+
+        self.mock_round_repo.get_by_round_id.assert_not_awaited()
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
+
     async def test_upsert_meetings_requires_partner_id(self):
         """The v1 payload cannot omit the partner: without it the request
         cannot say which pair the meeting belongs to."""
@@ -456,6 +566,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
         )
 
         self.mock_current_user = MagicMock()
@@ -491,6 +602,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.mock_pairs_repo = self.mock_mentorship_pairs_repository
         self.mock_pairs_repo.get_pairs_by_user_and_round = AsyncMock()
+        self.mock_pairs_repo.get_pair_by_id = AsyncMock(return_value=MagicMock())
 
         self.mock_mapper = MagicMock()
 
@@ -502,6 +614,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
         )
 
         self.user_id = 1
@@ -1075,6 +1188,69 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             self.mock_meeting_repo.recalculate_completed_count.await_count, 2
         )
 
+    async def test_delete_google_meetings_locks_each_pair_before_its_rows(self):
+        """Pair before meetings, as the admin meeting batch and the attendance
+        sync take them, and pairs in id order, so two writers never wait on
+        each other in a circle. 200 comes out of the set before 9, so this
+        also catches a loop that relies on set order."""
+        pair_low = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=9, mentor_id=2, mentee_id=1
+        )
+        pair_high = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=200, mentor_id=3, mentee_id=1
+        )
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
+            pair_high,
+            pair_low,
+        ]
+
+        def meetings_of(session, pair_id):
+            meeting_id = {9: "low", 200: "high"}[pair_id]
+            return [
+                MagicMock(
+                    spec=MentorshipMeetingEntity,
+                    meeting_id=meeting_id,
+                    source=MeetingSource.GOOGLE,
+                )
+            ]
+
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = meetings_of
+        self.mock_meeting_scheduling_service.cancel.return_value = (
+            ["high", "low"],
+            [],
+        )
+        order = []
+        self.mock_pairs_repo.get_pair_by_id.side_effect = lambda *args, **kwargs: (
+            order.append(("lock", args[1], kwargs)) or MagicMock()
+        )
+        self.mock_meeting_repo.delete_meetings.side_effect = lambda **kwargs: (
+            order.append(("delete", kwargs["pair_id"])) or 1
+        )
+        self.mock_meeting_repo.recalculate_completed_count.side_effect = (
+            lambda **kwargs: order.append(("recount", kwargs["pair_id"])) or 0
+        )
+
+        await self.service.delete_google_meetings(
+            session=self.mock_session,
+            user_context=self.user_context,
+            deletions=[
+                {"round_id": 1, "partner_id": 3, "meeting_ids": ["high"]},
+                {"round_id": 1, "partner_id": 2, "meeting_ids": ["low"]},
+            ],
+        )
+
+        self.assertEqual(
+            order,
+            [
+                ("lock", 9, {"with_lock": True}),
+                ("delete", 9),
+                ("recount", 9),
+                ("lock", 200, {"with_lock": True}),
+                ("delete", 200),
+                ("recount", 200),
+            ],
+        )
+
     async def test_delete_google_meetings_partial_cancel_skips_failed_pair(self):
         """When Calendar cancels some ids but not others, only the succeeded
         ids may be deleted from the table, and a pair whose ids ALL failed
@@ -1281,6 +1457,306 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
                 "2026-11-05T15:00:00+00:00",
             ],
         )
+
+
+class TestMeetingServiceReschedule(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.mock_logger = MagicMock()
+        self.mock_users_repository = MagicMock()
+        self.mock_users_repository.get_user_by_user_id = AsyncMock()
+        self.mock_pairs_repo = MagicMock()
+        self.mock_pairs_repo.get_pair_with_partner_by_round_and_users_and_status = (
+            AsyncMock()
+        )
+        self.mock_session = AsyncMock()
+
+        self.mock_meeting_scheduling_service = AsyncMock()
+        self.mock_meeting_scheduling_service.update = AsyncMock(
+            return_value={
+                "google_event_id": "google-event-1",
+                "meet_link": "https://meet.google.com/abc-def-ghi",
+                "entry_points": [],
+                "conference_id": "abc-def-ghi",
+                "created": "",
+            }
+        )
+
+        self.mock_meeting_repo = MagicMock()
+        self.mock_meeting_repo.get_meetings_by_pair = AsyncMock()
+        self.mock_meeting_repo.update_schedule = AsyncMock()
+
+        self.service = MeetingService(
+            logger=self.mock_logger,
+            mentorship_pairs_repository=self.mock_pairs_repo,
+            mentorship_mapper=MagicMock(),
+            users_repository=self.mock_users_repository,
+            meeting_scheduling_service=self.mock_meeting_scheduling_service,
+            mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
+        )
+
+        self.user_context = MagicMock(spec=UserContextDto, user_id=1)
+        self.mock_current_user = MagicMock(user_id=1)
+        self.mock_partner = MagicMock(user_id=2)
+        self.mock_users_repository.get_user_by_user_id.return_value = (
+            self.mock_current_user
+        )
+        self.mock_pair = MagicMock(pair_id=55)
+        self.mock_pairs_repo.get_pair_with_partner_by_round_and_users_and_status.return_value = (
+            self.mock_pair,
+            self.mock_partner,
+        )
+
+        # Far future so the SCHEDULED gate passes on its own merits.
+        self.scheduled_meeting = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="google-event-1",
+            pair_id=55,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime(2099, 5, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2099, 5, 1, 10, 30, tzinfo=timezone.utc),
+            is_completed=False,
+            meet_link="https://meet.google.com/abc-def-ghi",
+            entry_points=[],
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [
+            self.scheduled_meeting
+        ]
+
+        self.kwargs = dict(
+            session=self.mock_session,
+            user_context=self.user_context,
+            meeting_id="google-event-1",
+            round_id=10,
+            partner_id=2,
+            timezone="America/New_York",
+            start_date=date(2099, 6, 1),
+            start_time="09:00",
+            duration_minutes=60,
+        )
+
+    async def test_patches_calendar_and_moves_the_row(self):
+        result = await self.service.reschedule_google_meeting(**self.kwargs)
+
+        # 09:00 America/New_York on 2099-06-01 is 13:00Z (EDT, UTC-4).
+        expected_start = datetime(2099, 6, 1, 13, 0, tzinfo=timezone.utc)
+        expected_end = datetime(2099, 6, 1, 14, 0, tzinfo=timezone.utc)
+
+        self.mock_pairs_repo.get_pair_with_partner_by_round_and_users_and_status.assert_awaited_once_with(
+            session=self.mock_session,
+            round_id=10,
+            user_id=1,
+            partner_id=2,
+            status=PairStatus.ACTIVE,
+            with_lock=True,
+        )
+
+        self.mock_meeting_scheduling_service.update.assert_awaited_once()
+        call = self.mock_meeting_scheduling_service.update.await_args
+        self.assertEqual(call.kwargs["event_id"], "google-event-1")
+        self.assertEqual(call.kwargs["start_utc"], expected_start)
+        self.assertEqual(call.kwargs["end_utc"], expected_end)
+        self.assertEqual(sorted(call.kwargs["attendee_user_ids"]), [1, 2])
+        self.assertEqual(call.kwargs["calendar_id"], "cal-mentorship")
+
+        self.mock_meeting_repo.update_schedule.assert_awaited_once_with(
+            session=self.mock_session,
+            meeting=self.scheduled_meeting,
+            start_datetime=expected_start,
+            end_datetime=expected_end,
+        )
+        self.mock_session.commit.assert_awaited()
+
+        self.assertEqual(result.meeting_id, "google-event-1")
+        self.assertEqual(result.meet_link, "https://meet.google.com/abc-def-ghi")
+        self.assertEqual(sorted(result.attendees), [1, 2])
+        self.assertEqual(result.start_datetime, expected_start.isoformat())
+        self.assertEqual(result.end_datetime, expected_end.isoformat())
+        self.assertFalse(result.is_completed)
+
+    async def test_coerces_a_null_meet_link_to_empty_string(self):
+        # Migrated rows can carry a NULL meet_link (old JSONB writer
+        # defaulted it to "" whenever Meet conference creation failed).
+        # The DTO field is a non-nullable str, so this must not raise.
+        self.scheduled_meeting.meet_link = None
+        result = await self.service.reschedule_google_meeting(**self.kwargs)
+        self.assertEqual(result.meet_link, "")
+
+    async def test_rejects_when_no_active_pair(self):
+        self.mock_pairs_repo.get_pair_with_partner_by_round_and_users_and_status.return_value = None
+        with self.assertRaises(ValueError):
+            await self.service.reschedule_google_meeting(**self.kwargs)
+        self.mock_meeting_scheduling_service.update.assert_not_awaited()
+
+    async def test_rejects_a_meeting_that_is_not_this_pairs(self):
+        # The id exists on Calendar but belongs to some other pair: the row
+        # lookup is what stops it being moved from here.
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = []
+        with self.assertRaises(ValueError):
+            await self.service.reschedule_google_meeting(**self.kwargs)
+        self.mock_meeting_scheduling_service.update.assert_not_awaited()
+
+    async def test_rejects_a_manually_logged_meeting(self):
+        self.scheduled_meeting.source = MeetingSource.MANUAL
+        with self.assertRaises(ValueError):
+            await self.service.reschedule_google_meeting(**self.kwargs)
+        self.mock_meeting_scheduling_service.update.assert_not_awaited()
+
+    async def test_rejects_a_completed_meeting(self):
+        self.scheduled_meeting.is_completed = True
+        with self.assertRaises(ValueError):
+            await self.service.reschedule_google_meeting(**self.kwargs)
+        self.mock_meeting_scheduling_service.update.assert_not_awaited()
+
+    async def test_rejects_a_meeting_whose_slot_has_passed(self):
+        # Not completed but already started: history the attendance sweep
+        # never closed out, not something to move.
+        self.scheduled_meeting.start_datetime = datetime(
+            2020, 1, 1, tzinfo=timezone.utc
+        )
+        with self.assertRaises(ValueError):
+            await self.service.reschedule_google_meeting(**self.kwargs)
+        self.mock_meeting_scheduling_service.update.assert_not_awaited()
+
+    async def test_converts_a_vanished_calendar_event_into_a_recoverable_error(self):
+        self.mock_meeting_scheduling_service.update.side_effect = MeetingGoneError(
+            "gone"
+        )
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.reschedule_google_meeting(**self.kwargs)
+        self.assertIn("no longer exists", str(ctx.exception))
+        self.mock_meeting_repo.update_schedule.assert_not_awaited()
+
+
+class TestMeetingServiceCancelUpcomingForPairs(unittest.IsolatedAsyncioTestCase):
+    """Withdrawing someone cancels the meetings of their pairs that have not
+    started; anything that happened, or is not on Google, stays."""
+
+    async def asyncSetUp(self):
+        now = datetime.now(timezone.utc)
+        # Pair ids (501, 502, 509) never collide with user ids elsewhere.
+        self.future_a = self._meeting("g-a-up", 501, now + timedelta(days=2))
+        self.past_a = self._meeting("g-a-past", 501, now - timedelta(days=2))
+        self.manual_a = self._meeting(
+            "m-a-up", 501, now + timedelta(days=3), source=MeetingSource.MANUAL
+        )
+        self.future_b = self._meeting("g-b-up", 502, now + timedelta(days=1))
+        self.mock_meeting_repo = MagicMock()
+        self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock(
+            return_value={
+                501: [self.past_a, self.future_a, self.manual_a],
+                502: [self.future_b],
+            }
+        )
+        self.mock_meeting_repo.delete_meetings = AsyncMock(return_value=1)
+        self.scheduling = MagicMock()
+        self.scheduling.cancel = AsyncMock(return_value=(["g-a-up", "g-b-up"], []))
+        self.session = AsyncMock()
+        self.service = MeetingService(
+            logger=MagicMock(),
+            mentorship_pairs_repository=MagicMock(),
+            mentorship_mapper=MagicMock(),
+            users_repository=MagicMock(),
+            meeting_scheduling_service=self.scheduling,
+            mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
+        )
+
+    @staticmethod
+    def _meeting(meeting_id, pair_id, start, source=MeetingSource.GOOGLE):
+        return MentorshipMeetingEntity(
+            meeting_id=meeting_id,
+            pair_id=pair_id,
+            source=source,
+            start_datetime=start,
+            end_datetime=start + timedelta(hours=1),
+            is_completed=False,
+        )
+
+    async def test_counts_what_cancelling_would_cancel(self):
+        self.assertEqual(
+            await self.service.count_upcoming_for_pairs(self.session, [501, 502]), 2
+        )
+        self.scheduling.cancel.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_counting_no_pairs_reads_nothing(self):
+        self.assertEqual(
+            await self.service.count_upcoming_for_pairs(self.session, []), 0
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
+
+    async def test_only_google_meetings_not_yet_started_are_cancelled(self):
+        cancelled = await self.service.cancel_upcoming_for_pairs(
+            self.session, [501, 502]
+        )
+
+        self.assertEqual(cancelled, 2)
+        self.scheduling.cancel.assert_awaited_once_with(
+            ["g-a-up", "g-b-up"], calendar_id="cal-mentorship"
+        )
+        self.assertEqual(
+            [c.kwargs for c in self.mock_meeting_repo.delete_meetings.await_args_list],
+            [
+                {"session": self.session, "pair_id": 501, "meeting_ids": ["g-a-up"]},
+                {"session": self.session, "pair_id": 502, "meeting_ids": ["g-b-up"]},
+            ],
+        )
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_calendar_refusal_deletes_nothing_and_raises(self):
+        self.scheduling.cancel.return_value = (["g-a-up"], ["g-b-up"])
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.cancel_upcoming_for_pairs(self.session, [501, 502])
+
+        self.assertEqual(caught.exception.code, "calendar_cancel_failed")
+        self.assertIn("nothing in Purrf was changed", str(caught.exception))
+        self.assertIn("approve again to finish", str(caught.exception))
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_no_pairs_touches_nothing(self):
+        self.assertEqual(
+            await self.service.cancel_upcoming_for_pairs(self.session, []), 0
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
+        self.scheduling.cancel.assert_not_awaited()
+
+    async def test_nothing_upcoming_never_calls_the_calendar(self):
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            501: [self.past_a, self.manual_a]
+        }
+
+        self.assertEqual(
+            await self.service.cancel_upcoming_for_pairs(self.session, [501, 509]), 0
+        )
+        self.scheduling.cancel.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_cancel_calendar_events_cancels_on_the_mentorship_calendar(self):
+        await self.service.cancel_calendar_events(["g-a-up", "g-b-up"])
+
+        self.scheduling.cancel.assert_awaited_once_with(
+            ["g-a-up", "g-b-up"], calendar_id="cal-mentorship"
+        )
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_cancel_calendar_events_raises_when_calendar_refuses(self):
+        self.scheduling.cancel.return_value = (["g-a-up"], ["g-b-up"])
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.cancel_calendar_events(["g-a-up", "g-b-up"])
+
+        self.assertEqual(caught.exception.code, "calendar_cancel_failed")
+
+    async def test_cancel_calendar_events_with_no_ids_never_calls_the_calendar(
+        self,
+    ):
+        await self.service.cancel_calendar_events([])
+
+        self.scheduling.cancel.assert_not_awaited()
 
 
 if __name__ == "__main__":

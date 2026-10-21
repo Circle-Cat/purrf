@@ -235,6 +235,87 @@ class TestApplicationAssignmentRepository(BaseRepositoryTestLib):
 
         self.assertEqual(results, [])
 
+    async def test_get_current_assignee_ids_returns_who_holds_the_current_stage(self):
+        app, owner = await self._seed_application()
+        (assignee,) = await self._seed_users(1)
+        repo = ApplicationAssignmentRepository()
+        await repo.upsert(
+            self.session,
+            app.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            app.current_round,
+            assignee.user_id,
+            owner.user_id,
+        )
+
+        found = await repo.get_current_assignee_ids(self.session, app.application_id)
+
+        self.assertEqual(found, {assignee.user_id})
+
+    async def test_get_current_assignee_ids_ignores_an_earlier_stage(self):
+        """Rows accumulate as an application walks the pipeline.
+
+        Unscoped, a round-one screener would stay a recipient for every later
+        event on the same application.
+        """
+        app, owner = await self._seed_application()
+        earlier, current = await self._seed_users(2)
+        repo = ApplicationAssignmentRepository()
+        await repo.upsert(
+            self.session,
+            app.application_id,
+            ApplicationStage.APPLIED,
+            app.current_round,
+            earlier.user_id,
+            owner.user_id,
+        )
+        await repo.upsert(
+            self.session,
+            app.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            app.current_round,
+            current.user_id,
+            owner.user_id,
+        )
+
+        found = await repo.get_current_assignee_ids(self.session, app.application_id)
+
+        self.assertEqual(found, {current.user_id})
+
+    async def test_get_current_assignee_ids_drops_an_assignee_who_cannot_act(self):
+        """A deactivated or blocked assignee cannot open what the mail is about.
+
+        The two flags are read independently because blocking deliberately
+        leaves is_active alone.
+        """
+        app, owner = await self._seed_application()
+        deactivated, blocked = await self._seed_users(2)
+        deactivated.is_active = False
+        blocked.is_blocked = True
+        await self.session.flush()
+        repo = ApplicationAssignmentRepository()
+        for user in (deactivated, blocked):
+            await repo.upsert(
+                self.session,
+                app.application_id,
+                ApplicationStage.RECRUITER_SCREENING,
+                app.current_round,
+                user.user_id,
+                owner.user_id,
+            )
+
+        found = await repo.get_current_assignee_ids(self.session, app.application_id)
+
+        self.assertEqual(found, set())
+
+    async def test_get_current_assignee_ids_is_empty_when_nobody_is_assigned(self):
+        app, _owner = await self._seed_application()
+        repo = ApplicationAssignmentRepository()
+
+        found = await repo.get_current_assignee_ids(self.session, app.application_id)
+
+        self.assertEqual(found, set())
+
 
 if __name__ == "__main__":
     unittest.main()

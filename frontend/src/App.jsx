@@ -17,14 +17,16 @@ import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
+import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
+import MatchingResultsPage from "@/pages/MentorshipManagement/MatchingResultsPage";
+import ParticipantDetailPage from "@/pages/MentorshipManagement/ParticipantDetailPage";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
+import AdminAccounts from "@/pages/AdminAccounts";
 import Postings from "@/pages/Recruiting/Postings";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
-import MyReviews from "@/pages/Recruiting/MyReviews";
-import Blacklist from "@/pages/Recruiting/Blacklist";
 import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
 import MyApplication from "@/pages/Recruiting/MyApplication";
 import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
@@ -33,11 +35,17 @@ import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDe
 import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
 import Audit from "@/pages/Recruiting/audit/Audit";
 import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
+import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
+import TrainingCourse from "@/pages/TrainingCourse";
+import TrainingTrial from "@/pages/TrainingTrial";
+import TrainingPreview from "@/pages/TrainingPreview";
+import AdminTraining from "@/pages/AdminTraining";
+import InboxPage from "@/pages/Inbox";
 import { AuthProvider } from "@/context/auth";
-import { FlagsProvider, LDIdentifier } from "@/context/flags";
-import { PERMISSIONS } from "@/constants/Permissions";
+import { FlagsProvider, LDIdentifier, LDUserProvider } from "@/context/flags";
+import { PERMISSIONS, INBOX_PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -50,7 +58,9 @@ function App() {
   return (
     <FlagsProvider>
       <AuthProvider>
-        <LDIdentifier />
+        <LDUserProvider>
+          <LDIdentifier />
+        </LDUserProvider>
         <Router>
           <div
             className="group flex flex-col"
@@ -114,6 +124,10 @@ function App() {
                       element={<LeaveApprovalsPage />}
                     />
                     <Route
+                      path={ROUTE_PATHS.LEAVE_BALANCE_HISTORY}
+                      element={<BalanceHistoryPage />}
+                    />
+                    <Route
                       path={ROUTE_PATHS.LEAVE_REQUESTS}
                       element={<LeaveRequestsPage />}
                     />
@@ -144,12 +158,58 @@ function App() {
                       }
                     />
                     <Route
+                      path={ROUTE_PATHS.MENTORSHIP_ROUND_FEEDBACK(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <RoundFeedbackPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_MATCHING(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <MatchingResultsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_PARTICIPANT(":userId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <ParticipantDetailPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
                       path={ROUTE_PATHS.ADMIN_USERS}
                       element={
                         <ProtectedRoute
                           requiredPermissions={[PERMISSIONS.PERMISSION_MANAGE]}
                         >
                           <AdminPermissions />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_ACCOUNTS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.USER_ADMIN]}
+                        >
+                          <AdminAccounts />
                         </ProtectedRoute>
                       }
                     />
@@ -196,26 +256,10 @@ function App() {
                       }
                     />
                     <Route
-                      path={ROUTE_PATHS.RECRUITING_REVIEWS}
+                      path={ROUTE_PATHS.INBOX}
                       element={
-                        <ProtectedRoute
-                          requiredPermissions={[
-                            PERMISSIONS.RECRUITING_JOB_APPROVE,
-                          ]}
-                        >
-                          <MyReviews />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path={ROUTE_PATHS.RECRUITING_BLACKLIST}
-                      element={
-                        <ProtectedRoute
-                          requiredPermissions={[
-                            PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
-                          ]}
-                        >
-                          <Blacklist />
+                        <ProtectedRoute requiredPermissions={INBOX_PERMISSIONS}>
+                          <InboxPage />
                         </ProtectedRoute>
                       }
                     />
@@ -241,6 +285,7 @@ function App() {
                         <ProtectedRoute
                           requiredPermissions={[
                             PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+                            PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
                           ]}
                         >
                           <BoardPage />
@@ -276,6 +321,54 @@ function App() {
                     <Route
                       path="/recruiting/jobs/:jobId/application"
                       element={<MyApplication />}
+                    />
+                    {/* No permission gate: a training assignment is the
+                        caller's own, enforced by the backend session
+                        endpoint, not by a role. */}
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_COURSE(":trainingId")}
+                      element={<TrainingCourse />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_TRIAL(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_WRITE,
+                          ]}
+                        >
+                          <TrainingTrial />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Read-only, so the read grant -- the same one the
+                        catalogue this link lives on already requires. */}
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_PREVIEW(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_READ,
+                          ]}
+                        >
+                          <TrainingPreview />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Reading the catalogue is a narrower grant than
+                        changing it -- each write action's own button falls
+                        back on the backend's 403. */}
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_TRAINING}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_READ,
+                          ]}
+                        >
+                          <AdminTraining />
+                        </ProtectedRoute>
+                      }
                     />
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}

@@ -474,11 +474,11 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
     async def test_sync_near_real_time_message_to_redis_redis_pipeline_failure(self):
         self.mock_microsoft_service.get_message_by_id.return_value = self.TEST_MESSAGE
         self.mock_microsoft_service.get_ldap_by_id.return_value = self.TEST_USER_LDAP
-        mock_get_retry_on_transient = MagicMock(
+        mock_execute_pipeline = MagicMock(
             side_effect=Exception("Simulated Redis pipeline error")
         )
-        self.microsoft_chat_message_util.retry_utils.get_retry_on_transient = (
-            mock_get_retry_on_transient
+        self.microsoft_chat_message_util.retry_utils.execute_pipeline = (
+            mock_execute_pipeline
         )
 
         with self.assertRaises(RuntimeError):
@@ -486,7 +486,7 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
                 MicrosoftChatMessagesChangeType.CREATED.value, self.TEST_RESOURCE
             )
 
-        mock_get_retry_on_transient.assert_called_once_with(self.mock_pipeline.execute)
+        mock_execute_pipeline.assert_called_once_with(self.mock_pipeline)
 
     @patch.object(MicrosoftChatMessageUtil, "_handle_created_messages")
     def test_sync_history_chat_messages_to_redis(self, mock_handle_created):
@@ -507,7 +507,9 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
         mock_handle_created.assert_called_once_with(
             self.TEST_MESSAGE, self.TEST_USER_LDAP, self.mock_pipeline
         )
-        self.mock_pipeline.execute.assert_called_once
+        self.microsoft_chat_message_util.retry_utils.execute_pipeline.assert_called_once_with(
+            self.mock_pipeline
+        )
 
     def test_sync_history_chat_messages_to_redis_empty_messages_raises(self):
         with self.assertRaises(ValueError):
@@ -522,11 +524,11 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
             )
 
     def test_sync_history_chat_messages_to_redis_pipeline_failure(self):
-        mock_get_retry_on_transient = MagicMock(
+        mock_execute_pipeline = MagicMock(
             side_effect=Exception("History sync Redis error")
         )
-        self.microsoft_chat_message_util.retry_utils.get_retry_on_transient = (
-            mock_get_retry_on_transient
+        self.microsoft_chat_message_util.retry_utils.execute_pipeline = (
+            mock_execute_pipeline
         )
 
         with self.assertRaises(Exception):
@@ -534,7 +536,7 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
                 [self.TEST_MESSAGE], self.TEST_ALL_LDAPS
             )
 
-        mock_get_retry_on_transient.assert_called_once_with(self.mock_pipeline.execute)
+        mock_execute_pipeline.assert_called_once_with(self.mock_pipeline)
 
 
 if __name__ == "__main__":

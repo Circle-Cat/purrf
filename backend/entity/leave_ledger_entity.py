@@ -2,11 +2,13 @@ import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     func,
@@ -53,6 +55,13 @@ class LeaveLedgerEntity(Base):
             unique=True,
             postgresql_where=text(f"entry_type IN ({_JOB_WRITTEN_VALUES})"),
         ),
+        # A level change is only useful with both sides of it, and no other
+        # row has a level to speak of.
+        CheckConstraint(
+            "(entry_type = 'level_change')"
+            " = (annual_hours_before IS NOT NULL AND annual_hours_after IS NOT NULL)",
+            name="level_change_hours",
+        ),
     )
 
     leave_ledger_id: Mapped[int] = mapped_column(primary_key=True)
@@ -79,6 +88,10 @@ class LeaveLedgerEntity(Base):
         index=True,
         nullable=True,
     )
+    # Set on a level_change row only: the annual entitlement on either side of
+    # it, so a past year can be recomputed without the profile cache.
+    annual_hours_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    annual_hours_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str | None] = mapped_column(String, nullable=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True

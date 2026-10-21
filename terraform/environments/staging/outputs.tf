@@ -77,3 +77,7 @@ output "auth0_custom_domain_cname" {
 output "notification_pusher_sub" {
   value = module.purrf_instance.notification_pusher_sub
 }
+
+output "matcher_job_sub" {
+  value = module.purrf_instance.matcher_job_sub
+}

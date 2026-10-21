@@ -97,12 +97,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.users = AsyncMock()
         self.users.exists_active_internal.return_value = False
         self.session = AsyncMock()
+        self.internal_onboarding = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
             self.user_identities,
             self.user_permissions,
             self.users,
+            self.internal_onboarding,
             MagicMock(),
         )
 
@@ -347,6 +349,33 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.users.set_internal.assert_awaited_once_with(self.session, _USER_ID)
         self.session.commit.assert_awaited_once()
 
+    async def test_verify_company_email_assigns_the_onboarding_training(self):
+        """Joining a corp sign-in to an existing account is one of the ways
+        somebody becomes an employee, so it owes the same courses as a
+        first-login hire."""
+        corp_email = "bob@circlecat.org"
+        self.auth0.exchange_otp.return_value = {
+            "sub": _NEW_SUB,
+            "email": corp_email,
+            "email_verified": True,
+        }
+        self.user_emails.get_by_user_and_email.side_effect = [None, None]
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(email=corp_email), "123456"
+        )
+
+        self.internal_onboarding.ensure_for_internal.assert_awaited_once_with(
+            session=self.session, user_id=_USER_ID, email=corp_email
+        )
+
+    async def test_verify_personal_email_assigns_no_onboarding_training(self):
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.internal_onboarding.ensure_for_internal.assert_not_awaited()
+
     async def test_verify_company_email_skips_held_bundle_and_existing_primary(self):
         # Re-verifying is idempotent: bundle already held -> no new grant rows;
         # corp address already primary -> no promotion.
@@ -476,6 +505,52 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
         self.session.commit.assert_awaited_once()
 
+    async def test_verify_releases_a_backfill_placeholder_held_by_another_account(
+        self,
+    ):
+        """A never-logged-in backfilled account keeps a ``manual|`` identity
+        whose claim is the address. Left in place after the caller confirms
+        it, every login with the address would swap into that account and
+        collide with the caller's confirmed row, so it goes in the same
+        transaction.
+        """
+        order = []
+        self.user_identities.delete_swappable_on_other_users.side_effect = (
+            lambda *a, **k: order.append("release")
+        )
+        self.session.commit.side_effect = lambda: order.append("commit")
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.user_identities.delete_swappable_on_other_users.assert_awaited_once_with(
+            self.session, _TARGET_EMAIL, _USER_ID
+        )
+        self.assertEqual(order, ["release", "commit"])
+
+    async def test_verify_conflict_when_confirmed_elsewhere_after_initiate(self):
+        """The address can be confirmed on another account between initiate
+        and verify; verify must refuse as initiate does instead of letting the
+        insert hit the global unique index."""
+        self.user_emails.exists_on_other_user.return_value = True
+        with self.assertRaises(ConflictError) as ctx:
+            await self.service.verify(
+                self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "This email is already in use by another account. If it's "
+            "yours, sign in with a code sent to that address instead.",
+        )
+        self.user_emails.exists_on_other_user.assert_awaited_once_with(
+            self.session, _TARGET_EMAIL, _USER_ID
+        )
+        self.auth0.exchange_otp.assert_not_called()
+        self.user_emails.upsert_email.assert_not_called()
+        self.user_identities.delete_swappable_on_other_users.assert_not_called()
+        self.session.commit.assert_not_called()
+
     async def test_verify_promotes_existing_unconfirmed_row_without_new_identity(self):
         existing_email = UserEmailsEntity(
             user_id=_USER_ID, email=_TARGET_EMAIL, otp_confirmed=False, is_primary=False
@@ -573,7 +648,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [internal, external_current]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         emails = {e.email_id: e for e in result.emails}
@@ -608,7 +683,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [external]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         self.assertEqual(result.internal_identities, [])
@@ -634,7 +709,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [sso, otp_corp]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         ids = {i.identity_id: i for i in result.internal_identities}
@@ -672,7 +747,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [corp, personal, no_claim]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         self.assertEqual({i.identity_id for i in result.internal_identities}, {1})
@@ -699,7 +774,10 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = []
 
         view = await self.service.list_emails_and_identities(
-            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub=_CURRENT_SUB,
+            current_claim_email=None,
         )
 
         by_email = {e.email: e.is_corp for e in view.emails}
@@ -732,12 +810,102 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = []
 
         view = await self.service.list_emails_and_identities(
-            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub=_CURRENT_SUB,
+            current_claim_email=None,
         )
 
         by_id = {e.email_id: e.last_login_at for e in view.emails}
         self.assertEqual(by_id[1], stamped_at)
         self.assertIsNone(by_id[2])
+
+    async def test_emails_view_flags_passwordless_session_address(self):
+        """A row-less passwordless session has no identity row to flag, so the
+        address it signed in with must be flagged on the email row instead —
+        matched with the same case/whitespace tolerance as the remove guard."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=None,
+            ),
+            MagicMock(
+                email_id=2,
+                email="backup@gmail.com",
+                otp_confirmed=True,
+                is_primary=False,
+                added_at=added_at,
+                last_login_at=None,
+            ),
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub="email|abc123",
+            current_claim_email="  Backup@Gmail.com  ",
+        )
+
+        by_id = {e.email_id: e.is_current_session for e in view.emails}
+        self.assertFalse(by_id[1])
+        self.assertTrue(by_id[2])
+
+    async def test_emails_view_does_not_flag_email_row_for_google_session(self):
+        """The email-row flag is passwordless-only: a google session's address
+        is flagged on its identity row, so flagging the email row too would
+        badge the same address twice."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=None,
+            )
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub=_CURRENT_SUB,
+            current_claim_email="alice@gmail.com",
+        )
+
+        self.assertFalse(view.emails[0].is_current_session)
+
+    async def test_emails_view_without_claim_email_flags_nothing(self):
+        """No email claim on the token (defensive) leaves every row unflagged
+        rather than guessing which address the session belongs to."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=None,
+            )
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub="email|abc123",
+            current_claim_email=None,
+        )
+
+        self.assertFalse(view.emails[0].is_current_session)
 
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):
@@ -1199,7 +1367,13 @@ class TestSignState(unittest.TestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
         self.service = EmailManagementService(
-            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
+            MagicMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            MagicMock(),
         )
 
     def test_sign_state_stamps_envelope_and_roundtrips(self):
@@ -1243,6 +1417,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
+            AsyncMock(),
             AsyncMock(),
             AsyncMock(),
             AsyncMock(),

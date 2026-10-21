@@ -3,7 +3,7 @@ from unittest import TestCase, main
 from unittest.mock import patch, Mock
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google.oauth2.credentials import Credentials as UserCredentials
-from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
+from google.cloud.pubsub_v1 import PublisherClient
 from backend.common.google_client import GoogleClient
 from backend.common.constants import GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST
 import os
@@ -347,18 +347,6 @@ class TestGoogleClient(TestCase):
         mock_build.assert_called_once_with(
             "chat", "v1", credentials=mock_impersonated_credentials
         )
-
-    @patch("backend.common.google_client.SubscriberClient")
-    def test_create_subscriber_client(self, mock_subscriber_client):
-        """Test creation of the Pub/Sub Subscriber client."""
-
-        mock_subscriber_instance = Mock(spec=SubscriberClient)
-        mock_subscriber_client.return_value = mock_subscriber_instance
-
-        subscriber_client = self.client.create_subscriber_client()
-
-        mock_subscriber_client.assert_called_once_with()  # Check no arguments are passed
-        self.assertIs(subscriber_client, mock_subscriber_instance)
 
     @patch("backend.common.google_client.PublisherClient")
     def test_create_publisher_client(self, mock_publisher_client):

@@ -1,7 +1,13 @@
 import unittest
 from datetime import datetime, timezone
 
-from backend.common.communication_enums import ContextType, EmailDirection
+from sqlalchemy import func, inspect, select
+
+from backend.common.communication_enums import (
+    ContextType,
+    EmailDirection,
+    InboundKind,
+)
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.entity.email_message_entity import EmailMessageEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
@@ -57,6 +63,90 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
             )
         ])
 
+    async def test_insert_keeps_kind_and_attachments(self):
+        msg, _ = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-kind",
+            direction=EmailDirection.INBOUND,
+            inbound_kind=InboundKind.AUTO_REPLY,
+            attachments=[
+                {"name": "cv.pdf", "size": 1024, "gmailAttachmentId": "att-1"}
+            ],
+        )
+        self.assertEqual(msg.inbound_kind, "auto_reply")
+        self.assertEqual(msg.attachments[0]["name"], "cv.pdf")
+
+    async def test_insert_defaults_kind_and_attachments_to_none(self):
+        msg, _ = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-plain",
+            direction=EmailDirection.OUTBOUND,
+        )
+        self.assertIsNone(msg.inbound_kind)
+        self.assertIsNone(msg.attachments)
+
+    async def test_insert_keeps_a_bounce_failed_recipients(self):
+        bounce, _ = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="g-bounce",
+            direction=EmailDirection.INBOUND,
+            failed_recipients="a@x.com",
+        )
+        reply, _ = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="g-reply",
+            direction=EmailDirection.INBOUND,
+        )
+        await self.session.refresh(bounce)
+        await self.session.refresh(reply)
+
+        self.assertEqual(bounce.failed_recipients, "a@x.com")
+        self.assertIsNone(reply.failed_recipients)
+
+    async def test_insert_reports_a_new_row_as_inserted(self):
+        msg, inserted = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-new",
+            direction=EmailDirection.OUTBOUND,
+        )
+        self.assertTrue(inserted)
+        self.assertIsNotNone(msg.message_id)
+        self.assertIsNotNone(msg.created_at)
+
+    async def test_insert_of_a_stored_id_returns_the_stored_row_unchanged(self):
+        first, _ = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-dup",
+            direction=EmailDirection.OUTBOUND,
+            subject="Sent by Purrf",
+            sent_by_user_id=self.user.user_id,
+        )
+
+        second, inserted = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-dup",
+            direction=EmailDirection.INBOUND,
+            subject="Read back by a sync",
+        )
+
+        self.assertFalse(inserted)
+        self.assertEqual(second.message_id, first.message_id)
+        self.assertEqual(second.subject, "Sent by Purrf")
+        self.assertEqual(second.direction, EmailDirection.OUTBOUND)
+        count = await self.session.scalar(
+            select(func.count())
+            .select_from(EmailMessageEntity)
+            .where(EmailMessageEntity.gmail_message_id == "m-dup")
+        )
+        self.assertEqual(count, 1)
+
     async def test_returns_empty_set_when_thread_has_no_messages(self):
         result = await self.repo.list_gmail_message_ids_by_thread(
             self.session, self.thread.thread_id
@@ -78,6 +168,77 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
             self.session, self.thread.thread_id
         )
         self.assertEqual(result, {"mine"})
+
+    async def test_sender_ids_are_the_distinct_purrf_senders_of_one_thread(self):
+        first, second, elsewhere = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([first, second, elsewhere])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=gmail_message_id,
+                direction=direction,
+                sent_by_user_id=None if sender is None else sender.user_id,
+            )
+            for thread, gmail_message_id, direction, sender in (
+                (self.thread, "a1", EmailDirection.OUTBOUND, first),
+                (self.thread, "a2", EmailDirection.OUTBOUND, second),
+                (self.thread, "a3", EmailDirection.OUTBOUND, first),
+                # Sent from the Gmail web UI: no sender recorded.
+                (self.thread, "a4", EmailDirection.OUTBOUND, None),
+                (self.thread, "a5", EmailDirection.INBOUND, None),
+                (self.other_thread, "b1", EmailDirection.OUTBOUND, elsewhere),
+            )
+        ])
+
+        result = await self.repo.list_sender_ids_by_thread(
+            self.session, self.thread.thread_id
+        )
+
+        self.assertEqual(result, {first.user_id, second.user_id})
+
+    async def test_list_by_threads_leaves_bodies_unloaded(self):
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=self.thread.thread_id,
+                gmail_message_id="with-body",
+                direction=EmailDirection.INBOUND,
+                from_address="a@x.com",
+                body_html="<p>big</p>",
+                body_text="big",
+                snippet="big",
+                inbound_kind=InboundKind.HUMAN,
+            )
+        ])
+        self.session.expunge_all()
+
+        result = await self.repo.list_by_threads(
+            self.session, [self.thread.thread_id, self.other_thread.thread_id]
+        )
+
+        (message,) = result[self.thread.thread_id]
+        self.assertEqual(result[self.other_thread.thread_id], [])
+        unloaded = inspect(message).unloaded
+        self.assertIn("body_html", unloaded)
+        self.assertIn("body_text", unloaded)
+        self.assertEqual(
+            (message.direction, message.from_address, message.snippet),
+            (EmailDirection.INBOUND, "a@x.com", "big"),
+        )
+        self.assertEqual(message.inbound_kind, InboundKind.HUMAN)
+        self.assertIsNotNone(message.created_at)
+
+    async def test_get_reads_one_message_by_id(self):
+        await self._add_message(self.thread, "gm-get-1")
+        stored = await self.session.scalar(
+            select(EmailMessageEntity).where(
+                EmailMessageEntity.gmail_message_id == "gm-get-1"
+            )
+        )
+
+        found = await self.repo.get(self.session, stored.message_id)
+
+        self.assertEqual(found.gmail_message_id, "gm-get-1")
+        self.assertIsNone(await self.repo.get(self.session, stored.message_id + 100000))
 
 
 if __name__ == "__main__":

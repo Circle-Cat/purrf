@@ -17,25 +17,40 @@ class Permission(StrEnum):
     SYSTEM_SYNC = "system.sync"
     SYSTEM_SUBSCRIBE = "system.subscribe"
     INTERNAL_ACTIVITY_READ = "internal_activity.read"
-    DIRECTORY_MICROSOFT_LDAP_READ = "directory.microsoft_ldap.read"
     DASHBOARD_ACTIVITY_SUMMARY_READ = "dashboard.activity_summary.read"
     MENTORSHIP_ADMIN_READ = "mentorship.admin.read"
     MENTORSHIP_ADMIN_WRITE = "mentorship.admin.write"
+    # Deciding a mentorship approval request someone named you on. Held by
+    # different people from MENTORSHIP_ADMIN_WRITE, or the two-person check
+    # only ever stops someone approving their own request.
+    MENTORSHIP_APPROVE = "mentorship.approve"
     RECRUITING_JOB_READ = "recruiting.job.read"
     RECRUITING_JOB_WRITE = "recruiting.job.write"
     RECRUITING_JOB_APPROVE = "recruiting.job.approve"
     RECRUITING_INTERVIEW_EVALUATE = "recruiting.interview.evaluate"
     RECRUITING_APPLICATION_ADVANCE = "recruiting.application.advance"
     RECRUITING_APPLICATION_READ_ALL = "recruiting.application.read.all"
-    RECRUITING_BLACKLIST_WRITE = "recruiting.blacklist.write"
     RECRUITING_AUDIT_READ = "recruiting.audit.read"
     # Entering the company holiday calendar and adjusting balances by hand.
     # Reading the calendar needs no permission -- it is reference information
     # the whole company works from. Managers are not a role here either: what a
     # manager may see follows the Azure manager relationship, not a grant.
     LEAVE_ADMIN = "leave.admin"
+    # Learning a course you were assigned needs no permission; the assignment
+    # is the grant.
+    TRAINING_ADMIN_READ = "training.admin.read"
+    TRAINING_ADMIN_WRITE = "training.admin.write"
+    # The account console: who someone is, what state their account is in,
+    # how they sign in, plus deactivate / reactivate / unblock / block and
+    # deciding block requests. Deliberately separate from PERMISSION_MANAGE,
+    # which is effectively root: every action behind USER_ADMIN is reversible
+    # and its holder count grows with the user base, while PERMISSION_MANAGE
+    # must stay at one or two people forever.
+    USER_ADMIN = "user.admin"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
+    OPS_MAINTAIN = "ops.maintain"
+    INQUIRIES_MANAGE = "inquiries.manage"
 
 
 # Auto-injected for internal employees by the lifecycle hook on first internal
@@ -43,7 +58,6 @@ class Permission(StrEnum):
 # identity is removed. This constant is the source of truth; changing it needs a
 # migration to sync existing system_internal rows.
 INTERNAL_EMPLOYEE_PERMISSIONS = frozenset({
-    Permission.DIRECTORY_MICROSOFT_LDAP_READ,
     Permission.DASHBOARD_ACTIVITY_SUMMARY_READ,
 })
 

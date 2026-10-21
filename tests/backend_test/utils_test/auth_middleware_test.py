@@ -10,8 +10,25 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from backend.common.api_endpoints import NOTIFICATION_DELIVER_ENDPOINT
+from backend.common.api_endpoints import (
+    GMAIL_PUSH_ENDPOINT,
+    HEALTH_ENDPOINT,
+    MENTORSHIP_MATCH_RUN_COMPLETE,
+    NOTIFICATION_DELIVER_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+    TRAINING_CONTENT_ENDPOINT,
+)
+from backend.training.content_host import resolve_content_host
 from backend.utils.auth_middleware import AuthMiddleware
+
+
+_PUSH_ENDPOINTS = (
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+)
 
 
 def make_user_context(
@@ -85,7 +102,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(return_value=None)
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
             return_value=SimpleNamespace(
-                user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=1,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             )
         )
         self.mock_user_permissions_repository = MagicMock()
@@ -141,7 +162,11 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_super_admin=False, is_active=True, last_login_at=None
+            user_id=42,
+            is_super_admin=False,
+            is_active=True,
+            is_blocked=False,
+            last_login_at=None,
         )
 
         client = self._add_middleware()
@@ -167,7 +192,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub.return_value = None
         self.mock_user_identity_service.create_or_swap_user.return_value = (
             SimpleNamespace(
-                user_id=99, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=99,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             )
         )
 
@@ -191,7 +220,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_active=False, last_login_at=None
+            user_id=42, is_active=False, is_blocked=False, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -201,6 +230,59 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.assertIn("deactivated", response.json()["message"].lower())
+
+    def test_blocked_user_forbidden(self):
+        """
+        A blacklisted account authenticates (valid token, real user) but is
+        barred from every page: bootstrap raises and the middleware returns 403
+        with the suspended copy, kept distinct from the deactivated copy so the
+        two states stay tellable apart from the response alone.
+        """
+        user_context = make_user_context()
+        self.mock_auth_service.authenticate_request.return_value = user_context
+        self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
+            user_id=42,
+            is_super_admin=False,
+            is_active=True,
+            is_blocked=True,
+            last_login_at=None,
+        )
+
+        client = self._add_middleware()
+        response = client.get(
+            "/protected", headers={"Authorization": "Bearer valid_token"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        message = response.json()["message"].lower()
+        self.assertIn("suspended", message)
+        self.assertNotIn("deactivated", message)
+
+    def test_deactivated_wins_over_blocked(self):
+        """
+        An account that is both deactivated and blacklisted reads as
+        deactivated: is_active is the broader state, and pinning the order here
+        keeps the message for any pre-existing account state stable.
+        """
+        user_context = make_user_context()
+        self.mock_auth_service.authenticate_request.return_value = user_context
+        self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
+            user_id=42,
+            is_super_admin=False,
+            is_active=False,
+            is_blocked=True,
+            last_login_at=None,
+        )
+
+        client = self._add_middleware()
+        response = client.get(
+            "/protected", headers={"Authorization": "Bearer valid_token"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        message = response.json()["message"].lower()
+        self.assertIn("deactivated", message)
+        self.assertNotIn("suspended", message)
 
     def test_integrity_error_race_refinds_via_savepoint(self):
         """
@@ -215,7 +297,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub.side_effect = [
             None,
             SimpleNamespace(
-                user_id=7, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=7,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             ),
         ]
         self.mock_user_identity_service.create_or_swap_user.side_effect = (
@@ -365,7 +451,11 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+            user_id=1,
+            is_super_admin=False,
+            is_active=True,
+            is_blocked=False,
+            last_login_at=None,
         )
 
         client = self._add_middleware()
@@ -392,7 +482,9 @@ class TestAuthMiddleware(unittest.TestCase):
         threaded down to find_user_by_sub for identity/email stamping."""
         # Note: no last_login_at attribute on user at all -- the middleware
         # must not need or set one.
-        user = SimpleNamespace(user_id=5, is_super_admin=False, is_active=True)
+        user = SimpleNamespace(
+            user_id=5, is_super_admin=False, is_active=True, is_blocked=False
+        )
         self.mock_user_identity_service.find_user_by_sub.return_value = user
         user_context = make_user_context(last_login_at=1_700_000_000)
 
@@ -419,7 +511,11 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(sub="email|abc", identity_type="external")
         self.mock_user_identity_service.create_or_swap_user.return_value = (
             SimpleNamespace(
-                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=5,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             )
         )
 
@@ -445,7 +541,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.create_or_swap_user.side_effect = [
             IntegrityError("stmt", "params", Exception("unique")),
             SimpleNamespace(
-                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=5,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             ),
         ]
 
@@ -491,6 +591,104 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
 
+    def test_gmail_push_skips_authentication(self):
+        """Pub/Sub pushes Gmail changes with a Google OIDC token and no Auth0
+        session, so the middleware must let them through; the route checks the
+        token itself.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{GMAIL_PUSH_ENDPOINT}",
+                lambda request: PlainTextResponse("pushed"),
+                methods=["POST"],
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.post(f"/api{GMAIL_PUSH_ENDPOINT}", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "pushed")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_event_pushes_skip_authentication(self):
+        """Pub/Sub pushes Google Chat, Microsoft Teams and Gerrit events with a Google OIDC
+        token and no Auth0 session; their routes assert that token themselves.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        for endpoint in _PUSH_ENDPOINTS:
+            self.app.router.routes.append(
+                Route(
+                    f"/api{endpoint}",
+                    lambda request: PlainTextResponse("pushed"),
+                    methods=["POST"],
+                )
+            )
+
+        client = self._add_middleware()
+        for endpoint in _PUSH_ENDPOINTS:
+            with self.subTest(endpoint=endpoint):
+                response = client.post(f"/api{endpoint}", json={})
+
+                self.assertEqual(response.status_code, HTTPStatus.OK)
+                self.assertEqual(response.text, "pushed")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_matcher_completion_callback_skips_authentication(self):
+        """The matcher job calls back with a Google OIDC token and no Auth0
+        session, like a Pub/Sub push, so the middleware must let it through.
+
+        The route asserts that token and the job's account itself. Left to the
+        middleware, every callback was answered 400 before it ran, and the
+        admin who started the run was never told it finished.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
+                lambda request: PlainTextResponse("announced"),
+                methods=["POST"],
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.post(f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "announced")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_health_check_skips_authentication(self):
+        """Kubernetes probes the health check with no credentials.
+
+        Authenticated, every probe would be answered 400 and a probed pod
+        would never become ready.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(HEALTH_ENDPOINT, lambda request: PlainTextResponse("OK"))
+        )
+
+        client = self._add_middleware()
+        response = client.get(HEALTH_ENDPOINT)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "OK")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
     def test_only_the_exact_delivery_path_is_exempt(self):
         """The exemption is an exact match, not a prefix.
 
@@ -514,6 +712,184 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.mock_auth_service.authenticate_request.assert_called_once()
+
+
+CONTENT_HOST = "training-content.example.com"
+API_HOST = "api.example.com"
+CONTENT_PATH = "/p/tok3n/scormcontent/assets/lesson.mp3"
+
+
+class TestContentOriginExemption(unittest.TestCase):
+    """The one route that cannot present an Access JWT, and the blast radius
+    of getting its exemption slightly wrong."""
+
+    def setUp(self):
+        self.mock_auth_service = MagicMock()
+        # What the real service raises for a request carrying no credential,
+        # so an unexempted path comes back as the 400 seen in production.
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.mock_database, self.mock_session = make_session_mock()
+        self.mock_user_identity_service = MagicMock()
+        self.mock_user_permissions_repository = MagicMock()
+        self.mock_logger = MagicMock()
+
+        async def course_file(request):
+            return PlainTextResponse("asset")
+
+        async def api_endpoint(request):
+            return PlainTextResponse("api")
+
+        self.app = Starlette(
+            routes=[
+                Route(TRAINING_CONTENT_ENDPOINT, course_file),
+                Route("/api/training/courses", api_endpoint),
+                Route("/api/p/thing", api_endpoint),
+            ]
+        )
+
+    def _client(self, **kwargs):
+        self.app.add_middleware(
+            AuthMiddleware,
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+            **kwargs,
+        )
+        return TestClient(self.app)
+
+    def assert_passed_through(self, response):
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "asset")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def assert_authenticated(self, response):
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.mock_auth_service.authenticate_request.assert_called_once()
+
+    def test_a_course_file_on_the_content_host_is_not_authenticated(self):
+        """The course's own JavaScript fetches these and has no Access JWT; the
+        signature in the path is what stands in for one."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get(CONTENT_PATH, headers={"host": CONTENT_HOST})
+
+        self.assert_passed_through(response)
+
+    def test_the_same_course_path_on_the_api_host_is_still_authenticated(self):
+        """The exemption keys on (host, prefix), never on the prefix alone.
+
+        Exempting /p/ on the API host would open an unauthenticated route on
+        the API origin: a course knows the token in its own URL, so it could
+        navigate itself there, become same-origin with the API, read the
+        deliberately JS-readable Access cookie and call anything as the
+        learner.
+        """
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get(CONTENT_PATH, headers={"host": API_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_an_api_path_on_the_content_host_is_still_authenticated(self):
+        """The second hostname reaches the same pods; only course files are
+        exempt on it."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get("/api/training/courses", headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_a_content_host_the_resolver_disabled_is_not_exempt(self):
+        """APP_ORIGINS missing means the host cannot be shown to differ from
+        the app's own, so the exemption must not apply -- the learner gets an
+        authentication failure instead of course files on the wrong origin."""
+        resolved = resolve_content_host(CONTENT_HOST, None, self.mock_logger)
+        client = self._client(training_content_host=resolved)
+
+        response = client.get(CONTENT_PATH, headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_a_content_host_the_resolver_kept_is_still_exempt(self):
+        """The same wiring with APP_ORIGINS present serves the course."""
+        resolved = resolve_content_host(
+            CONTENT_HOST, f"https://{API_HOST}", self.mock_logger
+        )
+        client = self._client(training_content_host=resolved)
+
+        response = client.get(CONTENT_PATH, headers={"host": CONTENT_HOST})
+
+        self.assert_passed_through(response)
+
+    def test_a_content_host_that_is_an_app_origin_is_not_exempt(self):
+        """The failure this exists for: the same hostname for both would make
+        /p/ an unauthenticated path on the API origin."""
+        resolved = resolve_content_host(
+            API_HOST, f"https://{API_HOST}", self.mock_logger
+        )
+        client = self._client(training_content_host=resolved)
+
+        response = client.get(CONTENT_PATH, headers={"host": API_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_an_unconfigured_content_host_authenticates_everything(self):
+        """A missing TRAINING_CONTENT_HOST must fail closed. Treating "not
+        configured" as "matches" would exempt /p/ on every host at once."""
+        client = self._client()
+
+        response = client.get(CONTENT_PATH, headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_an_empty_content_host_authenticates_everything(self):
+        """An unset environment variable arrives as "" as often as None."""
+        client = self._client(training_content_host="")
+
+        response = client.get(CONTENT_PATH, headers={"host": API_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_the_content_host_with_a_port_is_still_exempt(self):
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get(CONTENT_PATH, headers={"host": f"{CONTENT_HOST}:443"})
+
+        self.assert_passed_through(response)
+
+    def test_a_host_prefixed_onto_the_content_host_is_not_exempt(self):
+        """An attacker who registers evil-<host> must not inherit the route; a
+        substring test would hand it to them."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get(CONTENT_PATH, headers={"host": f"evil-{CONTENT_HOST}"})
+
+        self.assert_authenticated(response)
+
+    def test_a_host_that_only_ends_with_the_content_host_is_not_exempt(self):
+        """<host>.evil.test is a name in somebody else's domain; only an exact
+        match on the configured host may skip authentication."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get(
+            CONTENT_PATH, headers={"host": f"{CONTENT_HOST}.evil.test"}
+        )
+
+        self.assert_authenticated(response)
+
+    def test_a_path_that_merely_contains_the_content_prefix_is_not_exempt(self):
+        """The prefix has to be at the start of the path, or any route with
+        /p/ anywhere in it silently loses its authentication."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get("/api/p/thing", headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
 
 
 if __name__ == "__main__":

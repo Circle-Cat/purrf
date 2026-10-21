@@ -1,6 +1,8 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
 
+from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import (
     ApplicationStage,
@@ -17,24 +19,32 @@ from backend.entity.application_comment_mention_entity import (
     ApplicationCommentMentionEntity,
 )
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.email_message_entity import EmailMessageEntity
+from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import JobReviewEntity
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management import recipient_registry
+from backend.notification_management.event_recorder import record_event
 from backend.notification_management.recipient_registry import resolve_recipients
 from backend.recruiting import recipient_resolvers  # noqa: F401  (registers)
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
 
 
-def _make_user(is_active: bool = True) -> UsersEntity:
+def _make_user(is_active: bool = True, is_blocked: bool = False) -> UsersEntity:
     """Build a minimal, unsaved user row satisfying every NOT NULL column.
 
     Args:
         is_active (bool): Whether the user is still with the org. Offboarded
             users must not be resolved as recipients.
+        is_blocked (bool): Whether the user is locked out of Purrf. Blocking
+            deliberately leaves is_active alone, so the two are separate.
 
     Returns:
         UsersEntity: The unsaved user.
@@ -46,6 +56,7 @@ def _make_user(is_active: bool = True) -> UsersEntity:
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
         is_active=is_active,
+        is_blocked=is_blocked,
         updated_timestamp=datetime.now(timezone.utc),
     )
 
@@ -158,8 +169,9 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         job_id: int,
         submitted_by: UsersEntity,
         reviewer: UsersEntity,
-    ) -> JobReviewEntity:
-        """Create and insert a pending initial review of a job.
+    ) -> ApprovalRequestEntity:
+        """Create and insert a pending initial review of a job: a
+        ``job_review`` approval request.
 
         Args:
             job_id (int): The job under review.
@@ -167,13 +179,16 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             reviewer (UsersEntity): Who can decide it.
 
         Returns:
-            JobReviewEntity: The inserted review, with ``review_id`` populated.
+            ApprovalRequestEntity: The inserted request, with ``request_id``
+                populated.
         """
-        review = JobReviewEntity(
-            job_id=job_id,
-            submitted_by=submitted_by.user_id,
+        review = ApprovalRequestEntity(
+            action="job_review",
+            target_type="job",
+            target_id=str(job_id),
+            payload={"kind": JobReviewKind.INITIAL.value},
+            raised_by=submitted_by.user_id,
             reviewer_id=reviewer.user_id,
-            kind=JobReviewKind.INITIAL,
         )
         await self.insert_entities([review])
         return review
@@ -316,6 +331,25 @@ class RecipientResolversTest(BaseRepositoryTestLib):
 
         self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
 
+    async def test_a_blocked_assignee_is_not_reached(self):
+        """Someone locked out of Purrf must stop receiving mail about it.
+
+        Blocking leaves is_active True on purpose, so filtering on activity
+        alone keeps mailing an assignee who cannot open the application the
+        mail is about.
+        """
+        owner, candidate = _make_user(), _make_user()
+        blocked = _make_user(is_blocked=True)
+        await self.insert_entities([owner, candidate, blocked])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, blocked, owner)
+        event = _event(
+            "recruiting.reassigned", "application", application.application_id
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
+
     async def test_auto_assigned_reaches_only_the_assignee(self):
         """Owners hear about a submission once, from application_submitted."""
         owner, candidate, assignee = _make_user(), _make_user(), _make_user()
@@ -341,12 +375,81 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             "recruiting.review_opened",
             "job",
             job.job_id,
-            details={"reviewId": review.review_id},
+            details={"reviewId": review.request_id},
         )
 
         self.assertEqual(
             await resolve_recipients(self.session, event), {reviewer.user_id}
         )
+
+    async def test_review_reassigned_reaches_the_new_reviewer_only(self):
+        """Read off the row, which the service overwrote before recording.
+
+        The previous reviewer is deliberately left out: reassignment exists
+        for the case where they can no longer sign in, and even when it does
+        not, this is the submitter redirecting their own question rather than
+        anybody being relieved of a duty.
+        """
+        submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([submitter, previous, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_reassigned",
+            "job",
+            job.job_id,
+            details={
+                "reviewId": review.request_id,
+                "previousReviewerId": previous.user_id,
+            },
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
+        )
+
+    async def test_review_reassigned_sees_the_reviewer_write_in_the_same_session(
+        self,
+    ):
+        """The whole point of the action must not be undone by a stale read.
+
+        The approval service moves the review with the repository's UPDATE
+        while the row is already loaded in the session, then records the
+        event in the same transaction. Were the loaded row left stale, the
+        resolver would read the previous reviewer and mail the handover
+        notice to the very account the reassignment exists to route around --
+        silently, since a notification addressed to somebody is never
+        obviously the wrong somebody.
+
+        Written against the real repository and ``record_event`` rather than
+        the resolver alone, because the ordering is the thing under test.
+        """
+        submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([submitter, previous, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, previous)
+
+        # Exactly what the service does: the row is loaded, then moved.
+        repository = ApprovalRequestRepository()
+        await repository.get(self.session, review.request_id, for_update=True)
+        moved = await repository.set_reviewer(
+            self.session, review.request_id, reviewer.user_id
+        )
+        self.assertTrue(moved)
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=submitter.user_id,
+            event_type=RecruitingEvent.REVIEW_REASSIGNED,
+            details={
+                "reviewId": review.request_id,
+                "previousReviewerId": previous.user_id,
+            },
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {reviewer.user_id})
 
     async def test_review_decided_reaches_the_submitter_not_the_owners(self):
         """Submitting is gated on permission, not ownership.
@@ -362,11 +465,29 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             "recruiting.review_decided",
             "job",
             job.job_id,
-            details={"reviewId": review.review_id},
+            details={"reviewId": review.request_id, "decision": "rejected"},
         )
 
         self.assertEqual(
             await resolve_recipients(self.session, event), {submitter.user_id}
+        )
+
+    async def test_review_decided_by_withdrawal_reaches_the_reviewer(self):
+        """The submitter took it back themselves; the news is for the person
+        it was waiting on."""
+        submitter, reviewer = _make_user(), _make_user()
+        await self.insert_entities([submitter, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            details={"reviewId": review.request_id, "decision": "withdrawn"},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
         )
 
     async def test_mentioned_reaches_the_users_named_in_the_comment(self):
@@ -390,6 +511,191 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             await resolve_recipients(self.session, event),
             {named_a.user_id, named_b.user_id},
         )
+
+    async def _make_thread(
+        self, application: ApplicationEntity, senders: list[UsersEntity | None]
+    ) -> EmailThreadEntity:
+        """Create a thread on ``application`` with one outbound message per sender.
+
+        Args:
+            application (ApplicationEntity): The application the thread is about.
+            senders (list[UsersEntity | None]): Who sent each outbound message
+                through Purrf; None for one sent from the Gmail web UI.
+
+        Returns:
+            EmailThreadEntity: The inserted thread, with ``thread_id`` populated.
+        """
+        thread = EmailThreadEntity(
+            user_id=application.user_id,
+            gmail_thread_id=f"t-{application.application_id}-{len(senders)}",
+            context_type=ContextType.APPLICATION,
+            context_id=application.application_id,
+        )
+        await self.insert_entities([thread])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"{thread.gmail_thread_id}-m{index}",
+                direction=EmailDirection.OUTBOUND,
+                sent_by_user_id=None if sender is None else sender.user_id,
+            )
+            for index, sender in enumerate(senders)
+        ])
+        return thread
+
+    async def test_email_received_reaches_who_sent_into_the_thread(self):
+        """Not the owners: the one waiting on the reply is whoever wrote."""
+        owner, sender, other_sender, candidate = (
+            _make_user(),
+            _make_user(),
+            _make_user(),
+            _make_user(),
+        )
+        await self.insert_entities([owner, sender, other_sender, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(
+            application, [sender, other_sender, sender, None]
+        )
+        # A second thread on the same application: its sender is not told.
+        await self._make_thread(application, [owner])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=candidate.user_id,
+            event_type=RecruitingEvent.EMAIL_RECEIVED,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(
+            {n.user_id for n in notifications},
+            {sender.user_id, other_sender.user_id},
+        )
+
+    async def test_email_received_on_a_thread_nobody_sent_through_purrf(self):
+        """Every message sent from the Gmail web UI: the job's owners are told."""
+        owner, other_owner, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, other_owner, candidate])
+        job = await self._make_job([owner.user_id, other_owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {owner.user_id, other_owner.user_id},
+        )
+
+    async def test_email_received_on_an_inbox_thread_nobody_replied_to(self):
+        """An inquiry assigned to an application before anyone wrote: the owners."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"{thread.gmail_thread_id}-in",
+                direction=EmailDirection.INBOUND,
+                from_address="candidate@ext.com",
+            )
+        ])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=candidate.user_id,
+            event_type=RecruitingEvent.EMAIL_RECEIVED,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {owner.user_id})
+
+    async def test_email_received_with_no_sender_and_no_owner_reaches_nobody(self):
+        candidate = _make_user()
+        await self.insert_entities([candidate])
+        job = await self._make_job([])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_received_with_no_sender_on_an_unknown_application(self):
+        candidate = _make_user()
+        await self.insert_entities([candidate])
+        job = await self._make_job([])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            987654321,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_bounced_with_no_sender_still_reaches_nobody(self):
+        """Only a received reply falls back to the owners; a bounce does not."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_BOUNCED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id, "failedRecipients": ["bad@x"]},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_bounced_reaches_who_sent_into_the_thread(self):
+        """The bounce is about their message, so they are the one told."""
+        owner, sender, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, sender, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [sender, None])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=None,
+            event_type=RecruitingEvent.EMAIL_BOUNCED,
+            details={"threadId": thread.thread_id, "failedRecipients": ["bad@x"]},
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {sender.user_id})
+
+    async def test_email_received_without_a_thread_id_is_an_error(self):
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED, "application", application.application_id
+        )
+
+        with self.assertRaises(ValueError):
+            await resolve_recipients(self.session, event)
 
     async def test_a_pointer_the_write_site_did_not_carry_is_an_error(self):
         """Failing open here is how @-mentions would silently reach nobody."""
@@ -431,7 +737,6 @@ class RegistrationCoverageTest(unittest.TestCase):
 
     SILENT = {
         RecruitingEvent.EMAIL_SENT,
-        RecruitingEvent.EMAIL_RECEIVED,
         RecruitingEvent.JOB_CREATED,
         RecruitingEvent.PENDING_EDIT_DISCARDED,
     }
@@ -462,6 +767,38 @@ class RegistrationCoverageTest(unittest.TestCase):
                 continue
             with self.subTest(event_type=event_type):
                 self.assertIn(subject_type, {"application", "job"})
+
+
+class SharedThreadRuleTest(unittest.IsolatedAsyncioTestCase):
+    """Both email resolvers ask the rule every domain shares."""
+
+    async def test_email_received_uses_the_shared_rule_with_the_owners_behind_it(self):
+        session = Mock()
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED, "application", 7, details={"threadId": 31}
+        )
+        with patch(
+            "backend.recruiting.recipient_resolvers.thread_senders_else",
+            new_callable=AsyncMock,
+            return_value={4},
+        ) as shared:
+            self.assertEqual(await resolve_recipients(session, event), {4})
+
+        self.assertEqual(shared.await_args.args[:2], (session, 31))
+
+    async def test_email_bounced_uses_the_shared_senders(self):
+        session = Mock()
+        event = _event(
+            RecruitingEvent.EMAIL_BOUNCED, "application", 7, details={"threadId": 31}
+        )
+        with patch(
+            "backend.recruiting.recipient_resolvers.thread_senders",
+            new_callable=AsyncMock,
+            return_value={5},
+        ) as shared:
+            self.assertEqual(await resolve_recipients(session, event), {5})
+
+        shared.assert_awaited_once_with(session, 31)
 
 
 if __name__ == "__main__":

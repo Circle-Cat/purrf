@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, call  # Import call for multiple assertions
 from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.common.constants import (
-    PullStatus,  # Not used in the provided test, but kept for context
+    GERRIT_DEDUPE_MERGED_KEY,
     GERRIT_DEDUPE_REVIEWED_KEY,
     GERRIT_CL_REVIEWED_FIELD,
     GerritChangeStatus,
@@ -15,22 +15,11 @@ from backend.common.constants import (
     GERRIT_LOC_MERGED_FIELD,  # New: Import for change_merged
 )
 
-from dataclasses import dataclass
-
-
-@dataclass
-class PullStatusResponse:
-    subscription_id: str
-    task_status: str
-    message: str
-    timestamp: str | None
-
 
 class TestStorePayload(unittest.TestCase):
     def setUp(self):
         self.mock_logger = MagicMock()
         self.mock_redis = MagicMock()
-        self.mock_puller_factory = MagicMock()
         self.mock_retry = MagicMock()
         self.mock_date_util = MagicMock()
         self.mock_gerrit_client = MagicMock()
@@ -38,13 +27,15 @@ class TestStorePayload(unittest.TestCase):
         self.service = GerritProcessorService(
             logger=self.mock_logger,
             redis_client=self.mock_redis,
-            pubsub_puller_factory=self.mock_puller_factory,
             retry_utils=self.mock_retry,
             date_time_util=self.mock_date_util,
             gerrit_client=self.mock_gerrit_client,
         )
 
         self.mock_retry.get_retry_on_transient.side_effect = lambda func: func()
+        self.mock_retry.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         # Preset date utility to return a fixed weekly bucket for assertion
         self.bucket_value = "2025-W20"
@@ -105,17 +96,18 @@ class TestStorePayload(unittest.TestCase):
             "comment": "Patch Set 1: LGTM+1",
         }
 
-        # Mock Redis deduplication check: first comment (not in set)
-        self.mock_redis.sismember.return_value = False
+        # First comment from this user on this CL: SADD adds a member
+        self.mock_redis.sadd.return_value = 1
 
         mock_pipeline = MagicMock()
         self.mock_redis.pipeline.return_value = mock_pipeline
 
         self.service.store_payload(payload)
 
-        # Check deduplication key
+        # The dedupe set is claimed atomically, before anything is counted
         dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=7043)
-        self.mock_redis.sismember.assert_called_once_with(dedupe_key, "alice")
+        self.mock_redis.sadd.assert_called_once_with(dedupe_key, "alice")
+        self.mock_redis.sismember.assert_not_called()
 
         # Assert project-specific stats key generation and increment execution
         stats_key_project = GERRIT_STATS_PROJECT_BUCKET_KEY.format(
@@ -133,7 +125,7 @@ class TestStorePayload(unittest.TestCase):
             stats_key_global, GERRIT_CL_REVIEWED_FIELD, 1
         )
 
-        mock_pipeline.sadd.assert_called_once_with(dedupe_key, "alice")
+        mock_pipeline.sadd.assert_not_called()
         mock_pipeline.expire.assert_called_once_with(
             dedupe_key, THREE_MONTHS_IN_SECONDS
         )
@@ -152,7 +144,7 @@ class TestStorePayload(unittest.TestCase):
         self.service.store_payload(payload)
 
         # Verify: No Redis operations executed (bot comments are skipped)
-        self.mock_redis.sismember.assert_not_called()
+        self.mock_redis.sadd.assert_not_called()
         self.mock_redis.pipeline.assert_not_called()
 
     def test_change_merged(self):
@@ -326,59 +318,87 @@ class TestStorePayload(unittest.TestCase):
             "eventCreatedOn": 1761279121,  # Added timestamp for compute_buckets_weekly to be called
         }
 
-        # Mock deduplication check: already reviewed
-        self.mock_redis.sismember.return_value = True
+        # Already in the dedupe set: SADD adds nothing
+        self.mock_redis.sadd.return_value = 0
 
         self.service.store_payload(payload)
 
         # Verify: No statistics update (duplicate count skipped)
         self.mock_redis.pipeline.assert_not_called()
-        self.mock_redis.sismember.assert_called_once()  # sismember is still called to check for duplication
+        self.mock_redis.sadd.assert_called_once()
 
+    def test_comment_whose_count_fails_releases_its_claim(self):
+        """A failed write must leave the redelivery free to count it."""
+        payload = {
+            "type": "comment-added",
+            "author": {"username": "alice"},
+            "change": {
+                "number": 7043,
+                "owner": {"username": "bob"},
+                "project": self.mock_project_value,
+            },
+            "eventCreatedOn": 1761279121,
+        }
+        self.mock_redis.sadd.return_value = 1
+        self.mock_redis.pipeline.return_value.execute.side_effect = ConnectionError()
 
-class TestPullGerrit(unittest.TestCase):
-    def setUp(self):
-        self.mock_logger = MagicMock()
-        self.mock_redis = MagicMock()
-        self.mock_puller_factory = MagicMock()
-        self.mock_retry = MagicMock()
-        self.mock_date_util = MagicMock()
-        self.mock_gerrit_client = MagicMock()
+        with self.assertRaises(ConnectionError):
+            self.service.store_payload(payload)
 
-        self.service = GerritProcessorService(
-            logger=self.mock_logger,
-            redis_client=self.mock_redis,
-            pubsub_puller_factory=self.mock_puller_factory,
-            retry_utils=self.mock_retry,
-            date_time_util=self.mock_date_util,
-            gerrit_client=self.mock_gerrit_client,
+        dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=7043)
+        self.mock_redis.srem.assert_called_once_with(dedupe_key, "alice")
+
+    def _merged_payload(self):
+        return {
+            "type": "change-merged",
+            "eventCreatedOn": 1761280203,
+            "change": {
+                "number": 7043,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+            },
+        }
+
+    def test_change_merged_claims_the_change_before_counting(self):
+        self.mock_redis.set.return_value = True
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
+
+        self.service.store_payload(self._merged_payload())
+
+        self.mock_redis.set.assert_called_once_with(
+            GERRIT_DEDUPE_MERGED_KEY.format(change_number=7043),
+            1,
+            nx=True,
+            ex=THREE_MONTHS_IN_SECONDS,
         )
+        self.mock_redis.pipeline.return_value.execute.assert_called_once()
 
-        self.fake_status = PullStatusResponse(
-            subscription_id="test-sub",
-            task_status=PullStatus.RUNNING.code,
-            message="Puller started",
-            timestamp="2025-07-01T00:00:00Z",
+    def test_redelivered_change_merged_is_counted_once(self):
+        """Pub/Sub push is at-least-once; a second copy must not add to the stats."""
+        self.mock_redis.set.return_value = None
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
+
+        self.service.store_payload(self._merged_payload())
+
+        self.mock_redis.pipeline.assert_not_called()
+
+    def test_change_merged_whose_count_fails_releases_its_claim(self):
+        self.mock_redis.set.return_value = True
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
+        self.mock_redis.pipeline.return_value.execute.side_effect = ConnectionError()
+
+        with self.assertRaises(ConnectionError):
+            self.service.store_payload(self._merged_payload())
+
+        self.mock_redis.delete.assert_called_once_with(
+            GERRIT_DEDUPE_MERGED_KEY.format(change_number=7043)
         )
-
-    def test_pull_gerrit_success(self):
-        mock_puller = MagicMock()
-        self.mock_puller_factory.get_puller_instance.return_value = mock_puller
-
-        result = self.service.pull_gerrit(project_id="proj1", subscription_id="sub1")
-
-        mock_puller.start_pulling_messages.assert_called_once()
-        self.assertIsNone(result)
-
-    def test_pull_gerrit_missing_project(self):
-        with self.assertRaises(ValueError) as cm:
-            self.service.pull_gerrit(project_id="", subscription_id="sub1")
-        self.assertIn("project_id", str(cm.exception))
-
-    def test_pull_gerrit_missing_subscription(self):
-        with self.assertRaises(ValueError) as cm:
-            self.service.pull_gerrit(project_id="proj1", subscription_id="")
-        self.assertIn("subscription_id", str(cm.exception))
 
 
 if __name__ == "__main__":

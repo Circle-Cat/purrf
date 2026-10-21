@@ -30,7 +30,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  * @returns {JSX.Element}
  */
 const LeaveApprovalsPage = () => {
-  const isEnabled = useLeaveEnabled();
+  const { isEnabled, isReady } = useLeaveEnabled();
   const {
     pending,
     decided,
@@ -41,6 +41,10 @@ const LeaveApprovalsPage = () => {
     load,
     decide,
   } = useLeaveApprovals({ enabled: isEnabled });
+
+  if (!isReady) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
 
   if (!isEnabled) {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
@@ -68,11 +72,7 @@ const LeaveApprovalsPage = () => {
 
       {!isLoading && !loadError && (
         <>
-          {decideError && (
-            <p className="text-sm text-red-700">
-              That decision didn't go through. Nothing was recorded — try again.
-            </p>
-          )}
+          {decideError && <p className="text-sm text-red-700">{decideError}</p>}
 
           <Card className="border-gray-200 shadow-sm">
             <CardHeader>

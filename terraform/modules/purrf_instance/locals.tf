@@ -16,6 +16,11 @@ locals {
     # here: the DNS record is a placeholder address behind Cloudflare's proxy
     # and a Worker route answers every request.
     hook = "${local.subdomain_prefix}hook.${var.base_domain}"
+    # Course files get their own origin so course JavaScript cannot read the
+    # app's CF_Authorization cookie. Authenticated by a signed path token, not
+    # a cookie, so this host is absent from the Access application
+    # (bootstrap/global/main.tf).
+    training_content = "${local.subdomain_prefix}training-content.${var.base_domain}"
   }
 
   common_labels = {
@@ -36,6 +41,18 @@ locals {
 }
 
 locals {
+  # Mentorship matcher. The image repository is shared by every environment
+  # and is not managed here (see matching.tf).
+  matcher_image_project    = var.gcp_project_id
+  matcher_image_location   = "us-west1"
+  matcher_image_repository = "purrf-matcher"
+
+  # Cloud Run rejects a job whose image does not exist, so the job waits for a
+  # tag that names one.
+  matcher_job_enabled = var.enable_matcher && var.matcher_image_tag != ""
+}
+
+locals {
   # Pub/Sub
   pubsub_names = [
     "chat-google-events",
@@ -43,11 +60,25 @@ locals {
     "gerrit-events"
   ]
 
+  # Gateway Worker paths for the subscriptions that can be delivered by push.
+  # A subscription absent here, or every one while pubsub_event_push_enabled
+  # is off, stays a pull subscription drained by the hourly sync.
+  pubsub_push_paths = {
+    "chat-google-events"    = "/pubsub/push/google-chat"
+    "chat-microsoft-events" = "/pubsub/push/microsoft-chat"
+    "gerrit-events"         = "/pubsub/push/gerrit"
+  }
+
+  # A pushed message is processed while Pub/Sub waits, and a Google Chat batch
+  # lists the whole directory, so the ack deadline is longer than for pull.
+  # More delivery attempts, spread by the retry policy's backoff, keep a
+  # backend restart from sending messages to the dead-letter topic.
   pubsub_map = {
     for name in local.pubsub_names : name => {
       full_name             = "${local.name_prefix}-${name}"
-      ack_deadline_seconds  = 20
-      max_delivery_attempts = 5
+      push_path             = var.pubsub_event_push_enabled ? lookup(local.pubsub_push_paths, name, null) : null
+      ack_deadline_seconds  = var.pubsub_event_push_enabled && contains(keys(local.pubsub_push_paths), name) ? 120 : 20
+      max_delivery_attempts = var.pubsub_event_push_enabled && contains(keys(local.pubsub_push_paths), name) ? 10 : 5
     }
   }
 }

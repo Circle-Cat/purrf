@@ -1,3 +1,7 @@
+# The backend sets no CORS headers, so this ruleset and the Access
+# applications below are the whole of purrf's CORS policy. Never add a
+# training-content host: it runs third-party course JavaScript, which must not
+# be able to read API responses.
 resource "cloudflare_ruleset" "cors_headers" {
   zone_id = local.zone_id
   name    = "default"
@@ -69,6 +73,14 @@ data "google_project" "circlecat_prod_iad_project_data" {
   project_id = var.circlecat_prod_iad_project_id
 }
 
+# Gmail's OAuth client lives in this project, because users.watch only accepts
+# a topic in the project of the client that issued the token. Enabled here
+# rather than in purrf_instance so that one state owns it, not one per
+# environment.
+resource "google_project_service" "gmail" {
+  project = var.main_gcp_project_id
+  service = "gmail.googleapis.com"
+}
 
 # Define an Access Context Manager policy for VPC Service Controls perimeter
 resource "google_access_context_manager_access_policy" "purrf_internal" {
@@ -475,6 +487,33 @@ resource "cloudflare_dns_record" "root_test" {
   }
 }
 
+# SCORM course files, test only for now. Same tunnel and backend as test-api;
+# only the hostname makes it a separate origin.
+#
+# This host must stay out of the Access application below and out of the CORS
+# ruleset at the top of this file. Access cookies are host-only and readable
+# from JavaScript (http_only_cookie_attribute = false), so an Access
+# application here would hand every course package a valid identity token.
+# Requests carry a signed path token instead
+# (random_password.training_token_signing_key in the purrf_instance module).
+#
+# staging and prod get the same record by hand when the feature promotes.
+resource "cloudflare_dns_record" "training_content_test" {
+  zone_id = local.zone_id
+  name    = "test-training-content"
+  type    = "CNAME"
+  # The test cluster's cloudflare-tunnel ingress controller, same tunnel as
+  # api_test above. staging and prod ride c65a2ea6 (cloudflare2-tunnel).
+  content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
 # CF-function route for staging reuses the existing tunnel (CF functions remain in purrf-452300).
 resource "cloudflare_dns_record" "cf_staging" {
   zone_id = local.zone_id
@@ -542,6 +581,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
   name       = "purrf"
   domain     = local.environments.prod.origin_web
   type       = "self_hosted"
+  # Never add a training-content host: Access cookies are host-only and
+  # JS-readable, so an application here would give course JavaScript a valid
+  # identity token. See cloudflare_dns_record.training_content_test.
   destinations = [
     { type = "public", uri = local.environments.prod.origin_web },
     { type = "public", uri = local.environments.prod.api_host },
@@ -717,6 +759,8 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
   name       = "purrf_test"
   domain     = local.environments.test.origin_web
   type       = "self_hosted"
+  # test-training-content.purrf.io is deliberately absent: an Access
+  # application here would give course JavaScript a readable identity token.
   destinations = [
     { type = "public", uri = local.environments.test.origin_web },
     { type = "public", uri = local.environments.test.api_host },
@@ -757,6 +801,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   name       = "purrf_staging"
   domain     = local.environments.staging.origin_web
   type       = "self_hosted"
+  # Never add a training-content host: Access cookies are host-only and
+  # JS-readable, so an application here would give course JavaScript a valid
+  # identity token. See cloudflare_dns_record.training_content_test.
   destinations = [
     { type = "public", uri = local.environments.staging.origin_web },
     { type = "public", uri = local.environments.staging.api_host },
@@ -839,6 +886,11 @@ resource "cloudflare_zero_trust_access_service_token" "notification_gateway_test
 # purrf application rather than another policy on it: Cloudflare matches the
 # most specific application, so this one governs the delivery route alone and
 # leaves the application covering the rest of the host untouched.
+#
+# Every backend path in the gateway Worker's route table has to be listed here.
+# One that is not falls to the host-wide application, which answers the service
+# token with a redirect to a login page; the Worker refuses to follow it and
+# reports a 502.
 
 resource "cloudflare_zero_trust_access_application" "notification_delivery_test" {
   account_id = local.cloudflare_account_id
@@ -846,6 +898,11 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_test"
   type       = "self_hosted"
   destinations = [
     { type = "public", uri = "${local.environments.test.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/gerrit" },
   ]
   # A machine endpoint: nobody should find it in the App Launcher.
   app_launcher_visible = false
@@ -904,6 +961,11 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_stagi
   type       = "self_hosted"
   destinations = [
     { type = "public", uri = "${local.environments.staging.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/gerrit" },
   ]
   app_launcher_visible = false
   session_duration     = "0s"

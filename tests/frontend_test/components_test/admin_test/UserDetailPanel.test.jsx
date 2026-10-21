@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import UserDetailPanel from "@/pages/AdminPermissions/components/UserDetailPanel";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuth } from "@/context/auth";
@@ -30,7 +31,10 @@ const makeHistory = (count) =>
     permissionName: "mentorship.admin.read",
     isActive: true,
     grantedSource: "manual",
-    grantedBy: `admin-${i}`,
+    // granted_by is an int on the wire, not a string. The panel renders it
+    // through the shared actor label, which names the person when the payload
+    // resolves one and otherwise keeps the id visible.
+    grantedBy: i,
     grantedTimestamp: "2026-07-28T00:00:00Z",
     revokedBy: null,
     revokedTimestamp: null,
@@ -40,16 +44,19 @@ const makeHistory = (count) =>
 // Mirror how UsersTab mounts it so the test exercises the real nesting.
 const renderPanel = () =>
   render(
-    <Dialog open>
-      <DialogContent className="sm:max-w-2xl overflow-y-auto max-h-[90vh]">
-        <UserDetailPanel
-          selectedUser={selectedUser}
-          catalog={catalog}
-          onMakeSuperAdmin={vi.fn()}
-          onRevokeSuperAdmin={vi.fn()}
-        />
-      </DialogContent>
-    </Dialog>,
+    // The panel links across to the account console, so it needs a Router.
+    <MemoryRouter>
+      <Dialog open>
+        <DialogContent className="sm:max-w-2xl overflow-y-auto max-h-[90vh]">
+          <UserDetailPanel
+            selectedUser={selectedUser}
+            catalog={catalog}
+            onMakeSuperAdmin={vi.fn()}
+            onRevokeSuperAdmin={vi.fn()}
+          />
+        </DialogContent>
+      </Dialog>
+    </MemoryRouter>,
   );
 
 describe("UserDetailPanel", () => {
@@ -60,6 +67,35 @@ describe("UserDetailPanel", () => {
       isSuperAdmin: true,
       permissions: ["permission.manage"],
     });
+  });
+
+  it("links to the same person's account state", async () => {
+    // The two admin pages were deliberately kept separate rather than merged,
+    // and this per-person cross-link is the only thing left holding them
+    // together. Without a test, deleting it keeps the suite green.
+    useAuth.mockReturnValue({
+      user: { userId: 99 },
+      isSuperAdmin: true,
+      permissions: ["permission.manage", "user.admin"],
+    });
+    api.getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
+    renderPanel();
+
+    const link = await screen.findByRole("link", { name: /Account state/ });
+    expect(link).toHaveAttribute("href", "/admin/accounts?user_id=1");
+  });
+
+  it("drops the link for a viewer who cannot open the account console", async () => {
+    // permission.manage and user.admin are held by different people on
+    // purpose. Offering the crossing to someone who only has the first one
+    // spends a click to reach a full-page 403.
+    api.getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
+    renderPanel();
+
+    await waitFor(() => expect(api.getUserPermissions).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("link", { name: /Account state/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a long history inside its own scroll box so the dialog does not grow", async () => {
@@ -76,7 +112,7 @@ describe("UserDetailPanel", () => {
     expect(box).toHaveClass("overflow-y-auto");
     // The rows still render in full - they are reachable by scrolling the box,
     // not truncated away.
-    expect(await screen.findByText("admin-39")).toBeInTheDocument();
+    expect(await screen.findByText("User 39")).toBeInTheDocument();
   });
 
   it("wraps the history in the scroll box even when there is none", async () => {

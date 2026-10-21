@@ -1,8 +1,9 @@
 """Shared internal-employee lifecycle hook, used both for brand-new
 first-login inserts and for corp sign-ins joining an EXISTING account
 (bridge link, in-account verify, or trusted-assertion routing): grant the
-internal-employee permission bundle and promote the corp address to the
-primary contact. Lives outside both services so the logic exists once."""
+internal-employee permission bundle, promote the corp address to the primary
+contact, and assign the onboarding training employment itself owes. Lives
+outside both services so the logic exists once."""
 
 from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 
@@ -15,14 +16,16 @@ async def absorb_internal_identity(
     user_permissions_repository,
     user_emails_repository,
     users_repository,
+    internal_onboarding_training_service,
     logger,
 ) -> None:
     """
     Shared internal-employee lifecycle hook, called both for brand-new
     first-login inserts and when a corp sign-in joins an EXISTING account
     (bridge link, in-account verify, or trusted-assertion routing): grant the
-    internal-employee permission bundle and promote the corp address to the
-    primary contact.
+    internal-employee permission bundle, promote the corp address to the
+    primary contact, and assign the onboarding training that being an
+    employee -- rather than anything recruiting decided -- makes them owe.
 
     Without this, an employee who linked their corp sign-in into a
     pre-existing external account would be INTERNAL without the baseline
@@ -39,6 +42,9 @@ async def absorb_internal_identity(
         email (str): The corp address (normalized) that was just verified.
         users_repository (UsersRepository): Repository handling UsersEntity,
             used to set the is_internal flag.
+        internal_onboarding_training_service (InternalOnboardingTrainingService):
+            Assigns the corporate culture course, and the residency
+            onboarding for an intern.
     """
     # Persist the internal-employee state (idempotent — set_internal no-ops
     # when already True), the sole classification signal in the row-less model.
@@ -71,3 +77,10 @@ async def absorb_internal_identity(
             "[internal_lifecycle] promoted corp email to primary for user_id=%s",
             user_id,
         )
+
+    # The third thing this moment means. Same transaction as the flag above:
+    # a user who is internal without the courses they owe is a gap nothing
+    # reports, because the hook that would notice never runs twice.
+    await internal_onboarding_training_service.ensure_for_internal(
+        session=session, user_id=user_id, email=email
+    )

@@ -91,7 +91,8 @@ class MentorshipMeetingEntity(Base):
     google_meeting_code: Mapped[str | None] = mapped_column(String)
     entry_points: Mapped[list | None] = mapped_column(JSONB)
 
-    # --- attendance results, written only by the attendance sweep ---
+    # --- attendance results, written by the attendance sweep and the admin
+    # meeting log editor ---
 
     absent_user_id: Mapped[int | None] = mapped_column(Integer)
     # NULL means attendance was never evaluated; an empty array means it was
@@ -101,6 +102,13 @@ class MentorshipMeetingEntity(Base):
     has_unknown_late: Mapped[bool | None] = mapped_column(Boolean)
     has_insufficient_duration: Mapped[bool | None] = mapped_column(Boolean)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when an admin changes any attendance result above through the
+    # meeting log editor. From then on the row's outcome is the admin's, and
+    # the attendance sweep no longer selects it. Deliberately outside
+    # _GOOGLE_ONLY_COLUMNS: the editor also accepts LEGACY rows.
+    attendance_set_by_admin_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     __table_args__ = (
         # Only a LEGACY row may lack times; everything else must have both,

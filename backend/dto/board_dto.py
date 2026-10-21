@@ -13,6 +13,7 @@ from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
+from backend.dto.block_dto import PendingBlockRequestDto
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 
 # Fixed reject-reason list surfaced by the board's reject dialog. A reject
@@ -109,6 +110,15 @@ class ApplicationDetailDto(BaseDto):
     # actionable control (those still gate on is_owner specifically).
     can_view: bool = False
     assignee_id: int | None = None
+    # Whether the APPLICANT is currently blocked org-wide. Distinct from the
+    # embedded application's tags["blacklisted"], which only records that this
+    # row was swept by a block at some point and never changes after. The page
+    # needs the live flag: it decides whether raising a block request is still
+    # something to offer, and BlockService.raise_request refuses one either way.
+    applicant_is_blocked: bool = False
+    # A block request on the applicant waiting on a reviewer, whoever raised
+    # it and from wherever: only its reviewer, never its reason or raiser.
+    pending_block_request: PendingBlockRequestDto | None = None
     interview: InterviewDto | None = None
     # The CALLER's IANA zone from their profile, for rendering the interview's
     # UTC instants as local wall clock. Per-request, not per-meeting: no zone is
@@ -211,42 +221,6 @@ class RoundChangeDto(BaseRequestDto):
         if v < 1:
             raise ValueError("round must be >= 1")
         return v
-
-
-class UpcomingInterviewDto(BaseDto):
-    """One still-to-happen interview meeting a blacklist is about to cancel.
-
-    Read-only pre-flight for the confirm dialog (see
-    ``BoardService.list_upcoming_interviews_for_user``), so it carries only
-    what identifies the meeting to a human: which posting, which step, and
-    when. No zone: the dialog renders ``start_at`` in the READER's own zone,
-    like every other interview time (see ``ApplicationDetailDto``'s
-    ``viewer_timezone``). The interviewer's name is deliberately left out too —
-    resolving it would cost another user lookup for a warning list nobody acts
-    on per-row.
-    """
-
-    application_id: int
-    job_title: str
-    stage: ApplicationStage
-    round: int
-    start_at: datetime
-
-
-class BlacklistDto(BaseRequestDto):
-    """Block a user org-wide and close out the triggering application."""
-
-    user_id: int
-    application_id: int
-    reason: str
-
-    @field_validator("reason")
-    @classmethod
-    def reason_must_not_be_blank(cls, value: str) -> str:
-        """A blacklist action must always carry a non-empty reason."""
-        if not value.strip():
-            raise ValueError("a reason is required")
-        return value
 
 
 class MentionedUserDto(BaseDto):

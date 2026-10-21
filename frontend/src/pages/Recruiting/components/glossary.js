@@ -66,7 +66,7 @@ export const GLOSSARY = {
   },
   "stage.blacklisted": {
     label: "Blacklisted",
-    hint: "This application was closed and the applicant is blocked from future postings.",
+    hint: "This application was closed and the applicant is blocked from future postings and from using Purrf at all.",
   },
   "evaluation.no_longer_assigned": {
     label: "No longer assigned",
@@ -136,7 +136,7 @@ export const GLOSSARY = {
   },
   "tag.blacklisted": {
     label: "Blacklisted",
-    hint: "This applicant is currently blocked from every posting. The tag can appear even if nobody was blacklisted from this posting, because blacklisting sweeps every posting the person has applied to.",
+    hint: "This applicant is currently blocked from every posting and from using Purrf at all. The tag can appear even if nobody was blacklisted from this posting, because blacklisting sweeps every posting the person has applied to.",
   },
   "tag.blacklist_lifted": {
     label: "Blacklist Lifted",

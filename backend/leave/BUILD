@@ -122,6 +122,7 @@ py_library(
     srcs = ["leave_participants.py"],
     deps = [
         "//backend/common:constants",
+        "//backend/common:name_utils",
         "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
@@ -173,10 +174,43 @@ py_library(
         ":leave_participants",
         ":leave_workdays",
         "//backend/common:constants",
+        "//backend/common:exceptions",
         "//backend/common:leave_enums",
-        "//backend/common:name_utils",
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_request_handler",
+    srcs = ["leave_request_handler.py"],
+    deps = [
+        ":leave_clock",
+        ":leave_request_service",
+        ":leave_workdays",
+        "//backend/approval:approval_handler",
+        "//backend/common:approval_enums",
+        "//backend/common:leave_enums",
+        "//backend/common:name_utils",
+    ],
+)
+
+py_library(
+    name = "notifications",
+    srcs = [
+        "notification_email_copy.py",
+        "notification_renderers.py",
+        "recipient_resolvers.py",
+    ],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/common:leave_enums",
+        "//backend/common:name_utils",
+        "//backend/entity:entities",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
         "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
@@ -187,6 +221,31 @@ py_library(
     srcs = ["leave_request_controller.py"],
     deps = [
         ":leave_request_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "leave_balance_service",
+    srcs = ["leave_balance_service.py"],
+    deps = [
+        ":leave_participants",
+        "//backend/common:name_utils",
+        "//backend/dto",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_balance_controller",
+    srcs = ["leave_balance_controller.py"],
+    deps = [
+        ":leave_balance_service",
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/dto",

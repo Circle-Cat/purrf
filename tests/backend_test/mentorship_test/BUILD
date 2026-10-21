@@ -16,6 +16,12 @@ py_test(
 )
 
 py_test(
+    name = "round_windows_test",
+    srcs = ["round_windows_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
     name = "rounds_service_test",
     srcs = ["rounds_service_test.py"],
     deps = ["//backend/mentorship"],
@@ -57,14 +63,24 @@ py_test(
 py_test(
     name = "mentorship_admin_controller_test",
     srcs = ["mentorship_admin_controller_test.py"],
-    deps = ["//backend/mentorship"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
 )
 
 py_test(
     name = "onboarding_training_service_test",
     srcs = ["onboarding_training_service_test.py"],
     deps = [
+        "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
         "//backend/mentorship",
     ],
 )
@@ -88,10 +104,12 @@ py_test(
     srcs = ["recipient_resolvers_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/mentorship",
+        "//backend/notification_management:event_recorder",
         "//backend/notification_management:recipient_registry",
         "//backend/notification_management:render_registry",
         "//tests/backend_test/repository_test:base_repository_test_lib",
@@ -109,5 +127,388 @@ py_test(
         "//backend/mentorship",
         "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "matching_contract_test",
+    srcs = ["matching_contract_test.py"],
+    data = ["//backend/mentorship:contracts"],
+    deps = [
+        "//backend/mentorship",
+        "@pypi//jsonschema",
+    ],
+)
+
+py_test(
+    name = "matching_payload_service_test",
+    srcs = ["matching_payload_service_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "matching_run_test",
+    srcs = ["matching_run_test.py"],
+    deps = [
+        "//backend/common:matching_job_client",
+        "//backend/mentorship",
+        "@pypi//requests",
+    ],
+)
+
+py_test(
+    name = "matching_run_complete_test",
+    srcs = ["matching_run_complete_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "matching_run_read_test",
+    srcs = ["matching_run_read_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "matching_eligibility_test",
+    srcs = ["matching_eligibility_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "matching_eligibility_service_test",
+    srcs = ["matching_eligibility_service_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "matching_draft_test",
+    srcs = ["matching_draft_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "matching_draft_service_test",
+    srcs = ["matching_draft_service_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "publish_matching_handler_test",
+    srcs = ["publish_matching_handler_test.py"],
+    deps = [
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "approval_notifications_test",
+    srcs = ["approval_notifications_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "mentorship_approval_service_test",
+    srcs = ["mentorship_approval_service_test.py"],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "publish_matching_flow_test",
+    srcs = ["publish_matching_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "exempt_matching_handler_test",
+    srcs = ["exempt_matching_handler_test.py"],
+    deps = [
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "exempt_matching_flow_test",
+    srcs = ["exempt_matching_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "withdraw_participant_handler_test",
+    srcs = ["withdraw_participant_handler_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "pair_endings_test",
+    srcs = ["pair_endings_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "end_pair_handler_test",
+    srcs = ["end_pair_handler_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "mentorship_block_service_test",
+    srcs = ["mentorship_block_service_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "end_pair_flow_test",
+    srcs = ["end_pair_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "withdraw_participant_flow_test",
+    srcs = ["withdraw_participant_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "mark_participant_handler_test",
+    srcs = ["mark_participant_handler_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "mark_participant_flow_test",
+    srcs = ["mark_participant_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "participant_detail_flow_test",
+    srcs = ["participant_detail_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/admin:block_user_handler",
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_service_test",
+    srcs = ["mentorship_email_service_test.py"],
+    deps = [
+        "//backend/mentorship",
+        "@pypi//requests",
+    ],
+)
+
+py_test(
+    name = "notification_mark_service_test",
+    srcs = ["notification_mark_service_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_prepare_service_test",
+    srcs = ["mentorship_email_prepare_service_test.py"],
+    deps = [
+        "//backend/common:kit_client",
+        "//backend/common:kit_html_checks",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_controller_test",
+    srcs = ["mentorship_email_controller_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "notification_mark_flow_test",
+    srcs = ["notification_mark_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "participant_email_notifier_test",
+    srcs = ["participant_email_notifier_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "participant_email_events_test",
+    srcs = ["participant_email_events_test.py"],
+    deps = [
+        "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "participant_email_service_test",
+    srcs = ["participant_email_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/common:permissions",
+        "//backend/communication",
+        "//backend/dto",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "participant_email_routes_test",
+    srcs = ["participant_email_routes_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )

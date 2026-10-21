@@ -70,7 +70,7 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "Grace Hopper assigned you to evaluate Ada Lovelace — Backend Engineer",
+        "Grace Hopper assigned an evaluator for Ada Lovelace — Backend Engineer",
       ),
     ).toBeInTheDocument();
   });
@@ -295,7 +295,688 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "Someone assigned you to evaluate Ada Lovelace — Backend Engineer",
+        "Someone assigned an evaluator for Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
+  // -- the block-request lines -------------------------------------------
+  //
+  // These rows are written under subject_type "user", so they carry no job or
+  // applicant -- only subjectName. Before these cases existed the bell listed
+  // them as blank rows that still counted towards the unread badge.
+
+  const blockRow = (overrides) => ({
+    id: 4,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "Ada Lovelace",
+    actorName: "Grace Hopper",
+    createdAt: "2026-09-19T00:00:00Z",
+    ...overrides,
+  });
+
+  const openWith = async (notification) => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: { unreadCount: 1, notifications: [notification] },
+    });
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+  };
+
+  it("tells a reviewer a block request is waiting for them", async () => {
+    await openWith(blockRow({ eventType: "user.block_requested" }));
+
+    expect(
+      screen.getByText("Grace Hopper asked you to block Ada Lovelace"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the raiser their block request was rejected", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "rejected" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper rejected the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the raiser their block request was approved", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "approved" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper approved the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the reviewer the raiser withdrew the block request", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "withdrawn" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper withdrew the block request about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says a direct block closed the request, never that it was rejected", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "superseded" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper blocked Ada Lovelace directly, closing the block request about them",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rejected/)).not.toBeInTheDocument();
+  });
+
+  it("reads the decision field, not the old approved flag", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, approved: true, decision: "rejected" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper rejected the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells both reviewers a block request moved", async () => {
+    await openWith(blockRow({ eventType: "user.block_request_reassigned" }));
+
+    expect(
+      screen.getByText(
+        "Grace Hopper reassigned the block request about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // -- posting reviews ----------------------------------------------------
+
+  it.each([
+    ["approved", 'Rae Kim approved "Backend Engineer"'],
+    ["rejected", 'Rae Kim rejected "Backend Engineer"'],
+    ["withdrawn", 'Rae Kim withdrew the review of "Backend Engineer"'],
+  ])("says a posting review was %s", async (decision, text) => {
+    await openWith({
+      id: 11,
+      eventType: "recruiting.review_decided",
+      jobTitle: "Backend Engineer",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Rae Kim",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { kind: "initial", reviewId: 31, decision },
+    });
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  // -- mentorship approvals ----------------------------------------------
+  //
+  // Written under subject_type "mentorship_round": what is asked for, the
+  // round and the person come from details.
+
+  const approvalRow = (eventType, details) => ({
+    id: 9,
+    eventType,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: "Ada Ng",
+    createdAt: "2026-10-07T00:00:00Z",
+    details: {
+      requestId: 31,
+      action: "publish_matching",
+      roundName: "Spring 2026",
+      ...details,
+    },
+  });
+
+  it("tells a reviewer a publish request is waiting on them", async () => {
+    await openWith(approvalRow("mentorship.approval_requested", {}));
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: publish the matching result for Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the person an exemption is for", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_reassigned", {
+        action: "exempt_matching",
+        personName: "Ann Lee",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng moved to you a request to approve: exempt Ann Lee from the matching history check in Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the person and round a withdrawal is for", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_requested", {
+        action: "withdraw_participant",
+        personName: "Mia Ko",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: withdraw Mia Ko from Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names both people when asked to end a pair", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_requested", {
+        action: "end_pair",
+        mentorName: "Mia Ko",
+        menteeName: "Ann Lee",
+        personName: "mentor Mia Ko and mentee Ann Lee",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: end the pair of mentor Mia Ko and mentee Ann Lee in Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "mark_no_show",
+      "Ada Ng asked you to approve: mark Mia Ko as a no show in Spring 2026",
+    ],
+    [
+      "mark_red_flag",
+      "Ada Ng asked you to approve: raise a red flag on Mia Ko in Spring 2026",
+    ],
+  ])(
+    "names the person and round a %s request is about",
+    async (action, text) => {
+      await openWith(
+        approvalRow("mentorship.approval_requested", {
+          action,
+          personName: "Mia Ko",
+        }),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    [
+      "approved",
+      "Ada Ng approved your request: publish the matching result for Spring 2026",
+    ],
+    [
+      "rejected",
+      "Ada Ng rejected your request: publish the matching result for Spring 2026",
+    ],
+    [
+      "withdrawn",
+      "Ada Ng withdrew the request: publish the matching result for Spring 2026",
+    ],
+  ])("tells the other side a request was %s", async (decision, text) => {
+    await openWith(approvalRow("mentorship.approval_decided", { decision }));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  // -- leave requests -----------------------------------------------------
+  //
+  // What the leave was for comes from details; the manager hears of a filing
+  // or a withdrawal, the employee of the decision.
+
+  const leaveRow = (eventType, details) => ({
+    id: 11,
+    eventType,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: "Ann Lee",
+    createdAt: "2026-10-07T00:00:00Z",
+    details: {
+      requestId: 40,
+      leaveType: "paid",
+      startDate: "2026-11-03",
+      endDate: "2026-11-05",
+      ...details,
+    },
+  });
+
+  it("tells a manager a leave request was filed", async () => {
+    await openWith(leaveRow("leave.request_submitted", {}));
+
+    expect(
+      screen.getByText("Ann Lee asked for paid leave, Nov 3 – Nov 5, 2026"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["approved", "Ann Lee approved your paid leave, Nov 3 – Nov 5, 2026"],
+    ["rejected", "Ann Lee rejected your paid leave, Nov 3 – Nov 5, 2026"],
+    [
+      "withdrawn",
+      "Ann Lee withdrew their request for paid leave, Nov 3 – Nov 5, 2026",
+    ],
+  ])("tells the other side a leave request was %s", async (decision, text) => {
+    await openWith(leaveRow("leave.request_decided", { decision }));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  // -- the matching-run line ---------------------------------------------
+  //
+  // Written under subject_type "mentorship_round", so everything it says comes
+  // from details. Before this case existed the admin who started a run saw a
+  // blank row that still counted towards the unread badge.
+
+  const runRow = (details) => ({
+    id: 5,
+    eventType: "mentorship.matching_run_completed",
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: null,
+    createdAt: "2026-09-26T00:00:00Z",
+    details: {
+      roundName: "Mentorship 2026 Fall",
+      status: "succeeded",
+      ...details,
+    },
+  });
+
+  it("tells the admin their matching run finished", async () => {
+    await openWith(runRow({}));
+
+    expect(
+      screen.getByText(
+        "The matching run you started for Mentorship 2026 Fall has finished",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the admin their matching run did not finish", async () => {
+    await openWith(runRow({ status: "failed", error: "PayloadError" }));
+
+    expect(
+      screen.getByText(
+        "The matching run you started for Mentorship 2026 Fall did not finish",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the round out rather than naming a blank one", async () => {
+    await openWith(runRow({ roundName: "   " }));
+
+    expect(
+      screen.getByText("The matching run you started has finished"),
+    ).toBeInTheDocument();
+  });
+
+  const sendRow = (details) => ({
+    id: 7,
+    eventType: "mentorship.email_send_prepared",
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: null,
+    createdAt: "2026-10-09T00:00:00Z",
+    details: {
+      roundName: "Fall 2026",
+      stage: "match_result",
+      status: "scheduled",
+      ...details,
+    },
+  });
+
+  it("tells the send's creator their Kit email is scheduled", async () => {
+    await openWith(sendRow({}));
+
+    expect(
+      screen.getByText("Kit email scheduled: Match result · Fall 2026"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the send's creator their Kit email was not scheduled", async () => {
+    await openWith(sendRow({ status: "failed", failureCode: "draft_gone" }));
+
+    expect(
+      screen.getByText(
+        "Kit email not scheduled: Match result · Fall 2026 — no email was sent",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the send's creator to check Kit when it may still send", async () => {
+    await openWith(
+      sendRow({
+        status: "failed",
+        failureCode: "kit_error",
+        mayStillBeScheduled: true,
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Kit email not scheduled: Match result · Fall 2026 — check Kit, it may still be sent",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells an ops.maintain holder the Gmail sync needs attention", async () => {
+    await openWith({
+      id: 6,
+      eventType: "ops.gmail_sync_alert",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-09-30T00:00:00Z",
+      details: { kind: "watch_renewal_failed" },
+    });
+
+    expect(
+      screen.getByText("Gmail sync needs attention: watch renewal failed"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the recipients a reply arrived, naming the application", async () => {
+    // The actor is the candidate under their preferred name; the line reads
+    // the application's applicant name, so the two differ here.
+    await openWith({
+      id: 7,
+      eventType: "recruiting.email_received",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: "Ada L.",
+      createdAt: "2026-10-01T00:00:00Z",
+      details: { threadId: 3 },
+    });
+
+    expect(
+      screen.getByText(
+        "New reply on the email thread about Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the sender their email bounced, naming the application", async () => {
+    await openWith({
+      id: 8,
+      eventType: "recruiting.email_bounced",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-03T00:00:00Z",
+      details: { threadId: 3, failedRecipients: ["bad@x.com"] },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email about Ada Lovelace — Backend Engineer could not be delivered",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells whoever can handle the thread that an email needs a reply", async () => {
+    await openWith({
+      id: 9,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { subject: "Regarding Q4 plans" },
+    });
+
+    expect(
+      screen.getByText("New email needs a reply: Regarding Q4 plans"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows fallback subject when inbox.needs_reply has no subject", async () => {
+    await openWith({
+      id: 10,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { subject: "" },
+    });
+
+    expect(
+      screen.getByText("New email needs a reply: (no subject)"),
+    ).toBeInTheDocument();
+  });
+
+  it("says who moved a thread that needs a reply and from where", async () => {
+    await openWith({
+      id: 13,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {
+        service: "inquiries",
+        subject: "Regarding Q4 plans",
+        movedFrom: "recruiting",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Grace Hopper transferred an email from Recruiting that needs a reply: Regarding Q4 plans",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the sender their email to a recipient bounced", async () => {
+    await openWith({
+      id: 11,
+      eventType: "inbox.bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { bouncedTo: "recipient@example.com" },
+    });
+
+    expect(
+      screen.getByText("Your email to recipient@example.com was not delivered"),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the address when the bounce names no recipient", async () => {
+    await openWith({
+      id: 12,
+      eventType: "inbox.bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { bouncedTo: "" },
+    });
+
+    expect(
+      screen.getByText("Your email was not delivered"),
+    ).toBeInTheDocument();
+  });
+
+  it("says who replied by email, naming the round", async () => {
+    await openWith({
+      id: 14,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 4,
+        userId: 21,
+        personName: "Maya Chen",
+        roundName: "Spring 2026 Mentorship",
+        threadId: 5,
+        subject: "Re: Your match",
+        from: "maya@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Maya Chen replied by email (Spring 2026 Mentorship): Re: Your match",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the round from a reply when the round is null", async () => {
+    await openWith({
+      id: 15,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 6,
+        userId: 22,
+        personName: "Owen Park",
+        roundName: null,
+        threadId: 7,
+        subject: "Availability next week",
+        from: "owen@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText("Owen Park replied by email: Availability next week"),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to a generic name and subject for a reply with neither", async () => {
+    await openWith({
+      id: 16,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 8,
+        userId: 23,
+        personName: "",
+        roundName: null,
+        threadId: 9,
+        subject: "",
+        from: "unknown@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText("A participant replied by email: (no subject)"),
+    ).toBeInTheDocument();
+  });
+
+  it("says which address an email bounced to and about what", async () => {
+    await openWith({
+      id: 17,
+      eventType: "mentorship.email_bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 10,
+        userId: 24,
+        personName: "Priya Nair",
+        roundName: "Autumn 2026 Pilot",
+        threadId: 11,
+        subject: "Welcome to the pilot",
+        bouncedTo: "lee.k@example.org",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email to lee.k@example.org about Welcome to the pilot was not delivered",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the address from a bounce when none is named", async () => {
+    await openWith({
+      id: 18,
+      eventType: "mentorship.email_bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 12,
+        userId: 25,
+        personName: "Sam Ortiz",
+        roundName: null,
+        threadId: 13,
+        subject: "Welcome to the pilot",
+        bouncedTo: "",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email about Welcome to the pilot was not delivered",
       ),
     ).toBeInTheDocument();
   });

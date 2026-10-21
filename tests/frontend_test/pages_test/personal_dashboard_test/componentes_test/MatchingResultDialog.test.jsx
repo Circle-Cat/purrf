@@ -87,6 +87,58 @@ describe("MatchingResultDialog", () => {
     isActive: false,
   };
 
+  it("says the pairing ended to someone unmatched after a pairing ended", () => {
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        canViewMatch
+        matchData={{
+          currentStatus: MatchStatus.UNMATCHED,
+          partners: [endedPartner],
+        }}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+
+    expect(screen.getByText("Pairing Ended")).toBeInTheDocument();
+    expect(screen.queryByText("No Match Found")).not.toBeInTheDocument();
+    expect(screen.getByText("Jane Roe")).toBeInTheDocument();
+    expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+  });
+
+  it("keeps the button disabled for someone unmatched once the result window closes", () => {
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        canViewMatch={false}
+        matchData={{
+          currentStatus: MatchStatus.UNMATCHED,
+          partners: [endedPartner],
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /view matching result/i }),
+    ).toBeDisabled();
+  });
+
+  it("still says no match was found to someone unmatched who was never paired", () => {
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        canViewMatch
+        matchData={{ currentStatus: MatchStatus.UNMATCHED, partners: [] }}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+
+    expect(screen.getByText("No Match Found")).toBeInTheDocument();
+  });
+
   it("should say the pairing ended when the only pairing has ended", async () => {
     // The user was matched and their partner has since left the round.
     // Congratulating them over an empty list is what the round-scoped
@@ -166,6 +218,38 @@ describe("MatchingResultDialog", () => {
     expect(screen.queryByText("Application Update")).not.toBeInTheDocument();
     expect(screen.getByText("Jane Roe")).toBeInTheDocument();
     expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+  });
+
+  it("should say the participation ended for someone withdrawn, paired or not", async () => {
+    const { unmount } = render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{
+          currentStatus: MatchStatus.WITHDRAWN,
+          partners: [endedPartner],
+        }}
+        canViewMatch
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+    expect(screen.getByText("Participation Ended")).toBeInTheDocument();
+    expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+    unmount();
+
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{ currentStatus: MatchStatus.WITHDRAWN, partners: [] }}
+        canViewMatch
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+    expect(screen.getByText("Participation Ended")).toBeInTheDocument();
+    expect(screen.queryByText("Status Unknown")).not.toBeInTheDocument();
   });
 
   it("should keep the not-eligible copy for an application that was turned down", async () => {

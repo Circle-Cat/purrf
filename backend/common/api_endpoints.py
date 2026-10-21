@@ -31,7 +31,9 @@ GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT = "/google/chat/spaces/messages"
 GERRIT_BACKFILL_CHANGES_ENDPOINT = "/gerrit/backfill"
 GERRIT_BACKFILL_PROJECTS_ENDPOINT = "/gerrit/projects/backfill"
 
-PUBSUB_SYNC_PULL_ENDPOINT = "/pubsub/sync"
+PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT = "/pubsub/push/google-chat"
+PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT = "/pubsub/push/microsoft-chat"
+PUBSUB_PUSH_GERRIT_ENDPOINT = "/pubsub/push/gerrit"
 
 
 MICROSOFT_LDAPS_ENDPOINT = "/microsoft/{status}/ldaps"
@@ -57,6 +59,7 @@ MY_SUMMARY_ENDPOINT = "/summary/me"
 MY_PROFILE_ENDPOINT = "/profiles/me"
 
 MENTORSHIP_ROUNDS_ENDPOINT = "/mentorship/rounds"
+MENTORSHIP_ROUND_SLOTS_ENDPOINT = "/mentorship/rounds/slots"
 MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT = "/mentorship/rounds/{round_id}/registration"
 MENTORSHIP_MATCH_RESULT_ENDPOINT = "/mentorship/rounds/{round_id}/matches"
 MENTORSHIP_PARTNERS_ENDPOINT = "/mentorship/partners/me"
@@ -67,17 +70,97 @@ MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT = "/mentorship/v2/meetings/batch-del
 MEET_ATTENDANCE_SYNC_ENDPOINT = "/mentorship/v2/meetings/attendance/sync"
 MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT = "/mentorship/rounds/{round_id}/feedback"
 MENTORSHIP_ADMIN_PARTICIPANTS = "/mentorship/admin/participants"
-MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT = "/mentorship/admin/participants/export"
 MENTORSHIP_ADMIN_PAIRS_MEETINGS = "/mentorship/admin/pairs/{pair_id}/meetings"
+MENTORSHIP_ADMIN_MATCH_RUNS = "/mentorship/admin/match-runs"
+MENTORSHIP_ADMIN_MATCH_RUN = "/mentorship/admin/match-runs/{round_id}"
+MENTORSHIP_ADMIN_MATCH_RUN_RESULTS = "/mentorship/admin/match-runs/{round_id}/results"
+MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED = (
+    "/mentorship/admin/match-runs/{round_id}/unmatched"
+)
+MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK = (
+    "/mentorship/admin/match-runs/{round_id}/edit-lock"
+)
+MENTORSHIP_ADMIN_MATCH_RUN_DRAFT = "/mentorship/admin/match-runs/{round_id}/draft"
+MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST = (
+    "/mentorship/admin/match-runs/{round_id}/publish-request"
+)
+MENTORSHIP_ADMIN_EXEMPTION_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/exemption-request"
+)
+MENTORSHIP_ADMIN_WITHDRAW_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/withdraw-request"
+)
+MENTORSHIP_ADMIN_MARK_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/mark-request"
+)
+MENTORSHIP_ADMIN_END_PAIR_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/end-pair-request"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_DETAIL = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_NOTES = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/notes"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAILS = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY = "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/{thread_id}/reply"
+MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails/refresh"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/emails"
+    "/messages/{message_id}/attachments/{index}"
+)
+MENTORSHIP_ADMIN_APPROVERS = "/mentorship/admin/approvals/approvers"
+MENTORSHIP_ADMIN_APPROVALS_MINE = "/mentorship/admin/approvals/mine"
+MENTORSHIP_ADMIN_APPROVAL_REASSIGN = "/mentorship/admin/approvals/{request_id}/reassign"
+MENTORSHIP_ADMIN_APPROVAL_DECIDE = "/mentorship/admin/approvals/{request_id}/decide"
+MENTORSHIP_ADMIN_APPROVAL_WITHDRAW = "/mentorship/admin/approvals/{request_id}/withdraw"
+MENTORSHIP_ADMIN_ROUND_FEEDBACK = "/mentorship/admin/rounds/{round_id}/feedback"
+MENTORSHIP_ADMIN_ROUND_UNREGISTERED = "/mentorship/admin/rounds/{round_id}/unregistered"
+# Called by the matcher job, through the gateway Worker. Not under
+# /admin: the caller is a service account, not a signed-in administrator.
+MENTORSHIP_MATCH_RUN_COMPLETE = "/mentorship/match-runs/complete"
+
+# Not under /api. Kubernetes probes it with no credentials, so the auth
+# middleware exempts it.
+HEALTH_ENDPOINT = "/fastapi/health"
 
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"
 ADMIN_USER_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions"
-ADMIN_PERMISSION_USERS_ENDPOINT = "/admin/permissions/{permission_name}/users"
 ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT = "/admin/audit/permission-changes"
 ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/grant"
 ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/revoke"
 ADMIN_USER_SUPER_ADMIN_ENDPOINT = "/admin/users/{user_id}/super-admin"
+
+# The account console. Separate from the permission routes above on purpose:
+# the two pages coexist, and USER_ADMIN gates these without touching those.
+# The three writes are single-verb POSTs rather than noun POST/DELETE pairs --
+# they are one-way state transitions with no resource to create or destroy.
+ADMIN_ACCOUNTS_ENDPOINT = "/admin/accounts"
+ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT = "/admin/accounts/{user_id}/sign-in-methods"
+ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/deactivate"
+ADMIN_ACCOUNT_REACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/reactivate"
+ADMIN_ACCOUNT_UNBLOCK_ENDPOINT = "/admin/accounts/{user_id}/unblock"
+ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"
+
+# Blocking as a request someone else decides. Not under /admin: the raiser is
+# standing on a domain page and holds no console permission at all.
+BLOCK_PREFLIGHT_ENDPOINT = "/block-preflight/{user_id}"
+BLOCK_REQUESTS_ENDPOINT = "/block-requests"
+# What the caller raised and is still waiting on. A separate path rather than a
+# filter on the line above: that one is the reviewer's queue and its gate says
+# so, and the two are read by people holding different permissions.
+BLOCK_REQUESTS_RAISED_ENDPOINT = "/block-requests/raised"
+BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
+BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
+BLOCK_REQUEST_WITHDRAW_ENDPOINT = "/block-requests/{request_id}/withdraw"
+# The reviewer picker for a raise. Named for its use, and outside /admin like
+# the rest of this group, because a raiser holds no console permission.
+BLOCK_REQUEST_REVIEWERS_ENDPOINT = "/block-request-reviewers"
 RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
 RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
 RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
@@ -91,6 +174,8 @@ RECRUITING_REVIEWS_ENDPOINT = "/recruiting/reviews"
 RECRUITING_REVIEW_ENDPOINT = "/recruiting/reviews/{review_id}"
 RECRUITING_INTERVIEW_POOL_ENDPOINT = "/recruiting/interview-pool"
 RECRUITING_JOB_OWNERS_ENDPOINT = "/recruiting/job-owners"
+RECRUITING_JOB_REVIEW_REVIEWER_ENDPOINT = "/recruiting/jobs/{job_id}/review/reviewer"
+RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT = "/recruiting/jobs/{job_id}/review/withdraw"
 RECRUITING_JOB_ACTIVITY_ENDPOINT = "/recruiting/jobs/{job_id}/activity"
 RECRUITING_PUBLIC_JOB_ENDPOINT = "/recruiting/public/jobs/{job_id}"
 RECRUITING_PUBLIC_JOBS_ENDPOINT = "/recruiting/public/jobs"
@@ -119,13 +204,6 @@ RECRUITING_APPLICATION_ROUND_ENDPOINT = (
 RECRUITING_APPLICATION_INTERVIEW_ENDPOINT = (
     "/recruiting/applications/{application_id}/interview"
 )
-RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
-RECRUITING_BLACKLIST_UNBLOCK_ENDPOINT = "/recruiting/blacklist/{user_id}"
-# Pre-flight read for the blacklist confirm dialog: the interviews the block
-# is about to cancel. Same permission as the block itself.
-RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT = (
-    "/recruiting/blacklist/{user_id}/upcoming-interviews"
-)
 RECRUITING_APPLICATION_RESUME_ENDPOINT = (
     "/recruiting/applications/{application_id}/resume"
 )
@@ -145,6 +223,10 @@ RECRUITING_APPLICATION_EMAILS_ENDPOINT = (
 RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT = (
     "/recruiting/applications/{application_id}/email-templates"
 )
+RECRUITING_APPLICATION_EMAIL_ATTACHMENT_ENDPOINT = (
+    "/recruiting/applications/{application_id}/emails"
+    "/messages/{message_id}/attachments/{index}"
+)
 RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT = (
     "/recruiting/applications/{application_id}/other-applications"
 )
@@ -157,13 +239,15 @@ RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
 )
 RECRUITING_NOTIFICATIONS_ENDPOINT = "/recruiting/notifications"
 RECRUITING_NOTIFICATION_ENDPOINT = "/recruiting/notifications/{notification_id}"
-RECRUITING_EMAIL_SYNC_ENDPOINT = "/recruiting/emails/sync"
-RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT = "/recruiting/emails/sync/recent"
 NOTIFICATION_DELIVER_ENDPOINT = "/notifications/deliver"
+GMAIL_PUSH_ENDPOINT = "/email/gmail/push"
+GMAIL_WATCH_MAINTAIN_ENDPOINT = "/email/gmail/maintain"
+GMAIL_FULL_RESYNC_ENDPOINT = "/email/gmail/resync"
 LEAVE_HOLIDAYS_YEAR_ENDPOINT = "/leave/holidays/{year}"
 LEAVE_HOLIDAY_YEARS_ENDPOINT = "/leave/holiday-years"
 LEAVE_POLICY_ENDPOINT = "/leave/policy"
 LEAVE_BALANCES_ENDPOINT = "/leave/balances"
+LEAVE_LEDGER_ENDPOINT = "/leave/ledger"
 LEAVE_ADJUSTMENTS_ENDPOINT = "/leave/adjustments"
 LEAVE_WEEKLY_ACCRUAL_JOB_ENDPOINT = "/leave/jobs/weekly-accrual"
 LEAVE_ANNUAL_CLOSE_JOB_ENDPOINT = "/leave/jobs/annual-close"
@@ -172,3 +256,45 @@ LEAVE_REQUESTS_ENDPOINT = "/leave/requests"
 LEAVE_REQUESTS_APPROVALS_ENDPOINT = "/leave/requests/approvals"
 LEAVE_REQUEST_WITHDRAW_ENDPOINT = "/leave/requests/{request_id}/withdraw"
 LEAVE_REQUEST_DECISION_ENDPOINT = "/leave/requests/{request_id}/decision"
+LEAVE_ME_LEDGER_ENDPOINT = "/leave/me/ledger"
+
+TRAINING_COURSES_ENDPOINT = "/training/courses"
+TRAINING_COURSE_ENDPOINT = "/training/courses/{course_id}"
+TRAINING_ASSIGNMENTS_BULK_ENDPOINT = "/training/assignments/bulk"
+TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT = "/training/assignments/audience"
+TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT = "/training/assignments/audience/ids"
+TRAINING_USER_ASSIGNMENTS_ENDPOINT = "/training/users/{user_id}/assignments"
+TRAINING_COURSE_PACKAGE_ENDPOINT = "/training/courses/{course_id}/package"
+TRAINING_COURSE_PUBLISH_ENDPOINT = "/training/courses/{course_id}/package/publish"
+TRAINING_COURSE_TRIAL_ENDPOINT = "/training/courses/{course_id}/trial"
+TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT = (
+    "/training/courses/{course_id}/preview-session"
+)
+TRAINING_SESSION_ENDPOINT = "/training/{training_id}/session"
+TRAINING_TRIAL_SESSION_ENDPOINT = "/training/{training_id}/trial-session"
+TRAINING_PROGRESS_ENDPOINT = "/training/{training_id}/progress"
+TRAINING_CONTENT_ENDPOINT = "/p/{token}/{asset_path:path}"
+
+INBOX_THREADS_ENDPOINT = "/inbox/threads"
+INBOX_COUNT_ENDPOINT = "/inbox/count"
+INBOX_THREAD_ENDPOINT = "/inbox/threads/{thread_id}"
+INBOX_THREAD_REPLY_ENDPOINT = "/inbox/threads/{thread_id}/reply"
+INBOX_THREAD_ARCHIVE_ENDPOINT = "/inbox/threads/{thread_id}/archive"
+INBOX_THREAD_UNARCHIVE_ENDPOINT = "/inbox/threads/{thread_id}/unarchive"
+INBOX_THREAD_ASSIGNMENT_ENDPOINT = "/inbox/threads/{thread_id}/assignment"
+INBOX_THREAD_MOVE_ENDPOINT = "/inbox/threads/{thread_id}/move"
+INBOX_THREAD_ASSIGN_OPTIONS_ENDPOINT = "/inbox/threads/{thread_id}/assign-options"
+INBOX_PEOPLE_ENDPOINT = "/inbox/people"
+INBOX_ATTACHMENT_ENDPOINT = (
+    "/inbox/threads/{thread_id}/messages/{message_id}/attachments/{attachment_id}"
+)
+MENTORSHIP_ADMIN_KIT_DRAFTS = "/mentorship/admin/kit-drafts"
+MENTORSHIP_ADMIN_EMAIL_SENDS = "/mentorship/admin/email-sends"
+MENTORSHIP_ADMIN_EMAIL_SENDS_NOTIFIED = "/mentorship/admin/email-sends/notified"
+MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON = "/mentorship/admin/email-sends/person"
+MENTORSHIP_ADMIN_EMAIL_SEND_PREVIEW = "/mentorship/admin/email-sends/{send_id}/preview"
+MENTORSHIP_ADMIN_EMAIL_SEND_CONFIRM = "/mentorship/admin/email-sends/{send_id}/confirm"
+MENTORSHIP_ADMIN_EMAIL_SEND_CANCEL = "/mentorship/admin/email-sends/{send_id}/cancel"
+MENTORSHIP_ADMIN_NOTIFICATIONS_MARK = (
+    "/mentorship/admin/rounds/{round_id}/notifications/mark"
+)

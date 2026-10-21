@@ -9,12 +9,12 @@ variable "gerrit_http_pass" {
 }
 
 variable "gmail_client_id" {
-  description = "OAuth 2.0 client ID for the Gmail candidate-email integration (purrf-auth GCP project)."
+  description = "OAuth 2.0 client ID for the Gmail candidate-email integration (purrf-452300 GCP project; users.watch requires the topic and the client in the same project)."
   type        = string
 }
 
 variable "gmail_client_secret" {
-  description = "OAuth 2.0 client secret paired with gmail_client_id (purrf-auth GCP project)."
+  description = "OAuth 2.0 client secret paired with gmail_client_id (purrf-452300 GCP project)."
   type        = string
   sensitive   = true
 }
@@ -23,4 +23,11 @@ variable "gmail_refresh_token" {
   description = "OAuth refresh token for the sender mailbox. Minted once via interactive consent; supply via TF_VAR."
   type        = string
   sensitive   = true
+}
+
+variable "kit_api_key" {
+  description = "Kit v4 API key for mentorship notifications; supply via TF_VAR. Empty leaves sending unavailable."
+  type        = string
+  sensitive   = true
+  default     = ""
 }

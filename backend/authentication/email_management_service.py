@@ -36,6 +36,36 @@ _STATE_ALGORITHM = "HS256"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _INVALID_STATE_MESSAGE = "Verification session expired. Please request a new code."
 _SET_PRIMARY_STATE_FLOW = "set_primary"
+_PASSWORDLESS_SUB_PREFIX = "email|"
+_EMAIL_IN_USE_MESSAGE = (
+    "This email is already in use by another account. If it's "
+    "yours, sign in with a code sent to that address instead."
+)
+
+
+def _is_session_address(
+    current_sub: str, current_claim_email: str | None, email: str
+) -> bool:
+    """Whether ``email`` is the address the caller's own session signed in with.
+
+    Passwordless-only by construction: a row-less ``email|`` login leaves no
+    ``user_identities`` row, so its address is the only handle on the session;
+    a google/social session is identified by its sub against an identity row
+    instead, and flagging its email row too would mark the same address twice.
+
+    Args:
+        current_sub (str): JWT ``sub`` of the caller's session.
+        current_claim_email (str | None): The session token's email claim.
+        email (str): The stored (lowercased) address to test.
+
+    Returns:
+        bool: True only for a passwordless session's own address.
+    """
+    return (
+        current_sub.startswith(_PASSWORDLESS_SUB_PREFIX)
+        and bool(current_claim_email)
+        and email == current_claim_email.strip().lower()
+    )
 
 
 class EmailManagementService:
@@ -46,6 +76,7 @@ class EmailManagementService:
         user_identities_repository,
         user_permissions_repository,
         users_repository,
+        internal_onboarding_training_service,
         logger,
     ):
         """
@@ -61,6 +92,9 @@ class EmailManagementService:
             users_repository (UsersRepository): Repository handling UsersEntity;
                 used to mirror the internal-employee lifecycle hook when a corp
                 sign-in joins an existing account.
+            internal_onboarding_training_service (InternalOnboardingTrainingService):
+                Assigns the onboarding training a new employee owes; passed
+                through to the shared internal-employee lifecycle hook.
             logger: Application logger.
         """
         self._auth0 = auth0_client
@@ -68,6 +102,7 @@ class EmailManagementService:
         self._user_identities = user_identities_repository
         self._user_permissions = user_permissions_repository
         self._users = users_repository
+        self._internal_onboarding_training = internal_onboarding_training_service
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
@@ -115,11 +150,7 @@ class EmailManagementService:
             raise ValueError("Email address not found.")
         if row.is_primary:
             raise ConflictError("Your primary contact email cannot be removed.")
-        if (
-            current_sub.startswith("email|")
-            and current_claim_email
-            and row.email == current_claim_email.strip().lower()
-        ):
+        if _is_session_address(current_sub, current_claim_email, row.email):
             raise ConflictError(
                 "You cannot remove the email tied to your current session. "
                 "Sign in with another method first."
@@ -165,10 +196,7 @@ class EmailManagementService:
         if await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
-            raise ConflictError(
-                "This email is already in use by another account. If it's "
-                "yours, sign in with a code sent to that address instead."
-            )
+            raise ConflictError(_EMAIL_IN_USE_MESSAGE)
 
         self._auth0.start_passwordless(normalized)
 
@@ -217,6 +245,13 @@ class EmailManagementService:
             # CSRF guard: the state must belong to the caller's session.
             raise ValueError(_INVALID_STATE_MESSAGE)
         target_email = claims["email"]
+        # Re-checked here because another account may have confirmed the
+        # address since initiate; the insert would then hit the global
+        # unique index.
+        if await self._user_emails.exists_on_other_user(
+            session, target_email, current_user_id
+        ):
+            raise ConflictError(_EMAIL_IN_USE_MESSAGE)
 
         id_token_claims = self._auth0.exchange_otp(target_email, otp)
         if not id_token_claims.get("email_verified"):
@@ -248,7 +283,11 @@ class EmailManagementService:
         return {"ok": True, "email": target_email}
 
     async def list_emails_and_identities(
-        self, session, current_user_id: int, current_sub: str
+        self,
+        session,
+        current_user_id: int,
+        current_sub: str,
+        current_claim_email: str | None,
     ) -> EmailsViewDto:
         """
         Assemble the comprehensive email/identity view for the Settings page.
@@ -262,10 +301,18 @@ class EmailManagementService:
         ``current_sub`` (the account root the session is bound to) is flagged
         ``is_current_session`` so the UI can badge it and withhold its unlink.
 
+        A row-less passwordless session matches no identity row at all, so the
+        same flag is set on the *email* row it signed in with — the address is
+        that session's only handle. The two flags are mutually exclusive by
+        ``_is_session_address``'s passwordless gate, so exactly one row carries
+        it whichever way the caller signed in.
+
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
             current_sub (str): JWT ``sub`` of the caller's session (the account root).
+            current_claim_email (str | None): The session token's email claim,
+                used to flag a passwordless session's own address.
 
         Returns:
             EmailsViewDto: The caller's email rows plus their internal and
@@ -300,6 +347,9 @@ class EmailManagementService:
                 linked_identity_count=claim_counts.get(row.email.lower(), 0),
                 is_corp=is_company_email(row.email),
                 last_login_at=row.last_login_at,
+                is_current_session=_is_session_address(
+                    current_sub, current_claim_email, row.email
+                ),
             )
             for row in emails
         ]
@@ -492,6 +542,7 @@ class EmailManagementService:
             user_permissions_repository=self._user_permissions,
             user_emails_repository=self._user_emails,
             users_repository=self._users,
+            internal_onboarding_training_service=self._internal_onboarding_training,
             logger=self._logger,
         )
 
@@ -505,10 +556,16 @@ class EmailManagementService:
 
         Any *other* account holding the address unconfirmed is released first:
         such a row is nobody's proof, ``uq_user_emails_email`` is global, and
-        the caller has just proved the mailbox. The release shares this
-        session, so it and the write land in one transaction.
+        the caller has just proved the mailbox. A never-logged-in backfilled
+        account's ``manual|`` identity claiming the address goes too: login
+        routing would otherwise keep swapping into that account and inserting
+        the address it no longer holds. The releases share this session, so
+        they and the write land in one transaction.
         """
         await self._user_emails.delete_unconfirmed_on_other_users(
+            session, email, user_id
+        )
+        await self._user_identities.delete_swappable_on_other_users(
             session, email, user_id
         )
         existing = await self._user_emails.get_by_user_and_email(

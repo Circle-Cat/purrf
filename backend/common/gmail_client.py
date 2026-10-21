@@ -13,9 +13,6 @@ in-app OAuth flow):
 - ``list_thread_message_ids`` — list a thread's message ids (metadata only, no
   bodies), so a caller can tell what is new without paying for what it already
   has.
-- ``list_recent_message_thread_ids`` — ask the whole mailbox which threads
-  received mail in a recent window, so a caller can skip the conversations
-  that cannot have changed.
 - ``get_message`` — pull back and parse one message (headers, HTML/plain
   bodies, snippet, timestamps).
 
@@ -41,12 +38,12 @@ shared domain exceptions (429 -> ``RateLimitedError``; anything else ->
 
 import base64
 import os
-import re
 import threading
+from datetime import datetime, timezone
+from email.message import Message
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import make_msgid, parseaddr
-from html import unescape
+from email.utils import getaddresses, make_msgid, parseaddr
 from http import HTTPStatus
 
 from google.auth.exceptions import RefreshError
@@ -59,7 +56,13 @@ from backend.common.environment_constants import (
     GMAIL_CLIENT_SECRET,
     GMAIL_REFRESH_TOKEN,
 )
-from backend.common.exceptions import RateLimitedError
+from backend.common.exceptions import (
+    GmailNotFoundError,
+    GmailUnavailableError,
+    HistoryExpiredError,
+    RateLimitedError,
+)
+from backend.common.html_text import html_to_text
 
 # OAuth2 token endpoint the refresh token is redeemed against.
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -73,13 +76,39 @@ _GMAIL_USER = "me"
 # of n counts as n requests, so the only reason to grow it is latency, and
 # past 50 that trade turns against us.
 _MESSAGE_BATCH_SIZE = 50
-# An anchor carrying an href, captured as (href, label). A link's URL lives in
-# the tag, not between the tags, so the plain-text fallback has to pull it out
-# before markup is stripped or it is lost with the tag.
-_ANCHOR_RE = re.compile(
-    r'(?is)<a\b[^>]*?\bhref\s*=\s*["\']([^"\']*)["\'][^>]*>(.*?)</a\s*>'
-)
-_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _google_explanation(error):
+    """Return Google's own account of an HttpError, or "" when it sent none.
+
+    The status code alone rarely says what to fix: a 400 from ``watch`` can
+    mean a malformed topic or a topic in the wrong project, and only the
+    message tells them apart.
+
+    Args:
+        error (HttpError): The error googleapiclient raised.
+
+    Returns:
+        str: ``"<message> (<reason>)"``, either part left out when absent.
+    """
+    message = error.reason if isinstance(error.reason, str) else ""
+    details = error.error_details
+    reason = ""
+    if isinstance(details, list) and details and isinstance(details[0], dict):
+        reason = details[0].get("reason") or ""
+    # Without a body googleapiclient falls back to the HTTP reason phrase,
+    # which repeats the status and explains nothing.
+    if message == getattr(error.resp, "reason", None):
+        message = ""
+    if message and reason:
+        return f"{message} ({reason})"
+    return message or reason
+
+
+def _with_explanation(text, error):
+    """Append Google's explanation of ``error`` to ``text`` when it gave one."""
+    explanation = _google_explanation(error)
+    return f"{text}: {explanation}" if explanation else text
 
 
 class GmailClient:
@@ -149,7 +178,6 @@ class GmailClient:
     def send_message(
         self,
         to,
-        cc,
         subject,
         body,
         sender,
@@ -167,7 +195,6 @@ class GmailClient:
 
         Args:
             to (list[str]): Recipient addresses.
-            cc (list[str]): Cc addresses (may be empty).
             subject (str): Subject line.
             body (str): HTML body.
             sender (str): The address to send as — an address this client owns,
@@ -195,7 +222,7 @@ class GmailClient:
         sender_domain = parseaddr(sender)[1].split("@")[-1]
         rfc822_message_id = make_msgid(domain=sender_domain)
         mime = self._build_mime(
-            to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
+            to, subject, body, sender, rfc822_message_id, in_reply_to, references
         )
         request_body = {
             "raw": base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
@@ -264,8 +291,11 @@ class GmailClient:
         Returns:
             dict: Keys ``gmail_message_id``, ``gmail_thread_id``,
             ``rfc822_message_id``, ``from_address``, ``to_addresses``,
-            ``cc_addresses``, ``subject``, ``html``, ``plain``, ``snippet``,
-            ``gmail_internal_date``.
+            ``subject``, ``html``, ``plain``, ``snippet``,
+            ``gmail_internal_date``, ``failed_recipients``, ``recipients``
+            (To, Cc and every Delivered-To, lower-cased, de-duplicated),
+            ``auto_submitted``, ``precedence`` and ``attachments`` (a list of
+            ``{"name", "size", "gmailAttachmentId"}``).
 
         Raises:
             RateLimitedError: If Gmail throttles the request (HTTP 429).
@@ -279,6 +309,50 @@ class GmailClient:
             .get(userId=_GMAIL_USER, id=message_id, format="full")
         )
         return self._parse_message(self._execute(request, "get_message"))
+
+    def get_attachment(self, message_id, attachment_id):
+        """Download one attachment of a message.
+
+        Args:
+            message_id (str): Gmail message id.
+            attachment_id (str): ``gmailAttachmentId`` from ``get_message``.
+
+        Returns:
+            bytes: The decoded attachment content.
+
+        Raises:
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .messages()
+            .attachments()
+            .get(userId=_GMAIL_USER, messageId=message_id, id=attachment_id)
+        )
+        response = self._execute(request, "get_attachment")
+        return base64.urlsafe_b64decode(response["data"].encode("ascii"))
+
+    def list_send_as_addresses(self):
+        """Return the mailbox's Send-As addresses, lower-cased.
+
+        Returns:
+            set[str]: Every ``sendAsEmail`` configured on the mailbox.
+
+        Raises:
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service().users().settings().sendAs().list(userId=_GMAIL_USER)
+        )
+        response = self._execute(request, "list_send_as_addresses")
+        return {
+            entry["sendAsEmail"].strip().lower()
+            for entry in response.get("sendAs", [])
+            if entry.get("sendAsEmail")
+        }
 
     def get_messages(self, message_ids):
         """
@@ -359,65 +433,136 @@ class GmailClient:
 
         Raises:
             RateLimitedError: The inner call was rate limited (HTTP 429).
+            GmailNotFoundError: The inner call got HTTP 404.
+            GmailUnavailableError: The inner call got HTTP 5xx.
             RuntimeError: Any other inner-call failure.
         """
-        status = None
-        if isinstance(exception, HttpError):
-            status = getattr(exception.resp, "status", None)
-        self._logger.error(
-            "[GmailClient] get_messages failed for one message (status=%s)", status
+        if not isinstance(exception, HttpError):
+            self._logger.error(
+                "[GmailClient] get_messages failed for one message (status=None)"
+            )
+            raise RuntimeError("Gmail API error during get_messages") from exception
+        self._raise_http_error(
+            exception, "get_messages", "get_messages failed for one message"
         )
-        if status == HTTPStatus.TOO_MANY_REQUESTS:
-            raise RateLimitedError(
-                "Gmail rate limited during get_messages"
-            ) from exception
-        raise RuntimeError("Gmail API error during get_messages") from exception
 
-    def list_recent_message_thread_ids(self, lookback_days):
-        """
-        Thread ids that received mail within the last ``lookback_days`` days.
-
-        This is the whole-mailbox half of an incremental sync: one flat-cost
-        call tells the caller which conversations are worth looking at, instead
-        of asking each conversation in turn. The reply spans the entire
-        mailbox, so the caller must filter it down to threads it actually
-        tracks.
-
-        The window is expressed as Gmail's ``newer_than:Nd`` search operator.
-        That is day-granular — Gmail documents no finer relative form, and
-        epoch timestamps are not a documented input — so callers should pass a
-        window with slack rather than one that is exactly right.
-
-        Args:
-            lookback_days (int): Size of the search window, in days.
+    def get_profile(self):
+        """Read the mailbox address and its current history cursor.
 
         Returns:
-            set[str]: Distinct Gmail thread ids. Empty when nothing matched.
+            dict: ``email_address`` (lower-cased str) and ``history_id`` (int).
 
         Raises:
+            GmailUnavailableError: Gmail answered 5xx.
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .getProfile(userId=_GMAIL_USER, fields="emailAddress,historyId")
+        )
+        response = self._execute(request, "get_profile")
+        return {
+            "email_address": response["emailAddress"].lower(),
+            "history_id": int(response["historyId"]),
+        }
+
+    def watch(self, topic_name):
+        """Ask Gmail to publish INBOX changes to a Pub/Sub topic.
+
+        Only INBOX is watched so that mail this application sends itself does
+        not produce a push.
+
+        Args:
+            topic_name (str): Full topic name, ``projects/<p>/topics/<t>``.
+
+        Returns:
+            dict: ``history_id`` (int) at registration time and ``expiration``
+                (timezone-aware UTC datetime) of the watch.
+
+        Raises:
+            GmailUnavailableError: Gmail answered 5xx.
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .watch(
+                userId=_GMAIL_USER,
+                body={
+                    "topicName": topic_name,
+                    "labelIds": ["INBOX"],
+                    "labelFilterBehavior": "include",
+                },
+            )
+        )
+        response = self._execute(request, "watch")
+        return {
+            "history_id": int(response["historyId"]),
+            "expiration": datetime.fromtimestamp(
+                int(response["expiration"]) / 1000, tz=timezone.utc
+            ),
+        }
+
+    def list_history(self, start_history_id):
+        """Thread ids that gained a message since a history cursor.
+
+        No ``labelId`` is passed, so a message sent by hand from the Gmail web
+        UI is reported as well, not just INBOX arrivals. A thread whose added
+        messages all carry ``SENT`` holds only our own new mail.
+
+        Args:
+            start_history_id (int): Cursor to read changes after.
+
+        Returns:
+            dict: ``history_id`` (int), the mailbox cursor from the response
+                (present even when nothing changed), ``thread_ids``
+                (set[str]), and ``sent_only_thread_ids`` (set[str]), the
+                threads among them whose added messages are all ``SENT``.
+
+        Raises:
+            HistoryExpiredError: The cursor is too old (HTTP 404); only a full
+                resync recovers.
+            GmailUnavailableError: Gmail answered 5xx.
             RateLimitedError: If Gmail throttles the request (HTTP 429).
             RuntimeError: For any other Gmail API failure.
         """
         thread_ids = set()
+        not_sent = set()
         page_token = None
         while True:
             request = (
                 self._get_service()
                 .users()
-                .messages()
+                .history()
                 .list(
                     userId=_GMAIL_USER,
-                    q=f"newer_than:{lookback_days}d",
-                    fields="messages/threadId,nextPageToken",
+                    startHistoryId=str(start_history_id),
+                    historyTypes=["messageAdded"],
                     pageToken=page_token,
                 )
             )
-            response = self._execute(request, "list_recent_message_thread_ids")
-            for message in response.get("messages", []):
-                thread_ids.add(message["threadId"])
+            try:
+                response = self._execute(request, "list_history")
+            except GmailNotFoundError as error:
+                raise HistoryExpiredError(
+                    f"history cursor {start_history_id} expired"
+                ) from error
+            for record in response.get("history", []):
+                for added in record.get("messagesAdded", []):
+                    message = added["message"]
+                    thread_ids.add(message["threadId"])
+                    if "SENT" not in (message.get("labelIds") or []):
+                        not_sent.add(message["threadId"])
             page_token = response.get("nextPageToken")
             if not page_token:
-                return thread_ids
+                return {
+                    "history_id": int(response["historyId"]),
+                    "thread_ids": thread_ids,
+                    "sent_only_thread_ids": thread_ids - not_sent,
+                }
 
     def _get_service(self):
         """Build the Gmail service lazily and cache it on the calling thread.
@@ -451,7 +596,8 @@ class GmailClient:
             # record: a replacement token must be minted with
             # https://www.googleapis.com/auth/gmail.send plus
             # https://www.googleapis.com/auth/gmail.readonly — send, plus
-            # messages.get / messages.list / threads.get. Nothing here modifies
+            # messages.get / messages.list / threads.get / history.list /
+            # watch / getProfile. Nothing here modifies
             # the mailbox, so gmail.modify is not needed.
             credentials = Credentials(
                 token=None,
@@ -486,23 +632,53 @@ class GmailClient:
                 "refresh token rejected (re-authorization required)"
             ) from error
         except HttpError as error:
-            status = getattr(error.resp, "status", None)
-            self._logger.error("[GmailClient] %s failed (status=%s)", operation, status)
-            if status == HTTPStatus.TOO_MANY_REQUESTS:
-                raise RateLimitedError(
-                    f"Gmail rate limited during {operation}"
-                ) from error
-            raise RuntimeError(f"Gmail API error during {operation}") from error
+            self._raise_http_error(error, operation, f"{operation} failed")
+
+    def _raise_http_error(self, error, operation, log_label):
+        """Log an HttpError and raise it as the matching domain error.
+
+        Google's explanation goes into both the log and the raised message, so
+        it reaches the ops alert and ``gmail_sync_state.last_error``.
+
+        Args:
+            error (HttpError): The error googleapiclient raised.
+            operation (str): The Gmail call, for the raised message.
+            log_label (str): What failed, for the log line.
+
+        Raises:
+            RateLimitedError: HTTP 429.
+            GmailNotFoundError: HTTP 404.
+            GmailUnavailableError: HTTP 5xx.
+            RuntimeError: Any other status.
+        """
+        status = getattr(error.resp, "status", None)
+        self._logger.error(
+            "%s",
+            _with_explanation(f"[GmailClient] {log_label} (status={status})", error),
+        )
+        if status == HTTPStatus.TOO_MANY_REQUESTS:
+            raise RateLimitedError(
+                _with_explanation(f"Gmail rate limited during {operation}", error)
+            ) from error
+        if status == HTTPStatus.NOT_FOUND:
+            raise GmailNotFoundError(
+                _with_explanation(f"Gmail resource not found during {operation}", error)
+            ) from error
+        if status is not None and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+            raise GmailUnavailableError(
+                _with_explanation(f"Gmail unavailable during {operation}", error)
+            ) from error
+        raise RuntimeError(
+            _with_explanation(f"Gmail API error during {operation}", error)
+        ) from error
 
     def _build_mime(
-        self, to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
+        self, to, subject, body, sender, rfc822_message_id, in_reply_to, references
     ):
         """Assemble a multipart/alternative message (plain fallback + HTML)."""
         message = MIMEMultipart("alternative")
         message["From"] = sender
         message["To"] = ", ".join(to)
-        if cc:
-            message["Cc"] = ", ".join(cc)
         message["Subject"] = subject
         message["Message-ID"] = rfc822_message_id
         if in_reply_to:
@@ -510,50 +686,9 @@ class GmailClient:
         if references:
             message["References"] = references
         # Least-preferred alternative first, most-preferred (HTML) last.
-        message.attach(MIMEText(self._html_to_text(body), "plain", "utf-8"))
+        message.attach(MIMEText(html_to_text(body), "plain", "utf-8"))
         message.attach(MIMEText(body, "html", "utf-8"))
         return message
-
-    @staticmethod
-    def _expand_link(match):
-        """
-        Render one anchor as ``label (url)`` for the plain-text fallback.
-
-        The url is kept whenever there is one, so a link never reaches a
-        plain-text reader as unclickable prose. It is only left out when the
-        label already *is* the url, where repeating it would read as
-        ``https://x (https://x)``; a ``mailto:`` scheme is likewise dropped when
-        the label is the bare address.
-        """
-        href = match.group(1).strip()
-        label = _TAG_RE.sub("", match.group(2)).strip()
-        if not href:
-            return label
-        if not label:
-            return href
-        bare = unescape(href).removeprefix("mailto:")
-        if unescape(label).rstrip("/") in (
-            unescape(href).rstrip("/"),
-            bare.rstrip("/"),
-        ):
-            return label
-        return f"{label} ({href})"
-
-    @staticmethod
-    def _html_to_text(html):
-        """Derive a readable plain-text fallback from an HTML body."""
-        text = re.sub(r"(?i)<br\s*/?>", "\n", html)
-        text = re.sub(r"(?i)</p\s*>", "\n\n", text)
-        text = re.sub(r"(?i)<li[^>]*>", "\n- ", text)
-        text = re.sub(r"(?i)</(h[1-6]|div|ul|ol)\s*>", "\n", text)
-        # Must run before the tag strip below, which would take the href with it.
-        text = _ANCHOR_RE.sub(GmailClient._expand_link, text)
-        text = _TAG_RE.sub("", text)
-        text = unescape(text)
-        # Collapse runs of blank lines and trailing spaces.
-        text = re.sub(r"[ \t]+\n", "\n", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
 
     def _parse_message(self, message):
         """Flatten a Gmail message resource into a transport-level dict."""
@@ -563,19 +698,80 @@ class GmailClient:
             for header in payload.get("headers", [])
         }
         html_body, plain_body = self._extract_bodies(payload)
+        raw_headers = payload.get("headers", [])
+
+        def _all(name):
+            return [h["value"] for h in raw_headers if h["name"].lower() == name]
+
+        recipients = []
+        for _, addr in getaddresses(_all("to") + _all("cc") + _all("delivered-to")):
+            addr = addr.strip().lower()
+            if addr and addr not in recipients:
+                recipients.append(addr)
         return {
             "gmail_message_id": message.get("id"),
             "gmail_thread_id": message.get("threadId"),
             "rfc822_message_id": headers.get("message-id"),
             "from_address": headers.get("from"),
             "to_addresses": headers.get("to"),
-            "cc_addresses": headers.get("cc"),
             "subject": headers.get("subject"),
             "html": html_body,
             "plain": plain_body,
             "snippet": message.get("snippet"),
             "gmail_internal_date": message.get("internalDate"),
+            "failed_recipients": self._failed_recipients(headers),
+            "recipients": recipients,
+            "auto_submitted": headers.get("auto-submitted"),
+            "precedence": headers.get("precedence"),
+            "attachments": self._extract_attachments(payload),
         }
+
+    @staticmethod
+    def _extract_attachments(payload):
+        """List the named attachment parts of a payload, without their bytes."""
+        attachments = []
+        stack = [payload]
+        while stack:
+            part = stack.pop()
+            body = part.get("body", {})
+            if part.get("filename") and body.get("attachmentId"):
+                attachments.append({
+                    "name": part["filename"],
+                    "size": body.get("size", 0),
+                    "gmailAttachmentId": body["attachmentId"],
+                })
+            stack.extend(reversed(part.get("parts", []) or []))
+        return attachments
+
+    @staticmethod
+    def _failed_recipients(headers):
+        """Who a delivery-failure report says could not be reached.
+
+        A message is such a report when its Content-Type is
+        ``multipart/report`` with ``report-type=delivery-status``, or when it
+        carries ``X-Failed-Recipients``. ``Auto-Submitted`` does not decide it:
+        Gmail sets ``auto-replied`` on its bounces and out-of-office replies
+        alike. Nor does the From address, since a person can write from
+        ``postmaster@``.
+
+        Args:
+            headers (dict[str, str]): The message's headers, names lower-cased.
+
+        Returns:
+            str | None: None for any other message; otherwise the raw
+                ``X-Failed-Recipients`` value, or "" when there is none.
+        """
+        failed = headers.get("x-failed-recipients")
+        content_type = Message()
+        content_type["Content-Type"] = headers.get("content-type", "")
+        is_report = (
+            content_type.get_content_type() == "multipart/report"
+            and str(content_type.get_param("report-type") or "").lower()
+            == "delivery-status"
+        )
+        if failed is None and not is_report:
+            return None
+        return (failed or "").strip()
 
     def _extract_bodies(self, payload):
         """Walk a message payload, returning (html, plain) — either may be None."""

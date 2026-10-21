@@ -61,14 +61,17 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             MentorshipRoundEntity(
                 name="2025-spring",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2025, 2, 15, tzinfo=timezone.utc),
             ),
             MentorshipRoundEntity(
                 name="2025-fall",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2025, 8, 15, tzinfo=timezone.utc),
             ),
             MentorshipRoundEntity(
                 name="2026-spring",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2026, 2, 15, tzinfo=timezone.utc),
             ),
         ]
 
@@ -282,7 +285,11 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         ordering by id alone would put the partner who is gone above the
         current one.
         """
-        later_round = MentorshipRoundEntity(name="2026-fall", required_meetings=5)
+        later_round = MentorshipRoundEntity(
+            name="2026-fall",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+        )
         await self.insert_entities([later_round])
         ended = MentorshipPairsEntity(
             round_id=later_round.round_id,
@@ -602,6 +609,21 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertTrue(all(p.status == PairStatus.ACTIVE for p in result))
         self.assertTrue(all(p.round_id == self.rounds[0].round_id for p in result))
 
+    async def test_list_pairs_by_round_includes_inactive_pairs(self):
+        """Every pair in the round, whatever its status, and only that round."""
+        result = await self.repo.list_pairs_by_round(
+            session=self.session,
+            round_id=self.rounds[0].round_id,
+        )
+
+        self.assertEqual(
+            [p.pair_id for p in result],
+            sorted([self.pairs[0].pair_id, self.pairs[2].pair_id]),
+        )
+        self.assertEqual(
+            {p.status for p in result}, {PairStatus.ACTIVE, PairStatus.INACTIVE}
+        )
+
     async def test_get_active_pairs_by_round_no_result(self):
         """Test no pairs returned for non-existing round."""
         result = await self.repo.get_active_pairs_by_round(
@@ -684,7 +706,11 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
     async def test_get_pair_stats_empty(self):
         """Returns an empty dict when there are no active pairs for a round."""
-        empty_round = MentorshipRoundEntity(name="empty-round", required_meetings=5)
+        empty_round = MentorshipRoundEntity(
+            name="empty-round",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+        )
         await self.insert_entities([empty_round])
 
         result = await self.repo.get_pair_stats(self.session)
@@ -762,6 +788,50 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         result = await self.repo.get_pair_stats(self.session)
 
         self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 3)
+
+    async def test_list_pairs_with_meeting_counts_reads_either_side_and_any_status(
+        self,
+    ):
+        first_round = self.rounds[0].round_id
+        start = self.now - timedelta(days=3)
+
+        def meeting(meeting_id, pair, *, completed):
+            return MentorshipMeetingEntity(
+                meeting_id=meeting_id,
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=completed,
+                created_datetime=start,
+            )
+
+        await self.insert_entities([
+            meeting("eligibility-done-1", self.pairs[0], completed=True),
+            meeting("eligibility-done-2", self.pairs[0], completed=True),
+            meeting("eligibility-missed", self.pairs[0], completed=False),
+        ])
+
+        # users[0] mentors pair 0 and is the mentee of the ended pair 2.
+        rows = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [first_round], [self.users[0].user_id]
+        )
+
+        self.assertEqual(
+            [(pair.pair_id, count) for pair, count in rows],
+            [(self.pairs[0].pair_id, 2), (self.pairs[2].pair_id, 0)],
+        )
+
+    async def test_list_pairs_with_meeting_counts_keeps_to_the_rounds_given(self):
+        rows = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [self.rounds[1].round_id], [self.users[1].user_id]
+        )
+        empty = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [], [self.users[1].user_id]
+        )
+
+        self.assertEqual([pair.pair_id for pair, _ in rows], [self.pairs[1].pair_id])
+        self.assertEqual(empty, [])
 
 
 if __name__ == "__main__":

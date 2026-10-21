@@ -141,9 +141,12 @@ const AddressRow = ({
   // row, so `isCorp` is their only remaining internal signal.
   const isInternal =
     identities.some((entry) => entry.internal) || !!emailRow?.isCorp;
-  const isCurrentSession = identities.some(
-    (entry) => entry.raw.isCurrentSession,
-  );
+  // A google/social session is flagged on its identity row; a row-less
+  // passwordless session has none, so its flag rides the email row instead.
+  // Reading only the identities leaves every email-OTP session unbadged.
+  const isCurrentSession =
+    identities.some((entry) => entry.raw.isCurrentSession) ||
+    !!emailRow?.isCurrentSession;
   const chips = capabilityChips(group);
   // A legacy backup address survives the identity migration unproven. It grants
   // nothing until verified, so the row says so rather than looking equivalent
@@ -161,11 +164,14 @@ const AddressRow = ({
     !emailRow.isPrimary;
   // A corp email on an internal account is a locked contact — the backend
   // refuses to remove it (an active employee must keep a corp address), so
-  // the control is withheld here too.
+  // the control is withheld here too. Same for the address the caller's own
+  // passwordless session signed in with: removing it would strand a live
+  // token, and the backend answers 409 — offering the button is a dead end.
   const canRemoveEmail =
     !!onRemove &&
     !!emailRow &&
     !emailRow.isPrimary &&
+    !emailRow.isCurrentSession &&
     !(accountIsInternal && emailRow.isCorp);
   // Removing one path never fully disconnects an address that has two removable
   // ones — say so, so nobody assumes "Remove ... sign-in" also kills Email OTP.

@@ -3,55 +3,14 @@ load("@rules_python//python:defs.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "pubsub_puller",
-    srcs = [
-        "pubsub_puller.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "@pypi//google_api_python_client",
-    ],
-)
-
-py_library(
-    name = "pubsub_pull_manager",
-    srcs = [
-        "pubsub_pull_manager.py",
-    ],
-)
-
-py_library(
-    name = "consumer_controller",
-    srcs = [
-        "consumer_controller.py",
-    ],
-    deps = [
-        "//backend/common:api_endpoints",
-        "//backend/common:fast_api_response_wrapper",
-        "//backend/common:identity_type",
-        "//backend/common:permissions",
-        "//backend/utils:permission_decorators",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
     name = "google_chat_processor_service",
     srcs = [
         "google_chat_processor_service.py",
     ],
     deps = [
-        ":pubsub_puller",
         "//backend/common:constants",
         "//backend/common:google_client",
         "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "microsoft_message_processor_service",
-    srcs = [
-        "microsoft_message_processor_service.py",
     ],
 )
 
@@ -66,19 +25,24 @@ py_library(
 )
 
 py_library(
-    name = "pubsub_puller_factory",
+    name = "pubsub_push_service",
     srcs = [
-        "pubsub_puller_factory.py",
+        "pubsub_push_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+        "//backend/internal_activity_service:activity_query_cache",
     ],
 )
 
 py_library(
-    name = "pubsub_sync_pull_service",
+    name = "pubsub_push_controller",
     srcs = [
-        "pubsub_sync_pull_service.py",
+        "pubsub_push_controller.py",
     ],
     deps = [
-        "//backend/common:constants",
-        "//backend/common:environment_constants",
+        ":pubsub_push_service",
+        "//backend/common:api_endpoints",
+        "@pypi//fastapi",
     ],
 )

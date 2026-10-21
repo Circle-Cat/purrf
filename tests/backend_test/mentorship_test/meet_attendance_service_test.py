@@ -1,7 +1,7 @@
 import copy
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import ANY, MagicMock, AsyncMock, patch
 
 from dateutil.parser import isoparse
 
@@ -12,6 +12,7 @@ from backend.mentorship.meet_attendance_service import (
     MAX_MEETING_DURATION,
     MeetAttendanceService,
 )
+from backend.repository.mentorship_meeting_repository import MeetingWriteGuard
 from backend.repository.mentorship_round_repository import RunningRoundWindow
 
 
@@ -105,12 +106,20 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
         self.mock_pairs_repo = MagicMock()
         self.mock_pairs_repo.get_active_pairs_by_round = AsyncMock()
+        self.mock_pairs_repo.get_pair_by_id = AsyncMock(return_value=MagicMock())
 
         self.mock_meeting_repo = MagicMock()
         self.mock_meeting_repo.get_pending_google_meetings_in_window = AsyncMock(
             return_value=[]
         )
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock(return_value=0)
+        # By default every meeting reads back as it was loaded (ANY equals any
+        # time), so a test that is not about the re-check writes as before.
+        self.mock_meeting_repo.get_write_guards = AsyncMock(
+            side_effect=lambda session, ids: {
+                meeting_id: MeetingWriteGuard(None, ANY, ANY) for meeting_id in ids
+            }
+        )
 
         self.mock_round_repo = MagicMock()
         self.mock_round_repo.get_running_rounds = AsyncMock(return_value=[])
@@ -792,6 +801,8 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             + result["meetings_not_yet_due"]
             + result["meetings_in_progress"]
             + result["meetings_no_show"]
+            + result["meetings_set_by_admin"]
+            + result["meetings_changed_meanwhile"]
             + result["meetings_failed"],
         )
         self.assertEqual(result["meetings_failed"], 1)
@@ -972,6 +983,240 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(meeting.absent_user_id)
         self.assertIsNone(meeting.has_unknown_absent)
         self.assertIsNotNone(meeting.last_sync_at)
+
+    async def test_meeting_whose_attendance_an_admin_set_is_not_written(self):
+        """The selection query already leaves these rows out; this pins that
+        the sweep never overwrites one even when it is handed it, and that
+        Meet is not asked about it."""
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
+        pair, meeting = self._make_active_pair_and_meeting()
+        meeting.absent_user_id = self.mentee.user_id
+        meeting.late_user_ids = []
+        marked_at = datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc)
+        meeting.attendance_set_by_admin_at = marked_at
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
+            meeting
+        ]
+        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.mock_google_service.list_conferences_by_meeting_code.assert_not_called()
+        self.assertEqual(result["meetings_selected"], 1)
+        self.assertEqual(result["meetings_set_by_admin"], 1)
+        self.assertEqual(result["meetings_reconciled"], 0)
+        self.assertEqual(result["meetings_failed"], 0)
+        self.assertFalse(meeting.is_completed)
+        self.assertEqual(meeting.absent_user_id, self.mentee.user_id)
+        self.assertEqual(meeting.late_user_ids, [])
+        self.assertIsNone(meeting.last_sync_at)
+        self.assertEqual(meeting.attendance_set_by_admin_at, marked_at)
+
+    def _arrange_a_meeting_meet_says_completed(self, pair_id=101):
+        """One pending meeting both people attended in full, per Meet."""
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
+        self.mock_google_service.list_conferences_by_meeting_code.return_value = (
+            [self._make_conference(start="2026-04-07T10:05:00+00:00")],
+            0,
+        )
+        pair, meeting = self._make_active_pair_and_meeting(pair_id=pair_id)
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
+            meeting
+        ]
+        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
+        self.mock_google_service.fetch_participants_for_record.return_value = [
+            {
+                "signedin_user_id": "uid-mentor",
+                "start_time": "2026-04-07T10:05:00+00:00",
+                "end_time": "2026-04-07T11:00:00+00:00",
+            },
+            {
+                "signedin_user_id": "uid-mentee",
+                "start_time": "2026-04-07T10:06:00+00:00",
+                "end_time": "2026-04-07T11:00:00+00:00",
+            },
+        ]
+        self.mock_google_service.get_email_by_google_user_id.side_effect = lambda uid: (
+            "mentor@example.com" if uid == "uid-mentor" else "mentee@example.com"
+        )
+        return pair, meeting
+
+    def _assert_untouched(self, meeting):
+        self.assertFalse(meeting.is_completed)
+        self.assertEqual(meeting.absent_user_id, self.mentee.user_id)
+        self.assertIsNone(meeting.last_sync_at)
+
+    async def test_an_admin_correction_that_lands_mid_sweep_is_kept(self):
+        """The row was loaded before the admin saved; the re-read under the
+        pair lock is what sees the admin's marker, so Meet's answer is not
+        written over the correction."""
+        _, meeting = self._arrange_a_meeting_meet_says_completed()
+        meeting.absent_user_id = self.mentee.user_id
+        start, end = meeting.start_datetime, meeting.end_datetime
+        self.mock_meeting_repo.get_write_guards.side_effect = None
+        self.mock_meeting_repo.get_write_guards.return_value = {
+            meeting.meeting_id: MeetingWriteGuard(
+                datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc), start, end
+            )
+        }
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(result["meetings_set_by_admin"], 1)
+        self.assertEqual(result["meetings_reconciled"], 0)
+        self.assertEqual(result["meetings_completed"], 0)
+        self.assertEqual(result["pairs_updated"], 0)
+        self._assert_untouched(meeting)
+        self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_a_meeting_moved_mid_sweep_is_not_written(self):
+        """Attendance worked out for the old slot must not land on a meeting
+        that has since been rescheduled."""
+        _, meeting = self._arrange_a_meeting_meet_says_completed()
+        meeting.absent_user_id = self.mentee.user_id
+        self.mock_meeting_repo.get_write_guards.side_effect = None
+        self.mock_meeting_repo.get_write_guards.return_value = {
+            meeting.meeting_id: MeetingWriteGuard(
+                None,
+                datetime(2026, 4, 9, 10, 0, tzinfo=timezone.utc),
+                datetime(2026, 4, 9, 11, 0, tzinfo=timezone.utc),
+            )
+        }
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(result["meetings_changed_meanwhile"], 1)
+        self.assertEqual(result["meetings_reconciled"], 0)
+        self._assert_untouched(meeting)
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_a_meeting_given_a_new_length_mid_sweep_is_not_written(self):
+        """Reschedule takes a start and a duration, so the end can move on
+        its own; the result was worked out against the old length."""
+        _, meeting = self._arrange_a_meeting_meet_says_completed()
+        meeting.absent_user_id = self.mentee.user_id
+        self.mock_meeting_repo.get_write_guards.side_effect = None
+        self.mock_meeting_repo.get_write_guards.return_value = {
+            meeting.meeting_id: MeetingWriteGuard(
+                None,
+                meeting.start_datetime,
+                meeting.end_datetime + timedelta(minutes=30),
+            )
+        }
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(result["meetings_changed_meanwhile"], 1)
+        self._assert_untouched(meeting)
+
+    async def test_a_meeting_given_a_new_start_mid_sweep_is_not_written(self):
+        _, meeting = self._arrange_a_meeting_meet_says_completed()
+        meeting.absent_user_id = self.mentee.user_id
+        self.mock_meeting_repo.get_write_guards.side_effect = None
+        self.mock_meeting_repo.get_write_guards.return_value = {
+            meeting.meeting_id: MeetingWriteGuard(
+                None,
+                meeting.start_datetime - timedelta(minutes=15),
+                meeting.end_datetime,
+            )
+        }
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(result["meetings_changed_meanwhile"], 1)
+        self._assert_untouched(meeting)
+
+    async def test_a_meeting_deleted_mid_sweep_is_skipped_not_failed(self):
+        _, meeting = self._arrange_a_meeting_meet_says_completed()
+        meeting.absent_user_id = self.mentee.user_id
+        self.mock_meeting_repo.get_write_guards.side_effect = None
+        self.mock_meeting_repo.get_write_guards.return_value = {}
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(result["meetings_changed_meanwhile"], 1)
+        self.assertEqual(result["meetings_failed"], 0)
+        self._assert_untouched(meeting)
+
+    async def test_writes_lock_the_pairs_in_id_order_after_every_meet_call(self):
+        """Meet is asked about every meeting before any lock is taken; the
+        pairs are then locked in id order, as the admin meeting batch and the
+        meeting delete take them, before the re-read, the writes and the one
+        commit. 200 comes out of a set before 9, so this also catches a loop
+        that relies on set order."""
+        pair_high, meeting_high = self._arrange_a_meeting_meet_says_completed(
+            pair_id=200
+        )
+        pair_low, meeting_low = self._make_active_pair_and_meeting(
+            pair_id=9, conf_id="low-xxxx-low"
+        )
+        meeting_low.meeting_id = "meeting-low"
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [
+            pair_high,
+            pair_low,
+        ]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
+            meeting_high,
+            meeting_low,
+        ]
+        order = []
+        conferences = (
+            self.mock_google_service.list_conferences_by_meeting_code.return_value
+        )
+
+        async def meet(*args):
+            order.append(("meet",))
+            return conferences
+
+        async def guards(session, ids):
+            order.append(("guards", sorted(ids)))
+            return {i: MeetingWriteGuard(None, ANY, ANY) for i in ids}
+
+        self.mock_google_service.list_conferences_by_meeting_code.side_effect = meet
+        self.mock_pairs_repo.get_pair_by_id.side_effect = lambda *args, **kwargs: (
+            order.append(("lock", args[1], kwargs)) or MagicMock()
+        )
+        self.mock_meeting_repo.get_write_guards.side_effect = guards
+        self.mock_meeting_repo.recalculate_completed_count.side_effect = (
+            lambda **kwargs: order.append(("recount", kwargs["pair_id"])) or 1
+        )
+        self.mock_session.commit.side_effect = lambda: order.append(("commit",))
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(
+            order[:4],
+            [
+                ("meet",),
+                ("meet",),
+                ("lock", 9, {"with_lock": True}),
+                ("lock", 200, {"with_lock": True}),
+            ],
+        )
+        self.assertEqual(
+            order[4],
+            ("guards", sorted([meeting_high.meeting_id, meeting_low.meeting_id])),
+        )
+        self.assertEqual(sorted(order[5:7]), [("recount", 9), ("recount", 200)])
+        self.assertEqual(order[7:], [("commit",)])
+        self.assertEqual(result["meetings_reconciled"], 2)
 
     async def test_two_signed_in_meeting_not_completed(self):
         """Both attended but duration < 80% → is_completed=False, no absence flag."""

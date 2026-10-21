@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import DOMPurify from "dompurify";
 import {
   Select,
   SelectContent,
@@ -46,7 +45,11 @@ import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
-import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
+import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
+import ComposeEmailDialog from "@/components/email/ComposeEmailDialog";
+import EmailConversation from "@/components/email/EmailConversation";
+import { recipientOptionsOf } from "@/components/email/emailThreads";
+import { useComposeEmail } from "@/components/email/useComposeEmail";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 import {
@@ -66,18 +69,29 @@ import {
   setApplicationSubStatus,
   setApplicationRound,
   changeApplicationStage,
-  blacklistUser,
-  listBlacklistUpcomingInterviews,
   reassignApplication,
   submitEvaluation,
   postComment,
   getApplicationEmails,
   sendApplicationEmail,
+  getApplicationEmailTemplates,
+  applicationEmailAttachmentUrl,
   resumeUrl,
   scheduleInterview,
   updateInterview,
   cancelInterview,
 } from "@/api/recruitingApi";
+import {
+  createBlockRequest,
+  getBlockPreflight,
+  getUserAdmins,
+  getRaisedBlockRequests,
+  reassignBlockRequest,
+  withdrawBlockRequest,
+} from "@/api/adminAccountsApi";
+import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
+import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
+import { termHint } from "@/pages/Recruiting/components/glossary";
 import {
   humanize,
   stageLabel,
@@ -135,6 +149,10 @@ const REJECT_REASONS = [
   "Other",
 ];
 
+// Shown on every owner control the backend would refuse for lack of the
+// recruiting advance grant.
+const ADVANCE_GRANT_HINT = "Requires the recruiting advance permission";
+
 /**
  * Allowed sub_status values per pipeline stage, mirroring the backend's
  * SUB_STATUS_SETS (backend/recruiting/stage_machine.py). Stages absent here
@@ -186,8 +204,10 @@ const advanceTarget = (jobStages, stage, kind) => {
  * recruiter is not otherwise told: the first move off "pending" freezes the
  * candidate's submission, and nothing brings the edit back.
  *
+ * `disabledHint`, when set, disables every button and titles it with why.
+ *
  * @param {{stage: string, subStatus: string|null, disabled: boolean,
- *          evaluatedDisabled: boolean,
+ *          evaluatedDisabled: boolean, disabledHint?: string,
  *          onSelect: (value: string) => void}} props
  */
 const SubStatusSelector = ({
@@ -195,6 +215,7 @@ const SubStatusSelector = ({
   subStatus,
   disabled,
   evaluatedDisabled,
+  disabledHint,
   onSelect,
 }) => {
   const options = SUB_STATUS_SETS[stage];
@@ -213,11 +234,16 @@ const SubStatusSelector = ({
             size="sm"
             variant={isActive ? "default" : "outline"}
             aria-pressed={isActive}
-            disabled={disabled || (value === "evaluated" && evaluatedDisabled)}
+            disabled={
+              disabled ||
+              Boolean(disabledHint) ||
+              (value === "evaluated" && evaluatedDisabled)
+            }
             title={
-              value === "evaluated" && evaluatedDisabled
+              disabledHint ??
+              (value === "evaluated" && evaluatedDisabled
                 ? "Requires a confirmed evaluation for the current session"
-                : undefined
+                : undefined)
             }
             onClick={() => onSelect(value)}
           >
@@ -296,7 +322,7 @@ const EvaluationSummaryRow = ({ field, entry }) => {
  */
 const evaluatorName = (evaluatorId, interviewPool) =>
   interviewPool.find((u) => u.userId === evaluatorId)?.name ??
-  `User ${evaluatorId}`;
+  unresolvedPersonLabel(evaluatorId);
 
 /**
  * Read-only summary of every submitted evaluation for an application,
@@ -510,11 +536,13 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       }`;
     }
     case "recruiting.email_sent":
-      return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
-        details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
-      }`;
+      return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}`;
     case "recruiting.email_received":
       return `Received reply "${details.subject}" from ${details.from}`;
+    case "recruiting.email_bounced":
+      return details.failedRecipients?.length
+        ? `Email could not be delivered to ${details.failedRecipients.join(", ")}`
+        : "Email could not be delivered";
     default:
       return humanize(eventType.replace(/^[^.]+\./, ""));
   }
@@ -696,143 +724,23 @@ const CommentsPanel = ({
   );
 };
 
-const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
-
-const EmailMessageBubble = ({ message, timezone }) => {
-  const html =
-    message.bodyHtml != null && message.bodyHtml !== ""
-      ? DOMPurify.sanitize(message.bodyHtml)
-      : null;
-  const when = message.gmailInternalDate ?? message.createdAt;
-  return (
-    <li className="rounded border p-2 text-sm">
-      <div className="mb-1 text-slate-500">
-        <span className="font-medium text-slate-700">
-          {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
-        </span>{" "}
-        · {message.fromAddress}
-        {when ? ` · ${formatDateTimeWithZone(when, timezone)}` : ""}
-      </div>
-      {html != null ? (
-        // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
-        // margins, drops list markers and strips link underlines — without
-        // these hooks a message reads as one dense block whose links are
-        // indistinguishable from plain text.
-        <div
-          className="max-w-none text-slate-700 [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <p className="whitespace-pre-wrap text-slate-700">
-          {message.bodyText ?? ""}
-        </p>
-      )}
-    </li>
-  );
-};
-
-/**
- * One application's email conversation.
- *
- * `canSend` and `canRefresh` are separate gates, not one flag: sending is
- * owner-only (`send_application_email` refuses `read.all`), while Refresh
- * triggers a Gmail sync that `read.all` may also run. The read-only reuse
- * inside an expanded other-application row turns both off, which drops the
- * toolbar entirely.
- *
- * @param {{conversation: {threads: object[]}|null, canSend: boolean,
- *          canRefresh?: boolean, onCompose?: () => void,
- *          onReply?: (thread: object) => void, onRefresh?: () => void,
- *          refreshing?: boolean, timezone: string}} props
- */
-const EmailsPanel = ({
-  conversation,
-  canSend,
-  canRefresh = true,
-  onCompose,
-  onReply,
-  onRefresh,
-  refreshing,
-  timezone,
-}) => {
-  const threads = conversation?.threads ?? [];
-  return (
-    <div className="space-y-4">
-      {(canSend || canRefresh) && (
-        <div className="flex items-center gap-2">
-          {canSend && (
-            <Button type="button" size="sm" onClick={onCompose}>
-              Send email
-            </Button>
-          )}
-          {canRefresh && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={onRefresh}
-              disabled={refreshing}
-            >
-              Refresh
-            </Button>
-          )}
-        </div>
-      )}
-      {threads.length === 0 ? (
-        <p className="text-sm text-slate-400">No emails yet.</p>
-      ) : (
-        <ul className="space-y-4">
-          {threads.map((thread) => (
-            <li key={thread.threadId} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">
-                  {thread.subject || "(no subject)"}
-                </span>
-                {canSend && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onReply(thread)}
-                  >
-                    Reply
-                  </Button>
-                )}
-              </div>
-              <ul className="space-y-2">
-                {thread.messages.map((message) => (
-                  <EmailMessageBubble
-                    key={message.messageId}
-                    message={message}
-                    timezone={timezone}
-                  />
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
 /**
  * The Emails tab inside an expanded other-application row: read-only, and
  * three-state rather than two.
  *
- * "No emails yet." (rendered by EmailsPanel for an empty thread list) and
- * "you may not read these" are different facts, so the withheld case gets
+ * "No emails yet." (rendered by EmailConversation for an empty thread list)
+ * and "you may not read these" are different facts, so the withheld case gets
  * its own copy instead of silently looking like an empty inbox. Visibility
  * is decided by the server per entry (`emailsVisible`, which mirrors the
  * emails endpoint's own owner/read.all gate), so a viewer without standing
  * never fires the request that endpoint would reject with a 400.
  *
- * @param {{visible: boolean,
+ * @param {{applicationId: number, visible: boolean,
  *          state: {status: "loading"|"ready"|"error",
  *                  conversation?: object}|undefined,
  *          timezone: string}} props
  */
-const RowEmails = ({ visible, state, timezone }) => {
+const RowEmails = ({ applicationId, visible, state, timezone }) => {
   if (!visible) {
     return (
       <p className="text-sm text-slate-400">
@@ -847,11 +755,13 @@ const RowEmails = ({ visible, state, timezone }) => {
     return <p className="text-sm text-slate-400">Loading emails...</p>;
   }
   return (
-    <EmailsPanel
+    <EmailConversation
       conversation={state.conversation}
+      formatTime={(iso) => formatDateTimeWithZone(iso, timezone)}
+      attachmentUrl={(messageId, index) =>
+        applicationEmailAttachmentUrl(applicationId, messageId, index)
+      }
       canSend={false}
-      canRefresh={false}
-      timezone={timezone}
     />
   );
 };
@@ -1029,6 +939,7 @@ const OtherApplicationsSection = ({
                       </TabsContent>
                       <TabsContent value="emails">
                         <RowEmails
+                          applicationId={other.application.id}
                           visible={other.emailsVisible}
                           state={emailsById[other.application.id]}
                           timezone={timezone}
@@ -1066,11 +977,14 @@ const OtherApplicationsSection = ({
  *   that panel is instead gated on real ownership (`detail.isOwner`)
  *   specifically, so a `read.all` viewer sees the same information an owner
  *   does but can't act on it: the sub-status buttons render disabled, the
- *   Reassign trigger and the whole "Operate" decision row (Blacklist/Reject/
- *   Advance) don't render at all. Blacklist is additionally gated on the
- *   `recruiting.blacklist.write` permission (an org-level sanction, not a
- *   per-posting decision — same gate as the backend route): an owner
- *   without it sees the button disabled with a tooltip. For an actual
+ *   Reassign trigger and the whole "Operate" decision row (Request block/
+ *   Reject/Advance) don't render at all. Every owner control is additionally
+ *   gated on holding the recruiting advance grant (`canOperate`), the same
+ *   gate as the backend routes behind them: an owner without it sees each one
+ *   disabled with a tooltip instead of a 403 after the click.
+ *   The page is still narrower than the route, which has no ownership check --
+ *   deliberately, since the evidence for a block lives on the posting you own.
+ *   For an actual
  *   owner, the workflow only
  *   ever moves forward one step at a time, so Advance is a single button
  *   covering both cases: round-advance (via the job's
@@ -1104,11 +1018,11 @@ const ApplicationDetailPage = () => {
   const evaluatorMode = searchParams.get("mode") === "evaluate";
   const { user, permissions = [] } = useAuth();
   const currentUserId = user?.userId;
-  // Blacklisting is an org-level sanction, permission-gated (not owner-gated)
-  // on the backend route — mirror that here so an owner without the grant
-  // sees a disabled button instead of a post-click error.
-  const canBlacklist = permissions.includes(
-    PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
+  // Raising a block request is gated on standing in the recruiting domain, not
+  // on the console permission -- mirror the backend's raise gate here so an
+  // owner without the grant sees a disabled button, not a post-click error.
+  const canRequestBlock = permissions.includes(
+    PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
   );
 
   const [detail, setDetail] = useState(null);
@@ -1151,15 +1065,24 @@ const ApplicationDetailPage = () => {
   const [reassignAssigneeId, setReassignAssigneeId] = useState("");
   const [reassigning, setReassigning] = useState(false);
 
-  const [blacklistConfirmOpen, setBlacklistConfirmOpen] = useState(false);
-  const [blacklistReason, setBlacklistReason] = useState("");
-  const [blacklisting, setBlacklisting] = useState(false);
-  // The interviews a block would cancel, read when the dialog opens (never on
-  // page load -- every owner would pay for a query only this button needs).
-  // `null` means "not loaded / couldn't be loaded"; the block itself goes
-  // ahead either way, since the backend cancels them regardless.
-  const [blacklistUpcoming, setBlacklistUpcoming] = useState([]);
-  const [blacklistUpcomingFailed, setBlacklistUpcomingFailed] = useState(false);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [blockSubmitting, setBlockSubmitting] = useState(false);
+  const [blockPreflight, setBlockPreflight] = useState(null);
+  const [blockPreflightError, setBlockPreflightError] = useState(false);
+  const [reviewerOptions, setReviewerOptions] = useState([]);
+  // Distinct from an empty list: the dialog says something different for
+  // "couldn't read the reviewers" than for "there genuinely are none".
+  const [reviewerOptionsFailed, setReviewerOptionsFailed] = useState(false);
+  // The open request this caller raised about this applicant. Seeded from the
+  // raiser-scoped read below so it survives a reload -- without it the page
+  // offers "Request block" again and the send comes back as a duplicate.
+  const [raisedBlockRequest, setRaisedBlockRequest] = useState(null);
+  const [raisedBlockRequestSettled, setRaisedBlockRequestSettled] =
+    useState(false);
+  const [withdrawnBlockRequestId, setWithdrawnBlockRequestId] = useState(null);
+  const [blockReassignOpen, setBlockReassignOpen] = useState(false);
+  const [blockReassigning, setBlockReassigning] = useState(false);
+  const [blockWithdrawing, setBlockWithdrawing] = useState(false);
 
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [interviewDialogMode, setInterviewDialogMode] = useState("schedule");
@@ -1176,12 +1099,15 @@ const ApplicationDetailPage = () => {
   const [emails, setEmails] = useState({
     threads: [],
     defaultTo: null,
-    defaultCc: [],
   });
-  const [sendingEmail, setSendingEmail] = useState(false);
-  const [refreshingEmails, setRefreshingEmails] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [replyThread, setReplyThread] = useState(null);
+  const emailCompose = useComposeEmail({
+    submit: (payload) =>
+      sendApplicationEmail(applicationId, payload).then(({ data }) => data),
+    reload: () => getApplicationEmails(applicationId).then(({ data }) => data),
+    onConversation: (data) =>
+      setEmails(data ?? { threads: [], defaultTo: null }),
+    contextKey: applicationId,
+  });
 
   const load = useCallback(() => {
     if (applicationId == null) return;
@@ -1215,9 +1141,7 @@ const ApplicationDetailPage = () => {
           setJob(jobData);
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
-          setEmails(
-            emailData ?? { threads: [], defaultTo: null, defaultCc: [] },
-          );
+          setEmails(emailData ?? { threads: [], defaultTo: null });
           const aggregate = otherApplicationsRes?.data ?? {};
           setOtherApplications(aggregate.otherJobs ?? []);
           setPreviousApplications(aggregate.previousSameJob ?? []);
@@ -1244,10 +1168,9 @@ const ApplicationDetailPage = () => {
           }
         }
         // Comments (and who can be @-mentioned in them) are readable by
-        // the owner AND the current-stage assignee (unlike job/pool/
-        // activity above, which stay owner-only) -- the one fetch here
-        // that must also run for an assignee-only viewer.
-        if (detailData.isOwner || detailData.assigneeId === currentUserId) {
+        // any canView viewer AND the current-stage assignee -- the one
+        // fetch here that must also run for an assignee-only viewer.
+        if (detailData.canView || detailData.assigneeId === currentUserId) {
           const [{ data: commentRows }, { data: mentionable }] =
             await Promise.all([
               getApplicationComments(applicationId),
@@ -1267,6 +1190,33 @@ const ApplicationDetailPage = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  const applicantId = detail?.application?.userId ?? null;
+
+  useEffect(() => {
+    // Gated on the same grant the read is: asking without it is a guaranteed
+    // 403.
+    if (applicantId == null || !canRequestBlock) return;
+    let current = true;
+    setRaisedBlockRequestSettled(false);
+    getRaisedBlockRequests()
+      .then(({ data }) => {
+        if (!current) return;
+        setRaisedBlockRequest(
+          (data ?? []).find((r) => r.targetUserId === applicantId) ?? null,
+        );
+        setRaisedBlockRequestSettled(true);
+      })
+      // Swallowed, not toasted: this is a background read the operator never
+      // asked for, and the page works without it -- the worst case is the
+      // duplicate refusal that was the whole behaviour before it existed.
+      .catch(() => {
+        if (current) setRaisedBlockRequestSettled(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [applicantId, canRequestBlock]);
 
   const jobStages = useMemo(
     () => (job?.pipelineConfig?.stages ?? []).map((s) => s.stage),
@@ -1627,41 +1577,80 @@ const ApplicationDetailPage = () => {
   };
 
   /**
-   * Open the blacklist confirm dialog and read what the block would cancel.
+   * Open the block-request dialog and read what the block would do.
    *
-   * Best-effort: a failed read shows a caveat instead of the list and still
-   * lets the block proceed — the backend cancels those meetings either way,
-   * so blocking an org-level sanction on a preview query would be backwards.
+   * Best-effort: a failed pre-flight shows a caveat instead of the counts and
+   * still lets the request go out, because the reviewer sees the same
+   * pre-flight before they decide.
    */
-  const handleOpenBlacklist = () => {
-    setBlacklistUpcoming([]);
-    setBlacklistUpcomingFailed(false);
-    setBlacklistConfirmOpen(true);
-    listBlacklistUpcomingInterviews(detail.application.userId)
-      .then(({ data }) => setBlacklistUpcoming(data ?? []))
-      .catch(() => setBlacklistUpcomingFailed(true));
+  const handleOpenBlockRequest = () => {
+    setBlockPreflight(null);
+    setBlockPreflightError(false);
+    setBlockDialogOpen(true);
+    getBlockPreflight(detail.application.userId)
+      .then(({ data }) => setBlockPreflight(data))
+      .catch(() => setBlockPreflightError(true));
+    loadReviewerOptions();
   };
 
-  const handleCancelBlacklist = () => {
-    setBlacklistConfirmOpen(false);
-    setBlacklistReason("");
+  // Read on every open, not once per page: the Reassign link can be reached
+  // straight from a request restored on load, without Request block having
+  // been clicked in this mount.
+  const loadReviewerOptions = () => {
+    setReviewerOptionsFailed(false);
+    getUserAdmins()
+      .then(({ data }) => setReviewerOptions(data ?? []))
+      .catch(() => setReviewerOptionsFailed(true));
   };
 
-  const handleConfirmBlacklist = () => {
-    if (!blacklistReason.trim() || blacklisting) return;
-    setBlacklisting(true);
-    blacklistUser({
-      userId: detail.application.userId,
-      applicationId,
-      reason: blacklistReason.trim(),
-    })
-      .then(() => {
-        toast.success("Applicant blacklisted.");
-        handleCancelBlacklist();
-        load();
+  const handleOpenReassignBlockRequest = () => {
+    setBlockReassignOpen(true);
+    loadReviewerOptions();
+  };
+
+  const handleConfirmBlockRequest = ({ reason, reviewerId }) => {
+    if (blockSubmitting) return;
+    setBlockSubmitting(true);
+    createBlockRequest(
+      { userId: detail.application.userId, reason, reviewerId },
+      // The page, not the surface it was reached from: the reviewer's card
+      // renders this verbatim, and "recruiting board" would name a page the
+      // request did not come from.
+      "recruiting_application",
+    )
+      .then(({ data }) => {
+        setRaisedBlockRequest(data);
+        setBlockDialogOpen(false);
+        toast.success(`Block requested — sent to ${data.reviewerName}.`);
       })
       .catch((e) => toast.error(e.message))
-      .finally(() => setBlacklisting(false));
+      .finally(() => setBlockSubmitting(false));
+  };
+
+  const handleReassignBlockRequest = (reviewerId) => {
+    if (blockReassigning) return;
+    setBlockReassigning(true);
+    reassignBlockRequest(raisedBlockRequest.id, reviewerId)
+      .then(({ data }) => {
+        setRaisedBlockRequest(data);
+        setBlockReassignOpen(false);
+        toast.success(`Reassigned to ${data.reviewerName}.`);
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setBlockReassigning(false));
+  };
+
+  const handleWithdrawBlockRequest = () => {
+    if (blockWithdrawing) return;
+    setBlockWithdrawing(true);
+    withdrawBlockRequest(raisedBlockRequest.id)
+      .then(() => {
+        setWithdrawnBlockRequestId(raisedBlockRequest.id);
+        setRaisedBlockRequest(null);
+        toast.success("Block request withdrawn.");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setBlockWithdrawing(false));
   };
 
   const openScheduleInterview = () => {
@@ -1744,43 +1733,6 @@ const ApplicationDetailPage = () => {
       .finally(() => setPostingComment(false));
   };
 
-  const handleSendEmail = (payload) => {
-    if (sendingEmail) return Promise.resolve();
-    setSendingEmail(true);
-    return sendApplicationEmail(applicationId, payload)
-      .then(({ data }) => {
-        setEmails(data);
-        toast.success("Email sent.");
-      })
-      .catch((e) => {
-        toast.error(e.message);
-        throw e;
-      })
-      .finally(() => setSendingEmail(false));
-  };
-
-  const handleRefreshEmails = () => {
-    if (refreshingEmails) return;
-    setRefreshingEmails(true);
-    getApplicationEmails(applicationId, { refresh: true })
-      .then(({ data }) => {
-        setEmails(data);
-        toast.success("Refreshed.");
-      })
-      .catch((e) => toast.error(e.message))
-      .finally(() => setRefreshingEmails(false));
-  };
-
-  const openCompose = () => {
-    setReplyThread(null);
-    setComposeOpen(true);
-  };
-
-  const openReply = (thread) => {
-    setReplyThread(thread);
-    setComposeOpen(true);
-  };
-
   if (!loaded || !detail) {
     return (
       <LoadGate
@@ -1803,7 +1755,39 @@ const ApplicationDetailPage = () => {
   );
   const assigneeName =
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
-    (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
+    (detail.assigneeId != null
+      ? unresolvedPersonLabel(detail.assigneeId)
+      : null);
+  const formatEmailTime = (iso) => formatDateTimeWithZone(iso, viewerTimezone);
+  // Every write an owner makes here needs the same grant as raising a block.
+  const canOperate = detail.isOwner && canRequestBlock;
+  // Only an owner gets the hint: a read.all viewer never had these controls.
+  const operateHint =
+    detail.isOwner && !canOperate ? ADVANCE_GRANT_HINT : undefined;
+  // Any block request waiting on the applicant, as the detail read it. The
+  // caller's own is shown with its controls instead; one they just withdrew
+  // is gone even though the detail still carries it.
+  // Held back until the caller's own requests are known, or it would flash
+  // their own as someone else's; a viewer who cannot raise never reads them.
+  const othersBlockRequest =
+    (!canRequestBlock || raisedBlockRequestSettled) &&
+    detail.pendingBlockRequest &&
+    detail.pendingBlockRequest.requestId !== raisedBlockRequest?.id &&
+    detail.pendingBlockRequest.requestId !== withdrawnBlockRequestId
+      ? detail.pendingBlockRequest
+      : null;
+  // Why the block button is closed, in the order the backend refuses: no
+  // standing to ask, then nothing left to ask for, then a question already
+  // asked. Undefined when it is live, which is what leaves the title off.
+  const blockButtonHint = !canRequestBlock
+    ? ADVANCE_GRANT_HINT
+    : detail.applicantIsBlocked
+      ? "This applicant is already blocked"
+      : raisedBlockRequest
+        ? "You already have an open request about this applicant"
+        : othersBlockRequest
+          ? "A block request about this applicant is already waiting on a decision"
+          : undefined;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -1822,6 +1806,15 @@ const ApplicationDetailPage = () => {
             <Badge variant="secondary">
               {stageLabel(detail.application.stage, job?.kind)}
             </Badge>
+            {/* The account's live state, not this application's
+                tags.blacklisted -- that tag only records that the row was
+                once swept and never comes back off. Same term as the board
+                card so one person does not read as two things. */}
+            {detail.applicantIsBlocked && (
+              <Badge variant="destructive" title={termHint("tag.blacklisted")}>
+                Blacklisted
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
         </div>
@@ -1855,6 +1848,7 @@ const ApplicationDetailPage = () => {
                 subStatus={detail.application.subStatus}
                 disabled={switchingSubStatus || !detail.isOwner}
                 evaluatedDisabled={!hasCurrentRoundEvaluation}
+                disabledHint={operateHint}
                 onSelect={handleSelectSubStatus}
               />
               {(assigneeName || canReassign) && (
@@ -1869,6 +1863,8 @@ const ApplicationDetailPage = () => {
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={!canOperate}
+                      title={operateHint}
                       onClick={() => setReassignOpen(true)}
                     >
                       Reassign
@@ -1892,6 +1888,7 @@ const ApplicationDetailPage = () => {
                   isTerminal={isTerminalStage}
                   isOwner={detail.isOwner}
                   busy={interviewBusy}
+                  disabledHint={operateHint}
                   onSchedule={openScheduleInterview}
                   onEdit={openEditInterview}
                   onCancel={() => setCancelInterviewConfirmOpen(true)}
@@ -1906,19 +1903,51 @@ const ApplicationDetailPage = () => {
                   <Button
                     variant="outline"
                     className="mr-auto"
-                    disabled={blacklisting || !canBlacklist}
-                    title={
-                      canBlacklist
-                        ? undefined
-                        : "Requires the blacklist permission"
+                    disabled={
+                      blockSubmitting ||
+                      !canRequestBlock ||
+                      detail.applicantIsBlocked ||
+                      Boolean(raisedBlockRequest) ||
+                      Boolean(othersBlockRequest)
                     }
-                    onClick={handleOpenBlacklist}
+                    title={blockButtonHint}
+                    onClick={handleOpenBlockRequest}
                   >
-                    Blacklist
+                    Request block
                   </Button>
+                  {!raisedBlockRequest && othersBlockRequest && (
+                    <span className="text-sm text-slate-600">
+                      {`Block requested — waiting on ${
+                        othersBlockRequest.reviewer?.name ||
+                        `ID ${othersBlockRequest.reviewer?.userId}`
+                      }`}
+                    </span>
+                  )}
+                  {raisedBlockRequest && (
+                    <span className="text-sm text-slate-600">
+                      {`Block requested — sent to ${raisedBlockRequest.reviewerName}`}
+                      <Button
+                        variant="link"
+                        className="px-2"
+                        onClick={handleOpenReassignBlockRequest}
+                      >
+                        Reassign
+                      </Button>
+                      <Button
+                        variant="link"
+                        className="px-2"
+                        onClick={handleWithdrawBlockRequest}
+                        disabled={blockWithdrawing}
+                      >
+                        Withdraw
+                      </Button>
+                    </span>
+                  )}
                   {isPipelineStage && (
                     <Button
                       variant="outline"
+                      disabled={!canOperate}
+                      title={operateHint}
                       onClick={() => {
                         setCancelUpcomingMeeting(true);
                         setRejectFormOpen(true);
@@ -1929,7 +1958,8 @@ const ApplicationDetailPage = () => {
                   )}
                   {canAdvanceRound ? (
                     <Button
-                      disabled={advancingRound}
+                      disabled={advancingRound || !canOperate}
+                      title={operateHint}
                       onClick={handleRoundAdvanceClick}
                     >
                       Advance to Session{" "}
@@ -1938,7 +1968,8 @@ const ApplicationDetailPage = () => {
                   ) : (
                     isPipelineStage && (
                       <Button
-                        disabled={advancing}
+                        disabled={advancing || !canOperate}
+                        title={operateHint}
                         onClick={handleStageAdvanceClick}
                       >
                         Advance to {stageLabel(next, job?.kind)}
@@ -1978,24 +2009,38 @@ const ApplicationDetailPage = () => {
                   />
                 </TabsContent>
                 <TabsContent value="emails">
-                  <EmailsPanel
+                  <EmailConversation
                     conversation={emails}
+                    formatTime={formatEmailTime}
+                    attachmentUrl={(messageId, index) =>
+                      applicationEmailAttachmentUrl(
+                        applicationId,
+                        messageId,
+                        index,
+                      )
+                    }
                     canSend={detail.isOwner}
-                    onCompose={openCompose}
-                    onReply={openReply}
-                    onRefresh={handleRefreshEmails}
-                    refreshing={refreshingEmails}
-                    timezone={viewerTimezone}
+                    sendDisabledHint={
+                      operateHint ??
+                      (emails.canSend === false
+                        ? "Sending email is not set up here"
+                        : undefined)
+                    }
+                    onCompose={emailCompose.openCompose}
+                    onReply={emailCompose.openReply}
                   />
                   <ComposeEmailDialog
-                    open={composeOpen}
-                    onOpenChange={setComposeOpen}
-                    applicationId={applicationId}
+                    {...emailCompose.dialogProps}
+                    mode="rich"
+                    recipientOptions={recipientOptionsOf(emails)}
                     defaultTo={emails.defaultTo}
-                    defaultCc={emails.defaultCc}
-                    replyThread={replyThread}
-                    onSend={handleSendEmail}
-                    sending={sendingEmail}
+                    senderAddress={emails.senderAddress}
+                    loadTemplates={() =>
+                      getApplicationEmailTemplates(applicationId).then(
+                        (res) => res?.data,
+                      )
+                    }
+                    formatTime={formatEmailTime}
                   />
                 </TabsContent>
               </Tabs>
@@ -2120,74 +2165,46 @@ const ApplicationDetailPage = () => {
         </div>
       </div>
 
-      <Dialog
-        open={blacklistConfirmOpen}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) handleCancelBlacklist();
+      <BlockDialog
+        open={blockDialogOpen}
+        onOpenChange={setBlockDialogOpen}
+        mode="request"
+        account={{
+          userId: detail.application.userId,
+          // Recruiting only ever resolves a candidate to one display string,
+          // so there is no first/last pair to hand over here.
+          name: detail.applicantName,
+          primaryEmail: detail.applicantEmail,
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Blacklist this applicant?</DialogTitle>
-          </DialogHeader>
-          {/* The reach of this action is far wider than the page it is taken
-              from, and it was previously only ever stated in a help dialog
-              nobody opens before clicking. It renders unconditionally: the
-              interview list below is conditional, and this must not be. */}
-          <p className="text-sm text-slate-700">
-            This rejects the application you are looking at, blocks the
-            applicant from applying to anything in future, and closes every
-            other application they hold on every posting — including any that
-            already reached Hired. Each one is tagged as blacklisted.
-          </p>
-          {blacklistUpcoming.length > 0 && (
-            <div className="text-sm text-slate-700">
-              <p>
-                This also cancels the scheduled interviews below, on every
-                posting. All attendees will be notified.
-              </p>
-              <ul className="mt-2 list-disc pl-5">
-                {blacklistUpcoming.map((entry) => (
-                  <li
-                    key={`${entry.applicationId}-${entry.stage}-${entry.round}`}
-                  >
-                    {`${entry.jobTitle} — ${humanize(entry.stage)} session ${
-                      entry.round
-                    } — ${formatInterviewWhen(entry.startAt, viewerTimezone)}`}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {blacklistUpcomingFailed && (
-            <p className="text-sm text-slate-500">
-              Couldn&apos;t check for scheduled interviews. Any still to come
-              will be cancelled anyway.
-            </p>
-          )}
-          <Textarea
-            placeholder="Reason (required)"
-            value={blacklistReason}
-            onChange={(e) => setBlacklistReason(e.target.value)}
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCancelBlacklist}
-              disabled={blacklisting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleConfirmBlacklist}
-              disabled={!blacklistReason.trim() || blacklisting}
-            >
-              Confirm blacklist
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        preflight={blockPreflight}
+        preflightError={blockPreflightError}
+        timezone={viewerTimezone}
+        holders={reviewerOptions}
+        holdersError={reviewerOptionsFailed}
+        currentUserId={user?.userId}
+        onConfirm={handleConfirmBlockRequest}
+        submitting={blockSubmitting}
+      />
+
+      <ApprovalRequestDialog
+        open={blockReassignOpen}
+        onOpenChange={setBlockReassignOpen}
+        title="Reassign this block request"
+        description="The request stays open and nothing about it changes except who decides it. Both the old and the new reviewer are told."
+        reviewers={reviewerOptions}
+        reviewersError={reviewerOptionsFailed}
+        // Everyone the backend refuses: the reviewer who has it, the raiser
+        // and the person it is about.
+        excludeUserIds={[
+          raisedBlockRequest?.reviewerId,
+          user?.userId,
+          detail.application.userId,
+        ]}
+        reviewerHint="The reviewer who has it now, you, and the person this is about are all left out of this list."
+        confirmLabel="Reassign"
+        onConfirm={({ reviewerId }) => handleReassignBlockRequest(reviewerId)}
+        submitting={blockReassigning}
+      />
 
       <Dialog
         open={evalReminderFor != null}

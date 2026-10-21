@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
+from backend.communication.person_email_service import PersonAddress
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import (
     SEARCH_RESULT_LIMIT,
@@ -17,7 +18,6 @@ from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
-    BlacklistDto,
     CommentCreateDto,
     ReassignDto,
     RoundChangeDto,
@@ -29,9 +29,7 @@ from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.dto.email_dto import (
     EmailConversationDto,
-    EmailMessageDto,
     EmailSendRequestDto,
-    EmailThreadDto,
 )
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
@@ -64,8 +62,16 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo = MagicMock()
         self.app_repo = MagicMock()
         self.sub_repo = MagicMock()
+        # Default: nobody typed a name, so a nameless applicant reads
+        # "User <id>" unless a test seeds what they typed.
+        self.sub_repo.get_latest_personal_by_user_ids = AsyncMock(return_value={})
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+        # Nobody in these fixtures is deactivated or blocked, so the default
+        # is the identity. The tests that care override it.
+        self.users_repo.filter_reachable_ids = AsyncMock(
+            side_effect=lambda session, user_ids: set(user_ids)
+        )
         self.resume_storage = MagicMock()
         # autospec (not a bare MagicMock) so a caller/repo signature drift
         # (e.g. a new required param) fails the test instead of silently
@@ -118,15 +124,29 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             return_value={}
         )
         self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
-        self.email_svc = AsyncMock()
-        self.email_svc.list_conversation = AsyncMock(return_value=[])
-        # sync returns the list of newly-persisted messages (Task 2); default
-        # empty so a plain refresh writes no timeline activity.
-        self.email_svc.sync_context = AsyncMock(return_value=[])
-        # board_service no longer syncs directly — it delegates to
-        # EmailSyncService, which owns the timeline-writing rule.
-        self.email_sync_svc = AsyncMock()
-        self.email_sync_svc.sync_application = AsyncMock(return_value=[])
+        # Stands in for PersonEmailService.
+        self.email_svc = MagicMock()
+        self.email_svc.default_sender_address = "recruiting@circlecat.org"
+        self.email_svc.person_email_addresses = AsyncMock(return_value=[])
+        self.email_svc.conversation = AsyncMock(
+            side_effect=lambda session, policy: EmailConversationDto(
+                threads=[],
+                can_send=policy.can_send,
+                default_to=policy.default_to,
+                recipient_options=list(policy.recipient_options),
+            )
+        )
+        self.email_svc.send_new = AsyncMock(
+            return_value=SimpleNamespace(
+                thread_id=10, subject="Hi", to_addresses="cand@example.com"
+            )
+        )
+        self.email_svc.reply = AsyncMock(
+            return_value=SimpleNamespace(
+                thread_id=55, subject="Re: Hi", to_addresses="Cand <cand@example.com>"
+            )
+        )
+        self.email_svc.read_attachment = AsyncMock(return_value=(b"%PDF", "cv.pdf"))
         # Real ApplicationAccess wired to the SAME test doubles BoardService
         # itself uses, so delegated `_load_owned_application`/
         # `_validate_interview_assignee` calls are indistinguishable from the
@@ -140,17 +160,20 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         # The interview collaborator board_service delegates the "cancel the
         # meeting on the round being left" action to. autospec so a signature
-        # drift on cancel_for_round fails the test instead of silently
-        # accepting any arity. Default True = "there was a future meeting and
-        # it was cancelled"; the flag-off tests assert it is never awaited.
+        # drift on release_for_round fails the test instead of silently
+        # accepting any arity. Default "evt-1" = "there was a future meeting,
+        # its row is gone and its event awaits deletion"; the flag-off tests
+        # assert it is never awaited.
         self.interview_svc = create_autospec(InterviewSchedulingService, instance=True)
-        self.interview_svc.cancel_for_round.return_value = True
+        self.interview_svc.release_for_round.return_value = "evt-1"
         # autospec so a signature drift on on_admitted fails the test
         # instead of silently accepting any arity.
         self.mentorship_admission_svc = create_autospec(
             MentorshipAdmissionService, instance=True
         )
         self.notification_repo = self._notification_repository_double()
+        self.approvals = MagicMock()
+        self.approvals.get_pending_for_target = AsyncMock(return_value=None)
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -167,11 +190,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.notification_repo,
             self.user_emails_repo,
             self.email_svc,
-            self.email_sync_svc,
             self.interview_repo,
             self.application_access,
             self.interview_svc,
             self.mentorship_admission_svc,
+            self.approvals,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -269,25 +292,22 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     def _email_dto(
         self,
         to=("cand@example.com",),
-        cc=(),
         subject="Hi",
         body="<p>x</p>",
         thread_id=None,
+        last_seen_message_id=None,
     ):
         return EmailSendRequestDto(
-            to=list(to), cc=list(cc), subject=subject, body=body, thread_id=thread_id
+            to=list(to),
+            subject=subject,
+            body=body,
+            thread_id=thread_id,
+            last_seen_message_id=last_seen_message_id,
         )
 
     def _caller(self, user_id=3):
         """A UserContextDto for the recruiter making the call."""
         return self._ctx(user_id=user_id)
-
-    def _email_service(self):
-        """The already-constructed BoardService plus its email-related mocks."""
-        return self.service, SimpleNamespace(
-            email_conversation_service=self.email_svc,
-            user_emails_repository=self.user_emails_repo,
-        )
 
     def _setup_owned_application(
         self, application_id=7, job_id=100, user_id=5, owner=2
@@ -303,20 +323,36 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- application email: send --
 
-    async def test_send_application_email_delegates_to_conversation_service(self):
+    async def test_send_application_email_sends_a_new_email_as_the_owner(self):
         self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value="c@x.com")
+        self.email_svc.person_email_addresses.return_value = [
+            PersonAddress(address="c@x.com", is_primary=True)
+        ]
+
         result = await self.service.send_application_email(
             self.session, self._ctx(user_id=2), 7, self._email_dto(to=["c@x.com"])
         )
-        self.email_svc.send.assert_awaited_once()
-        _, kw = self.email_svc.send.call_args
-        self.assertEqual(kw["user_id"], 5)
-        self.assertEqual(kw["context_type"], ContextType.APPLICATION)
-        self.assertEqual(kw["context_id"], 7)
-        self.assertEqual(kw["to"], ["c@x.com"])
-        self.assertEqual(kw["sender_user_id"], 2)
-        self.assertIsNone(kw["thread_id"])
+
+        policy = self.email_svc.send_new.call_args.args[1]
+        self.assertEqual(
+            (policy.user_id, policy.context_type, policy.context_id),
+            (5, ContextType.APPLICATION, 7),
+        )
+        self.assertEqual([o.address for o in policy.recipient_options], ["c@x.com"])
+        self.assertEqual(
+            self.email_svc.send_new.call_args.kwargs,
+            {
+                "sender_user_id": 2,
+                "to": ["c@x.com"],
+                "subject": "Hi",
+                "body": "<p>x</p>",
+            },
+        )
+        self.email_svc.reply.assert_not_awaited()
+        self.assertEqual(self.call_order, ["record", "commit"])
         self.assertIsInstance(result, EmailConversationDto)
+        self.assertTrue(result.can_send)
 
     async def test_send_application_email_rejects_non_owner(self):
         self._setup_owned_application(owner=2)
@@ -324,7 +360,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.send_application_email(
                 self.session, self._ctx(user_id=99), 7, self._email_dto()
             )
-        self.email_svc.send.assert_not_awaited()
+        self.email_svc.send_new.assert_not_awaited()
 
     async def test_send_application_email_missing_application(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
@@ -332,33 +368,55 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.send_application_email(
                 self.session, self._ctx(user_id=2), 7, self._email_dto()
             )
-        self.email_svc.send.assert_not_awaited()
+        self.email_svc.send_new.assert_not_awaited()
 
-    async def test_send_application_email_empty_to_uses_contact_email(self):
-        self._setup_owned_application(user_id=5, owner=2)
-        self.user_emails_repo.get_contact_email = AsyncMock(return_value="fb@x.com")
+    async def test_a_reply_goes_through_the_thread_and_ignores_to(self):
+        self._setup_owned_application(owner=2)
+
         await self.service.send_application_email(
-            self.session, self._ctx(user_id=2), 7, self._email_dto(to=[])
+            self.session,
+            self._ctx(user_id=2),
+            7,
+            self._email_dto(
+                to=["someone@else.com"], thread_id=55, last_seen_message_id=12
+            ),
         )
-        _, kw = self.email_svc.send.call_args
-        self.assertEqual(kw["to"], ["fb@x.com"])
 
-    async def test_send_application_email_no_recipient_raises(self):
-        self._setup_owned_application(user_id=5, owner=2)
-        self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
+        self.assertEqual(
+            self.email_svc.reply.call_args.kwargs,
+            {
+                "sender_user_id": 2,
+                "thread_id": 55,
+                "body": "<p>x</p>",
+                "last_seen_message_id": 12,
+            },
+        )
+        self.email_svc.send_new.assert_not_awaited()
+
+    async def test_a_reply_without_the_last_seen_message_is_refused(self):
+        self._setup_owned_application(owner=2)
+
         with self.assertRaises(ValueError):
             await self.service.send_application_email(
-                self.session, self._ctx(user_id=2), 7, self._email_dto(to=[])
+                self.session, self._ctx(user_id=2), 7, self._email_dto(thread_id=55)
             )
-        self.email_svc.send.assert_not_awaited()
 
-    async def test_send_application_email_reply_passes_thread_id(self):
+        self.email_svc.reply.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_failed_send_records_and_commits_nothing(self):
         self._setup_owned_application(owner=2)
-        await self.service.send_application_email(
-            self.session, self._ctx(user_id=2), 7, self._email_dto(thread_id=55)
+        self.email_svc.send_new.side_effect = ValueError(
+            "'x@y.com' is not an address this person can be written to at"
         )
-        _, kw = self.email_svc.send.call_args
-        self.assertEqual(kw["thread_id"], 55)
+
+        with self.assertRaises(ValueError):
+            await self.service.send_application_email(
+                self.session, self._ctx(user_id=2), 7, self._email_dto(to=["x@y.com"])
+            )
+
+        self.record_event.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
 
     # -- application email: templates --
 
@@ -539,60 +597,58 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         rejection = next(t for t in result.templates if t.key == "rejection")
         self.assertIn("Dear ,", rejection.body_html)
 
-    # -- application email: get / refresh --
+    # -- application email: get --
 
-    async def test_get_application_conversation_pure_read_does_not_sync(self):
-        self._setup_owned_application(owner=2)
+    async def test_get_application_conversation_lets_an_advancing_owner_compose(self):
+        self._setup_owned_application(user_id=5, owner=2)
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value="c@x.com")
+        self.email_svc.person_email_addresses.return_value = [
+            PersonAddress(address="c@x.com", is_primary=True)
+        ]
+
         result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=False
+            self.session,
+            self._ctx(
+                user_id=2, permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            ),
+            7,
         )
-        self.email_sync_svc.sync_application.assert_not_awaited()
-        self.email_svc.list_conversation.assert_awaited_once()
-        self.assertIsInstance(result, EmailConversationDto)
 
-    async def test_get_application_conversation_refresh_syncs_first(self):
+        self.assertTrue(result.can_send)
+        self.assertEqual(result.default_to, "c@x.com")
+        self.session.commit.assert_not_awaited()
+
+    async def test_an_owner_without_the_advance_permission_reads_only(self):
         self._setup_owned_application(owner=2)
-        await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=True
+
+        result = await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=2), 7
         )
-        self.email_sync_svc.sync_application.assert_awaited_once()
+
+        self.assertFalse(result.can_send)
+        self.assertIsNone(result.default_to)
+        self.user_emails_repo.get_contact_email.assert_not_awaited()
 
     async def test_get_application_conversation_allows_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
         ctx = self._ctx(
-            user_id=99, permissions=[Permission.RECRUITING_APPLICATION_READ_ALL]
+            user_id=99,
+            permissions=[
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+                Permission.RECRUITING_APPLICATION_ADVANCE,
+            ],
         )
-        result = await self.service.get_application_conversation(
-            self.session, ctx, 7, refresh=False
-        )
+
+        result = await self.service.get_application_conversation(self.session, ctx, 7)
+
         self.assertIsInstance(result, EmailConversationDto)
+        self.assertFalse(result.can_send)
 
     async def test_conversation_read_allows_owner_of_another_posting_of_the_candidate(
         self,
     ):
         """The cross-posting history rows read mail through this endpoint,
-        so an owner of ANY posting the candidate applied to can read it —
-        the same "single entry gate" get_resume already resolves by."""
-        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        sibling_job = self._job(job_id=200, owner_ids=(42,))
-        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (app, self._job(job_id=100, owner_ids=(2,))),
-                (sibling_app, sibling_job),
-            ]
-        )
-
-        result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=42), 7, refresh=False
-        )
-
-        self.assertIsInstance(result, EmailConversationDto)
-        self.email_svc.list_conversation.assert_awaited_once()
-
-    async def test_conversation_read_gives_a_candidate_scope_caller_no_prefill(self):
-        """A read-only caller has no compose box to seed, and default_cc
-        would otherwise hand out a recruiter's contact address."""
+        so an owner of ANY posting the candidate applied to can read it."""
         app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
         sibling_app = self._application(application_id=8, job_id=200, user_id=5)
         self.app_repo.list_by_user = AsyncMock(
@@ -603,11 +659,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=42), 7, refresh=False
+            self.session, self._ctx(user_id=42), 7
         )
 
+        self.assertIsInstance(result, EmailConversationDto)
         self.assertIsNone(result.default_to)
-        self.assertEqual(result.default_cc, [])
+        policy = self.email_svc.conversation.call_args.args[1]
+        self.assertEqual((policy.user_id, policy.context_id), (5, 7))
         self.user_emails_repo.get_contact_email.assert_not_awaited()
 
     async def test_conversation_read_forbids_a_caller_with_no_standing_anywhere(self):
@@ -618,29 +676,37 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self.service.get_application_conversation(
-                self.session, self._ctx(user_id=42), 7, refresh=False
+                self.session, self._ctx(user_id=42), 7
             )
-        self.email_svc.list_conversation.assert_not_awaited()
+        self.email_svc.conversation.assert_not_awaited()
 
-    async def test_conversation_refresh_does_not_widen_to_candidate_scope(self):
-        """Refresh calls out to Gmail and writes: nobody drives a sync on a
-        posting they have no standing on. Refused outright rather than
-        silently downgraded, so the caller can't mistake a stale view for a
-        fresh one."""
+    async def test_an_attachment_is_read_with_the_tab_gate_and_the_application(self):
+        self._setup_owned_application(application_id=7, user_id=5, owner=2)
+
+        content = await self.service.get_application_email_attachment(
+            self.session, self._ctx(user_id=2), 7, 31, 0
+        )
+
+        self.assertEqual(content, (b"%PDF", "cv.pdf"))
+        policy, message_id, index = self.email_svc.read_attachment.call_args.args[1:]
+        self.assertEqual(
+            (policy.user_id, policy.context_type, policy.context_id, message_id, index),
+            (5, ContextType.APPLICATION, 7, 31, 0),
+        )
+        self.assertFalse(policy.can_send)
+
+    async def test_an_attachment_needs_standing_on_the_candidate(self):
         app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
         self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (app, self._job(job_id=100, owner_ids=(2,))),
-                (sibling_app, self._job(job_id=200, owner_ids=(42,))),
-            ]
+            return_value=[(app, self._job(job_id=100, owner_ids=(2,)))]
         )
 
         with self.assertRaises(ValueError):
-            await self.service.get_application_conversation(
-                self.session, self._ctx(user_id=42), 7, refresh=True
+            await self.service.get_application_email_attachment(
+                self.session, self._ctx(user_id=42), 7, 31, 0
             )
-        self.email_sync_svc.sync_application.assert_not_awaited()
+
+        self.email_svc.read_attachment.assert_not_awaited()
 
     async def test_send_application_email_write_forbids_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
@@ -651,91 +717,34 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.send_application_email(
                 self.session, ctx, 7, self._email_dto()
             )
-        self.email_svc.send.assert_not_awaited()
-
-    async def test_conversation_default_cc_is_recruiter_only_for_new(self):
-        service, mocks = self._email_service()
-        mocks.email_conversation_service.list_conversation = AsyncMock(return_value=[])
-        # candidate contact = candidate@x ; recruiter (caller 3) contact = rec@x
-        mocks.user_emails_repository.get_contact_email = AsyncMock(
-            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
-        )
-        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
-        result = await service._build_application_conversation(
-            self.session, self._caller(user_id=3), application_id=7, user_id=42
-        )
-        self.assertEqual(result.default_cc, ["rec@x"])
-        self.assertEqual(result.default_to, "candidate@x")
-
-    async def test_thread_default_cc_unions_recruiter_and_history(self):
-        service, mocks = self._email_service()
-        thread = EmailThreadDto(
-            thread_id=10,
-            subject="S",
-            synced_at=None,
-            created_at=datetime.now(timezone.utc),
-            messages=[
-                EmailMessageDto(
-                    message_id=1,
-                    direction="outbound",
-                    cc_addresses="Boss <boss@x>, candidate@x",
-                    created_at=datetime.now(timezone.utc),
-                ),
-                EmailMessageDto(
-                    message_id=2,
-                    direction="inbound",
-                    cc_addresses="BOSS@x, ally@x, recruiting@corp.com",
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ],
-        )
-        mocks.email_conversation_service.list_conversation = AsyncMock(
-            return_value=[thread]
-        )
-        mocks.user_emails_repository.get_contact_email = AsyncMock(
-            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
-        )
-        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
-        result = await service._build_application_conversation(
-            self.session, self._caller(user_id=3), application_id=7, user_id=42
-        )
-        # recruiter first; boss deduped case-insensitively; candidate (To) and
-        # company sender excluded; order preserved.
-        self.assertEqual(result.threads[0].default_cc, ["rec@x", "boss@x", "ally@x"])
+        self.email_svc.send_new.assert_not_awaited()
 
     # -- application email: timeline events --
 
     async def test_send_application_email_logs_email_sent_activity(self):
         self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        self.email_svc.send = AsyncMock(return_value=SimpleNamespace(thread_id=10))
-        dto = self._email_dto(to=["c@x"], cc=["boss@x"], subject="Hello")
-        await self.service.send_application_email(
-            self.session, self._ctx(user_id=2), 7, dto
-        )
-        self.record_event.assert_awaited_once()
-        _args, kwargs = self.record_event.await_args
-        self.assertEqual(kwargs["subject_id"], 7)
-        self.assertEqual(kwargs["actor_id"], 2)  # the sending recruiter
-        self.assertEqual(kwargs["event_type"], "recruiting.email_sent")
-        self.assertEqual(kwargs["details"]["subject"], "Hello")
-        self.assertEqual(kwargs["details"]["to"], ["c@x"])
-        self.assertEqual(kwargs["details"]["cc"], ["boss@x"])
-        self.assertEqual(kwargs["details"]["threadId"], 10)
-        self.assertEqual(kwargs["details"]["direction"], "outbound")
 
-    async def test_refresh_delegates_to_email_sync_service_and_commits(self):
-        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=True
+        await self.service.send_application_email(
+            self.session,
+            self._ctx(user_id=2),
+            7,
+            self._email_dto(thread_id=55, last_seen_message_id=12),
         )
-        self.email_sync_svc.sync_application.assert_awaited_once()
-        args, _ = self.email_sync_svc.sync_application.await_args
-        self.assertIs(args[0], self.session)
-        self.assertIs(args[1], app)
-        self.session.commit.assert_awaited_once()
-        # The timeline write moved to EmailSyncService; board_service must not
-        # write activities on the refresh path any more.
-        self.record_event.assert_not_awaited()
+
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["subject_id"], 7)
+        self.assertEqual(kwargs["actor_id"], 2)
+        self.assertEqual(kwargs["event_type"], "recruiting.email_sent")
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "subject": "Re: Hi",
+                "to": ["cand@example.com"],
+                "threadId": 55,
+                "direction": "outbound",
+            },
+        )
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(
@@ -1088,12 +1097,53 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=99, first="Default", last="Person")]
         )
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=99)]
+        )
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
         self.assertEqual(
             result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
             "Default Person",
+        )
+
+    async def test_get_board_hides_a_default_who_can_no_longer_evaluate(self):
+        """A default outside the evaluator pool would never get the row, so
+        naming them on the card would promise an evaluation nobody owes."""
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("recruiter_screening",),
+            default_assignees={"recruiter_screening": 99},
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        first = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        second = self._application(
+            application_id=11, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.app_repo.list_by_job = AsyncMock(
+            return_value=[
+                (first, self._user(user_id=3)),
+                (second, self._user(user_id=4)),
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=99, first="Default", last="Person")]
+        )
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        items = result["stages"]["recruiter_screening"]["items"]
+        self.assertEqual([card.reviewer_name for card in items], [None, None])
+        # One pool read for the page, not one per card.
+        self.user_permissions_repo.get_active_users_with_permission.assert_awaited_once_with(
+            self.session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
         )
 
     async def test_get_board_reviewer_none_when_no_assignment_and_no_default(self):
@@ -1319,6 +1369,92 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(result.resume_available)
+
+    async def test_get_application_detail_reports_a_blocked_applicant(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        applicant.is_blocked = True
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        # Per id, not one return_value: the viewer is read through the same
+        # method, and a single row would let the flag be read off whoever asked.
+        self._users_by_id({2: self._user(user_id=2), 3: applicant})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.applicant_is_blocked)
+
+    async def test_get_application_detail_reports_an_applicant_who_is_not_blocked(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        viewer = self._user(user_id=2)
+        viewer.is_blocked = True
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        # The viewer carries the flag and the applicant does not, so reading
+        # the wrong row shows up as a True here rather than as nothing.
+        self._users_by_id({2: viewer, 3: self._user(user_id=3)})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertFalse(result.applicant_is_blocked)
+
+    def _detail_fixture(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self._users_by_id({2: self._user(user_id=2), 3: self._user(user_id=3)})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+    async def test_get_application_detail_names_only_the_reviewer_of_a_pending_block(
+        self,
+    ):
+        self._detail_fixture()
+        self.approvals.get_pending_for_target = AsyncMock(
+            return_value=SimpleNamespace(
+                request_id=901,
+                reviewer_id=77,
+                raised_by=8,
+                reason="Harassed a mentee in a session",
+            )
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=77, first="Rita", last="Reviewer")]
+        )
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.approvals.get_pending_for_target.assert_awaited_once_with(
+            self.session, "block_user", "3"
+        )
+        dumped = result.model_dump(by_alias=True)["pendingBlockRequest"]
+        self.assertEqual(
+            dumped,
+            {"requestId": 901, "reviewer": {"userId": 77, "name": "Rita Reviewer"}},
+        )
+        self.assertNotIn("Harassed", str(result.model_dump(by_alias=True)))
+
+    async def test_get_application_detail_has_no_pending_block_when_none_waits(self):
+        self._detail_fixture()
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertIsNone(result.pending_block_request)
 
     async def test_get_application_detail_raises_when_missing(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
@@ -2963,263 +3099,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.sub_status, "in_progress")
         self.evaluation_repo.has_confirmed.assert_not_awaited()
 
-    # -- blacklist --
-
-    async def test_blacklist_writes_block_fields_on_the_user(self):
-        user = self._user(user_id=3)
-        application = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
-        )
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(
-            user_id=3, application_id=10, reason="Fabricated credentials"
-        )
-        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        self.assertTrue(user.is_blocked)
-        self.assertEqual(user.blocked_by, 99)
-        self.assertEqual(user.blocked_reason, "Fabricated credentials")
-        self.assertIsNotNone(user.blocked_at)
-
-    async def test_blacklist_closes_tags_and_freezes_the_application(self):
-        user = self._user(user_id=3)
-        application = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
-        )
-        application.current_round = 2
-        application.sub_status = "in_progress"
-        application.tags = {"existing": "keep-me"}
-        current_sub = self._submission(application_id=10, is_frozen=False)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
-
-        dto = BlacklistDto(
-            user_id=3, application_id=10, reason="Fabricated credentials"
-        )
-        result = await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        self.assertEqual(result.stage, ApplicationStage.REJECTED)
-        self.assertIsNone(result.sub_status)
-        self.assertEqual(result.tags["existing"], "keep-me")
-        self.assertTrue(result.tags["blacklisted"])
-        self.assertTrue(current_sub.is_frozen)
-        self.app_repo.update.assert_awaited_once()
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result.current_round, 1)
-
-    async def test_blacklist_logs_activity(self):
-        user = self._user(user_id=3)
-        application = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
-        )
-        current_sub = self._submission(application_id=10, is_frozen=False)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
-
-        dto = BlacklistDto(
-            user_id=3, application_id=10, reason="Fabricated credentials"
-        )
-        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        self.record_event.assert_awaited_once_with(
-            self.session,
-            subject_type="application",
-            subject_id=10,
-            actor_id=99,
-            event_type="recruiting.blacklisted",
-            details={
-                "fromStage": ApplicationStage.TECH.value,
-                "reason": "Fabricated credentials",
-            },
-        )
-
-    async def test_blacklist_row_locks_the_application(self):
-        user = self._user(user_id=3)
-        application = self._application(application_id=10, job_id=1, user_id=3)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        self.app_repo.get_by_id.assert_awaited_once_with(
-            self.session, 10, for_update=True
-        )
-
-    async def test_blacklist_missing_user_raises(self):
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=None)
-        self.app_repo.get_by_id = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        with self.assertRaises(ValueError):
-            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-        self.app_repo.get_by_id.assert_not_awaited()
-
-    async def test_blacklist_missing_application_raises(self):
-        user = self._user(user_id=3)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(user_id=3, application_id=999, reason="Spam")
-        with self.assertRaises(ValueError) as ctx:
-            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-        self.assertEqual(str(ctx.exception), "application 999 not found")
-
-    async def test_blacklist_application_belonging_to_other_user_raises(self):
-        user = self._user(user_id=3)
-        application = self._application(application_id=10, job_id=1, user_id=4)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        with self.assertRaises(ValueError) as ctx:
-            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-        self.assertEqual(str(ctx.exception), "application 10 not found")
-        self.app_repo.update.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
-
-    async def test_blacklist_is_not_owner_gated(self):
-        """The caller need not own the application's job — only the
-        RECRUITING_BLACKLIST_WRITE permission (checked at the route) gates
-        this action."""
-        user = self._user(user_id=3)
-        application = self._application(application_id=10, job_id=1, user_id=3)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-        # job_repo is deliberately never consulted; blacklist doesn't load
-        # the job or check ownership at all.
-        self.job_repo.get_by_job_id = AsyncMock(
-            side_effect=AssertionError("blacklist must not check job ownership")
-        )
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        await self.service.blacklist(self.session, self._ctx(user_id=42), dto)
-
-        self.job_repo.get_by_job_id.assert_not_awaited()
-
-    async def test_blacklist_rejects_other_in_flight_applications(self):
-        """Blacklisting closes out EVERY other application of the same user
-        (2026-07-22 decision), not just the triggering one. In-flight and
-        already-HIRED rows are rejected + tagged; already-REJECTED rows that
-        aren't yet tagged get the ``blacklisted`` tag backfilled (stage kept)."""
-        user = self._user(user_id=3)
-        job_a = self._job(job_id=1, owner_ids=(2,))
-        job_b = self._job(job_id=2, owner_ids=(2,))
-        job_c = self._job(job_id=3, owner_ids=(2,))
-        job_d = self._job(job_id=4, owner_ids=(2,))
-        trigger = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
-        )
-        second = self._application(
-            application_id=11, job_id=2, user_id=3, stage=ApplicationStage.APPLIED
-        )
-        second.current_round = 2
-        third = self._application(
-            application_id=12, job_id=3, user_id=3, stage=ApplicationStage.HIRED
-        )
-        fourth = self._application(
-            application_id=13, job_id=4, user_id=3, stage=ApplicationStage.REJECTED
-        )
-        fourth.current_round = 4
-        apps_by_id = {10: trigger, 11: second, 12: third, 13: fourth}
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(
-            side_effect=lambda _session, application_id, for_update=False: apps_by_id[
-                application_id
-            ]
-        )
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (trigger, job_a),
-                (second, job_b),
-                (third, job_c),
-                (fourth, job_d),
-            ]
-        )
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(
-            user_id=3, application_id=10, reason="Fabricated credentials"
-        )
-        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        # In-flight -> full close-out.
-        self.assertEqual(second.stage, ApplicationStage.REJECTED)
-        self.assertTrue(second.tags["blacklisted"])
-        self.assertIsNone(second.sub_status)
-        self.assertEqual(second.current_round, 1)
-        # HIRED -> now also rejected + tagged (was previously left untouched).
-        self.assertEqual(third.stage, ApplicationStage.REJECTED)
-        self.assertTrue(third.tags["blacklisted"])
-        self.assertIsNone(third.sub_status)
-        self.assertEqual(third.current_round, 1)
-        # Already-REJECTED, untagged -> stage kept, tag backfilled, round kept.
-        self.assertEqual(fourth.stage, ApplicationStage.REJECTED)
-        self.assertTrue(fourth.tags["blacklisted"])
-        self.assertEqual(fourth.current_round, 4)
-        self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
-        # trigger (10) + second (11) + third (12) + fourth (13).
-        self.assertEqual(self.record_event.call_count, 4)
-        by_app = {
-            call.kwargs["subject_id"]: call for call in self.record_event.call_args_list
-        }
-        self.assertEqual(by_app[12].kwargs["actor_id"], 99)
-        self.assertEqual(by_app[12].kwargs["event_type"], "recruiting.blacklisted")
-        self.assertEqual(
-            by_app[12].kwargs["details"]["fromStage"], ApplicationStage.HIRED.value
-        )
-        self.assertEqual(by_app[13].kwargs["actor_id"], 99)
-        self.assertEqual(by_app[13].kwargs["event_type"], "recruiting.blacklisted")
-        self.assertEqual(
-            by_app[13].kwargs["details"]["fromStage"], ApplicationStage.REJECTED.value
-        )
-
-    async def test_blacklist_skips_already_tagged_rejected_applications(self):
-        """A prior blacklist already rejected + tagged some rows; re-running
-        blacklist leaves those rows untouched and logs no duplicate activity."""
-        user = self._user(user_id=3)
-        job_a = self._job(job_id=1, owner_ids=(2,))
-        job_b = self._job(job_id=2, owner_ids=(2,))
-        trigger = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
-        )
-        prior = self._application(
-            application_id=11, job_id=2, user_id=3, stage=ApplicationStage.REJECTED
-        )
-        prior.tags = {"blacklisted": True}
-        prior.current_round = 5
-        apps_by_id = {10: trigger, 11: prior}
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(
-            side_effect=lambda _session, application_id, for_update=False: apps_by_id[
-                application_id
-            ]
-        )
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[(trigger, job_a), (prior, job_b)]
-        )
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Repeat offender")
-        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        self.assertEqual(prior.stage, ApplicationStage.REJECTED)
-        self.assertEqual(prior.tags, {"blacklisted": True})
-        self.assertEqual(prior.current_round, 5)
-        # Only the triggering application (10) is logged; the already-tagged
-        # rejected row logs nothing.
-        self.assertEqual(self.record_event.call_count, 1)
-        self.assertEqual(self.record_event.call_args_list[0].kwargs["subject_id"], 10)
-
-    # -- set_round --
-
     async def test_set_round_advances_to_a_valid_round(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
         application = self._application(
@@ -3389,7 +3268,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # The stage+round being LEFT, not the target: the meeting that just
         # became unreachable in the UI is behavioral round 2's, and the
         # application is about to read tech round 1.
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3407,7 +3286,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dto.cancel_interview)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_change_stage_reject_cancels_with_the_reject_source(self):
         self._setup_behavioral_application()
@@ -3419,7 +3298,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3438,7 +3317,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             commits_seen_at_cancel.append(self.session.commit.await_count)
             return True
 
-        self.interview_svc.cancel_for_round = AsyncMock(side_effect=record)
+        self.interview_svc.release_for_round = AsyncMock(side_effect=record)
         self._setup_behavioral_application()
 
         dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
@@ -3458,7 +3337,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_set_round_cancels_the_left_rounds_meeting_when_asked(self):
         self._setup_behavioral_application(current_round=1)
@@ -3466,7 +3345,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=2, cancel_interview=True)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3482,7 +3361,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dto.cancel_interview)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_set_round_to_the_same_round_never_cancels(self):
         """Re-setting the current round leaves no round behind, so there is no
@@ -3493,7 +3372,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=2, cancel_interview=True)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
     async def test_set_round_moving_backward_cancels_the_round_it_leaves(self):
         """Rescue lanes move an application back a round; the round being left
@@ -3503,7 +3382,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=1, cancel_interview=True)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+        self.interview_svc.release_for_round.assert_awaited_once_with(
             self.session,
             10,
             ApplicationStage.BEHAVIORAL,
@@ -3519,9 +3398,74 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.interview_svc.release_for_round.assert_not_awaited()
 
-    # -- blacklist: the upcoming meetings it sweeps away --
+    def _track_cancel_order(self):
+        manager = MagicMock()
+        manager.attach_mock(self.interview_svc.release_for_round, "release")
+        manager.attach_mock(self.session.commit, "commit")
+        manager.attach_mock(self.interview_svc.delete_calendar_events, "delete")
+        return manager
+
+    async def test_change_stage_deletes_the_calendar_event_only_after_commit(self):
+        """Google mails the cancellation the moment the event is deleted, so it
+        must not happen for a decision that could still roll back."""
+        self._setup_behavioral_application(current_round=2)
+        manager = self._track_cancel_order()
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(
+            [c[0] for c in manager.mock_calls], ["release", "commit", "delete"]
+        )
+        self.interview_svc.delete_calendar_events.assert_awaited_once_with(["evt-1"])
+
+    async def test_change_stage_failing_after_the_release_deletes_no_event(self):
+        self._setup_behavioral_application(current_round=2)
+        self.app_repo.update = AsyncMock(side_effect=RuntimeError("db down"))
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        with self.assertRaises(RuntimeError):
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.release_for_round.assert_awaited_once()
+        self.session.commit.assert_not_awaited()
+        self.interview_svc.delete_calendar_events.assert_not_awaited()
+
+    async def test_change_stage_with_nothing_released_deletes_no_event(self):
+        """No upcoming meeting on the round being left: nothing to delete."""
+        self._setup_behavioral_application()
+        self.interview_svc.release_for_round.return_value = None
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.session.commit.assert_awaited_once()
+        self.interview_svc.delete_calendar_events.assert_not_awaited()
+
+    async def test_set_round_deletes_the_calendar_event_only_after_commit(self):
+        self._setup_behavioral_application(current_round=1)
+        manager = self._track_cancel_order()
+
+        dto = RoundChangeDto(round=2, cancel_interview=True)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(
+            [c[0] for c in manager.mock_calls], ["release", "commit", "delete"]
+        )
+        self.interview_svc.delete_calendar_events.assert_awaited_once_with(["evt-1"])
+
+    async def test_set_round_failing_after_the_release_deletes_no_event(self):
+        self._setup_behavioral_application(current_round=1)
+        self.app_repo.update = AsyncMock(side_effect=RuntimeError("db down"))
+
+        dto = RoundChangeDto(round=2, cancel_interview=True)
+        with self.assertRaises(RuntimeError):
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.session.commit.assert_not_awaited()
+        self.interview_svc.delete_calendar_events.assert_not_awaited()
 
     # Far from any real "now" in both directions, so these never turn into
     # time bombs.
@@ -3547,213 +3491,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             timezone="America/Los_Angeles",
             scheduled_by=2,
         )
-
-    def _setup_blacklist_target(self, others=()):
-        """The blacklisted candidate's triggering application, plus siblings.
-
-        `others` is an iterable of (application_id, stage, tags) triples.
-        """
-        application = self._application(
-            application_id=10, job_id=1, user_id=5, stage=ApplicationStage.BEHAVIORAL
-        )
-        sibling_rows = []
-        siblings = {}
-        for other_id, other_stage, other_tags in others:
-            sibling = self._application(
-                application_id=other_id, job_id=2, user_id=5, stage=other_stage
-            )
-            sibling.tags = other_tags
-            siblings[other_id] = sibling
-            sibling_rows.append((sibling, self._job(job_id=2, owner_ids=(2,))))
-        by_id = {10: application, **siblings}
-
-        async def get_by_id(_session, application_id, for_update=False):
-            return by_id.get(application_id)
-
-        self.app_repo.get_by_id = AsyncMock(side_effect=get_by_id)
-        self.app_repo.list_by_user = AsyncMock(return_value=sibling_rows)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(user_id=5)
-        )
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-        return application, siblings
-
-    async def test_blacklist_cancels_every_upcoming_meeting_it_sweeps(self):
-        self._setup_blacklist_target(
-            others=[(11, ApplicationStage.TECH, None)],
-        )
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[
-                self._interview_row(application_id=10),
-                self._interview_row(
-                    application_id=11, stage=ApplicationStage.TECH, round=2
-                ),
-            ]
-        )
-
-        await self.service.blacklist(
-            self.session,
-            self._ctx(user_id=2),
-            BlacklistDto(user_id=5, application_id=10, reason="spam"),
-        )
-
-        self.assertEqual(
-            [c.args[1:] for c in self.interview_svc.cancel_for_round.await_args_list],
-            [
-                (10, ApplicationStage.BEHAVIORAL, 1, 2),
-                (11, ApplicationStage.TECH, 2, 2),
-            ],
-        )
-        for call_args in self.interview_svc.cancel_for_round.await_args_list:
-            self.assertEqual(call_args.kwargs, {"via": "blacklisted"})
-
-    async def test_blacklist_never_asks_before_cancelling(self):
-        """Unlike an advance or a reject, a blacklist carries no opt-out: the
-        candidate is banned org-wide, so the meeting will not happen."""
-        self._setup_blacklist_target()
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[self._interview_row(application_id=10)]
-        )
-
-        # BlacklistDto has no cancel flag to set -- the sweep is unconditional.
-        await self.service.blacklist(
-            self.session,
-            self._ctx(user_id=2),
-            BlacklistDto(user_id=5, application_id=10, reason="spam"),
-        )
-
-        self.interview_svc.cancel_for_round.assert_awaited_once()
-
-    async def test_blacklist_skips_an_already_blacklisted_applications_meeting(self):
-        """A sibling already tagged blacklisted is left untouched by the sweep
-        (no duplicate activity), so its meeting isn't re-cancelled either."""
-        self._setup_blacklist_target(
-            others=[(11, ApplicationStage.TECH, {"blacklisted": True})],
-        )
-        self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
-
-        await self.service.blacklist(
-            self.session,
-            self._ctx(user_id=2),
-            BlacklistDto(user_id=5, application_id=10, reason="spam"),
-        )
-
-        self.interview_repo.list_by_application_ids.assert_awaited_once_with(
-            self.session, [10]
-        )
-
-    async def test_blacklist_cancels_inside_the_same_transaction(self):
-        commits_seen_at_cancel = []
-
-        async def record(*_args, **_kwargs):
-            commits_seen_at_cancel.append(self.session.commit.await_count)
-            return True
-
-        self.interview_svc.cancel_for_round = AsyncMock(side_effect=record)
-        self._setup_blacklist_target()
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[self._interview_row(application_id=10)]
-        )
-
-        await self.service.blacklist(
-            self.session,
-            self._ctx(user_id=2),
-            BlacklistDto(user_id=5, application_id=10, reason="spam"),
-        )
-
-        self.assertEqual(commits_seen_at_cancel, [0])
-        self.session.commit.assert_awaited_once()
-
-    # -- blacklist: the pre-flight preview the confirm dialog shows --
-
-    async def test_list_upcoming_interviews_names_the_posting_and_the_slot(self):
-        application = self._application(
-            application_id=10, job_id=1, user_id=5, stage=ApplicationStage.BEHAVIORAL
-        )
-        application.current_round = 1
-        job = self._job(job_id=1, owner_ids=(2,))
-        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[self._interview_row(application_id=10)]
-        )
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].application_id, 10)
-        self.assertEqual(result[0].job_title, "Job 1")
-        self.assertEqual(result[0].stage, ApplicationStage.BEHAVIORAL)
-        self.assertEqual(result[0].round, 1)
-        self.assertEqual(result[0].start_at, self.UPCOMING)
-        # No zone on the projection: the dialog renders this instant in the
-        # reader's own zone, like every other interview time.
-        self.assertFalse(hasattr(result[0], "timezone"))
-
-    async def test_list_upcoming_interviews_omits_meetings_already_underway(self):
-        application = self._application(application_id=10, job_id=1, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[(application, self._job(job_id=1))]
-        )
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[self._interview_row(application_id=10, start_at=self.STARTED)]
-        )
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual(result, [])
-
-    async def test_list_upcoming_interviews_omits_already_blacklisted_applications(
-        self,
-    ):
-        """Their meetings were already cancelled by the earlier blacklist, and
-        the sweep skips those rows -- promising to cancel them again would be a
-        lie."""
-        blocked = self._application(application_id=11, job_id=2, user_id=5)
-        blocked.tags = {"blacklisted": True}
-        live = self._application(application_id=10, job_id=1, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (live, self._job(job_id=1)),
-                (blocked, self._job(job_id=2)),
-            ]
-        )
-        self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
-
-        await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.interview_repo.list_by_application_ids.assert_awaited_once_with(
-            self.session, [10]
-        )
-
-    async def test_list_upcoming_interviews_orders_by_start_time(self):
-        first = self._application(application_id=10, job_id=1, user_id=5)
-        second = self._application(application_id=11, job_id=2, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (first, self._job(job_id=1)),
-                (second, self._job(job_id=2)),
-            ]
-        )
-        later = self.UPCOMING.replace(year=2100)
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[
-                self._interview_row(application_id=11, start_at=later),
-                self._interview_row(application_id=10),
-            ]
-        )
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual([row.application_id for row in result], [10, 11])
-
-    async def test_list_upcoming_interviews_for_a_candidate_with_nothing_booked(self):
-        self.app_repo.list_by_user = AsyncMock(return_value=[])
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual(result, [])
-
-    # -- activity timeline logging --
 
     async def test_change_stage_logs_stage_changed_activity(self):
         job = self._job(
@@ -4072,6 +3809,132 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.applicant_name, "Ada Lovelace")
 
+    # -- An applicant whose account has no name (an email-code sign-in) is
+    # -- named by what they typed into their latest application, else by id.
+
+    def _nameless(self, user_id=3):
+        return self._user(user_id=user_id, first="", last="", preferred="Addy")
+
+    def _typed(self, user_id=3):
+        self.sub_repo.get_latest_personal_by_user_ids = AsyncMock(
+            return_value={user_id: {"firstName": "Typed", "lastName": "Applicant"}}
+        )
+
+    async def _board_with(self, *rows):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.list_by_job = AsyncMock(return_value=list(rows))
+        self.assignment_repo.list_by_application_ids = AsyncMock(return_value=[])
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+        return result["stages"]["recruiter_screening"]["items"]
+
+    async def test_get_board_names_a_nameless_applicant_by_what_they_typed(self):
+        named = self._user(user_id=4, first="Ada", last="Lovelace")
+        self._typed(3)
+
+        items = await self._board_with(
+            (self._application(application_id=10, user_id=3), self._nameless(3)),
+            (self._application(application_id=11, user_id=4), named),
+        )
+
+        names = {item.id: item.applicant_name for item in items}
+        self.assertEqual(names, {10: "Typed Applicant", 11: "Ada Lovelace"})
+        # One query, for the nameless applicant only.
+        self.sub_repo.get_latest_personal_by_user_ids.assert_awaited_once_with(
+            self.session, [3]
+        )
+
+    async def test_get_board_names_an_applicant_who_typed_nothing_by_user_id(self):
+        items = await self._board_with((
+            self._application(application_id=10, user_id=3),
+            self._nameless(3),
+        ))
+
+        self.assertEqual(items[0].applicant_name, "User 3")
+
+    async def test_get_board_skips_the_submission_query_when_everyone_has_a_name(
+        self,
+    ):
+        await self._board_with(
+            (
+                self._application(application_id=10, user_id=3),
+                self._user(user_id=3, first="Ada", last="Lovelace"),
+            ),
+            (
+                self._application(application_id=11, user_id=4),
+                self._user(user_id=4, first="Grace", last="Hopper"),
+            ),
+        )
+
+        self.sub_repo.get_latest_personal_by_user_ids.assert_not_awaited()
+
+    async def test_search_applicants_names_a_nameless_applicant_by_what_they_typed(
+        self,
+    ):
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
+        application, _ = self._hit_row(application_id=10, job_id=1, user_id=5)
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[(application, self._nameless(5))]
+        )
+        self._typed(5)
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "typed", job_id=1
+        )
+
+        self.assertEqual(result["hits"][0].applicant_name, "Typed Applicant")
+
+    async def test_search_applicants_names_an_applicant_who_typed_nothing_by_id(self):
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
+        application, _ = self._hit_row(application_id=10, job_id=1, user_id=5)
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[(application, self._nameless(5))]
+        )
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "user", job_id=1
+        )
+
+        self.assertEqual(result["hits"][0].applicant_name, "User 5")
+
+    async def _detail_for(self, applicant):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: applicant,
+                2: self._user(user_id=2),
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        return await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+    async def test_get_application_detail_names_a_nameless_applicant_by_what_they_typed(
+        self,
+    ):
+        self._typed(3)
+
+        result = await self._detail_for(self._nameless(3))
+
+        self.assertEqual(result.applicant_name, "Typed Applicant")
+
+    async def test_get_application_detail_names_an_applicant_who_typed_nothing_by_id(
+        self,
+    ):
+        result = await self._detail_for(self._nameless(3))
+
+        self.assertEqual(result.applicant_name, "User 3")
+
     async def test_get_application_detail_names_interview_staff_by_preferred_name(
         self,
     ):
@@ -4241,6 +4104,184 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         names = await self.service._resolve_mentioned_users(self.session, [7])
 
         self.assertEqual(names[0].name, "Evie")
+
+    # -- A colleague with no name (an email-code account) is named User <id>
+    # -- instead of an empty string, which the pages would hide.
+
+    async def test_get_board_names_a_reviewer_with_no_name_by_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.app_repo.list_by_job = AsyncMock(
+            return_value=[(app, self._user(user_id=3))]
+        )
+        self.assignment_repo.list_by_application_ids = AsyncMock(
+            return_value=[
+                self._assignment(10, ApplicationStage.RECRUITER_SCREENING, 1, 276)
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=276, first="", last="")]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertEqual(
+            result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
+            "User 276",
+        )
+
+    async def test_get_application_detail_names_interview_staff_with_no_name_by_id(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        assignment = MagicMock()
+        assignment.assignee_id = 276
+        self.assignment_repo.get.return_value = assignment
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: self._user(user_id=3, first="C", last="D"),
+                276: self._user(user_id=276, first="", last=""),
+                2: self._user(user_id=2, first=None, last=None),
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.interview_repo.get.return_value = SimpleNamespace(
+            interview_id=77,
+            stage=ApplicationStage.BEHAVIORAL,
+            round=1,
+            start_at=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc),
+            end_at=datetime(2026, 8, 5, 21, 45, tzinfo=timezone.utc),
+            meet_link="https://meet.example/abc",
+            scheduled_by=2,
+        )
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.interview.assignee_name, "User 276")
+        self.assertEqual(result.interview.scheduled_by_name, "User 2")
+
+    async def test_get_application_activity_names_people_with_no_name_by_user_id(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.event_repo.list_by_subject = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    event_id=1,
+                    subject_type="application",
+                    subject_id=10,
+                    actor_id=276,
+                    event_type="recruiting.stage_changed",
+                    details={"toStage": "tech", "assigneeId": 277},
+                    created_at=datetime(2026, 7, 4, 12, 0, 0),
+                )
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=276, first="", last=""),
+                self._user(user_id=277, first="", last=""),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].actor_name, "User 276")
+        self.assertEqual(result[0].details["assigneeName"], "User 277")
+
+    async def test_list_comments_names_author_and_mention_with_no_name_by_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.comment_repo.list_by_application = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    comment_id=1,
+                    application_id=10,
+                    author_id=276,
+                    body="cc @[277]",
+                    created_at=datetime(2026, 7, 7, 12, 0, 0),
+                )
+            ]
+        )
+        self.comment_mention_repo.get_by_comment_ids = AsyncMock(
+            return_value=[SimpleNamespace(comment_id=1, mentioned_user_id=277)]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=276, first="", last=""),
+                self._user(user_id=277, first="", last=""),
+            ]
+        )
+
+        result = await self.service.list_comments(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].author_name, "User 276")
+        self.assertEqual(result[0].mentions[0].name, "User 277")
+
+    async def test_add_comment_names_an_author_with_no_name_by_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.comment_repo.create = AsyncMock(
+            return_value=SimpleNamespace(
+                comment_id=5,
+                application_id=10,
+                author_id=2,
+                body="Great candidate.",
+                created_at=datetime(2026, 7, 7, 12, 0, 0),
+            )
+        )
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="", last="")
+        )
+
+        result = await self.service.add_comment(
+            self.session,
+            self._ctx(user_id=2),
+            10,
+            CommentCreateDto(body="Great candidate."),
+        )
+
+        self.assertEqual(result.author_name, "User 2")
+
+    async def test_list_mentionable_users_names_one_with_no_name_by_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=276)
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=276, first="", last=""),
+            ]
+        )
+
+        result = await self.service.list_mentionable_users(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual([m.name for m in result], ["Owen Owner", "User 276"])
 
     async def test_get_application_activity_returns_dtos_with_resolved_actor_names(
         self,
@@ -5202,6 +5243,43 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.comment_mention_repo.create_mentions.assert_not_awaited()
         self.assertEqual(result.mentions, [])
 
+    async def test_add_comment_mention_of_a_deactivated_user_is_stripped(self):
+        """The same treatment an unauthorized id gets, for the same reason.
+
+        Both paths read ``_mentionable_user_ids``, so filtering it covers the
+        picker and the submitted token together -- a hand-written token cannot
+        reach somebody the dropdown refuses to offer. The comment still posts,
+        visibly without the mention, rather than silently accepting an @ that
+        would reach nobody.
+        """
+        job = self._job(job_id=1, owner_ids=(2, 3))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.filter_reachable_ids = AsyncMock(return_value={2})
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="ping ",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+
+        dto = CommentCreateDto(body="ping @[3]")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_repo.create.assert_awaited_once_with(self.session, 10, 2, "ping ")
+        self.comment_mention_repo.create_mentions.assert_not_awaited()
+        self.assertEqual(result.mentions, [])
+        self.record_event.assert_not_awaited()
+
     async def test_add_comment_body_that_is_only_an_invalid_mention_is_rejected(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(application_id=10, job_id=1)
@@ -5427,6 +5505,31 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual({u.user_id for u in result}, {2})
+
+    async def test_list_mentionable_users_excludes_deactivated_and_blocked(self):
+        """An owner who can no longer sign in is not offered as a mention.
+
+        Ownership lives in the job's pipeline_config and is not rewritten when
+        an account is turned off, so the raw candidate set still names them.
+        Offering the pick would let somebody @ a person who can neither read
+        the comment nor be notified about it.
+        """
+        job = self._job(job_id=1, owner_ids=(2, 3))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=7)
+        self.users_repo.filter_reachable_ids = AsyncMock(return_value={2})
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.list_mentionable_users(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual({u.user_id for u in result}, {2})
+        self.users_repo.get_all_by_ids.assert_awaited_once_with(self.session, [2])
 
     async def test_list_mentionable_users_non_owner_non_assignee_gets_collapsed_not_found_message(
         self,

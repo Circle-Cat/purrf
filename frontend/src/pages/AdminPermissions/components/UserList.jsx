@@ -14,6 +14,9 @@ import { Pencil } from "lucide-react";
 
 /** Sentinel value meaning "no user-type filter". */
 const ALL_TYPES = "__all__";
+// Radix Select cannot hold an empty string value, so "no filter" needs a
+// sentinel of its own here too.
+const ALL_PERMISSIONS = "__all_permissions__";
 
 /**
  * Maps table column accessors to backend sort_by field names.
@@ -55,6 +58,10 @@ const ACCESSOR_TO_SORT_FIELD = {
  * @param {boolean} props.isSuperAdmin - Super-admins-only filter (draft).
  * @param {(checked: boolean) => void} props.onSuperAdminFilterChange
  * @param {string} props.userType - "internal"|"external"|"" (all) (draft).
+ * @param {string} props.permissionName - Holders-of filter, "" for all (draft).
+ * @param {(name: string) => void} props.onPermissionNameChange
+ * @param {{name: string, description: string}[]} props.catalog - Grantable
+ *   permissions, for the holders-of filter.
  * @param {(value: string) => void} props.onUserTypeChange
  */
 const UserList = ({
@@ -78,6 +85,9 @@ const UserList = ({
   isSuperAdmin,
   onSuperAdminFilterChange,
   userType,
+  permissionName,
+  onPermissionNameChange,
+  catalog,
   onUserTypeChange,
 }) => {
   const hasPrev = offset > 0;
@@ -119,10 +129,16 @@ const UserList = ({
             : u.userType === "external"
               ? "External"
               : u.userType,
-        status: u.isActive ? (
-          "Active"
-        ) : (
-          <Badge variant="secondary">Deactivated</Badge>
+        // Three orthogonal facts rather than one winner-takes-all label: the
+        // same account can be blocked and deactivated at once, and blocking
+        // never writes is_active, so activity alone cannot report it. Same
+        // reading as the account console's chips.
+        status: (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            {u.isBlocked && <Badge variant="destructive">Blocked</Badge>}
+            {!u.isActive && <Badge variant="secondary">Deactivated</Badge>}
+            {u.isActive && !u.isBlocked && "Active"}
+          </span>
         ),
         superAdmin: u.isSuperAdmin ? <Badge>Super-admin</Badge> : "—",
         actions: (
@@ -157,14 +173,24 @@ const UserList = ({
           onKeyDown={(e) => e.key === "Enter" && onSearch()}
         />
 
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <Checkbox
-            checked={isSuperAdmin}
-            onCheckedChange={onSuperAdminFilterChange}
-            aria-label="Super-admins only"
-          />
-          Super-admins only
-        </label>
+        <Select
+          value={permissionName || ALL_PERMISSIONS}
+          onValueChange={(v) =>
+            onPermissionNameChange(v === ALL_PERMISSIONS ? "" : v)
+          }
+        >
+          <SelectTrigger aria-label="Holds permission" className="w-64">
+            <SelectValue placeholder="Any permission" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_PERMISSIONS}>Any permission</SelectItem>
+            {(catalog ?? []).map(({ name }) => (
+              <SelectItem key={name} value={name}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         <Select
           value={userType || ALL_TYPES}
@@ -179,6 +205,15 @@ const UserList = ({
             <SelectItem value="external">External</SelectItem>
           </SelectContent>
         </Select>
+
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <Checkbox
+            checked={isSuperAdmin}
+            onCheckedChange={onSuperAdminFilterChange}
+            aria-label="Super-admins only"
+          />
+          Super-admins only
+        </label>
 
         <Button type="button" onClick={onSearch}>
           Search

@@ -255,6 +255,25 @@ class ScheduleTest(_BaseTest):
         self.assertEqual(result.assignee_name, "Iv")
         self.assertEqual(result.scheduled_by_name, "Ray")
 
+    async def test_names_interview_staff_with_no_name_by_user_id(self):
+        """A colleague with no name reads User <id>, never an empty string."""
+        self._users_by_id({
+            CANDIDATE_ID: self._person("Ana", "Lopez"),
+            ASSIGNEE_ID: SimpleNamespace(
+                user_id=ASSIGNEE_ID, first_name="", last_name="", preferred_name=None
+            ),
+            OWNER_ID: SimpleNamespace(
+                user_id=OWNER_ID, first_name=None, last_name=None, preferred_name=""
+            ),
+        })
+
+        result = await self.service.schedule(
+            self.session, self._ctx(), APPLICATION_ID, self._dto()
+        )
+
+        self.assertEqual(result.assignee_name, f"User {ASSIGNEE_ID}")
+        self.assertEqual(result.scheduled_by_name, f"User {OWNER_ID}")
+
     async def test_calendar_title_uses_the_candidates_legal_first_name(self):
         """The invitation a candidate receives names them legally."""
         self._users_by_id({
@@ -905,6 +924,81 @@ class CancelForRoundTest(_BaseTest):
         await self._cancel_for_round()
         _args, kwargs = self.record_event.call_args
         self.assertIsNone(kwargs["details"]["assigneeId"])
+
+
+class ReleaseForRoundTest(_BaseTest):
+    """The database half of ``cancel_for_round``: the row and its activity
+    entry go inside the caller's transaction, and the Calendar event id comes
+    back for the caller to delete once that transaction commits."""
+
+    FUTURE = CancelForRoundTest.FUTURE
+    PAST = CancelForRoundTest.PAST
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.existing = self._interview_row(
+            start_at=self.FUTURE,
+            end_at=self.FUTURE.replace(minute=45),
+        )
+        self.interview_repo.get = AsyncMock(return_value=self.existing)
+
+    async def _release(self):
+        return await self.service.release_for_round(
+            self.session,
+            APPLICATION_ID,
+            ApplicationStage.BEHAVIORAL,
+            1,
+            OWNER_ID,
+            via="stage_changed",
+        )
+
+    async def test_removes_the_row_and_hands_back_the_event_id(self):
+        event_id = await self._release()
+
+        self.assertEqual(event_id, "evt-1")
+        self.interview_repo.delete.assert_awaited_once_with(self.session, self.existing)
+        _args, kwargs = self.record_event.call_args
+        self.assertEqual(kwargs["details"]["via"], "stage_changed")
+        self.session.commit.assert_not_awaited()
+
+    async def test_never_touches_the_calendar(self):
+        await self._release()
+        self.meeting_svc.cancel.assert_not_awaited()
+
+    async def test_a_past_or_missing_meeting_releases_nothing(self):
+        for row in (
+            self._interview_row(start_at=self.PAST, end_at=self.PAST),
+            None,
+        ):
+            self.interview_repo.get = AsyncMock(return_value=row)
+            self.assertIsNone(await self._release())
+        self.interview_repo.delete.assert_not_awaited()
+        self.record_event.assert_not_awaited()
+
+
+class DeleteCalendarEventsTest(_BaseTest):
+    """Runs after the caller committed, so nothing it hits may propagate: the
+    decision already stands."""
+
+    async def test_deletes_the_events_on_the_interview_calendar(self):
+        await self.service.delete_calendar_events(["evt-1", "evt-2"])
+        self.meeting_svc.cancel.assert_awaited_once_with(
+            ["evt-1", "evt-2"], calendar_id="cal-interview"
+        )
+
+    async def test_a_refused_delete_is_logged_not_raised(self):
+        self.meeting_svc.cancel = AsyncMock(return_value=([], ["evt-1"]))
+        await self.service.delete_calendar_events(["evt-1"])
+        self.logger.warning.assert_called_once()
+
+    async def test_an_exception_is_logged_not_raised(self):
+        self.meeting_svc.cancel = AsyncMock(side_effect=RuntimeError("google down"))
+        await self.service.delete_calendar_events(["evt-1"])
+        self.logger.exception.assert_called_once()
+
+    async def test_no_events_never_calls_the_calendar(self):
+        await self.service.delete_calendar_events([])
+        self.meeting_svc.cancel.assert_not_awaited()
 
 
 if __name__ == "__main__":

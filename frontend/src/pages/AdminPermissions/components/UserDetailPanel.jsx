@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/auth";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { legalName } from "@/utils/userName";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { useUserPermissions } from "@/pages/AdminPermissions/hooks/useUserPermissions";
 import PermissionChecklist from "@/pages/AdminPermissions/components/PermissionChecklist";
@@ -31,6 +34,7 @@ const UserDetailPanel = ({
   onRevokeSuperAdmin,
 }) => {
   const { user, isSuperAdmin, permissions } = useAuth();
+  const canOpenAccountConsole = permissions.includes(PERMISSIONS.USER_ADMIN);
   const [saving, setSaving] = useState(false);
   const [superBusy, setSuperBusy] = useState(false);
   const { active, history, loading, saveDiff } = useUserPermissions(
@@ -55,7 +59,10 @@ const UserDetailPanel = ({
     }
   };
 
-  const displayName = `${selectedUser.firstName} ${selectedUser.lastName}`;
+  // The dialog title has room for one line, so it carries the legal name
+  // and the preferred name follows on the sub-line -- all three fields, shown
+  // verbatim, which is the rule for an admin view.
+  const displayName = legalName(selectedUser);
   const subLine = [
     selectedUser.preferredName ? `"${selectedUser.preferredName}"` : null,
     selectedUser.primaryEmail,
@@ -68,6 +75,19 @@ const UserDetailPanel = ({
       <DialogHeader>
         <DialogTitle>{displayName}</DialogTitle>
         {subLine && <DialogDescription>{subLine}</DialogDescription>}
+        {/* The account console holds the other half of this person: whether
+            they can sign in at all. The two pages are deliberately separate,
+            so each one links to the other -- and the two permissions are held
+            by different people, so the crossing is offered only to a viewer
+            who holds the far side too. */}
+        {canOpenAccountConsole && (
+          <Link
+            to={`${ROUTE_PATHS.ADMIN_ACCOUNTS}?user_id=${selectedUser.userId}`}
+            className="text-sm font-medium text-sky-700 hover:text-sky-900"
+          >
+            Account state →
+          </Link>
+        )}
       </DialogHeader>
 
       <div className="flex flex-col gap-5">

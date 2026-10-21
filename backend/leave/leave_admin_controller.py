@@ -3,6 +3,7 @@
 from backend.common.api_endpoints import (
     LEAVE_ADJUSTMENTS_ENDPOINT,
     LEAVE_BALANCES_ENDPOINT,
+    LEAVE_LEDGER_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.leave_overview_dto import LeaveOverviewDto
@@ -10,7 +11,7 @@ from backend.common.permissions import Permission
 from backend.dto.leave_adjustment_dto import LeaveAdjustmentRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 
 class LeaveAdminController:
@@ -20,7 +21,13 @@ class LeaveAdminController:
     somebody's hours by hand does.
     """
 
-    def __init__(self, leave_adjustment_service, leave_engine_service, database):
+    def __init__(
+        self,
+        leave_adjustment_service,
+        leave_engine_service,
+        leave_balance_service,
+        database,
+    ):
         """
         Args:
             leave_adjustment_service (LeaveAdjustmentService): Hand-written
@@ -32,6 +39,7 @@ class LeaveAdminController:
         """
         self.leave_adjustment_service = leave_adjustment_service
         self.leave_engine_service = leave_engine_service
+        self.leave_balance_service = leave_balance_service
         self.database = database
         self.router = APIRouter(tags=["leave-admin"])
 
@@ -47,6 +55,12 @@ class LeaveAdminController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            LEAVE_LEDGER_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.LEAVE_ADMIN])(self.ledger),
+            methods=["GET"],
+            response_model=None,
+        )
 
     async def balances(self):
         """Everybody the engine pays, what they hold, and who it cannot pay."""
@@ -55,6 +69,25 @@ class LeaveAdminController:
         return api_response(
             message="Leave balances fetched.",
             data=LeaveOverviewDto.of(overview),
+        )
+
+    async def ledger(
+        self,
+        user_id: int | None = Query(None, ge=1, alias="userId"),
+        page: int = Query(1, ge=1),
+        page_size: int = Query(50, ge=1, le=200, alias="pageSize"),
+    ):
+        """Paginated list of all ledger entries with an optional per-person filter."""
+        async with self.database.session() as session:
+            result = await self.leave_balance_service.list_ledger(
+                session,
+                user_id=user_id,
+                page=page,
+                page_size=page_size,
+            )
+        return api_response(
+            message="Leave ledger fetched.",
+            data=result,
         )
 
     async def adjust(

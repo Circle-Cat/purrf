@@ -406,6 +406,64 @@ class ApplicationRepository:
                 roles.append(role)
         return roles
 
+    async def list_hired_activity_roles_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, set[ParticipantRole]]:
+        """Every mentorship role each user holds a HIRED ACTIVITY application
+        in, for a page of people in one query.
+
+        A set, not a list: unlike ``list_hired_activity_roles`` nothing here
+        is ordered by admission, and the caller decides how to show them.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            user_ids (list[int]): People to look up.
+
+        Returns:
+            dict[int, set[ParticipantRole]]: user_id -> roles. Users with no
+                such admission are absent. Empty for empty input, without
+                touching the database.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(ApplicationEntity.user_id, JobEntity.mentorship_role)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id.in_(user_ids),
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role.is_not(None),
+            )
+            .distinct()
+        )
+        roles: dict[int, set[ParticipantRole]] = {}
+        for user_id, role in result.all():
+            roles.setdefault(user_id, set()).add(role)
+        return roles
+
+    async def get_by_ids(
+        self, session: AsyncSession, application_ids: list[int]
+    ) -> list[ApplicationEntity]:
+        """The applications with these ids, in no particular order.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application_ids (list[int]): The applications wanted.
+
+        Returns:
+            list[ApplicationEntity]: The applications found; empty, without
+                a query, for no ids.
+        """
+        if not application_ids:
+            return []
+        result = await session.execute(
+            select(ApplicationEntity).where(
+                ApplicationEntity.application_id.in_(application_ids)
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_by_id(
         self,
         session: AsyncSession,
@@ -417,8 +475,7 @@ class ApplicationRepository:
 
         When ``for_update`` is True the row is selected ``FOR UPDATE`` so a
         concurrent stage/sub-status decision on the same application blocks
-        until this transaction commits (mirrors
-        ``JobReviewRepository.get``'s row lock).
+        until this transaction commits.
         """
         stmt = select(ApplicationEntity).where(
             ApplicationEntity.application_id == application_id,
@@ -427,6 +484,32 @@ class ApplicationRepository:
             stmt = stmt.with_for_update()
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_with_job(
+        self, session: AsyncSession, application_id: int
+    ) -> tuple[ApplicationEntity, JobEntity] | None:
+        """One application together with the job it was made to, in one read.
+
+        Both halves are wanted together often enough -- who applied, and what
+        they applied to -- that fetching them separately would be two round
+        trips for one question.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            application_id (int): The application wanted.
+
+        Returns:
+            tuple[ApplicationEntity, JobEntity] | None: The pair, or None when
+                there is no such application. An application cannot outlive
+                its job, so a missing pair means the application is gone.
+        """
+        result = await session.execute(
+            select(ApplicationEntity, JobEntity)
+            .join(JobEntity, JobEntity.job_id == ApplicationEntity.job_id)
+            .where(ApplicationEntity.application_id == application_id)
+        )
+        row = result.first()
+        return (row[0], row[1]) if row is not None else None
 
     async def create(
         self, session: AsyncSession, entity: ApplicationEntity
@@ -448,7 +531,6 @@ class ApplicationRepository:
         self,
         session: AsyncSession,
         terminal_cutoff: datetime,
-        gmail_thread_ids: set[str] | None = None,
     ) -> list[ApplicationEntity]:
         """Applications the email sync should touch.
 
@@ -464,13 +546,6 @@ class ApplicationRepository:
             session (AsyncSession): The active DB session.
             terminal_cutoff (datetime): Oldest ``stage_entered_at`` still swept
                 for a HIRED/REJECTED application (e.g. now minus seven days).
-            gmail_thread_ids (set[str] | None): When given, restrict the result
-                to applications owning one of these Gmail threads — the nightly
-                delta passes the set Gmail flagged as recently active. When
-                ``None`` (the weekly reconcile), every eligible application is
-                returned. The eligibility rule itself is identical either way,
-                deliberately: it lives here once so the two jobs cannot
-                disagree about what is worth syncing.
 
         Returns:
             list[ApplicationEntity]: Distinct applications, oldest id first.
@@ -484,8 +559,6 @@ class ApplicationRepository:
                 ApplicationEntity.stage_entered_at >= terminal_cutoff,
             )
         ]
-        if gmail_thread_ids is not None:
-            conditions.append(EmailThreadEntity.gmail_thread_id.in_(gmail_thread_ids))
 
         result = await session.execute(
             select(ApplicationEntity)

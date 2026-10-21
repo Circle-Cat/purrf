@@ -1,15 +1,32 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from backend.common.api_endpoints import HEALTH_ENDPOINT
 from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.notification_management.publish_on_commit import (
     install_publish_listener,
+)
+from backend.communication import (  # noqa: F401 (registers)
+    notification_renderers as inbox_notification_renderers,
+    recipient_resolvers as inbox_recipient_resolvers,
+)
+from backend.leave import (  # noqa: F401 (registers)
+    notification_renderers as leave_notification_renderers,
+    recipient_resolvers as leave_recipient_resolvers,
 )
 from backend.mentorship import (  # noqa: F401 (registers)
     notification_renderers as mentorship_notification_renderers,
     recipient_resolvers as mentorship_recipient_resolvers,
 )
+from backend.ops import (  # noqa: F401 (registers)
+    notification_renderers as ops_notification_renderers,
+    recipient_resolvers as ops_recipient_resolvers,
+)
 from backend.recruiting import notification_renderers  # noqa: F401 (registers)
 from backend.recruiting import recipient_resolvers  # noqa: F401 (registers)
+from backend.user_identity import (  # noqa: F401 (registers)
+    notification_renderers as user_notification_renderers,
+    user_recipient_resolvers,
+)
 from backend.utils.auth_middleware import AuthMiddleware
 
 
@@ -29,25 +46,35 @@ class FastAppFactory:
         user_permissions_repository,
         notification_controller,
         historical_controller,
-        consumer_controller,
         internal_activity_controller,
         profile_controller,
         mentorship_controller,
         mentorship_admin_controller,
+        mentorship_email_controller,
+        matching_run_complete_controller,
         email_management_controller,
         permission_admin_controller,
+        user_account_controller,
+        block_controller,
         recruiting_controller,
         application_controller,
         board_controller,
-        blacklist_controller,
         evaluation_controller,
         audit_controller,
         recruiting_notification_controller,
         leave_admin_controller,
+        training_admin_controller,
+        training_content_controller,
+        training_content_host,
         leave_job_controller,
         leave_request_controller,
         leave_calendar_controller,
+        leave_balance_controller,
         notification_delivery_controller,
+        gmail_push_controller,
+        gmail_sync_controller,
+        inbox_controller,
+        pubsub_push_controller,
         notification_publisher,
         notification_topic_path,
         launchdarkly_client,
@@ -63,24 +90,31 @@ class FastAppFactory:
             user_identity_service: UserIdentityService used by middleware to bootstrap the internal user on first login.
             notification_controller: An instance of NotificationController that manages API routes for subscribe_microsoft_chat_messages and subscribe_google_chat_space.
             historical_controller: An instance of HistoricalController that manages API routes for sync historical data.
-            consumer_controller: An instance of ConsumerController that manages API routes to trigger, check, or stop subscribers.
             internal_activity_controller: An instance of InternalActivityController that manages API routes to query internal activity data.
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
             mentorship_admin_controller: An instance of MentorshipAdminController that manages API routes for admin participant search.
+            mentorship_email_controller: An instance of MentorshipEmailController that manages API routes for mentorship sends through Kit.
+            matching_run_complete_controller: An instance of MatchingRunCompleteController, the route the matcher job calls when a run finishes.
             email_management_controller: An instance of EmailManagementController that manages API routes for email OTP verify/link.
             recruiting_controller: An instance of RecruitingController that manages API routes for job posting lifecycle.
             application_controller: An instance of ApplicationController that manages API routes for candidate application submission.
             board_controller: An instance of BoardController that manages API routes for the owner-facing recruiting application board.
-            blacklist_controller: An instance of BlacklistController that manages API routes for viewing and clearing the org-wide user blacklist.
             evaluation_controller: An instance of EvaluationController that manages API routes for assignee-facing interview evaluation scorecards.
             audit_controller: An instance of AuditController that manages API routes for the cross-posting recruiting audit page.
             recruiting_notification_controller: An instance of RecruitingNotificationController that manages API routes for the caller's own in-app notifications.
             leave_admin_controller: An instance of LeaveAdminController that manages admin-only leave API routes, starting with hand-written balance adjustments.
+            training_admin_controller: An instance of TrainingAdminController that manages the course catalogue and manual assignment.
+            training_content_controller: An instance of TrainingContentController that serves course files on the content origin.
+            training_content_host: Hostname course files are served from, or None where content hosting is not configured.
             leave_job_controller: An instance of LeaveJobController that exposes the two scheduled leave jobs to the CronJobs that call them.
             leave_request_controller: An instance of LeaveRequestController that manages the routes employees file leave through and managers decide on.
             leave_calendar_controller: An instance of LeaveCalendarController that manages API routes for the company holiday calendar and the read-only leave policy.
             notification_delivery_controller: An instance of NotificationDeliveryController that manages the Pub/Sub push endpoint which sends notification emails.
+            gmail_push_controller: An instance of GmailPushController that manages the Pub/Sub push endpoint Gmail change notifications arrive on.
+            gmail_sync_controller: An instance of GmailSyncController that manages the daily Gmail maintenance and manual full resync endpoints.
+            inbox_controller: An instance of InboxController that manages the Inbox routes (threads of every service, by permission).
+            pubsub_push_controller: An instance of PubSubPushController that manages the Pub/Sub push endpoints Google Chat, Microsoft Teams and Gerrit events arrive on.
             notification_publisher: Pub/Sub publisher client used to deliver a
                 notification once its creating transaction commits.
             notification_topic_path: Fully qualified Pub/Sub topic
@@ -95,25 +129,35 @@ class FastAppFactory:
         self.user_permissions_repository = user_permissions_repository
         self.notification_controller = notification_controller
         self.historical_controller = historical_controller
-        self.consumer_controller = consumer_controller
         self.internal_activity_controller = internal_activity_controller
         self.profile_controller = profile_controller
         self.mentorship_controller = mentorship_controller
         self.mentorship_admin_controller = mentorship_admin_controller
+        self.mentorship_email_controller = mentorship_email_controller
+        self.matching_run_complete_controller = matching_run_complete_controller
         self.email_management_controller = email_management_controller
         self.permission_admin_controller = permission_admin_controller
+        self.user_account_controller = user_account_controller
+        self.block_controller = block_controller
         self.recruiting_controller = recruiting_controller
         self.application_controller = application_controller
         self.board_controller = board_controller
-        self.blacklist_controller = blacklist_controller
         self.evaluation_controller = evaluation_controller
         self.audit_controller = audit_controller
         self.recruiting_notification_controller = recruiting_notification_controller
         self.leave_admin_controller = leave_admin_controller
+        self.training_admin_controller = training_admin_controller
+        self.training_content_controller = training_content_controller
+        self.training_content_host = training_content_host
         self.leave_job_controller = leave_job_controller
         self.leave_request_controller = leave_request_controller
         self.leave_calendar_controller = leave_calendar_controller
+        self.leave_balance_controller = leave_balance_controller
         self.notification_delivery_controller = notification_delivery_controller
+        self.gmail_push_controller = gmail_push_controller
+        self.gmail_sync_controller = gmail_sync_controller
+        self.inbox_controller = inbox_controller
+        self.pubsub_push_controller = pubsub_push_controller
         self.notification_publisher = notification_publisher
         self.notification_topic_path = notification_topic_path
         self.launchdarkly_client = launchdarkly_client
@@ -187,23 +231,26 @@ class FastAppFactory:
             user_identity_service=self.user_identity_service,
             user_permissions_repository=self.user_permissions_repository,
             logger=self.logger,
+            training_content_host=self.training_content_host,
         )
 
         # Include authentication routes
         app.include_router(self.authentication_controller.router, prefix="/api")
         app.include_router(self.notification_controller.router, prefix="/api")
         app.include_router(self.historical_controller.router, prefix="/api")
-        app.include_router(self.consumer_controller.router, prefix="/api")
         app.include_router(self.internal_activity_controller.router, prefix="/api")
         app.include_router(self.profile_controller.router, prefix="/api")
         app.include_router(self.mentorship_controller.router, prefix="/api")
         app.include_router(self.mentorship_admin_controller.router, prefix="/api")
+        app.include_router(self.mentorship_email_controller.router, prefix="/api")
+        app.include_router(self.matching_run_complete_controller.router, prefix="/api")
         app.include_router(self.email_management_controller.router, prefix="/api")
         app.include_router(self.permission_admin_controller.router, prefix="/api")
+        app.include_router(self.user_account_controller.router, prefix="/api")
+        app.include_router(self.block_controller.router, prefix="/api")
         app.include_router(self.recruiting_controller.router, prefix="/api")
         app.include_router(self.application_controller.router, prefix="/api")
         app.include_router(self.board_controller.router, prefix="/api")
-        app.include_router(self.blacklist_controller.router, prefix="/api")
         app.include_router(self.evaluation_controller.router, prefix="/api")
         app.include_router(self.audit_controller.router, prefix="/api")
         app.include_router(
@@ -211,21 +258,31 @@ class FastAppFactory:
         )
         app.include_router(self.leave_calendar_controller.router, prefix="/api")
         app.include_router(self.leave_admin_controller.router, prefix="/api")
+        app.include_router(self.training_admin_controller.router, prefix="/api")
+        # No /api prefix and no authenticate(): course files live at /p/<token>/
+        # on the content origin, and the middleware exempts exactly that pair.
+        app.include_router(self.training_content_controller.router)
         app.include_router(self.leave_job_controller.router, prefix="/api")
         app.include_router(self.leave_request_controller.router, prefix="/api")
+        app.include_router(self.leave_balance_controller.router, prefix="/api")
         # Deliberately NOT authenticate()-gated -- this route has no Auth0
         # session. Its guard is the Cloudflare Worker + Access Service Auth
         # policy in front of it, the same trust boundary every other route
         # behind Access relies on.
         app.include_router(self.notification_delivery_controller.router, prefix="/api")
+        app.include_router(self.gmail_push_controller.router, prefix="/api")
+        app.include_router(self.gmail_sync_controller.router, prefix="/api")
+        app.include_router(self.inbox_controller.router, prefix="/api")
+        app.include_router(self.pubsub_push_controller.router, prefix="/api")
 
-        @app.get("/fastapi/health")
+        @app.get(HEALTH_ENDPOINT)
         def health_check():
             """
             Health check endpoint.
 
             Returns a simple JSON response to verify that the
-            application is running.
+            application is running. It reads no database and calls nothing
+            outside, so a slow dependency never takes the pod out of rotation.
 
             Returns:
                 dict: JSON containing the health status.

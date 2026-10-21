@@ -1,8 +1,13 @@
 import unittest
 
+from datetime import datetime, timezone
+
 from backend.repository.job_repository import JobRepository
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
-from backend.common.recruiting_enums import JobKind, JobStatus
+from backend.entity.users_entity import UsersEntity
+from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -12,6 +17,25 @@ class TestJobRepository(BaseRepositoryTestLib):
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.repo = JobRepository()
+
+    async def test_get_by_job_ids_returns_every_job_asked_for(self):
+        first = await self.repo.create_job(
+            self.session,
+            JobEntity(kind=JobKind.ACTIVITY, title="A", status=JobStatus.DRAFT),
+        )
+        second = await self.repo.create_job(
+            self.session,
+            JobEntity(kind=JobKind.EMPLOYMENT, title="B", status=JobStatus.CLOSED),
+        )
+
+        found = await self.repo.get_by_job_ids(
+            self.session, [first.job_id, second.job_id, 999_999]
+        )
+
+        self.assertEqual({job.job_id for job in found}, {first.job_id, second.job_id})
+
+    async def test_get_by_job_ids_with_no_ids_returns_an_empty_list(self):
+        self.assertEqual(await self.repo.get_by_job_ids(self.session, []), [])
 
     async def test_persists_pipeline_config_and_pending(self):
         """create_job round-trips pipeline_config; pending fields default to None."""
@@ -136,6 +160,51 @@ class TestJobRepository(BaseRepositoryTestLib):
         self.assertEqual(
             fetched.pipeline_config["stages"][0]["stage"], "recruiter_screening"
         )
+
+    async def _application_for(self, job: JobEntity) -> ApplicationEntity:
+        """One application against ``job``, with the applicant it needs."""
+        applicant = UsersEntity(
+            first_name="U",
+            last_name="Ser",
+            timezone="UTC",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+        )
+        await self.insert_entities([applicant])
+        application = ApplicationEntity(
+            job_id=job.job_id,
+            user_id=applicant.user_id,
+            stage=ApplicationStage.APPLIED,
+        )
+        await self.insert_entities([application])
+        return application
+
+    async def test_get_by_application_id_returns_the_job_applied_to(self):
+        """Recipient resolution holds an application id and wants the owners,
+        which live in the job's pipeline_config."""
+        job = await self.repo.create_job(
+            self.session,
+            JobEntity(
+                kind=JobKind.ACTIVITY,
+                title="A",
+                status=JobStatus.PUBLISHED,
+                pipeline_config={"ownerIds": [1, 2]},
+            ),
+        )
+        application = await self._application_for(job)
+
+        found = await self.repo.get_by_application_id(
+            self.session, application.application_id
+        )
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.job_id, job.job_id)
+        self.assertEqual(found.pipeline_config, {"ownerIds": [1, 2]})
+
+    async def test_get_by_application_id_returns_none_for_no_such_application(self):
+        self.assertIsNone(await self.repo.get_by_application_id(self.session, 999_999))
 
 
 if __name__ == "__main__":

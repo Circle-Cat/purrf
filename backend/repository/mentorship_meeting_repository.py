@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import NamedTuple
 
 from sqlalchemy import delete, func, nullslast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,14 @@ _MEETING_ORDER_BY = (
     MentorshipMeetingEntity.created_datetime.asc(),
     MentorshipMeetingEntity.meeting_id.asc(),
 )
+
+
+class MeetingWriteGuard(NamedTuple):
+    """What a writer re-reads about a meeting before writing over it."""
+
+    attendance_set_by_admin_at: datetime | None
+    start_datetime: datetime | None
+    end_datetime: datetime | None
 
 
 class MentorshipMeetingRepository:
@@ -86,8 +95,8 @@ class MentorshipMeetingRepository:
     ) -> dict[int, list[MentorshipMeetingEntity]]:
         """Every meeting for a batch of pairs, one query, grouped in Python.
 
-        For the admin CSV export, which pages up to 500 pairs and needs this
-        batched -- calling ``get_meetings_by_pair`` once per pair would
+        For callers that hold a page of pairs, such as the admin participant
+        search -- calling ``get_meetings_by_pair`` once per pair would
         reintroduce an N+1 the rest of that page already avoids.
 
         Args:
@@ -172,7 +181,8 @@ class MentorshipMeetingRepository:
 
         Returns:
             list[MentorshipMeetingEntity]: Rows with ``source='google'``,
-                ``is_completed=False``, a non-null ``google_meeting_code``, and
+                ``is_completed=False``, a non-null ``google_meeting_code``, no
+                ``attendance_set_by_admin_at``, and
                 a slot inside both the sweep bounds and the round window,
                 ordered like every other read here (``start_datetime``
                 ascending, then ``created_datetime``, then ``meeting_id``).
@@ -192,6 +202,9 @@ class MentorshipMeetingRepository:
                 # Do not "correct" this back to `.is_(False)`.
                 MentorshipMeetingEntity.is_completed == False,  # noqa: E712
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
+                # An admin's attendance correction is final; re-analysing the
+                # row would overwrite it with whatever Meet recorded.
+                MentorshipMeetingEntity.attendance_set_by_admin_at.is_(None),
                 MentorshipMeetingEntity.end_datetime >= ends_after,
                 MentorshipMeetingEntity.start_datetime <= starts_before,
                 MentorshipMeetingEntity.start_datetime >= round_window_start,
@@ -201,6 +214,43 @@ class MentorshipMeetingRepository:
         )
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_write_guards(
+        self, session: AsyncSession, meeting_ids: list[str]
+    ) -> dict[str, MeetingWriteGuard]:
+        """Re-read, from the database, the columns a stale writer must check.
+
+        Selects columns rather than entities, so the answer is what the
+        database holds now, not what a row loaded earlier in this session
+        still says.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            meeting_ids (list[str]): The meetings to read.
+
+        Returns:
+            dict[str, MeetingWriteGuard]: Keyed by meeting_id. A meeting that
+                no longer exists is absent. Empty for empty input, without
+                touching the database.
+        """
+        if not meeting_ids:
+            return {}
+        result = await session.execute(
+            select(
+                MentorshipMeetingEntity.meeting_id,
+                MentorshipMeetingEntity.attendance_set_by_admin_at,
+                MentorshipMeetingEntity.start_datetime,
+                MentorshipMeetingEntity.end_datetime,
+            ).where(MentorshipMeetingEntity.meeting_id.in_(meeting_ids))
+        )
+        return {
+            row.meeting_id: MeetingWriteGuard(
+                row.attendance_set_by_admin_at,
+                row.start_datetime,
+                row.end_datetime,
+            )
+            for row in result.all()
+        }
 
     async def insert_meeting(
         self, session: AsyncSession, meeting: MentorshipMeetingEntity
@@ -215,6 +265,37 @@ class MentorshipMeetingRepository:
             MentorshipMeetingEntity: The persisted row.
         """
         session.add(meeting)
+        await session.flush()
+        return meeting
+
+    async def update_schedule(
+        self,
+        session: AsyncSession,
+        meeting: MentorshipMeetingEntity,
+        start_datetime: datetime,
+        end_datetime: datetime,
+    ) -> MentorshipMeetingEntity:
+        """Move one meeting to a new slot.
+
+        Writes the two time columns and nothing else. `meeting_id` is the
+        Calendar event id and a Calendar patch does not change it;
+        `created_datetime` holds Google's own creation time and is the
+        ordering tiebreaker when two meetings share a start; `meet_link` and
+        `entry_points` describe a Meet space that a patch never re-opens.
+        None of them may be rewritten here.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            meeting (MentorshipMeetingEntity): The row to move, already
+                loaded and belonging to the caller's pair.
+            start_datetime (datetime): New start, tz-aware UTC.
+            end_datetime (datetime): New end, tz-aware UTC.
+
+        Returns:
+            MentorshipMeetingEntity: The updated row.
+        """
+        meeting.start_datetime = start_datetime
+        meeting.end_datetime = end_datetime
         await session.flush()
         return meeting
 

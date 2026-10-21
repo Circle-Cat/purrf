@@ -44,6 +44,23 @@ export const listApprovers = () =>
 export const submitForReview = (jobId, body) =>
   request.post(API_ENDPOINTS.RECRUITING_JOB_SUBMIT(jobId), body);
 
+/**
+ * Move a posting's open review to a different approver. body: {reviewerId}.
+ *
+ * Addressed by posting, not by review id: only the assigned reviewer ever
+ * learns a review's id, and they are the person this routes around.
+ */
+export const reassignReviewer = (jobId, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_JOB_REVIEW_REVIEWER(jobId), body);
+
+/**
+ * Take back a posting's open review; the posting returns to where it was.
+ * Only its submitter may.
+ * @param {number|string} jobId
+ */
+export const withdrawReview = (jobId) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REVIEW_WITHDRAW(jobId));
+
 /** List the current reviewer's pending reviews. */
 export const listMyReviews = () =>
   request.get(API_ENDPOINTS.RECRUITING_REVIEWS);
@@ -194,13 +211,6 @@ export const setApplicationRound = (id, round, assigneeId, cancelInterview) =>
     cancelInterview,
   });
 
-/**
- * Add a user to the recruiting blacklist.
- * body: { userId, reason? }
- */
-export const blacklistUser = (body) =>
-  request.post(API_ENDPOINTS.RECRUITING_BLACKLIST, body);
-
 /** Reassign the interviewer responsible for an application's current stage. */
 export const reassignApplication = (id, assigneeId) =>
   request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_ASSIGNMENT(id), {
@@ -227,35 +237,11 @@ export const cancelInterview = (id) =>
   request.delete(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id));
 
 /**
- * List every currently-blocked user, optionally filtered by a name/email/
- * reason substring.
- */
-export const listBlacklist = (search) =>
-  request.get(API_ENDPOINTS.RECRUITING_BLACKLIST, { params: { search } });
-
-/**
- * List the interview meetings a blacklist of this user would cancel — every
- * still-upcoming one across all of their applications. Read by the blacklist
- * confirm dialog so the sanction never silently deletes a calendar invite.
- */
-export const listBlacklistUpcomingInterviews = (userId) =>
-  request.get(API_ENDPOINTS.RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS(userId));
-
-/** Clear a user's block state. */
-export const unblockUser = (userId) =>
-  request.delete(API_ENDPOINTS.RECRUITING_BLACKLIST_UNBLOCK(userId));
-
-/**
  * Build the full URL to a candidate's resume PDF.
  * Used to construct href for direct file download links.
- * Mirrors the base URL logic from request.js to ensure consistency.
  */
-export const resumeUrl = (id) => {
-  const baseURL = import.meta.env.PROD
-    ? import.meta.env.VITE_API_BASE_URL + "/api"
-    : "/api";
-  return baseURL + API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id);
-};
+export const resumeUrl = (id) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id)}`;
 
 /** List the current user's assigned evaluations (EvaluationSummaryDto[]). */
 export const listMyEvaluations = () =>
@@ -281,10 +267,8 @@ export const getApplicationComments = (id) =>
 export const postComment = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id), body);
 
-export const getApplicationEmails = (id, { refresh = false } = {}) =>
-  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id), {
-    params: refresh ? { refresh: true } : {},
-  });
+export const getApplicationEmails = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id));
 
 export const sendApplicationEmail = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id), body);
@@ -292,6 +276,13 @@ export const sendApplicationEmail = (id, body) =>
 /** Preset compose templates, already rendered for this application. */
 export const getApplicationEmailTemplates = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_TEMPLATES(id));
+
+/**
+ * Build the URL of an attachment on a stored email, for a plain download
+ * link; the session cookie authorizes it.
+ */
+export const applicationEmailAttachmentUrl = (id, messageId, index) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_ATTACHMENT(id, messageId, index)}`;
 
 /** Everyone who can currently be @-mentioned on this application. */
 export const getMentionableUsers = (id) =>

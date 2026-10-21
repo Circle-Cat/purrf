@@ -21,6 +21,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo = AsyncMock()
         self.emails_repo = AsyncMock()
         self.permissions_repo = AsyncMock()
+        self.internal_onboarding = AsyncMock()
         self.session = AsyncMock()
         self.logger = MagicMock()
 
@@ -30,6 +31,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             user_identities_repository=self.identities_repo,
             user_emails_repository=self.emails_repo,
             user_permissions_repository=self.permissions_repo,
+            internal_onboarding_training_service=self.internal_onboarding,
         )
 
         self.iat = 1_700_000_000
@@ -705,6 +707,49 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(user_info.user_id, 55)
 
+    async def test_create_or_swap_first_login_internal_assigns_onboarding_training(
+        self,
+    ):
+        """Becoming an employee is what makes somebody owe the corporate
+        culture course, so the absorb hook is where it is assigned."""
+        user_info = UserContextDto(
+            sub="google-oauth2|emp",
+            primary_email="emp@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.users_repo.upsert_users.return_value = MagicMock(
+            spec=UsersEntity, user_id=55
+        )
+        self.permissions_repo.get_active_permission_names.return_value = []
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.internal_onboarding.ensure_for_internal.assert_awaited_once_with(
+            session=self.session, user_id=55, email="emp@circlecat.org"
+        )
+
+    async def test_create_or_swap_external_first_login_assigns_no_training(self):
+        """The two courses are owed by employment; an external account owes
+        neither."""
+        user_info = UserContextDto(
+            sub="google-oauth2|out",
+            primary_email="someone@gmail.com",
+            identity_type=IdentityType.EXTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.users_repo.upsert_users.return_value = MagicMock(
+            spec=UsersEntity, user_id=56
+        )
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.internal_onboarding.ensure_for_internal.assert_not_awaited()
+
     async def test_create_or_swap_first_login_google_seeds_confirmed_primary(self):
         """A trusted first login seeds its address confirmed AND primary —
         the verify wall no longer exists for allowlisted IdPs."""
@@ -908,6 +953,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.emails_repo.set_primary.assert_not_awaited()
         # Still row-less.
         self.identities_repo.upsert_identity.assert_not_awaited()
+        # And the once-in-a-lifetime training assignment does not re-run.
+        self.internal_onboarding.ensure_for_internal.assert_not_awaited()
 
     async def test_create_or_swap_untrusted_sub_never_email_routes(self):
         """An unlisted connection (auth0 database) with a verified claim is

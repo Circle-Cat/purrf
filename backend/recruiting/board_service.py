@@ -1,15 +1,15 @@
 import re
-from datetime import datetime, timezone
 from email.utils import getaddresses
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.admin.block_service import pending_block_summary
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.board_dto import (
     ApplicationActivityDto,
     ApplicationAggregateDto,
     ApplicationDetailDto,
-    BlacklistDto,
     BoardCardDto,
     BoardJobDto,
     CommentCreateDto,
@@ -21,7 +21,6 @@ from backend.dto.board_dto import (
     RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
-    UpcomingInterviewDto,
 )
 from backend.communication.email_templates import (
     render_all_templates,
@@ -35,14 +34,15 @@ from backend.dto.email_dto import (
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType
-from backend.common.name_utils import display_name_of
+from backend.common.name_utils import display_name_or_id
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.notification_management.event_recorder import record_event
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
+from backend.recruiting.application_email_policy import RecruitingApplicationEmailPolicy
+from backend.recruiting.candidate_names import candidate_name_of, candidate_names
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 _MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
@@ -131,39 +131,13 @@ def _screen_rule_label(rule: dict, question_labels: dict) -> str:
     return f"{subject} {operator} {values}".strip()
 
 
-def _parse_cc_addresses(raw: str | None) -> list[str]:
-    """Extract bare email addresses from a raw RFC-5322 Cc header string."""
-    if not raw:
-        return []
-    return [addr for _, addr in getaddresses([raw]) if addr]
-
-
-def _dedupe_addresses(addresses: list[str], exclude: list[str]) -> list[str]:
-    """Case-insensitive dedupe preserving first-seen order, minus ``exclude``."""
-    excluded = {a.lower() for a in exclude if a}
-    seen: set[str] = set()
-    result: list[str] = []
-    for addr in addresses:
-        if not addr:
-            continue
-        low = addr.lower()
-        if low in excluded or low in seen:
-            continue
-        seen.add(low)
-        result.append(addr)
-    return result
-
-
 class BoardService:
     """Owner-facing reads for the recruiting application board.
 
     Every read here is row-level owner-gated against a job's
     ``pipeline_config`` owner ids (see ``pipeline_owners.normalized_owner_ids``)
     rather than an enum permission — visibility is "did you configure
-    yourself as an owner of this posting", not a role. ``blacklist`` is the
-    one exception: it's an org-level sanction gated only by the
-    ``RECRUITING_BLACKLIST_WRITE`` permission at the route, not by job
-    ownership.
+    yourself as an owner of this posting", not a role.
     """
 
     def __init__(
@@ -182,12 +156,12 @@ class BoardService:
         evaluation_repository,
         notification_repository,
         user_emails_repository,
-        email_conversation_service,
-        email_sync_service,
+        person_email_service,
         application_interview_repository,
         application_access,
         interview_scheduling_service,
         mentorship_admission_service,
+        approval_service,
     ):
         """
         Args:
@@ -232,10 +206,9 @@ class BoardService:
                 (mentioned users notified) -- independent, explicit calls,
                 not merged with the activity log (see the notification-system
                 design spec for why).
-            email_conversation_service (EmailConversationService): Person-anchored
-                email transport/DB layer; the Emails-tab endpoints resolve an
-                application to its (user_id, APPLICATION:application_id) context
-                and delegate send/sync/read here.
+            person_email_service (PersonEmailService): Email with the applicant;
+                the Emails-tab endpoints resolve an application to its
+                (user_id, APPLICATION:application_id) policy and delegate here.
             application_interview_repository (ApplicationInterviewRepository):
                 Read-only lookup used by ``get_application_detail`` to embed
                 the current stage+round's scheduled meeting, if any.
@@ -248,12 +221,15 @@ class BoardService:
             interview_scheduling_service (InterviewSchedulingService): Owns
                 every Calendar-touching interview write. ``change_stage``/
                 ``set_round`` delegate the opt-in "cancel the meeting on the
-                round being left" cleanup to its ``cancel_for_round``, rather
-                than reaching for the Calendar themselves.
+                round being left" cleanup to its ``release_for_round`` and
+                ``delete_calendar_events``, rather than reaching for the
+                Calendar themselves.
             mentorship_admission_service (MentorshipAdmissionService): Owns
                 what an admission means -- the onboarding training task, and
                 the admission email a mentor receives. A no-op for every
                 posting that is not a mentor/mentee activity.
+            approval_service (ApprovalService): Finds a block request waiting
+                on the applicant.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -271,12 +247,15 @@ class BoardService:
         self.evaluation_repository = evaluation_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
-        self.email_conversation_service = email_conversation_service
-        self.email_sync_service = email_sync_service
+        self.person_email_service = person_email_service
+        self.application_email_policy = RecruitingApplicationEmailPolicy(
+            person_email_service, user_emails_repository
+        )
         self.application_interview_repository = application_interview_repository
         self.application_access = application_access
         self.interview_scheduling_service = interview_scheduling_service
         self.mentorship_admission_service = mentorship_admission_service
+        self.approval_service = approval_service
 
     async def _visible_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -414,12 +393,16 @@ class BoardService:
                 session, [user.user_id for _, user in rows]
             )
         )
+        names_by_user_id = await candidate_names(
+            session, self.application_submission_repository, [u for _, u in rows]
+        )
         hits = [
             self.recruiting_mapper.to_board_applicant_hit_dto(
                 application,
                 user,
                 jobs_by_id[application.job_id],
                 applicant_email=contact_by_user_id.get(user.user_id, ""),
+                applicant_name=names_by_user_id[user.user_id],
             )
             for application, user in rows
         ]
@@ -476,54 +459,56 @@ class BoardService:
         application_id: int,
         dto,
     ) -> EmailConversationDto:
-        """Send (or reply to) a candidate email for one application.
+        """Send a new candidate email, or reply in one of the application's threads.
 
-        Owner-only (mirrors advancing the candidate): the caller must be a
-        configured owner of the application's posting. Resolves the application
-        to its candidate ``user_id`` and delegates to the shared email service
-        under ``(APPLICATION, application_id)``. Returns the refreshed
-        conversation so the Emails tab can re-render in one round-trip.
+        Owner-only (mirrors advancing the candidate). Without ``thread_id`` it
+        is a new email to the chosen ``to``, each of which must be one of the
+        applicant's addresses. With it, a reply to whoever the thread's reply
+        goes to; ``to`` and ``subject`` are ignored and
+        ``last_seen_message_id`` is required. Records ``email_sent`` and
+        commits, then returns the conversation.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application being emailed about.
-            dto (EmailSendRequestDto): Compose payload (to/cc/subject/body,
-                optional thread_id for a reply).
+            dto (EmailSendRequestDto): The compose payload.
 
         Returns:
-            EmailConversationDto: The application's full conversation after send.
+            EmailConversationDto: The application's conversation after the send.
 
         Raises:
-            ValueError: If the application is missing, the caller is not an
-                owner, or no recipient can be determined.
+            ValueError: Missing application, caller not an owner, a reply
+                without ``last_seen_message_id``, or content refused.
+            NotFoundError: The reply's thread is not this application's.
+            ConflictError: ``THREAD_CHANGED`` when a newer message arrived.
         """
         application = await self._require_application_owner(
             session, current_user, application_id, allow_read_all=False
         )
-        recipients = list(dto.to)
-        if not recipients:
-            contact = await self.user_emails_repository.get_contact_email(
-                session, application.user_id
-            )
-            if contact:
-                recipients = [contact]
-        if not recipients:
-            raise ValueError(
-                "No recipient: the candidate has no contact email; provide 'to'."
-            )
-        message = await self.email_conversation_service.send(
-            session,
-            user_id=application.user_id,
-            context_type=ContextType.APPLICATION,
-            context_id=application_id,
-            to=recipients,
-            cc=dto.cc,
-            subject=dto.subject,
-            body=dto.body,
-            sender_user_id=current_user.user_id,
-            thread_id=dto.thread_id,
+        policy = await self.application_email_policy.resolve(
+            session, application, may_send=True
         )
+        if dto.thread_id is None:
+            message = await self.person_email_service.send_new(
+                session,
+                policy,
+                sender_user_id=current_user.user_id,
+                to=dto.to,
+                subject=dto.subject,
+                body=dto.body,
+            )
+        else:
+            if dto.last_seen_message_id is None:
+                raise ValueError("lastSeenMessageId is required to reply")
+            message = await self.person_email_service.reply(
+                session,
+                policy,
+                sender_user_id=current_user.user_id,
+                thread_id=dto.thread_id,
+                body=dto.body,
+                last_seen_message_id=dto.last_seen_message_id,
+            )
         await record_event(
             session,
             subject_type="application",
@@ -531,17 +516,14 @@ class BoardService:
             actor_id=current_user.user_id,
             event_type=RecruitingEvent.EMAIL_SENT,
             details={
-                "subject": dto.subject,
-                "to": recipients,
-                "cc": list(dto.cc),
+                "subject": message.subject,
+                "to": [a for _, a in getaddresses([message.to_addresses or ""]) if a],
                 "threadId": message.thread_id,
                 "direction": "outbound",
             },
         )
         await session.commit()
-        return await self._build_application_conversation(
-            session, current_user, application_id, application.user_id
-        )
+        return await self.person_email_service.conversation(session, policy)
 
     async def list_application_email_templates(
         self,
@@ -648,11 +630,8 @@ class BoardService:
         session: AsyncSession,
         current_user: UserContextDto,
         application_id: int,
-        refresh: bool = False,
     ) -> EmailConversationDto:
-        """Read one application's email conversation.
-
-        Reading and refreshing are gated differently on purpose.
+        """Read one application's email conversation, from the database only.
 
         Reading passes for a *direct* caller — an owner of this
         application's own posting, or a ``read.all`` holder — and also for a
@@ -666,36 +645,48 @@ class BoardService:
         Withholding only the mail would protect nothing while leaving the
         history with a hole in it.
 
-        Refreshing does NOT widen: ``refresh=True`` calls out to Gmail and
-        writes, and nobody should be able to drive a sync on a posting they
-        have no standing on. A candidate-scope caller asking to refresh is
-        refused outright rather than quietly downgraded to a plain read, so
-        the frontend can't mistake a stale view for a fresh one. The history
-        rows accordingly render without Send or Refresh; sending stays
-        owner-only in ``send_application_email``.
+        The history rows render without Send; sending stays owner-only in
+        ``send_application_email``.
 
-        A candidate-scope caller also gets no compose prefill
-        (``default_to``/``default_cc`` come back empty): those exist to seed
-        a compose box they aren't allowed to open, and ``default_cc`` would
-        otherwise hand out a recruiter's contact address.
+        A caller who cannot send gets no compose choices (``can_send`` false,
+        no ``default_to``, no recipient options).
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application to read.
-            refresh (bool): When True, sync from Gmail before reading.
-                Direct callers only.
 
         Returns:
             EmailConversationDto: Threads (with messages), plus the
-                candidate's default contact address and Cc prefill for a
-                direct caller.
+                candidate's default contact address for a direct caller.
 
         Raises:
             ValueError: If the application is missing; if the caller has no
                 owner/``read.all`` standing on it or on any other
-                application by the same candidate; or if a candidate-scope
-                caller asked to refresh.
+                application by the same candidate.
+        """
+        application, is_direct = await self._require_conversation_reader(
+            session, current_user, application_id
+        )
+        may_send = is_direct and await self._may_send_email(
+            session, current_user, application.job_id
+        )
+        policy = await self.application_email_policy.resolve(
+            session, application, may_send=may_send
+        )
+        return await self.person_email_service.conversation(session, policy)
+
+    async def _require_conversation_reader(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> tuple[ApplicationEntity, bool]:
+        """The application, and whether the caller reads it directly.
+
+        Raises:
+            ValueError: Missing application, or no owner/``read.all``
+                standing on it or on any other application by the candidate.
         """
         application = await self.application_repository.get_by_id(
             session, application_id
@@ -705,21 +696,61 @@ class BoardService:
         is_direct = await self._has_owner_standing(
             session, current_user, application.job_id
         )
-        if refresh:
-            if not is_direct:
-                raise ValueError("you are not an owner of this job")
-            await self.email_sync_service.sync_application(session, application)
-            await session.commit()
-        elif not is_direct and not await self._has_candidate_standing(
+        if not is_direct and not await self._has_candidate_standing(
             session, current_user, application.user_id
         ):
             raise ValueError("you are not an owner of this job")
-        return await self._build_application_conversation(
-            session,
-            current_user,
-            application_id,
-            application.user_id,
-            compose_prefill=is_direct,
+        return application, is_direct
+
+    async def _may_send_email(
+        self, session: AsyncSession, current_user: UserContextDto, job_id: int
+    ) -> bool:
+        """What sending requires: the advance permission and owning the posting."""
+        if not current_user.has_permission(Permission.RECRUITING_APPLICATION_ADVANCE):
+            return False
+        try:
+            await self._require_owner(
+                session, current_user, job_id, allow_read_all=False
+            )
+        except ValueError:
+            return False
+        return True
+
+    async def get_application_email_attachment(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        message_id: int,
+        index: int,
+    ) -> tuple[bytes, str]:
+        """One attachment of a message in the application's threads.
+
+        Gated exactly like reading the Emails tab.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application.
+            message_id (int): A message in one of its threads.
+            index (int): Position in the message's attachments.
+
+        Returns:
+            tuple[bytes, str]: The content and the file name.
+
+        Raises:
+            ValueError: No standing on the application or candidate, or
+                ``attachment not found``.
+            NotFoundError: The message is not in this application's threads.
+        """
+        application, _ = await self._require_conversation_reader(
+            session, current_user, application_id
+        )
+        policy = await self.application_email_policy.resolve(
+            session, application, may_send=False
+        )
+        return await self.person_email_service.read_attachment(
+            session, policy, message_id, index
         )
 
     async def _has_owner_standing(
@@ -781,54 +812,6 @@ class BoardService:
         )
         return application
 
-    async def _build_application_conversation(
-        self,
-        session: AsyncSession,
-        current_user: UserContextDto,
-        application_id: int,
-        user_id: int,
-        *,
-        compose_prefill: bool = True,
-    ) -> EmailConversationDto:
-        """Assemble the EmailConversationDto for one application.
-
-        ``default_cc`` prefills the compose Cc field: the recruiter's own
-        address for a new mail (conversation level), and the recruiter plus
-        that thread's prior Cc for a reply (thread level) — always excluding
-        the company sender and the candidate's To address.
-
-        ``compose_prefill=False`` drops all of that (and skips the two
-        contact lookups it needs): a read-only caller has no compose box to
-        seed, and the Cc prefill would otherwise disclose a recruiter's
-        address.
-        """
-        threads = await self.email_conversation_service.list_conversation(
-            session, ContextType.APPLICATION, application_id
-        )
-        if not compose_prefill:
-            for thread in threads:
-                thread.default_cc = []
-            return EmailConversationDto(threads=threads, default_to=None, default_cc=[])
-        default_to = await self.user_emails_repository.get_contact_email(
-            session, user_id
-        )
-        recruiter_email = await self.user_emails_repository.get_contact_email(
-            session, current_user.user_id
-        )
-        sender = self.email_conversation_service.sender_address
-        exclude = [default_to, sender]
-        conversation_default_cc = _dedupe_addresses([recruiter_email], exclude)
-        for thread in threads:
-            history = []
-            for message in thread.messages:
-                history.extend(_parse_cc_addresses(message.cc_addresses))
-            thread.default_cc = _dedupe_addresses([recruiter_email, *history], exclude)
-        return EmailConversationDto(
-            threads=threads,
-            default_to=default_to,
-            default_cc=conversation_default_cc,
-        )
-
     async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
         """Build BoardCardDto list for (application, user) rows, resolving
         reviewer names + contact emails in batch (same logic get_board used).
@@ -845,7 +828,8 @@ class BoardService:
                 the explicit assignment for that card's
                 ``(stage, current_round)`` if one exists; otherwise, only at
                 round 1, the job's configured ``default_assignee_id`` for
-                that stage; otherwise None. Non-interview stages always get
+                that stage, if that person is still an active interview
+                evaluator; otherwise None. Non-interview stages always get
                 ``reviewer_name=None``.
         """
         default_by_stage: dict[ApplicationStage, int] = {}
@@ -870,13 +854,38 @@ class BoardService:
         assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
             (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
         }
+        needs_default = any(
+            application.stage in INTERVIEW_STAGES
+            and application.stage in default_by_stage
+            and application.current_round == 1
+            and (application.application_id, application.stage, 1)
+            not in assignment_by_key
+            for application, _ in rows
+        )
+        if needs_default:
+            # Read once for the page: a default who can no longer evaluate
+            # will never get the row, so the card must not name them.
+            evaluator_ids = await self.application_access.interview_evaluator_ids(
+                session
+            )
+            default_by_stage = {
+                stage: default_id
+                for stage, default_id in default_by_stage.items()
+                if default_id in evaluator_ids
+            }
+        else:
+            default_by_stage = {}
         name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
         reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
-        names_by_id = {u.user_id: display_name_of(u) for u in reviewers}
+        names_by_id = {u.user_id: display_name_or_id(u) for u in reviewers}
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, [user.user_id for _, user in rows]
             )
+        )
+
+        applicant_names = await candidate_names(
+            session, self.application_submission_repository, [u for _, u in rows]
         )
 
         cards = []
@@ -898,6 +907,7 @@ class BoardService:
                     user,
                     reviewer_name=reviewer_name,
                     applicant_email=contact_by_user_id.get(user.user_id, ""),
+                    applicant_name=applicant_names[user.user_id],
                 )
             )
         return cards
@@ -916,7 +926,8 @@ class BoardService:
         explicit assignment for that card's ``(stage, current_round)`` if
         one exists; otherwise, only at round 1 and only for
         recruiter_screening/behavioral, the job's configured
-        ``default_assignee_id`` for that stage; otherwise None. Non-interview
+        ``default_assignee_id`` for that stage if that person is still an
+        active interview evaluator; otherwise None. Non-interview
         stages always get ``reviewer_name=None``.
 
         Args:
@@ -1029,8 +1040,8 @@ class BoardService:
                 also passes — used by the read path (``get_application_detail``)
                 now that owners and assignees share one detail page.
                 Mutation paths (``change_stage``,
-                ``set_sub_status``, ``reassign``, ``blacklist``) leave this
-                False and stay owner-only.
+                ``set_sub_status``, ``reassign``) leave this False and stay
+                owner-only.
             allow_self (bool): When True, a caller who is the application's
                 own submitter also passes, regardless of job ownership or
                 assignment — used by ``get_resume`` so a candidate can read
@@ -1156,10 +1167,8 @@ class BoardService:
         )
         return ApplicationDetailDto(
             application=application_dto,
-            applicant_name=(
-                f"{user.first_name} {user.last_name}".strip()
-                if user is not None
-                else ""
+            applicant_name=await candidate_name_of(
+                session, self.application_submission_repository, user
             ),
             applicant_email=applicant_email or "",
             resume_available=bool(
@@ -1169,6 +1178,14 @@ class BoardService:
             is_owner=is_owner,
             can_view=can_view,
             assignee_id=assignment.assignee_id if assignment is not None else None,
+            # Free: `user` was already fetched above for the applicant's name.
+            applicant_is_blocked=bool(user is not None and user.is_blocked),
+            pending_block_request=await pending_block_summary(
+                session,
+                approval_service=self.approval_service,
+                users_repository=self.users_repository,
+                user_id=application.user_id,
+            ),
             interview=interview_dto,
             viewer_timezone=viewer_timezone,
         )
@@ -1212,9 +1229,11 @@ class BoardService:
         return self.recruiting_mapper.to_interview_dto(
             interview,
             assignee_id=assignee_id,
-            assignee_name=(display_name_of(assignee) if assignee is not None else None),
+            assignee_name=(
+                display_name_or_id(assignee) if assignee is not None else None
+            ),
             scheduled_by_name=(
-                display_name_of(scheduler) if scheduler is not None else None
+                display_name_or_id(scheduler) if scheduler is not None else None
             ),
         )
 
@@ -1388,7 +1407,7 @@ class BoardService:
         users = await self.users_repository.get_all_by_ids(
             session, list(ids_to_resolve)
         )
-        names_by_id = {user.user_id: display_name_of(user) for user in users}
+        names_by_id = {user.user_id: display_name_or_id(user) for user in users}
         result = []
         for row in rows:
             details = {**row.details}
@@ -1644,9 +1663,10 @@ class BoardService:
         of OFFER (no rubric exists for it).
 
         When ``dto.cancel_interview`` is set, the meeting booked on the
-        stage+round being LEFT is cancelled in this same transaction (see
-        ``InterviewSchedulingService.cancel_for_round``, which no-ops when that
-        round has no meeting or its meeting has already started). Without it,
+        stage+round being LEFT is removed in this same transaction and its
+        Calendar event deleted once the transaction commits (see
+        ``InterviewSchedulingService.release_for_round``, which no-ops when
+        that round has no meeting or its meeting has already started). Without it,
         such a meeting stays live on everyone's calendar while becoming
         invisible in Purrf, which only ever shows the current stage+round's.
 
@@ -1712,19 +1732,23 @@ class BoardService:
         # Last thing before the writes begin, so a rejected transition or an
         # unqualified assignee never costs the candidate their meeting, and
         # inside this transaction, so the cancellation and the decision that
-        # asked for it stand or fall together.
+        # asked for it stand or fall together. The Calendar event goes only
+        # after the commit: Google mails the cancellation on delete.
+        released_event_id = None
         if dto.cancel_interview:
-            await self.interview_scheduling_service.cancel_for_round(
-                session,
-                application_id,
-                from_stage,
-                application.current_round,
-                current_user.user_id,
-                via=(
-                    "rejected"
-                    if dto.to_stage == ApplicationStage.REJECTED
-                    else "stage_changed"
-                ),
+            released_event_id = (
+                await self.interview_scheduling_service.release_for_round(
+                    session,
+                    application_id,
+                    from_stage,
+                    application.current_round,
+                    current_user.user_id,
+                    via=(
+                        "rejected"
+                        if dto.to_stage == ApplicationStage.REJECTED
+                        else "stage_changed"
+                    ),
+                )
             )
 
         if dto.to_stage == ApplicationStage.REJECTED:
@@ -1801,6 +1825,10 @@ class BoardService:
                 },
             )
         await session.commit()
+        if released_event_id is not None:
+            await self.interview_scheduling_service.delete_calendar_events([
+                released_event_id
+            ])
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
         # is never in that window, so this is always False here.
@@ -2073,15 +2101,19 @@ class BoardService:
         )
         # Only a move to a DIFFERENT round leaves a round (and therefore a
         # meeting) behind; re-setting the current round leaves the meeting
-        # exactly where the page still shows it.
+        # exactly where the page still shows it. As in change_stage, the
+        # Calendar event goes only after the commit.
+        released_event_id = None
         if dto.cancel_interview and dto.round != from_round:
-            await self.interview_scheduling_service.cancel_for_round(
-                session,
-                application_id,
-                application.stage,
-                from_round,
-                current_user.user_id,
-                via="round_advanced",
+            released_event_id = (
+                await self.interview_scheduling_service.release_for_round(
+                    session,
+                    application_id,
+                    application.stage,
+                    from_round,
+                    current_user.user_id,
+                    via="round_advanced",
+                )
             )
 
         application.current_round = dto.round
@@ -2114,218 +2146,29 @@ class BoardService:
             },
         )
         await session.commit()
+        if released_event_id is not None:
+            await self.interview_scheduling_service.delete_calendar_events([
+                released_event_id
+            ])
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
         )
-
-    async def blacklist(
-        self,
-        session: AsyncSession,
-        current_user: UserContextDto,
-        dto: BlacklistDto,
-    ) -> ApplicationDto:
-        """Block a user org-wide and close out the triggering application
-        and every other application of the user (including already-HIRED
-        ones; already-rejected ones keep their stage but get the tag).
-
-        Deliberately NOT owner-gated: unlike every other write in this
-        service, this does not check whether ``current_user`` owns the
-        triggering application's job. It's an org-level sanction — whoever
-        holds ``Permission.RECRUITING_BLACKLIST_WRITE`` (checked at the
-        route) may blacklist any user off any application, regardless of
-        which posting surfaced the abuse (2026-06-26 decision).
-
-        Row-locks the application for the duration of the transaction, same
-        as ``change_stage``/``set_sub_status``, and freezes its current
-        submission version since the application is being closed out. Logs
-        a ``"blacklisted"`` activity entry (not ``"stage_changed"`` — this
-        doesn't go through ``change_stage`` and carries its own reason).
-
-        Also cancels every still-upcoming interview meeting on the
-        applications it sweeps — unconditionally, unlike ``change_stage``'s
-        opt-in flag. See the call to ``cancel_for_round`` below, and
-        ``list_upcoming_interviews_for_user`` for the pre-flight the confirm
-        dialog shows so this is never a surprise.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated caller,
-                recorded as ``blocked_by``.
-            dto (BlacklistDto): The target user/application and the
-                (required, non-blank) reason.
-
-        Returns:
-            ApplicationDto: The now-REJECTED, blacklist-tagged application.
-
-        Raises:
-            ValueError: If the target user is missing, the application is
-                missing, or the application does not belong to
-                ``dto.user_id``.
-        """
-        user = await self.users_repository.get_user_by_user_id(session, dto.user_id)
-        if user is None:
-            raise ValueError(f"user {dto.user_id} not found")
-        user.is_blocked = True
-        user.blocked_by = current_user.user_id
-        user.blocked_at = datetime.now(timezone.utc)
-        user.blocked_reason = dto.reason
-
-        application = await self.application_repository.get_by_id(
-            session, dto.application_id, for_update=True
-        )
-        if application is None or application.user_id != dto.user_id:
-            raise ValueError(f"application {dto.application_id} not found")
-
-        from_stage = application.stage
-        application.stage = ApplicationStage.REJECTED
-        application.stage_entered_at = datetime.now(timezone.utc)
-        application.tags = {**(application.tags or {}), "blacklisted": True}
-        application.sub_status = None
-        application.current_round = 1
-
-        current_sub = await self._freeze_current_submission(session, dto.application_id)
-        application = await self.application_repository.update(session, application)
-        await record_event(
-            session,
-            subject_type="application",
-            subject_id=dto.application_id,
-            actor_id=current_user.user_id,
-            event_type=RecruitingEvent.BLACKLISTED,
-            details={"fromStage": from_stage.value, "reason": dto.reason},
-        )
-
-        # Close out EVERY other application of the same user, so a blacklisted
-        # person ends up rejected + tagged on all of them (2026-07-22 decision,
-        # superseding the 2026-07-15 one that spared HIRED/already-rejected
-        # rows). In-flight and already-HIRED rows get the full close-out;
-        # already-rejected rows keep their stage but have the ``blacklisted``
-        # tag backfilled. Rows already tagged blacklisted are left untouched so
-        # a re-run logs no duplicate activity. Each row is re-fetched FOR UPDATE
-        # so a concurrent stage decision on it can't interleave.
-        swept_application_ids = [dto.application_id]
-        rows = await self.application_repository.list_by_user(session, dto.user_id)
-        for other, _job in rows:
-            if other.application_id == dto.application_id:
-                continue
-            locked = await self.application_repository.get_by_id(
-                session, other.application_id, for_update=True
-            )
-            if locked is None or (locked.tags or {}).get("blacklisted"):
-                continue
-            other_from_stage = locked.stage
-            locked.tags = {**(locked.tags or {}), "blacklisted": True}
-            if locked.stage != ApplicationStage.REJECTED:
-                # In-flight or HIRED: fully close it out. Already-rejected rows
-                # keep their historical stage/round/sub_status and frozen
-                # submission — only the tag is backfilled.
-                locked.stage = ApplicationStage.REJECTED
-                locked.stage_entered_at = datetime.now(timezone.utc)
-                locked.sub_status = None
-                locked.current_round = 1
-                await self._freeze_current_submission(session, locked.application_id)
-            await self.application_repository.update(session, locked)
-            await record_event(
-                session,
-                subject_type="application",
-                subject_id=locked.application_id,
-                actor_id=current_user.user_id,
-                event_type=RecruitingEvent.BLACKLISTED,
-                details={"fromStage": other_from_stage.value, "reason": dto.reason},
-            )
-            swept_application_ids.append(locked.application_id)
-
-        # Every meeting still ahead of us on the applications just swept is
-        # cancelled outright, with no opt-out anywhere in the UI: the candidate
-        # is banned org-wide, so none of those interviews is going to happen,
-        # and each one left booked would sit live on the interviewer's and the
-        # candidate's calendars while being unreachable in Purrf. Rows whose
-        # meeting has already started are filtered out by `cancel_for_round`
-        # itself, and rows on applications the sweep skipped (already tagged by
-        # an earlier blacklist, so already handled then) never make the list.
-        interviews = (
-            await self.application_interview_repository.list_by_application_ids(
-                session, swept_application_ids
-            )
-        )
-        for interview in interviews:
-            await self.interview_scheduling_service.cancel_for_round(
-                session,
-                interview.application_id,
-                interview.stage,
-                interview.round,
-                current_user.user_id,
-                via="blacklisted",
-            )
-
-        await session.commit()
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
-
-    async def list_upcoming_interviews_for_user(
-        self, session: AsyncSession, user_id: int
-    ) -> list[UpcomingInterviewDto]:
-        """Every still-to-happen interview meeting a blacklist would cancel.
-
-        The pre-flight the blacklist confirm dialog shows, so the sanction
-        never silently deletes a meeting the recruiter didn't know about. It
-        mirrors ``blacklist``'s own sweep exactly: applications already tagged
-        ``blacklisted`` are excluded (that earlier block already cancelled
-        their meetings, and the sweep skips them), and meetings that have
-        already started are excluded (``cancel_for_round`` leaves those alone).
-        Promising anything else here would make the dialog lie.
-
-        Not owner-gated, like ``blacklist`` itself: the route's
-        ``RECRUITING_BLACKLIST_WRITE`` is the whole gate, and this returns no
-        more than the block it precedes is about to act on.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            user_id (int): The candidate about to be blocked.
-
-        Returns:
-            list[UpcomingInterviewDto]: Soonest first; empty when the
-                candidate has nothing booked.
-        """
-        rows = await self.application_repository.list_by_user(session, user_id)
-        live = [
-            (application, job)
-            for application, job in rows
-            if not (application.tags or {}).get("blacklisted")
-        ]
-        job_titles = {
-            application.application_id: job.title for application, job in live
-        }
-        interviews = (
-            await self.application_interview_repository.list_by_application_ids(
-                session, [application.application_id for application, _job in live]
-            )
-        )
-        now = datetime.now(timezone.utc)
-        upcoming = sorted(
-            (interview for interview in interviews if interview.start_at > now),
-            key=lambda interview: interview.start_at,
-        )
-        return [
-            UpcomingInterviewDto(
-                application_id=interview.application_id,
-                job_title=job_titles.get(interview.application_id, ""),
-                stage=interview.stage,
-                round=interview.round,
-                start_at=interview.start_at,
-            )
-            for interview in upcoming
-        ]
 
     async def _mentionable_user_ids(
         self, session: AsyncSession, application: ApplicationEntity, job: JobEntity
     ) -> set[int]:
-        """Owner(s) plus the current-stage assignee, if any.
+        """Owner(s) plus the current-stage assignee, if any, minus whoever
+        can no longer sign in.
 
         The exact same population _load_owned_application's allow_assignee
         gate already authorizes to see this application's comments -- used
         both to answer "who can I @mention" and to validate mention tokens
-        on submit.
+        on submit. Filtering here therefore covers both at once: a
+        deactivated or blocked owner is neither offered in the picker nor
+        accepted as a hand-written token.
+
+        Owners come from the job's pipeline_config, which nothing rewrites
+        when an account is turned off, so the raw set keeps naming them.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -2345,7 +2188,7 @@ class BoardService:
         )
         if assignment is not None:
             ids.add(assignment.assignee_id)
-        return ids
+        return await self.users_repository.filter_reachable_ids(session, ids)
 
     def _resolve_mentions(
         self, body: str, mentionable_ids: set[int]
@@ -2395,7 +2238,7 @@ class BoardService:
         if not mentioned_ids:
             return []
         users = await self.users_repository.get_all_by_ids(session, mentioned_ids)
-        names_by_id = {user.user_id: display_name_of(user) for user in users}
+        names_by_id = {user.user_id: display_name_or_id(user) for user in users}
         return [
             MentionedUserDto(user_id=uid, name=names_by_id.get(uid, f"User {uid}"))
             for uid in mentioned_ids
@@ -2466,7 +2309,7 @@ class BoardService:
         authors = await self.users_repository.get_all_by_ids(
             session, list({row.author_id for row in rows})
         )
-        names_by_id = {user.user_id: display_name_of(user) for user in authors}
+        names_by_id = {user.user_id: display_name_or_id(user) for user in authors}
         comment_ids = [row.comment_id for row in rows]
         mention_rows = (
             await self.application_comment_mention_repository.get_by_comment_ids(
@@ -2477,7 +2320,7 @@ class BoardService:
             session, list({m.mentioned_user_id for m in mention_rows})
         )
         mention_names_by_id = {
-            user.user_id: display_name_of(user) for user in mentioned_users
+            user.user_id: display_name_or_id(user) for user in mentioned_users
         }
         mentions_by_comment: dict[int, list[MentionedUserDto]] = {}
         for m in mention_rows:
@@ -2584,7 +2427,7 @@ class BoardService:
             session, current_user.user_id
         )
         author_name = (
-            display_name_of(author)
+            display_name_or_id(author)
             if author is not None
             else f"User {current_user.user_id}"
         )
@@ -2648,7 +2491,7 @@ class BoardService:
             (
                 MentionedUserDto(
                     user_id=user.user_id,
-                    name=display_name_of(user),
+                    name=display_name_or_id(user),
                 )
                 for user in users
             ),

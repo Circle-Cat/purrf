@@ -57,10 +57,12 @@ class TestNotificationWebhook(unittest.TestCase):
     def test_validation_token_response(self):
         request = self.make_request(args=self.handshake)
 
-        response, status = notification_webhook(request)
+        response, status, headers = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.OK)
         self.assertEqual(response, "test-validation-token")
+        # Graph requires the token back as text/plain; Flask would send text/html.
+        self.assertEqual(headers, {"Content-Type": "text/plain"})
 
     def test_none_json_body(self):
         request = self.make_request(json_data=None)

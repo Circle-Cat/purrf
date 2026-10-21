@@ -8,6 +8,8 @@ from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.common.json_schema_validator import JsonSchemaValidator
 from backend.common.gerrit_client import GerritClient
+from backend.common.matching_job_client import MatchingJobClient
+from backend.common.kit_client import KitClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
@@ -20,18 +22,12 @@ from backend.notification_management.notification_controller import (
     NotificationController,
 )
 from backend.utils.google_chat_message_utils import GoogleChatMessagesUtils
-from backend.consumers.consumer_controller import ConsumerController
 from backend.utils.microsoft_chat_message_util import MicrosoftChatMessageUtil
 from backend.utils.date_time_util import DateTimeUtil
-from backend.consumers.microsoft_message_processor_service import (
-    MicrosoftMessageProcessorService,
-)
 from backend.consumers.google_chat_processor_service import GoogleChatProcessorService
-from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
-from backend.consumers.pubsub_puller import PubSubPuller
 from backend.consumers.gerrit_processor_service import GerritProcessorService
-from backend.consumers.pubsub_pull_manager import PubSubPullManager
-from backend.consumers.pubsub_sync_pull_service import PubSubSyncPullService
+from backend.consumers.pubsub_push_controller import PubSubPushController
+from backend.consumers.pubsub_push_service import PubSubPushService
 from backend.historical_data.historical_controller import HistoricalController
 from backend.leave.employment_sync_service import EmploymentSyncService
 from backend.historical_data.microsoft_member_sync_service import (
@@ -69,13 +65,18 @@ from backend.internal_activity_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
 from backend.internal_activity_service.summary_service import SummaryService
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.common.environment_constants import (
     GMAIL_SENDER_RECRUITING,
     GMAIL_SENDER_NOTIFICATION,
+    GMAIL_WATCH_TOPIC,
     JIRA_SERVER,
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    MATCHER_JOB_SUBS,
     NOTIFICATION_PUSHER_SUBS,
     NOTIFICATION_TOPIC,
     USER_EMAIL,
@@ -83,7 +84,6 @@ from backend.common.environment_constants import (
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
 )
-from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from backend.utils.fast_app_factory import FastAppFactory
 from backend.authentication.authentication_controller import AuthenticationController
 from backend.authentication.authentication_service import AuthenticationService
@@ -92,9 +92,13 @@ from backend.authentication.email_management_controller import (
     EmailManagementController,
 )
 from backend.admin.permission_admin_service import PermissionAdminService
+from backend.admin.block_controller import BlockController
+from backend.admin.block_service import BlockService
+from backend.admin.block_user_handler import BlockUserHandler
 from backend.admin.permission_admin_controller import PermissionAdminController
+from backend.admin.user_account_controller import UserAccountController
+from backend.admin.user_account_service import UserAccountService
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.event_repository import EventRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
@@ -125,8 +129,6 @@ from backend.recruiting.board_service import BoardService
 from backend.recruiting.email_sync_service import EmailSyncService
 from backend.recruiting.board_controller import BoardController
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
-from backend.recruiting.blacklist_service import BlacklistService
-from backend.recruiting.blacklist_controller import BlacklistController
 from backend.recruiting.evaluation_service import EvaluationService
 from backend.recruiting.evaluation_controller import EvaluationController
 from backend.recruiting.audit_service import AuditService
@@ -136,8 +138,21 @@ from backend.leave.leave_calendar_service import LeaveCalendarService
 from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
+from backend.leave.leave_balance_service import LeaveBalanceService
+from backend.leave.leave_balance_controller import LeaveBalanceController
+from backend.training.content_host import app_origin_set, resolve_content_host
+from backend.training.training_admin_controller import TrainingAdminController
+from backend.training.training_assignment_service import TrainingAssignmentService
+from backend.training.training_audience_service import TrainingAudienceService
+from backend.training.training_content_controller import TrainingContentController
+from backend.training.training_content_service import TrainingContentService
+from backend.training.training_course_service import TrainingCourseService
+from backend.training.training_package_service import TrainingPackageService
+from backend.training.training_progress_service import TrainingProgressService
+from backend.training.training_storage import TrainingStorage
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
+from backend.leave.leave_request_handler import LeaveRequestHandler
 from backend.leave.leave_request_service import LeaveRequestService
 from backend.leave.leave_request_controller import LeaveRequestController
 from backend.repository.leave_request_repository import LeaveRequestRepository
@@ -153,7 +168,14 @@ from backend.notification_management.delivery_service import DeliveryService
 from backend.notification_management.delivery_controller import (
     NotificationDeliveryController,
 )
-from backend.common.environment_constants import RESUME_BUCKET
+from backend.common.environment_constants import (
+    RESUME_BUCKET,
+    APP_ORIGINS,
+    MATCHER_JOB_RESOURCE,
+    TRAINING_BUCKET,
+    TRAINING_CONTENT_HOST,
+    TRAINING_TOKEN_SIGNING_KEY,
+)
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
@@ -162,9 +184,61 @@ from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
+from backend.communication.person_email_service import PersonEmailService
+from backend.communication.email_context_registry import EmailContextRegistry
+from backend.communication.inbox_aliases import InboxAliases
+from backend.communication.inbox_controller import InboxController
+from backend.communication.inbox_service import InboxThreadService
+from backend.communication.inbox_router import InboxRouter
+from backend.communication.inbox_notifier import InboxNotifier
+from backend.communication.inbox_sync_handler import (
+    INBOX_CONTEXT_TYPES,
+    InboxSyncHandler,
+)
+from backend.communication.thread_service import ThreadServiceResolver
+from backend.communication.gmail_push_controller import GmailPushController
+from backend.communication.gmail_push_service import GmailPushService
+from backend.communication.gmail_maintenance_service import GmailMaintenanceService
+from backend.communication.gmail_sync_controller import GmailSyncController
+from backend.communication.gmail_sync_service import GmailSyncService
+from backend.ops.ops_alert_service import OpsAlertService
+from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
+from backend.common.communication_enums import ContextType
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
+from backend.repository.mentorship_participant_note_repository import (
+    MentorshipParticipantNoteRepository,
+)
+from backend.approval.approval_service import ApprovalService
+from backend.mentorship.publish_matching_handler import PublishMatchingHandler
+from backend.mentorship.exempt_matching_handler import ExemptMatchingHandler
+from backend.mentorship.end_pair_handler import EndPairHandler
+from backend.mentorship.withdraw_participant_handler import (
+    WithdrawParticipantHandler,
+)
+from backend.mentorship.mark_participant_handler import (
+    MarkNoShowHandler,
+    MarkRedFlagHandler,
+)
+from backend.mentorship.mentorship_block_service import MentorshipBlockService
+from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
+from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
+from backend.repository.training_course_repository import (
+    TrainingCourseRepository,
+)
+from backend.repository.training_progress_repository import (
+    TrainingProgressRepository,
+)
+from backend.repository.training_course_package_repository import (
+    TrainingCoursePackageRepository,
+)
+from backend.repository.training_audience_repository import (
+    TrainingAudienceRepository,
+)
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
@@ -178,7 +252,31 @@ from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.mentorship.matching_payload_service import MatchingPayloadService
+from backend.mentorship.matching_run_read_service import MatchingRunReadService
+from backend.mentorship.matching_draft_service import MatchingDraftService
+from backend.mentorship.matching_run_service import MatchingRunService
+from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
+from backend.mentorship.matching_run_complete_controller import (
+    MatchingRunCompleteController,
+)
+from backend.mentorship.matching_run_complete_service import (
+    MatchingRunCompleteService,
+)
+from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
+from backend.mentorship.participant_email_notifier import ParticipantEmailNotifier
+from backend.mentorship.participant_email_service import (
+    MentorshipParticipantEmailPolicy,
+    ParticipantEmailService,
+)
+from backend.mentorship.mentorship_email_controller import MentorshipEmailController
+from backend.mentorship.mentorship_email_service import MentorshipEmailService
+from backend.mentorship.mentorship_email_prepare_service import (
+    MentorshipEmailPrepareService,
+)
+from backend.mentorship.notification_mark_service import NotificationMarkService
+from backend.repository.mentorship_email_repository import MentorshipEmailRepository
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
@@ -194,6 +292,9 @@ from backend.profile.profile_mapper import ProfileMapper
 from backend.profile.profile_service import ProfileService
 from backend.common.database import Database
 from backend.profile.profile_controller import ProfileController
+from backend.user_identity.internal_onboarding_training import (
+    InternalOnboardingTrainingService,
+)
 from backend.user_identity.user_identity_service import UserIdentityService
 from backend.common.launchdarkly_client import LaunchDarklyClient
 from backend.service.launchdarkly_service import LaunchDarklyService
@@ -209,7 +310,7 @@ class AppDependencyBuilder:
     - Redis client
     - Microsoft Graph client
     - Business services (e.g. MicrosoftService, MicrosoftChatService)
-    - HTTP API controllers (e.g. HistoryController, InternalActivityController, ConsumerController)
+    - HTTP API controllers (e.g. HistoryController, InternalActivityController)
 
     Example:
         builder = AppDependencyBuilder()
@@ -243,6 +344,11 @@ class AppDependencyBuilder:
             for sub in (os.getenv(NOTIFICATION_PUSHER_SUBS) or "").split(",")
             if sub.strip()
         )
+        matcher_job_subs = frozenset(
+            sub.strip()
+            for sub in (os.getenv(MATCHER_JOB_SUBS) or "").split(",")
+            if sub.strip()
+        )
 
         # No presence check here: GoogleClient already validates USER_EMAIL and
         # raises before this point, so repeating it would just be noise.
@@ -271,7 +377,6 @@ class AppDependencyBuilder:
         self.google_workspaceevents_client = (
             self.google_client.create_workspaceevents_client()
         )
-        self.subscriber_client = self.google_client.create_subscriber_client()
         self.notification_publisher_client = (
             self.google_client.create_publisher_client()
         )
@@ -329,23 +434,6 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
         )
-        self.asyncio_event_loop_manager = AsyncioEventLoopManager(logger=self.logger)
-
-        self.pubsub_puller_factory = PubSubPullerFactory(
-            puller_creator=PubSubPuller,
-            logger=self.logger,
-            redis_client=self.redis_client,
-            subscriber_client=self.subscriber_client,
-            asyncio_event_loop_manager=self.asyncio_event_loop_manager,
-        )
-        self.pubsub_pull_manager = PubSubPullManager(
-            pubsub_puller_factory=self.pubsub_puller_factory
-        )
-        self.microsoft_message_processor_service = MicrosoftMessageProcessorService(
-            logger=self.logger,
-            pubsub_puller_factory=self.pubsub_puller_factory,
-            microsoft_chat_message_util=self.microsoft_chat_message_util,
-        )
         self.google_chat_messages_utils = GoogleChatMessagesUtils(
             logger=self.logger,
             redis_client=self.redis_client,
@@ -363,28 +451,15 @@ class AppDependencyBuilder:
         )
         self.google_chat_processor_service = GoogleChatProcessorService(
             logger=self.logger,
-            pubsub_puller_factory=self.pubsub_puller_factory,
             google_chat_messages_utils=self.google_chat_messages_utils,
             google_service=self.google_service,
         )
         self.gerrit_processor_service = GerritProcessorService(
             logger=self.logger,
             redis_client=self.redis_client,
-            pubsub_puller_factory=self.pubsub_puller_factory,
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
             gerrit_client=self.gerrit_client,
-        )
-        self.pubsub_sync_pull_service = PubSubSyncPullService(
-            logger=self.logger,
-            subscriber_client=self.subscriber_client,
-            microsoft_chat_message_util=self.microsoft_chat_message_util,
-            google_chat_processor_service=self.google_chat_processor_service,
-            gerrit_processor_service=self.gerrit_processor_service,
-            asyncio_event_loop_manager=self.asyncio_event_loop_manager,
-        )
-        self.consumer_controller = ConsumerController(
-            pubsub_sync_pull_service=self.pubsub_sync_pull_service,
         )
 
         self.microsoft_member_sync_service = MicrosoftMemberSyncService(
@@ -453,6 +528,7 @@ class AppDependencyBuilder:
             google_service=self.google_service,
             google_chat_message_utils=self.google_chat_messages_utils,
         )
+        self.activity_query_cache = ActivityQueryCache(logger=self.logger)
         self.historical_controller = HistoricalController(
             logger=self.logger,
             microsoft_member_sync_service=self.microsoft_member_sync_service,
@@ -463,6 +539,7 @@ class AppDependencyBuilder:
             gerrit_sync_service=self.gerrit_sync_service,
             google_chat_history_sync_service=self.google_chat_history_sync_service,
             employment_sync_service=self.employment_sync_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,
@@ -470,6 +547,7 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             ldap_service=self.ldap_service,
             retry_utils=self.retry_utils,
+            activity_query_cache=self.activity_query_cache,
         )
         self.microsoft_meeting_chat_topic_cache_service = (
             MicrosoftMeetingChatTopicCacheService(
@@ -485,12 +563,14 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
             ldap_service=self.ldap_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.google_calendar_analytics_service = GoogleCalendarAnalyticsService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
             ldap_service=self.ldap_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.gerrit_analytics_service = GerritAnalyticsService(
             logger=self.logger,
@@ -499,6 +579,7 @@ class AppDependencyBuilder:
             ldap_service=self.ldap_service,
             date_time_util=self.date_time_util,
             gerrit_client=self.gerrit_client,
+            activity_query_cache=self.activity_query_cache,
         )
         self.google_chat_analytics_service = GoogleChatAnalyticsService(
             logger=self.logger,
@@ -507,6 +588,7 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             google_service=self.google_service,
             ldap_service=self.ldap_service,
+            activity_query_cache=self.activity_query_cache,
         )
         self.summary_service = SummaryService(
             ldap_service=self.ldap_service,
@@ -516,6 +598,8 @@ class AppDependencyBuilder:
             gerrit_analytics_service=self.gerrit_analytics_service,
             jira_analytics_service=self.jira_analytics_service,
             date_time_util=self.date_time_util,
+            user_emails_repository=self.user_emails_repository,
+            activity_query_cache=self.activity_query_cache,
         )
         self.internal_activity_controller = InternalActivityController(
             ldap_service=self.ldap_service,
@@ -528,15 +612,29 @@ class AppDependencyBuilder:
             google_chat_analytics_service=self.google_chat_analytics_service,
             summary_service=self.summary_service,
             launchdarkly_service=self.launchdarkly_service,
+            database=self.database,
         )
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
-        # Built here, next to its repository, because both ApplicationService
+        self.training_course_repository = TrainingCourseRepository()
+        self.training_course_package_repository = TrainingCoursePackageRepository()
+        self.training_audience_repository = TrainingAudienceRepository()
+        # Built here, next to its repositories, because both ApplicationService
         # and BoardService take it and are constructed further down.
         self.onboarding_training_service = OnboardingTrainingService(
             logger=self.logger,
             training_repository=self.training_repository,
+            training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
+        )
+        # Every route into "this person is now an employee" runs the shared
+        # absorb hook, so the courses employment owes are assigned there too.
+        self.internal_onboarding_training_service = InternalOnboardingTrainingService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+            onboarding_training_service=self.onboarding_training_service,
         )
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -544,6 +642,9 @@ class AppDependencyBuilder:
             user_identities_repository=self.user_identities_repository,
             user_emails_repository=self.user_emails_repository,
             user_permissions_repository=self.user_permissions_repository,
+            internal_onboarding_training_service=(
+                self.internal_onboarding_training_service
+            ),
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController(
@@ -557,6 +658,9 @@ class AppDependencyBuilder:
             user_identities_repository=self.user_identities_repository,
             user_permissions_repository=self.user_permissions_repository,
             users_repository=self.users_repository,
+            internal_onboarding_training_service=(
+                self.internal_onboarding_training_service
+            ),
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()
@@ -582,6 +686,7 @@ class AppDependencyBuilder:
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
         )
         self.participation_service = ParticipationService(
             logger=self.logger,
@@ -615,6 +720,7 @@ class AppDependencyBuilder:
             meeting_scheduling_service=self.meeting_scheduling_service,
             mentorship_calendar_id=mentorship_calendar_id,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
@@ -635,6 +741,114 @@ class AppDependencyBuilder:
             database=self.database,
             meet_attendance_sync_service=self.meet_attendance_service,
         )
+        self.mentorship_participant_note_repository = (
+            MentorshipParticipantNoteRepository()
+        )
+        self.matching_eligibility_service = MatchingEligibilityService(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            rounds_repository=self.mentorship_round_repository,
+            training_repository=self.training_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            logger=self.logger,
+        )
+        # Nothing here needs self.database, so it is safe this early; the
+        # matching run service takes a session per call like the rest.
+        self.matching_payload_service = MatchingPayloadService(
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            logger=self.logger,
+        )
+        self.matching_storage = MatchingStorage(
+            redis_client=self.redis_client, logger=self.logger
+        )
+        self.matching_job_client = MatchingJobClient(
+            os.getenv(MATCHER_JOB_RESOURCE), logger=self.logger
+        )
+        self.approval_request_repository = ApprovalRequestRepository()
+        self.job_review_handler = JobReviewHandler(
+            job_repository=self.job_repository,
+            user_permissions_repository=self.user_permissions_repository,
+        )
+        self.publish_matching_handler = PublishMatchingHandler(
+            matching_storage=self.matching_storage,
+            pairs_repository=self.mentorship_pairs_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            rounds_repository=self.mentorship_round_repository,
+            logger=self.logger,
+            matching_eligibility_service=self.matching_eligibility_service,
+        )
+        self.exempt_matching_handler = ExemptMatchingHandler(
+            matching_eligibility_service=self.matching_eligibility_service,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+            participants_repository=self.mentorship_round_participants_repo,
+        )
+        self.withdraw_participant_handler = WithdrawParticipantHandler(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            meeting_service=self.meeting_service,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
+        self.end_pair_handler = EndPairHandler(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            meeting_service=self.meeting_service,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
+        mark_dependencies = dict(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
+        self.mark_no_show_handler = MarkNoShowHandler(**mark_dependencies)
+        self.mark_red_flag_handler = MarkRedFlagHandler(**mark_dependencies)
+        self.approval_service = ApprovalService(
+            approval_request_repository=self.approval_request_repository,
+            user_permissions_repository=self.user_permissions_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+            handlers=[
+                self.publish_matching_handler,
+                self.exempt_matching_handler,
+                self.withdraw_participant_handler,
+                self.mark_no_show_handler,
+                self.mark_red_flag_handler,
+                self.end_pair_handler,
+                self.job_review_handler,
+            ],
+        )
+        self.mentorship_approval_service = MentorshipApprovalService(
+            approval_service=self.approval_service,
+            matching_storage=self.matching_storage,
+            users_repository=self.users_repository,
+            rounds_repository=self.mentorship_round_repository,
+            pairs_repository=self.mentorship_pairs_repository,
+            logger=self.logger,
+        )
+        self.kit_client = KitClient(logger=self.logger)
+        self.mentorship_email_repository = MentorshipEmailRepository()
+        self.mentorship_email_service = MentorshipEmailService(
+            mentorship_email_repository=self.mentorship_email_repository,
+            user_emails_repository=self.user_emails_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            kit_client=self.kit_client,
+            sender_address=os.getenv(GMAIL_SENDER_NOTIFICATION),
+            logger=self.logger,
+        )
         self.mentorship_admin_service = MentorshipAdminService(
             users_repository=self.users_repository,
             participants_repository=self.mentorship_round_participants_repo,
@@ -642,13 +856,67 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
             pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
-            date_time_util=self.date_time_util,
-            database=self.database,
             logger=self.logger,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
+            application_repository=self.application_repository,
+            matching_eligibility_service=self.matching_eligibility_service,
+            mentorship_approval_service=self.mentorship_approval_service,
+            note_repository=self.mentorship_participant_note_repository,
+            approval_service=self.approval_service,
+            mentorship_email_service=self.mentorship_email_service,
+            meeting_service=self.meeting_service,
         )
-        self.mentorship_admin_controller = MentorshipAdminController(
-            mentorship_admin_service=self.mentorship_admin_service,
+        self.matching_run_service = MatchingRunService(
+            matching_payload_service=self.matching_payload_service,
+            matching_storage=self.matching_storage,
+            matching_job_client=self.matching_job_client,
+            matching_eligibility_service=self.matching_eligibility_service,
+            approval_service=self.approval_service,
+            logger=self.logger,
+        )
+        self.matching_run_read_service = MatchingRunReadService(
+            matching_storage=self.matching_storage,
+            users_repository=self.users_repository,
+            approval_service=self.approval_service,
+            logger=self.logger,
+        )
+        self.matching_draft_service = MatchingDraftService(
+            matching_storage=self.matching_storage,
+            users_repository=self.users_repository,
+            approval_service=self.approval_service,
+            logger=self.logger,
+        )
+        self.matching_run_complete_service = MatchingRunCompleteService(
+            logger=self.logger,
+            auth_service=self.authentication_service,
+            matcher_job_subs=matcher_job_subs,
+            matching_storage=self.matching_storage,
+            mentorship_round_repository=self.mentorship_round_repository,
+        )
+        self.matching_run_complete_controller = MatchingRunCompleteController(
+            matching_run_complete_service=self.matching_run_complete_service,
+            database=self.database,
+        )
+        self.mentorship_email_prepare_service = MentorshipEmailPrepareService(
+            database=self.database,
+            mentorship_email_repository=self.mentorship_email_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            kit_client=self.kit_client,
+            logger=self.logger,
+        )
+        self.notification_mark_service = NotificationMarkService(
+            note_repository=self.mentorship_participant_note_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            rounds_repository=self.mentorship_round_repository,
+            users_repository=self.users_repository,
+            mentorship_email_repository=self.mentorship_email_repository,
+            logger=self.logger,
+        )
+        self.mentorship_email_controller = MentorshipEmailController(
+            mentorship_email_service=self.mentorship_email_service,
+            mentorship_email_prepare_service=self.mentorship_email_prepare_service,
+            notification_mark_service=self.notification_mark_service,
+            launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )
         self.experience_repository = ExperienceRepository()
@@ -689,7 +957,6 @@ class AppDependencyBuilder:
         )
         self.notification_repository = NotificationRepository()
         self.event_repository = EventRepository()
-        self.job_review_repository = JobReviewRepository()
         self.recruiting_mapper = RecruitingMapper()
         # Person-anchored email transport, needed by the notification email
         # channel below. GmailClient reads the GMAIL_* credentials from the
@@ -710,16 +977,24 @@ class AppDependencyBuilder:
             raise ValueError(
                 f"Missing environment variable: {GMAIL_SENDER_NOTIFICATION}"
             )
+        self.inbox_aliases = InboxAliases.from_env()
         self.gmail_client = GmailClient(
             logger=self.logger,
             retry_utils=self.retry_utils,
-            sender_addresses=[recruiting_sender, self.notification_sender_address],
+            sender_addresses=[
+                recruiting_sender,
+                self.notification_sender_address,
+                *self.inbox_aliases.addresses(),
+            ],
         )
+        self.application_submission_repository = ApplicationSubmissionRepository()
         self.recruiting_notification_service = RecruitingNotificationService(
             self.notification_repository,
             self.application_repository,
             self.job_repository,
             self.users_repository,
+            self.event_repository,
+            self.application_submission_repository,
         )
         self.notification_email_service = NotificationEmailService(
             gmail_client=self.gmail_client,
@@ -736,10 +1011,12 @@ class AppDependencyBuilder:
         self.notification_event_email_service = NotificationEventEmailService(
             user_emails_repository=self.user_emails_repository,
             email_service=self.notification_email_service,
+            event_repository=self.event_repository,
         )
         self.delivery_service = DeliveryService(
             logger=self.logger,
             email_service=self.notification_event_email_service,
+            notification_repository=self.notification_repository,
         )
         self.notification_delivery_controller = NotificationDeliveryController(
             logger=self.logger,
@@ -754,11 +1031,11 @@ class AppDependencyBuilder:
             self.job_repository,
             self.recruiting_mapper,
             self.user_permissions_repository,
-            self.job_review_repository,
             self.notification_repository,
             self.users_repository,
             self.user_emails_repository,
             self.event_repository,
+            approval_service=self.approval_service,
         )
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_interview_repository = ApplicationInterviewRepository()
@@ -766,9 +1043,17 @@ class AppDependencyBuilder:
         self.application_comment_mention_repository = (
             ApplicationCommentMentionRepository()
         )
-        self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.evaluation_repository = EvaluationRepository()
+        # Shared owner/assignee gating + interview-evaluator validation, used
+        # by ApplicationService (default-assignee eligibility), BoardService
+        # (via its thin delegating methods) and InterviewSchedulingService.
+        self.application_access = ApplicationAccess(
+            self.application_repository,
+            self.job_repository,
+            self.application_assignment_repository,
+            self.user_permissions_repository,
+        )
         self.application_service = ApplicationService(
             self.application_repository,
             self.application_submission_repository,
@@ -779,6 +1064,7 @@ class AppDependencyBuilder:
             self.notification_repository,
             self.user_emails_repository,
             self.mentorship_admission_service,
+            self.application_access,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -799,26 +1085,166 @@ class AppDependencyBuilder:
             sender_address=recruiting_sender,
         )
         self.email_sync_service = EmailSyncService(
-            gmail_client=self.gmail_client,
             email_conversation_service=self.email_conversation_service,
             application_repository=self.application_repository,
             logger=self.logger,
         )
+        self.email_context_registry = EmailContextRegistry()
+        self.email_context_registry.register(
+            ContextType.APPLICATION, self.email_sync_service
+        )
+        self.thread_service_resolver = ThreadServiceResolver(
+            job_repository=self.job_repository
+        )
+        self.inbox_notifier = InboxNotifier(
+            message_repository=self.email_message_repository,
+            thread_service_resolver=self.thread_service_resolver,
+        )
+        self.inbox_sync_handler = InboxSyncHandler(
+            conversation_service=self.email_conversation_service,
+            thread_repository=self.email_thread_repository,
+            notifier=self.inbox_notifier,
+            logger=self.logger,
+            context_types=INBOX_CONTEXT_TYPES,
+        )
+        # A full resync calls resync_all once per registered context; only
+        # MENTORSHIP_INBOX gets the sweeping handler.
+        self.email_context_registry.register(
+            ContextType.MENTORSHIP_INBOX, self.inbox_sync_handler
+        )
+        for context_type in (
+            ContextType.RECRUITING_INBOX,
+            ContextType.INQUIRIES_INBOX,
+        ):
+            self.email_context_registry.register(
+                context_type, self.inbox_sync_handler.alias_without_resync()
+            )
+        # A person's round threads are read on their participant page; new
+        # mail there tells mentorship, not the Inbox.
+        self.participant_email_notifier = ParticipantEmailNotifier(
+            message_repository=self.email_message_repository,
+            users_repository=self.users_repository,
+            round_repository=self.mentorship_round_repository,
+        )
+        self.participant_email_sync_handler = InboxSyncHandler(
+            conversation_service=self.email_conversation_service,
+            thread_repository=self.email_thread_repository,
+            notifier=self.participant_email_notifier,
+            logger=self.logger,
+            context_types=[ContextType.ACTIVITY],
+        )
+        self.email_context_registry.register(
+            ContextType.ACTIVITY, self.participant_email_sync_handler
+        )
+        self.person_email_service = PersonEmailService(
+            conversation_service=self.email_conversation_service,
+            thread_repository=self.email_thread_repository,
+            message_repository=self.email_message_repository,
+            users_repository=self.users_repository,
+            user_emails_repository=self.user_emails_repository,
+            context_registry=self.email_context_registry,
+            gmail_client=self.gmail_client,
+        )
+        self.participant_email_service = ParticipantEmailService(
+            policy=MentorshipParticipantEmailPolicy(
+                rounds_repository=self.mentorship_round_repository,
+                users_repository=self.users_repository,
+                person_email_service=self.person_email_service,
+                aliases=self.inbox_aliases,
+            ),
+            person_email_service=self.person_email_service,
+        )
+        self.mentorship_admin_controller = MentorshipAdminController(
+            mentorship_admin_service=self.mentorship_admin_service,
+            matching_run_service=self.matching_run_service,
+            matching_run_read_service=self.matching_run_read_service,
+            matching_draft_service=self.matching_draft_service,
+            mentorship_approval_service=self.mentorship_approval_service,
+            launchdarkly_service=self.launchdarkly_service,
+            participant_email_service=self.participant_email_service,
+            database=self.database,
+        )
+        # Optional: an environment whose mailbox has no watch yet boots
+        # normally and the daily job reports it as skipped.
+        gmail_watch_topic = os.getenv(GMAIL_WATCH_TOPIC) or None
+        self.gmail_sync_state_repository = GmailSyncStateRepository()
+        self.ops_alert_service = OpsAlertService(logger=self.logger)
+        self.inbox_router = InboxRouter(
+            gmail_client=self.gmail_client,
+            thread_repository=self.email_thread_repository,
+            aliases=self.inbox_aliases,
+            logger=self.logger,
+        )
+        self.gmail_sync_service = GmailSyncService(
+            gmail_client=self.gmail_client,
+            state_repository=self.gmail_sync_state_repository,
+            thread_repository=self.email_thread_repository,
+            context_registry=self.email_context_registry,
+            ops_alerts=self.ops_alert_service,
+            watch_topic=gmail_watch_topic,
+            database=self.database,
+            logger=self.logger,
+            inbox_router=self.inbox_router,
+        )
+        # Pub/Sub pushes for Gmail use the same service account as the
+        # notification pushes, so the allowlist is shared.
+        self.gmail_push_service = GmailPushService(
+            logger=self.logger,
+            gmail_sync_service=self.gmail_sync_service,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
+            database=self.database,
+        )
+        # Google Chat, Microsoft Teams and Gerrit pushes are signed by the same
+        # account too.
+        self.pubsub_push_service = PubSubPushService(
+            logger=self.logger,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
+            google_chat_processor_service=self.google_chat_processor_service,
+            gerrit_processor_service=self.gerrit_processor_service,
+            microsoft_chat_message_util=self.microsoft_chat_message_util,
+            activity_query_cache=self.activity_query_cache,
+        )
+        self.pubsub_push_controller = PubSubPushController(
+            pubsub_push_service=self.pubsub_push_service,
+        )
+        self.gmail_maintenance_service = GmailMaintenanceService(
+            logger=self.logger,
+            gmail_sync_service=self.gmail_sync_service,
+            database=self.database,
+        )
+        self.gmail_push_controller = GmailPushController(
+            gmail_push_service=self.gmail_push_service,
+            database=self.database,
+        )
+        self.gmail_sync_controller = GmailSyncController(
+            gmail_maintenance_service=self.gmail_maintenance_service,
+            database=self.database,
+        )
+        self.inbox_thread_service = InboxThreadService(
+            thread_repository=self.email_thread_repository,
+            message_repository=self.email_message_repository,
+            user_emails_repository=self.user_emails_repository,
+            users_repository=self.users_repository,
+            application_repository=self.application_repository,
+            round_repository=self.mentorship_round_repository,
+            event_repository=self.event_repository,
+            thread_service_resolver=self.thread_service_resolver,
+            aliases=self.inbox_aliases,
+            person_email_service=self.person_email_service,
+            round_participants_repository=self.mentorship_round_participants_repo,
+            rounds_service=self.rounds_service,
+        )
+        self.inbox_controller = InboxController(
+            inbox_thread_service=self.inbox_thread_service,
+            database=self.database,
+        )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
-            email_sync_service=self.email_sync_service,
             database=self.database,
         )
 
-        # Shared owner/assignee gating + interview-evaluator validation, used
-        # by both BoardService (via its thin delegating methods) and
-        # InterviewSchedulingService.
-        self.application_access = ApplicationAccess(
-            self.application_repository,
-            self.job_repository,
-            self.application_assignment_repository,
-            self.user_permissions_repository,
-        )
         # Built before BoardService, which delegates its ghost-meeting cleanup
         # (change_stage/set_round's `cancelInterview`) here. The dependency is
         # one-way: this service never calls back into BoardService.
@@ -849,23 +1275,64 @@ class AppDependencyBuilder:
             self.evaluation_repository,
             self.notification_repository,
             self.user_emails_repository,
-            self.email_conversation_service,
-            self.email_sync_service,
+            self.person_email_service,
             self.application_interview_repository,
             self.application_access,
             self.interview_scheduling_service,
             self.mentorship_admission_service,
+            self.approval_service,
         )
         self.board_controller = BoardController(
             self.board_service,
             self.database,
             self.interview_scheduling_service,
         )
-        self.blacklist_service = BlacklistService(
-            self.users_repository, self.user_emails_repository
+        self.user_account_service = UserAccountService(
+            self.users_repository,
+            self.user_emails_repository,
+            self.user_identities_repository,
+            self.user_permissions_repository,
+            self.approval_service,
+            logger=self.logger,
         )
-        self.blacklist_controller = BlacklistController(
-            self.blacklist_service,
+        self.mentorship_block_service = MentorshipBlockService(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            meeting_service=self.meeting_service,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
+        # Registered here rather than with the other handlers: approving a
+        # block cancels interviews, and the scheduling service is built late.
+        self.block_user_handler = BlockUserHandler(
+            self.users_repository,
+            self.application_repository,
+            self.application_submission_repository,
+            self.application_interview_repository,
+            self.interview_scheduling_service,
+            self.mentorship_block_service,
+            self.user_permissions_repository,
+        )
+        self.approval_service.register(self.block_user_handler)
+        self.block_service = BlockService(
+            self.users_repository,
+            self.application_repository,
+            self.application_submission_repository,
+            self.application_interview_repository,
+            self.interview_scheduling_service,
+            self.approval_service,
+            self.user_permissions_repository,
+            mentorship_block_service=self.mentorship_block_service,
+            logger=self.logger,
+        )
+        self.user_account_controller = UserAccountController(
+            self.user_account_service,
+            self.block_service,
+            self.database,
+        )
+        self.block_controller = BlockController(
+            self.block_service,
             self.database,
         )
         self.evaluation_service = EvaluationService(
@@ -917,16 +1384,91 @@ class AppDependencyBuilder:
             leave_ledger_repository=self.leave_ledger_repository,
             users_repository=self.users_repository,
         )
-        self.leave_admin_controller = LeaveAdminController(
-            self.leave_adjustment_service,
-            self.leave_engine_service,
-            self.database,
-        )
         self.leave_job_controller = LeaveJobController(
             self.leave_engine_service,
             self.database,
         )
+        self.training_course_service = TrainingCourseService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
+            users_repository=self.users_repository,
+        )
+        self.training_assignment_service = TrainingAssignmentService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+            training_repository=self.training_repository,
+            training_course_package_repository=self.training_course_package_repository,
+        )
+        self.training_progress_repository = TrainingProgressRepository()
+        self.training_storage = TrainingStorage(
+            os.getenv(TRAINING_BUCKET), logger=self.logger
+        )
+        # Nothing downstream can tell a content host apart from the app's own
+        # host: set them equal and every request still succeeds, with course
+        # JavaScript same-origin with the API. A host that cannot be shown to
+        # differ resolves to None, which disables the exemption and the route
+        # together rather than taking the whole app down over one feature.
+        self.training_content_host = resolve_content_host(
+            os.getenv(TRAINING_CONTENT_HOST), os.getenv(APP_ORIGINS), self.logger
+        )
+        self.training_package_service = TrainingPackageService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+            training_progress_repository=self.training_progress_repository,
+            training_course_package_repository=self.training_course_package_repository,
+            training_storage=self.training_storage,
+        )
+        self.training_content_service = TrainingContentService(
+            logger=self.logger,
+            signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
+            content_host=self.training_content_host,
+            training_repository=self.training_repository,
+            training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
+            training_progress_repository=self.training_progress_repository,
+            training_storage=self.training_storage,
+        )
+        self.training_progress_service = TrainingProgressService(
+            logger=self.logger,
+            signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
+            training_repository=self.training_repository,
+            training_progress_repository=self.training_progress_repository,
+            training_course_package_repository=self.training_course_package_repository,
+        )
+        self.training_audience_service = TrainingAudienceService(
+            logger=self.logger,
+            training_audience_repository=self.training_audience_repository,
+            user_emails_repository=self.user_emails_repository,
+            ldap_service=self.ldap_service,
+            training_repository=self.training_repository,
+            training_progress_repository=self.training_progress_repository,
+        )
+        self.training_admin_controller = TrainingAdminController(
+            self.training_course_service,
+            self.training_assignment_service,
+            self.training_package_service,
+            self.training_content_service,
+            self.training_progress_service,
+            self.training_audience_service,
+            self.database,
+        )
+        self.training_content_controller = TrainingContentController(
+            self.training_content_service,
+            self.training_content_host,
+            self.database,
+            self.logger,
+            app_origins=app_origin_set(os.getenv(APP_ORIGINS)),
+        )
+
         self.leave_request_repository = LeaveRequestRepository()
+        self.leave_request_handler = LeaveRequestHandler(
+            leave_request_repository=self.leave_request_repository,
+            leave_ledger_repository=self.leave_ledger_repository,
+            leave_holiday_repository=self.leave_holiday_repository,
+            users_repository=self.users_repository,
+        )
+        self.approval_service.register(self.leave_request_handler)
         self.leave_request_service = LeaveRequestService(
             logger=self.logger,
             leave_request_repository=self.leave_request_repository,
@@ -937,9 +1479,26 @@ class AppDependencyBuilder:
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
             participant_resolver=self.leave_participant_resolver,
+            approval_service=self.approval_service,
         )
         self.leave_request_controller = LeaveRequestController(
             self.leave_request_service,
+            self.database,
+        )
+        self.leave_balance_service = LeaveBalanceService(
+            logger=self.logger,
+            leave_ledger_repository=self.leave_ledger_repository,
+            users_repository=self.users_repository,
+            user_emails_repository=self.user_emails_repository,
+        )
+        self.leave_balance_controller = LeaveBalanceController(
+            leave_balance_service=self.leave_balance_service,
+            database=self.database,
+        )
+        self.leave_admin_controller = LeaveAdminController(
+            self.leave_adjustment_service,
+            self.leave_engine_service,
+            self.leave_balance_service,
             self.database,
         )
         self.fast_app_factory = FastAppFactory(
@@ -949,25 +1508,35 @@ class AppDependencyBuilder:
             user_permissions_repository=self.user_permissions_repository,
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
-            consumer_controller=self.consumer_controller,
             internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
             mentorship_admin_controller=self.mentorship_admin_controller,
+            mentorship_email_controller=self.mentorship_email_controller,
+            matching_run_complete_controller=self.matching_run_complete_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
+            user_account_controller=self.user_account_controller,
+            block_controller=self.block_controller,
             recruiting_controller=self.recruiting_controller,
             application_controller=self.application_controller,
             board_controller=self.board_controller,
-            blacklist_controller=self.blacklist_controller,
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
             leave_admin_controller=self.leave_admin_controller,
+            training_admin_controller=self.training_admin_controller,
+            training_content_controller=self.training_content_controller,
+            training_content_host=self.training_content_host,
             leave_job_controller=self.leave_job_controller,
             leave_request_controller=self.leave_request_controller,
             leave_calendar_controller=self.leave_calendar_controller,
+            leave_balance_controller=self.leave_balance_controller,
             notification_delivery_controller=self.notification_delivery_controller,
+            gmail_push_controller=self.gmail_push_controller,
+            gmail_sync_controller=self.gmail_sync_controller,
+            inbox_controller=self.inbox_controller,
+            pubsub_push_controller=self.pubsub_push_controller,
             notification_publisher=self.notification_publisher_client,
             notification_topic_path=self.notification_topic_path,
             launchdarkly_client=self.launchdarkly_client,

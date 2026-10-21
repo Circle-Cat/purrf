@@ -8,13 +8,17 @@ so the one thing this must never do is fail quietly.
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.leave.leave_participants import LeaveParticipantResolver
+from backend.leave.leave_participants import (
+    LeaveParticipantResolver,
+    resolve_names_and_ldaps,
+)
 
 
-def _email_row(email, user_id):
+def _email_row(email, user_id, confirmed=True):
     row = MagicMock()
     row.email = email
     row.user_id = user_id
+    row.otp_confirmed = confirmed
     return row
 
 
@@ -69,6 +73,20 @@ class LeaveParticipantResolverTest(IsolatedAsyncioTestCase):
         self.assertEqual(resolved.by_ldap, {})
         self.assertEqual(resolved.unresolved, ("ann",))
 
+    async def test_an_unconfirmed_address_is_reported_not_paid(self):
+        """Anyone can add an address without owning it, so an unconfirmed one
+        does not tie an ldap to an account. It is named in the report rather
+        than dropped, so an employee who never confirmed is still seen."""
+        self.user_emails_repository.list_by_emails.return_value = [
+            _email_row("ann@circlecat.org", 11, confirmed=False)
+        ]
+        self.users_repository.get_all_by_ids.return_value = [_user(11)]
+
+        resolved = await self.resolver.resolve(self.session, ["ann"])
+
+        self.assertEqual(resolved.by_ldap, {})
+        self.assertEqual(resolved.unresolved, ("ann",))
+
     async def test_someone_with_no_purrf_account_is_reported(self):
         resolved = await self.resolver.resolve(self.session, ["ghost"])
 
@@ -112,6 +130,45 @@ class LeaveParticipantResolverTest(IsolatedAsyncioTestCase):
         resolved = await self.resolver.resolve(self.session, ["zoe", "ann", "mia"])
 
         self.assertEqual(resolved.unresolved, ("ann", "mia", "zoe"))
+
+    async def test_resolve_names_and_ldaps_empty_user_ids(self):
+        """Should return empty dictionaries immediately without querying repositories when user_ids is empty."""
+
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            self.session,
+            [],
+            self.users_repository,
+            self.user_emails_repository,
+        )
+
+        self.assertEqual(name_by_id, {})
+        self.assertEqual(ldap_by_id, {})
+        self.users_repository.get_all_by_ids.assert_not_called()
+        self.user_emails_repository.get_emails_by_user_ids.assert_not_called()
+
+    async def test_resolve_names_and_ldaps_resolves_correctly(self):
+        """Verify user records and emails correctly resolve into name_by_id and ldap_by_id mappings."""
+
+        user_mock = MagicMock()
+        user_mock.user_id = 44
+        user_mock.first_name = "Wen"
+        user_mock.last_name = "Zhang"
+        user_mock.preferred_name = None
+
+        self.users_repository.get_all_by_ids = AsyncMock(return_value=[user_mock])
+        self.user_emails_repository.get_emails_by_user_ids = AsyncMock(
+            return_value={44: ["wen.zhang@circlecat.org"]}
+        )
+
+        name_by_id, ldap_by_id = await resolve_names_and_ldaps(
+            self.session,
+            [44],
+            self.users_repository,
+            self.user_emails_repository,
+        )
+
+        self.assertEqual(name_by_id, {44: "Wen Zhang"})
+        self.assertEqual(ldap_by_id, {44: "wen.zhang"})
 
 
 if __name__ == "__main__":

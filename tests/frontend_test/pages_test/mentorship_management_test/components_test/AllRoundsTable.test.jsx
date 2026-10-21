@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import AllRoundsTable from "@/pages/MentorshipManagement/components/AllRoundsTable";
 
 const makeTestRound = (overrides = {}) => ({
@@ -131,5 +132,60 @@ describe("AllRoundsTable", () => {
     expect(
       screen.getByRole("button", { name: /view round/i }),
     ).toBeInTheDocument();
+  });
+
+  describe("Feedback column", () => {
+    const renderWithFeedback = (rounds, canReadFeedback = true) =>
+      render(
+        <MemoryRouter>
+          <AllRoundsTable
+            rounds={rounds}
+            totals={{}}
+            onEdit={vi.fn()}
+            canReadFeedback={canReadFeedback}
+          />
+        </MemoryRouter>,
+      );
+
+    it("links sent of owed to the round's feedback page", () => {
+      renderWithFeedback([
+        makeTestRound({ id: 7, feedbackOwed: 8, feedbackSent: 3 }),
+      ]);
+
+      expect(screen.getByText("Feedback")).toBeInTheDocument();
+      const link = screen.getByRole("link", {
+        name: "Feedback for Mentorship 2026 Spring",
+      });
+      expect(link).toHaveTextContent("3 of 8 sent");
+      expect(link).toHaveAttribute(
+        "href",
+        "/mentorship-management/rounds/7/feedback",
+      );
+    });
+
+    it("shows a dash, not a link, when nobody owes feedback", () => {
+      renderWithFeedback([
+        makeTestRound({
+          feedbackOwed: 0,
+          feedbackSent: 0,
+          mentorAverageScore: 4.5,
+          menteeAverageScore: 4.8,
+        }),
+      ]);
+
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+      // Every other cell has a value, so the one dash is the Feedback cell.
+      expect(screen.getAllByText("—")).toHaveLength(1);
+    });
+
+    it("leaves the column out without read permission", () => {
+      renderWithFeedback(
+        [makeTestRound({ feedbackOwed: 8, feedbackSent: 3 })],
+        false,
+      );
+
+      expect(screen.queryByText("Feedback")).not.toBeInTheDocument();
+      expect(screen.queryByText("3 of 8 sent")).not.toBeInTheDocument();
+    });
   });
 });

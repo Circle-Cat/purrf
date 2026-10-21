@@ -1,0 +1,1700 @@
+"""What one LMSCommit is allowed to change."""
+
+import unittest
+from datetime import datetime, timezone
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
+
+from backend.common.exceptions import ConflictError
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
+from backend.entity.training_course_entity import TrainingCourseEntity
+from backend.entity.training_entity import TrainingEntity
+from backend.entity.training_progress_entity import TrainingProgressEntity
+from backend.training.training_content_token import issue_content_token
+from backend.training.training_progress_service import (
+    RUN_SUPERSEDED,
+    TrainingProgressService,
+)
+
+_TRAINING_ID = 42
+_USER_ID = 11
+_EARLIER = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_SIGNING_KEY = "test-signing-key"
+_PACKAGE_ID = 7
+
+
+def _session_token(
+    package_id: int = _PACKAGE_ID,
+    training_id: int = _TRAINING_ID,
+    user_id: int = _USER_ID,
+    run_id: str | None = None,
+) -> str:
+    """The token a page was handed when it opened a run of ``package_id``.
+
+    ``training_id`` and ``user_id`` are overridable so a test can hand over a
+    token that is authentic but belongs to some other run. ``run_id`` is None
+    by default, which is the shape of a token minted before runs had one.
+    """
+    token, _ = issue_content_token(
+        _SIGNING_KEY, training_id, user_id, package_id=package_id, run_id=run_id
+    )
+    return token
+
+
+# Two tabs open on the same assignment, oldest first.
+_OLDER_RUN = "run-older-tab"
+_NEWER_RUN = "run-newer-tab"
+
+
+# What our player sends: renderCommitCMI(true) always carries total_time.
+_COMMIT = {
+    "cmi.core.lesson_status": "incomplete",
+    "cmi.core.lesson_location": "Summary",
+    "cmi.suspend_data": "x" * 5000,
+    "cmi.core.session_time": "00:02:30",
+    "cmi.core.total_time": "00:02:30",
+}
+# A course driving the API without total_time.
+_SESSION_TIME_ONLY_COMMIT = {
+    key: value for key, value in _COMMIT.items() if key != "cmi.core.total_time"
+}
+
+
+class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.session = AsyncMock()
+        self.logger = MagicMock()
+        self.training_repository = AsyncMock()
+        self.training_repository.get_training_by_id.return_value = TrainingEntity(
+            training_id=_TRAINING_ID,
+            user_id=_USER_ID,
+            course_id=3,
+            status=TrainingStatus.IN_PROGRESS,
+        )
+        self.progress_repository = AsyncMock()
+        self.progress_repository.get_by_training_id.return_value = None
+        self.progress_repository.upsert.side_effect = (
+            lambda session, training_id, **columns: TrainingProgressEntity(
+                training_id=training_id, **columns
+            )
+        )
+        self.package_repository = AsyncMock()
+        # One object behind both lookups: the course's live package is also
+        # the package a fresh token names.
+        self.package = self.package_repository.get_by_state.return_value
+        self.package.package_id = _PACKAGE_ID
+        self.package.state = TrainingPackageState.LIVE
+        self.package_repository.get_by_id.return_value = self.package
+        self.service = TrainingProgressService(
+            logger=self.logger,
+            signing_key=_SIGNING_KEY,
+            training_repository=self.training_repository,
+            training_progress_repository=self.progress_repository,
+            training_course_package_repository=self.package_repository,
+        )
+
+    def _saved_columns(self):
+        return self.progress_repository.upsert.call_args.kwargs
+
+
+class TestNonStringValues(_ProgressServiceCase):
+    """The body is JSON from whoever holds the assignment, so a CMI element
+    can arrive as a number, an object or null however well the course behaves."""
+
+    async def test_a_text_element_that_is_not_a_string_is_refused(self):
+        for value in (5, {"nested": "object"}, None, ["a"], True):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    await self.service.save(
+                        self.session,
+                        _TRAINING_ID,
+                        _USER_ID,
+                        {"cmi.suspend_data": value},
+                        session_token=_session_token(),
+                    )
+
+        self.progress_repository.upsert.assert_not_called()
+
+    async def test_a_non_string_time_is_dropped_not_a_crash(self):
+        """Same treatment as a time in a format we cannot read."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.total_time": 90, "cmi.core.lesson_location": "Summary"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns(), {"lesson_location": "Summary"})
+        self.logger.warning.assert_called()
+
+    async def test_a_non_string_score_is_dropped_like_an_unstorable_one(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.score.raw": {"value": 80}, "cmi.core.lesson_location": "End"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns(), {"lesson_location": "End"})
+
+
+class TestSave(_ProgressServiceCase):
+    async def test_the_course_values_land_on_the_row(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertEqual(saved["lesson_status"], "incomplete")
+        self.assertEqual(saved["lesson_location"], "Summary")
+        self.assertEqual(saved["suspend_data"], "x" * 5000)
+
+    async def test_suspend_data_is_stored_whole_however_long_it_is(self):
+        """Real packages disable the 4096 cap; a rejected write is silent."""
+        long_blob = "y" * 40000
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.suspend_data": long_blob},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["suspend_data"], long_blob)
+
+    async def test_an_empty_suspend_data_is_stored_rather_than_ignored(self):
+        """The course clears it to reset itself after a package change."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.suspend_data": "", "cmi.core.lesson_location": ""},
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertEqual(saved["suspend_data"], "")
+        self.assertEqual(saved["lesson_location"], "")
+
+    async def test_session_time_without_total_time_leaves_the_stored_time_alone(
+        self,
+    ):
+        """session_time is this session so far and is committed many times
+        per session, so adding it would count the same time again. The real
+        player always sends total_time; a payload that does not stores the
+        rest of the commit, keeps the banked time and says so."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=500)
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _SESSION_TIME_ONLY_COMMIT,
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("session_time_seconds", saved)
+        self.assertEqual(saved["lesson_location"], "Summary")
+        self.logger.warning.assert_called()
+        self.assertIn("total_time", self.logger.warning.call_args.args[0])
+
+    async def test_session_time_comes_from_total_time_when_present(self):
+        """scorm-again's total_time is already seeded-total plus this
+        session's elapsed time, so it replaces the stored value outright."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=500)
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:10:00"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 600)
+
+    async def test_two_commits_in_one_session_do_not_double_count(self):
+        """Each commit's total_time already covers the whole session so far;
+        summing successive commits would multiply it, not accumulate it."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:03:00"},
+            session_token=_session_token(),
+        )
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=180)
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:05:00"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 300)
+
+    async def test_a_second_tab_cannot_spend_the_time_the_first_one_banked(self):
+        """Both tabs seed total_time from the same stored value, so each one
+        reports that value plus only its own elapsed time. The tab that
+        commits last would otherwise write a total missing everything the
+        other one banked, and banked time is the one thing that never goes
+        backwards."""
+        # The first tab has already committed 500 + 600.
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=1100)
+        )
+
+        # The second tab opened at 500 and has been watching for a minute.
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:09:20"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 1100)
+
+    async def test_a_malformed_session_time_does_not_lose_the_commit(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_SESSION_TIME_ONLY_COMMIT, "cmi.core.session_time": "not a timespan"},
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("session_time_seconds", saved)
+        self.assertEqual(saved["lesson_location"], "Summary")
+
+    async def test_a_malformed_total_time_leaves_the_stored_value_alone(self):
+        """0 is a real elapsed time, not a stand-in for "could not read it";
+        writing it over a real total would wipe accumulated time."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "not a timespan"},
+            session_token=_session_token(),
+        )
+
+        self.assertNotIn("session_time_seconds", self._saved_columns())
+
+    async def test_an_unparseable_total_time_is_logged(self):
+        """A course reporting time in a shape we reject would otherwise bank
+        nothing, forever, with no trace anywhere."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "not a timespan"},
+            session_token=_session_token(),
+        )
+
+        self.logger.warning.assert_called_once()
+        message = "%s" % (self.logger.warning.call_args,)
+        self.assertIn(str(_TRAINING_ID), message)
+        self.assertIn("not a timespan", message)
+
+    async def test_a_single_digit_hour_total_time_is_treated_as_malformed(self):
+        """SCORM 1.2's CMITimespan needs at least two digits of hours; a value
+        that skips the leading zero is not one of ours to guess at, so it is
+        left unparsed rather than silently read as zero."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "0:02:30"},
+            session_token=_session_token(),
+        )
+
+        self.assertNotIn("session_time_seconds", self._saved_columns())
+
+    async def test_a_commit_matching_no_known_element_is_logged(self):
+        """columns ends up empty and the row still gets touched -- the only
+        trace of a misbehaving course is this log line."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.objectives.0.id": "obj-1"},
+            session_token=_session_token(),
+        )
+
+        self.logger.warning.assert_called_once()
+        message = "%s" % (self.logger.warning.call_args,)
+        self.assertIn(str(_TRAINING_ID), message)
+        self.assertIn("cmi.objectives.0.id", message)
+
+    async def test_a_commit_with_a_recognised_element_is_not_logged(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.logger.warning.assert_not_called()
+
+    async def test_score_fields_land_on_the_row(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.score.raw": "82.5",
+                "cmi.core.score.min": "0",
+                "cmi.core.score.max": "100",
+            },
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertEqual(saved["score_raw"], Decimal("82.5"))
+        self.assertEqual(saved["score_min"], Decimal("0"))
+        self.assertEqual(saved["score_max"], Decimal("100"))
+
+    async def test_an_unparseable_score_does_not_lose_the_rest_of_the_commit(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.score.raw": "not-a-number"},
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("score_raw", saved)
+        self.assertEqual(saved["lesson_status"], "incomplete")
+
+    async def test_an_out_of_range_score_does_not_lose_the_rest_of_the_commit(self):
+        """ "12345678" parses as a Decimal fine, but overflows Numeric(8, 2)
+        and would otherwise 500 the request at flush, losing suspend_data
+        along with it."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.score.raw": "12345678",
+                "cmi.core.score.min": "0",
+                "cmi.core.score.max": "82.5",
+            },
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("score_raw", saved)
+        self.assertEqual(saved["score_min"], Decimal("0"))
+        self.assertEqual(saved["score_max"], Decimal("82.5"))
+        self.assertEqual(saved["suspend_data"], "x" * 5000)
+
+    async def test_a_non_finite_score_does_not_lose_the_rest_of_the_commit(self):
+        """ "NaN" and "Infinity" both parse as a Decimal; storing them would
+        round-trip back out to the browser as the literal string "NaN"."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.score.raw": "NaN",
+                "cmi.core.score.min": "Infinity",
+                "cmi.core.score.max": "72",
+            },
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("score_raw", saved)
+        self.assertNotIn("score_min", saved)
+        self.assertEqual(saved["score_max"], Decimal("72"))
+        self.assertEqual(saved["lesson_status"], "incomplete")
+
+    async def test_an_unstorable_score_is_logged(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.score.raw": "1e400"},
+            session_token=_session_token(),
+        )
+
+        self.logger.warning.assert_called_once()
+        message = "%s" % (self.logger.warning.call_args,)
+        self.assertIn(str(_TRAINING_ID), message)
+        self.assertIn("1e400", message)
+
+    async def test_an_empty_score_is_stored_as_no_score_rather_than_zero(self):
+        """A course clears its score the same way it clears any other field:
+        by writing an empty string. Numeric has no empty value, so that
+        clears to NULL instead of being rejected as unparseable."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.score.raw": ""},
+            session_token=_session_token(),
+        )
+
+        self.assertIsNone(self._saved_columns()["score_raw"])
+
+    async def test_a_completion_finishes_the_assignment_and_stamps_the_time(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertIsNotNone(assignment.completed_timestamp)
+
+    async def test_the_save_reports_the_status_it_left_the_assignment_in(self):
+        """The page shows this rather than judging the lesson_status itself."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(result.status, TrainingStatus.DONE)
+
+    async def test_a_save_that_moves_nothing_still_reports_where_it_stands(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(result.status, TrainingStatus.IN_PROGRESS)
+
+    async def test_a_verifier_already_done_can_still_stamp_a_replaced_package(self):
+        """Re-upload clears the stamp but leaves the verifier's row DONE.
+
+        Their status moves nowhere on the next run, so a stamp gated on that
+        move would leave the new package unverifiable by the one person most
+        likely to be running it.
+        """
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNotNone(package.verified_completable_at)
+        self.assertEqual(package.verified_by_user_id, _USER_ID)
+
+    async def test_reopening_a_finished_course_does_not_undo_it(self):
+        """Mentor onboarding writes `incomplete` on its way to `completed`."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+
+    async def test_the_completion_time_is_the_first_one_not_the_latest(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+
+    async def test_a_partial_body_leaves_absent_fields_alone(self):
+        """Only the elements a course actually committed are written."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.lesson_status": "completed"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns(), {"lesson_status": "completed"})
+
+    async def test_an_explicit_empty_value_is_written_not_treated_as_absent(self):
+        """A course clears a field on purpose and reads it back to check."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.suspend_data": "", "cmi.core.lesson_location": ""},
+            session_token=_session_token(),
+        )
+
+        saved = self._saved_columns()
+        self.assertEqual(saved, {"suspend_data": "", "lesson_location": ""})
+
+    async def test_finishing_an_unverified_course_unlocks_it(self):
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNotNone(package.verified_completable_at)
+        self.assertEqual(package.verified_by_user_id, _USER_ID)
+
+    async def test_a_learner_without_the_grant_cannot_unlock_the_course(self):
+        """Replacing a package clears the stamp and keeps every assignment,
+        so an assignee could otherwise post a finishing status and make the
+        new package assignable to everybody without opening it."""
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        package.verified_by_user_id = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            session_token=_session_token(),
+        )
+
+        self.assertIsNone(package.verified_completable_at)
+        self.assertIsNone(package.verified_by_user_id)
+
+    async def test_a_learner_without_the_grant_still_finishes_their_own_training(self):
+        """The gate is on unlocking the course for everybody else, not on a
+        learner reporting their own assignment done."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            session_token=_session_token(),
+        )
+
+        self.assertIs(assignment.status, TrainingStatus.DONE)
+        self.assertIsNotNone(assignment.completed_timestamp)
+
+    async def test_an_already_verified_course_keeps_its_first_verifier(self):
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = _EARLIER
+        package.verified_by_user_id = 99
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(package.verified_completable_at, _EARLIER)
+        self.assertEqual(package.verified_by_user_id, 99)
+
+    async def test_not_finishing_it_leaves_the_course_locked(self):
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNone(package.verified_completable_at)
+
+    async def test_an_assignment_with_no_course_does_not_crash_the_save(self):
+        """Legacy link-only rows carry no course_id."""
+        self.training_repository.get_training_by_id.return_value.course_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_awaited()
+
+    async def test_an_identical_commit_writes_nothing(self):
+        """The driver commits every 20 seconds whether anything changed or not.
+
+        Carries cmi.core.total_time, as our own player always does.
+        """
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=500,
+            )
+        )
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:08:20"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_an_identical_commit_still_reports_success(self):
+        """The course must not be told its save failed."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+        # No exception is the assertion; the controller answers 200 either way.
+
+    async def test_a_growing_total_time_alone_does_not_count_as_a_change(self):
+        """Otherwise an idle learner is written every 20 seconds forever."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=500,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_stale_tab_reporting_less_time_does_not_rewrite_the_row(self):
+        """The guard above leaves the column at what is stored, so a tab left
+        open on an older seed stops being a reason to write at all."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=3600,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:10:00"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_one_changed_field_writes_all_of_them(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Intro",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        saved = self.progress_repository.upsert.call_args.kwargs
+        self.assertEqual(saved["lesson_location"], "Summary")
+        self.assertEqual(saved["suspend_data"], "x" * 5000)
+
+    async def test_a_completion_is_written_even_though_the_progress_matches(self):
+        """The status still has to move, or a failed save is never made up."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="passed",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.session.commit.assert_awaited()
+
+    async def test_an_absent_key_is_not_a_difference(self):
+        """A partial body means "do not touch", not "set it to nothing"."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.lesson_status": "incomplete"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_an_explicit_empty_value_is_a_difference(self):
+        """A course clears these to reset itself; that is a real write."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.suspend_data": ""},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(
+            self.progress_repository.upsert.call_args.kwargs["suspend_data"], ""
+        )
+
+    async def test_the_first_commit_of_all_is_written(self):
+        self.progress_repository.get_by_training_id.return_value = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_awaited()
+
+    async def test_a_session_time_only_commit_is_skipped_like_any_other(self):
+        """Without total_time nothing about the time is stored, so an idle
+        tab's repeated session_time-only commit is unchanged content and is
+        not written again."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=30,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                "cmi.core.lesson_status": "incomplete",
+                "cmi.core.lesson_location": "Summary",
+                "cmi.suspend_data": "x" * 5000,
+                "cmi.core.session_time": "00:00:30",
+            },
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_the_write_is_committed_after_the_upsert(self):
+        order = []
+        self.progress_repository.upsert.side_effect = None
+
+        async def fake_upsert(session, training_id, **columns):
+            order.append("upsert")
+            return TrainingProgressEntity(training_id=training_id, **columns)
+
+        async def fake_commit():
+            order.append("commit")
+
+        self.progress_repository.upsert.side_effect = fake_upsert
+        self.session.commit.side_effect = fake_commit
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(order, ["upsert", "commit"])
+
+
+class TestConcurrentSaves(_ProgressServiceCase):
+    """Two commits for one assignment, arriving at once.
+
+    The mentor onboarding course writes `incomplete` and then `completed`
+    within the same second, and the page does not wait for the first save
+    before sending the second.
+    """
+
+    async def test_the_assignment_is_read_under_a_row_lock(self):
+        """Unlocked, both requests read the status the other has not written
+        yet: one of them decides "not finished" from a snapshot that is
+        already stale by the time it commits, and a learner who finished is
+        left held at the matching gate with nothing to reopen."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.training_repository.get_training_by_id.assert_awaited_once_with(
+            self.session, _TRAINING_ID, for_update=True
+        )
+
+    async def test_the_loser_of_the_race_reads_the_status_the_winner_wrote(self):
+        """What the lock buys: the second request re-reads DONE rather than
+        the TO_DO it would have seen, and next_training_status leaves it."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+
+
+class TestFinalSave(_ProgressServiceCase):
+    """The page's parting save as the tab closes."""
+
+    def _row_matching(self, **overrides):
+        return TrainingProgressEntity(
+            training_id=_TRAINING_ID,
+            lesson_status="incomplete",
+            lesson_location="Summary",
+            suspend_data="x" * 5000,
+            session_time_seconds=500,
+            **overrides,
+        )
+
+    async def test_a_final_save_is_written_even_though_the_content_matches(self):
+        """It resends the cmi the last commit already stored, so the content
+        always matches -- and the elapsed time it exists to bank is the one
+        thing the content comparison leaves out. Skipped, it does nothing."""
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            final=True,
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 3600)
+
+    async def test_an_ordinary_save_of_the_same_commit_is_still_skipped(self):
+        """The 20-second rewrite of a parked tab has to stay gone."""
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_skipped_save_still_reports_where_the_assignment_stands(self):
+        """A parked tab gets the same answer as a tab that stored something."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.assertEqual(result.status, TrainingStatus.DONE)
+
+    async def test_a_final_save_does_not_move_a_finished_assignment(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            final=True,
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+        self.progress_repository.upsert.assert_awaited()
+
+
+class TestLengthLimits(_ProgressServiceCase):
+    """The endpoint is open to anyone holding the assignment, and the columns
+    behind it are unbounded text."""
+
+    async def test_a_suspend_data_no_course_could_produce_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.suspend_data": "x" * 65537},
+                session_token=_session_token(),
+            )
+
+    async def test_a_refused_commit_writes_nothing_at_all(self):
+        """Refused loudly, not stored short: the course is told, and the row
+        is left exactly as it was."""
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.suspend_data": "x" * 65537},
+                session_token=_session_token(),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_suspend_data_at_the_limit_is_stored_whole(self):
+        """The cap is far above any real package; nothing legitimate is near
+        it, and what is under it is still stored byte for byte."""
+        blob = "x" * 65536
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.suspend_data": blob},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["suspend_data"], blob)
+
+    async def test_an_oversized_lesson_location_is_refused(self):
+        """String columns are unbounded too, so the same hole is open here."""
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.core.lesson_location": "y" * 4097},
+                session_token=_session_token(),
+            )
+
+    async def test_an_oversized_lesson_status_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.core.lesson_status": "z" * 65},
+                session_token=_session_token(),
+            )
+
+    async def test_the_refusal_names_the_element_and_the_limit(self):
+        """The learner sees a failed save; whoever they report it to needs to
+        be able to tell abuse from a course that got bigger."""
+        with self.assertRaises(ValueError) as caught:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.suspend_data": "x" * 65537},
+                session_token=_session_token(),
+            )
+
+        message = str(caught.exception)
+        self.assertIn("cmi.suspend_data", message)
+        self.assertIn("65536", message)
+
+    async def test_an_empty_value_is_not_caught_by_the_cap(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.suspend_data": ""},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["suspend_data"], "")
+
+
+class TestSaveRefusals(_ProgressServiceCase):
+    async def test_saving_onto_somebody_elses_assignment_is_refused(self):
+        self.training_repository.get_training_by_id.return_value.user_id = 999
+
+        with self.assertRaises(PermissionError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_saving_onto_an_assignment_that_does_not_exist_is_refused(self):
+        self.training_repository.get_training_by_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+
+class TestATrialStoresNoProgress(_ProgressServiceCase):
+    """A trial runs the staged package, and opening one never seeds it with
+    stored progress, so what a trial writes it can never read back. Storing it
+    would only leave the staged package's bookmark on the verifier's own row,
+    where their next run as a learner picks it up."""
+
+    async def test_a_commit_from_a_trial_stores_no_progress(self):
+        self.package.state = TrainingPackageState.PENDING
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_trial_that_finishes_still_stamps_its_package(self):
+        # Unlike a preview this is not refused: a trial exists to prove the
+        # staged package can be completed, so it has to reach the stamp.
+        self.package.state = TrainingPackageState.PENDING
+        self.package.verified_completable_at = None
+        self.package.verified_by_user_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNotNone(self.package.verified_completable_at)
+        self.progress_repository.upsert.assert_not_awaited()
+
+
+class TestAPreviewCannotSaveAnything(_ProgressServiceCase):
+    """A preview's token names no assignment, so it has nothing to save into
+    and nothing it may stamp."""
+
+    async def test_a_preview_session_cannot_save_anything(self):
+        token, _ = issue_content_token(
+            _SIGNING_KEY, None, _USER_ID, package_id=_PACKAGE_ID
+        )
+
+        with self.assertRaises(PermissionError) as raised:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {"cmi.core.lesson_status": "completed"},
+                session_token=token,
+            )
+
+        self.assertEqual("A preview does not record progress.", str(raised.exception))
+        # Refused before any package or progress read, and before any write.
+        # The assignment itself is still read and row-locked first, and the
+        # ownership check still runs before this -- that ordering is correct
+        # and must win over a preview's refusal.
+        self.package_repository.get_by_id.assert_not_awaited()
+        self.progress_repository.upsert.assert_not_awaited()
+
+
+class TestTheTokenMustNameThisRun(_ProgressServiceCase):
+    """A commit may only store into the run its own token names.
+
+    The token already carries the assignment and the person it was minted
+    for; both were signed. Reading only "is this a preview" out of it left
+    the rest of the claim unchecked, which is how one course's bookmark could
+    be stored on another course's row -- the same breakage a replaced package
+    causes, and the one the token exists to make impossible.
+    """
+
+    async def test_a_token_for_another_assignment_is_refused(self):
+        with self.assertRaises(PermissionError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(training_id=_TRAINING_ID + 1),
+            )
+
+        self.progress_repository.upsert.assert_not_called()
+
+    async def test_a_token_for_another_person_is_refused(self):
+        with self.assertRaises(PermissionError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(user_id=_USER_ID + 1),
+            )
+
+        self.progress_repository.upsert.assert_not_called()
+
+    async def test_the_run_its_own_token_names_still_stores(self):
+        """The guard must not cost the ordinary commit anything."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_called_once()
+
+
+class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
+    """A tab left open across a replacement still holds the old package's CMI
+    model, and the driver re-commits the whole of it every twenty seconds.
+
+    Stored, that model puts the old package's bookmark and finishing status
+    back into the row the replacement cleared -- and the learner reopens onto
+    a lesson the new package does not have, from which the course can never
+    write a new bookmark. So the run is identified by the package it is
+    running, and a commit that cannot name a package still being served is
+    refused outright rather than stored against its successor.
+    """
+
+    def _refused(self, **kwargs):
+        return self.assertRaises(ConflictError)
+
+    async def test_a_commit_whose_package_is_gone_is_refused(self):
+        self.package_repository.get_by_id.return_value = None
+
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(),
+            )
+
+    async def test_nothing_of_that_commit_reaches_the_row(self):
+        """The whole point: the stale bookmark and suspend_data must not be
+        written back over what the replacement cleared."""
+        self.package_repository.get_by_id.return_value = None
+
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_learner_without_the_grant_is_refused_the_same_way(self):
+        """This guard protects the learner's own row, not the stamp, so it
+        cannot sit behind the TRAINING_ADMIN_WRITE check the stamp sits
+        behind: an ordinary learner is exactly who gets the bad bookmark."""
+        self.package_repository.get_by_id.return_value = None
+
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                may_verify_course=False,
+                session_token=_session_token(),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_commit_naming_no_session_is_refused(self):
+        """A commit that names no run cannot say which package it belongs to,
+        which is the same position as one naming a package that is gone. Our
+        own player always sends the token it was handed."""
+        with self.assertRaises(ConflictError):
+            await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_an_unreadable_session_token_is_refused(self):
+        forged, _ = issue_content_token(
+            "some-other-key", _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID
+        )
+        payload, _, _ = _session_token().partition(".")
+
+        for token in (forged, payload + ".notasignature", 12345, ""):
+            with self.subTest(token=token):
+                self.progress_repository.upsert.reset_mock()
+                with self.assertRaises(ConflictError):
+                    await self.service.save(
+                        self.session,
+                        _TRAINING_ID,
+                        _USER_ID,
+                        _COMMIT,
+                        session_token=token,
+                    )
+                self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_run_whose_package_is_still_served_stores_normally(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_awaited()
+        self.package_repository.get_by_id.assert_awaited_with(self.session, _PACKAGE_ID)
+
+
+class TestTheNewestTabWins(_ProgressServiceCase):
+    """Two tabs on one assignment are seeded from the same row, and each
+    commits its own in-memory model every twenty seconds. suspend_data is
+    opaque, so the two cannot be merged; opening a run makes it the owner, and
+    a commit from any run opened before it is refused rather than stored over
+    the newer tab's place."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.assignment = self.training_repository.get_training_by_id.return_value
+        self.assignment.active_run_id = _NEWER_RUN
+
+    async def test_the_run_that_owns_the_assignment_saves(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(run_id=_NEWER_RUN),
+        )
+
+        self.progress_repository.upsert.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_an_older_run_is_refused_as_open_elsewhere(self):
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(run_id=_OLDER_RUN),
+            )
+
+        self.assertEqual(RUN_SUPERSEDED, caught.exception.code)
+        self.assertIn("another tab", str(caught.exception))
+
+    async def test_nothing_of_an_older_runs_commit_is_written(self):
+        """Neither the row nor the assignment: a finishing status from the
+        older tab must not move the assignment either."""
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.core.lesson_status": "completed"},
+                session_token=_session_token(run_id=_OLDER_RUN),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+        self.assertIs(TrainingStatus.IN_PROGRESS, self.assignment.status)
+
+    async def test_an_older_runs_parting_save_is_refused_too(self):
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                final=True,
+                session_token=_session_token(run_id=_OLDER_RUN),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_the_refusal_is_not_the_replaced_package_one(self):
+        """The page gives opposite advice for the two -- reload here, close
+        this tab there -- so it has to be able to tell them apart."""
+        self.package_repository.get_by_id.return_value = None
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(run_id=_NEWER_RUN),
+            )
+
+        self.assertNotEqual(RUN_SUPERSEDED, caught.exception.code)
+
+    async def test_a_token_from_before_runs_had_ids_still_saves(self):
+        """Tabs open across the deploy hold tokens with no run in them.
+        Refusing those would strand every sitting in progress at the time."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(run_id=None),
+        )
+
+        self.progress_repository.upsert.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_an_assignment_nobody_has_opened_since_has_no_owner_to_defer_to(
+        self,
+    ):
+        self.assignment.active_run_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(run_id=_OLDER_RUN),
+        )
+
+        self.progress_repository.upsert.assert_awaited_once()
+
+    async def test_a_trial_is_not_refused_and_still_reaches_the_stamp(self):
+        """A trial stores nothing on the row, so there is nothing for it to
+        overwrite and no reason to hold it to a learner's run."""
+        self.package.state = TrainingPackageState.PENDING
+        self.package.verified_completable_at = None
+        self.package.verified_by_user_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(run_id=_OLDER_RUN),
+        )
+
+        self.assertIsNotNone(self.package.verified_completable_at)
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_awaited_once()
+
+
+class TestTheStampLandsOnThePackage(_ProgressServiceCase):
+    async def test_the_stamp_lands_on_the_package_the_token_names(self):
+        package = self.package
+        package.verified_completable_at = None
+        package.verified_by_user_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNotNone(package.verified_completable_at)
+        self.assertEqual(package.verified_by_user_id, _USER_ID)
+        # There is no course-side stamp left to land on: the column is gone.
+        course = TrainingCourseEntity(course_id=3, name="Cat Care", is_active=True)
+        self.assertFalse(hasattr(course, "verified_completable_at"))
+
+    async def test_the_live_package_is_never_consulted_for_the_stamp(self):
+        """Which package a run vouches for is the one it ran, read by id --
+        never whatever happens to be live when the commit lands."""
+        self.package.verified_completable_at = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.package_repository.get_by_state.assert_not_awaited()
+
+    async def test_a_commit_without_the_grant_leaves_the_package_unstamped(self):
+        self.package.verified_completable_at = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=False,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNone(self.package.verified_completable_at)
+
+
+class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):
+    """The trial page cannot read this off the assignment's own status: a
+    verifier re-running a replaced package was already DONE, so their run
+    moves nothing and the status never changes."""
+
+    async def test_the_commit_that_stamps_the_course_says_so(self):
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIs(result.course_verified, True)
+
+    async def test_a_trial_stamps_even_when_it_matches_the_verifier_own_row(self):
+        """A trial has no row of its own, so "unchanged" cannot describe it.
+
+        The verifier most likely to run a replacement package is whoever
+        already completed the course: their row holds ``completed`` and the
+        bookmark a re-export of the same content ends on, and a DONE
+        assignment moves nowhere. Skipping on that likeness parks the trial
+        short of the stamp it exists to produce -- and since a trial stores
+        nothing, the next commit compares against the same row and skips
+        again, so the package can never be published.
+        """
+        self.package.state = TrainingPackageState.PENDING
+        self.package.verified_completable_at = None
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="completed",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=500,
+            )
+        )
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.lesson_status": "completed",
+                "cmi.core.total_time": "00:08:20",
+            },
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIs(result.course_verified, True)
+        self.assertIsNotNone(self.package.verified_completable_at)
+        # Only the skip changed: a trial still banks nothing on the row.
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_an_already_stamped_course_reads_verified_too(self):
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = _EARLIER
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIs(result.course_verified, True)
+
+    async def test_a_commit_that_reports_no_completion_reads_nothing(self):
+        """The heartbeat arrives every twenty seconds and often stores
+        nothing. It must not grow a query to answer this."""
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNone(result.course_verified)
+        self.package_repository.get_by_state.assert_not_awaited()
+
+    async def test_a_learner_without_the_grant_is_told_nothing_either_way(self):
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            session_token=_session_token(),
+        )
+
+        self.assertIsNone(result.course_verified)
+
+
+if __name__ == "__main__":
+    unittest.main()

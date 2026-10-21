@@ -56,6 +56,48 @@ class ApplicationSubmissionRepository:
         )
         return result.scalars().first()
 
+    async def get_latest_personal_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, dict]:
+        """Return each candidate's ``personal`` block from their latest submission.
+
+        "Latest" is ``get_latest_by_user``'s order, applied per candidate in
+        one query, so a page of candidates costs one round trip.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            user_ids (list[int]): The candidates to look up.
+
+        Returns:
+            dict[int, dict]: ``personal`` keyed by user id; {} for a latest
+                submission without one. Candidates who never submitted
+                anything are absent.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(
+                ApplicationEntity.user_id,
+                ApplicationSubmissionEntity.submission["personal"],
+            )
+            .join(
+                ApplicationEntity,
+                ApplicationSubmissionEntity.application_id
+                == ApplicationEntity.application_id,
+            )
+            .where(ApplicationEntity.user_id.in_(user_ids))
+            .distinct(ApplicationEntity.user_id)
+            .order_by(
+                ApplicationEntity.user_id,
+                ApplicationSubmissionEntity.submitted_at.desc().nullslast(),
+                ApplicationSubmissionEntity.submission_id.desc(),
+            )
+        )
+        return {
+            user_id: personal if isinstance(personal, dict) else {}
+            for user_id, personal in result.all()
+        }
+
     async def list_by_application(
         self, session: AsyncSession, application_id: int
     ) -> list[ApplicationSubmissionEntity]:

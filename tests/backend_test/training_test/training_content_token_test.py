@@ -1,0 +1,414 @@
+"""The signed session token that stands between a learner and the content host."""
+
+import base64
+import dataclasses
+import hashlib
+import hmac
+import json
+import unittest
+
+from backend.training.training_content_token import (
+    TOKEN_LIFETIME_SECONDS,
+    ContentTokenClaims,
+    InvalidContentToken,
+    issue_content_token,
+    read_session_run,
+    verify_content_token,
+)
+
+_KEY = "s3cret-signing-key"
+_OTHER_KEY = "a-different-signing-key"
+_NOW = 1_756_000_000
+_TRAINING_ID = 4242
+_USER_ID = 77
+_PACKAGE_ID = 91
+
+
+def _split(token):
+    """A token is a payload segment and a signature segment."""
+    payload, _, signature = token.rpartition(".")
+    return payload, signature
+
+
+def _decode_segment(segment):
+    padding = "=" * (-len(segment) % 4)
+    return base64.urlsafe_b64decode(segment + padding)
+
+
+def _encode_segment(raw):
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _payload(token):
+    payload, _ = _split(token)
+    return json.loads(_decode_segment(payload))
+
+
+def _sign(key, claims):
+    """Encode and sign a claims dict for real, so a malformed-shape test
+    reaches the JSON-parsing branch. Reattaching the original signature to a
+    mutated payload would die at the signature check instead."""
+    return _sign_raw(
+        key,
+        json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+    )
+
+
+def _sign_raw(key, payload):
+    """Sign arbitrary payload bytes, JSON or not."""
+    signature = (
+        base64.urlsafe_b64encode(
+            hmac.new(key.encode("utf-8"), payload, hashlib.sha256).digest()
+        )
+        .decode("ascii")
+        .rstrip("=")
+    )
+    return _encode_segment(payload) + "." + signature
+
+
+class TestIssueAndVerify(unittest.TestCase):
+    def test_a_token_verifies_back_to_the_pair_it_was_issued_for(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        claims = verify_content_token(_KEY, token, now=_NOW)
+
+        self.assertEqual(claims.training_id, _TRAINING_ID)
+        self.assertEqual(claims.user_id, _USER_ID)
+
+    def test_a_token_names_the_package_the_run_opened_against(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        claims = verify_content_token(_KEY, token, now=_NOW)
+
+        self.assertEqual(claims.package_id, _PACKAGE_ID)
+
+    def test_a_token_from_the_old_payload_shape_is_refused(self):
+        """A tab that was open across the deploy holds one of these. Refusing
+        it is what stops its stale CMI model from being written back. Signed
+        for real, so it is the missing package that refuses it."""
+        stale = _sign(_KEY, {"t": _TRAINING_ID, "u": _USER_ID, "e": _NOW + 100})
+
+        with self.assertRaisesRegex(InvalidContentToken, "^Malformed"):
+            verify_content_token(_KEY, stale, now=_NOW)
+
+    def test_the_returned_expiry_is_the_one_the_claims_carry(self):
+        token, expires_at = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        claims = verify_content_token(_KEY, token, now=_NOW)
+
+        self.assertEqual(expires_at, claims.expires_at)
+
+    def test_the_default_lifetime_is_twelve_hours(self):
+        """Long enough that a lesson cannot outlive the token it loaded under."""
+        self.assertEqual(TOKEN_LIFETIME_SECONDS, 12 * 60 * 60)
+
+        _, expires_at = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        self.assertEqual(expires_at, _NOW + TOKEN_LIFETIME_SECONDS)
+
+    def test_an_explicit_lifetime_overrides_the_default(self):
+        _, expires_at = issue_content_token(
+            _KEY,
+            _TRAINING_ID,
+            _USER_ID,
+            package_id=_PACKAGE_ID,
+            now=_NOW,
+            lifetime_seconds=60,
+        )
+
+        self.assertEqual(expires_at, _NOW + 60)
+
+    def test_a_preview_token_names_no_assignment(self):
+        token, _ = issue_content_token(_KEY, None, 7, package_id=42, now=1_000)
+        claims = verify_content_token(_KEY, token, now=1_100)
+        self.assertIsNone(claims.training_id)
+        self.assertEqual(42, claims.package_id)
+        self.assertEqual(7, claims.user_id)
+
+
+class TestExpiry(unittest.TestCase):
+    def setUp(self):
+        self.token, self.expires_at = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+    def test_a_token_is_still_valid_one_second_before_its_expiry(self):
+        """Expiry is exclusive, as it is for a JWT `exp`."""
+        claims = verify_content_token(_KEY, self.token, now=self.expires_at - 1)
+
+        self.assertEqual(claims.expires_at, self.expires_at)
+
+    def test_a_token_at_exactly_its_expiry_is_refused(self):
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, self.token, now=self.expires_at)
+
+    def test_a_long_expired_token_is_refused(self):
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, self.token, now=self.expires_at + 86_400)
+
+
+class TestForgery(unittest.TestCase):
+    def setUp(self):
+        self.token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+    def test_a_token_signed_with_another_key_is_refused(self):
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_OTHER_KEY, self.token, now=_NOW)
+
+    def test_editing_the_payload_under_the_original_signature_is_refused(self):
+        """Swapping in somebody else's training must not survive the signature."""
+        payload, signature = _split(self.token)
+        claims = json.loads(_decode_segment(payload))
+        key = next(k for k, v in claims.items() if v == _TRAINING_ID)
+        claims[key] = _TRAINING_ID + 1
+        forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, forged, now=_NOW)
+
+    def test_editing_the_signature_is_refused(self):
+        payload, signature = _split(self.token)
+        flipped = ("B" if signature[0] != "B" else "C") + signature[1:]
+
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, payload + "." + flipped, now=_NOW)
+
+    def test_a_truncated_signature_is_refused(self):
+        payload, signature = _split(self.token)
+
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, payload + "." + signature[:-2], now=_NOW)
+
+
+class TestGarbageInput(unittest.TestCase):
+    def _assert_only_invalid_content_token(self, token):
+        try:
+            verify_content_token(_KEY, token, now=_NOW)
+        except InvalidContentToken:
+            return
+        except Exception as exc:
+            self.fail(f"{token!r} raised {type(exc).__name__}: {exc}")
+        self.fail(f"{token!r} was accepted")
+
+    def test_an_empty_token_is_refused(self):
+        self._assert_only_invalid_content_token("")
+
+    def test_a_token_with_no_separator_is_refused(self):
+        self._assert_only_invalid_content_token("justonesegment")
+
+    def test_a_token_with_too_many_segments_is_refused(self):
+        self._assert_only_invalid_content_token("a.b.c.d")
+
+    def test_a_token_whose_segments_are_not_base64_is_refused(self):
+        self._assert_only_invalid_content_token("!!!!.????")
+
+    def test_a_non_ascii_signature_is_refused_not_a_500(self):
+        """hmac.compare_digest raises TypeError rather than answering False,
+        and anybody can put a non-ASCII character in a URL."""
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+        payload, _ = _split(token)
+        self._assert_only_invalid_content_token(payload + ".sign\u00e9")
+
+    def test_a_non_ascii_payload_segment_is_refused_not_a_500(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+        _, signature = _split(token)
+        self._assert_only_invalid_content_token("caf\u00e9." + signature)
+
+    def _assert_refused_as_malformed(self, token):
+        """Refused by the payload parsing, not by the signature check: the
+        two raise different messages, and only a correctly signed token gets
+        as far as parsing."""
+        with self.assertRaisesRegex(InvalidContentToken, "^Malformed"):
+            verify_content_token(_KEY, token, now=_NOW)
+
+    def test_base64_that_is_not_the_expected_json_is_refused(self):
+        self._assert_refused_as_malformed(_sign_raw(_KEY, b"this is not json"))
+
+    def test_json_of_the_wrong_shape_is_refused(self):
+        self._assert_refused_as_malformed(
+            _sign_raw(_KEY, json.dumps(["not", "an", "object"]).encode())
+        )
+
+    def test_a_payload_with_no_t_key_at_all_is_refused(self):
+        """`t: null` is now legal (a preview), but a payload that never had a
+        `t` key -- a token minted before package_id existed -- must still be
+        refused."""
+        token = _sign(_KEY, {"p": _PACKAGE_ID, "u": _USER_ID, "e": _NOW + 100})
+
+        self._assert_refused_as_malformed(token)
+
+    def test_invalid_content_token_is_a_value_error(self):
+        self.assertTrue(issubclass(InvalidContentToken, ValueError))
+
+
+class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
+    """The prefix is looked up per request, so it must never be baked in here.
+
+    A token minted before a re-upload would otherwise keep pointing a learner
+    at the retired prefix and start 404ing mid-lesson.
+    """
+
+    def setUp(self):
+        self.token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+    def test_the_payload_holds_no_storage_prefix(self):
+        payload = _payload(self.token)
+
+        for key, value in payload.items():
+            rendered = str(value)
+            self.assertNotIn("training/", rendered, msg=f"{key} looks like a prefix")
+            self.assertNotIn("/", rendered, msg=f"{key} looks like an object path")
+
+    def test_the_claims_name_a_package_by_id_and_never_a_path(self):
+        """A package id resolves to no file on its own -- the prefix behind it
+        is read from the database on every request."""
+        names = {field.name for field in dataclasses.fields(ContentTokenClaims)}
+
+        self.assertEqual(
+            names, {"training_id", "user_id", "expires_at", "package_id", "run_id"}
+        )
+
+    def test_the_claims_are_frozen(self):
+        claims = verify_content_token(_KEY, self.token, now=_NOW)
+
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            claims.training_id = 1
+
+
+class TestReadingTheRunsPackage(unittest.TestCase):
+    """A commit posted back on the app origin names the run it came from, and
+    the server reads which package that run opened against out of the
+    signature rather than trusting the body -- otherwise a tab left open
+    across a replacement could just claim to be running the current one."""
+
+    def test_the_package_comes_back(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        self.assertEqual(read_session_run(_KEY, token).package_id, _PACKAGE_ID)
+
+    def test_an_expired_token_still_says_which_package_it_ran(self):
+        """Here the token is not the credential, and refusing an overrun one
+        would cost the longest sitting its last save."""
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        self.assertEqual(read_session_run(_KEY, token).package_id, _PACKAGE_ID)
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, token, now=_NOW + TOKEN_LIFETIME_SECONDS)
+
+    def test_a_token_signed_with_another_key_is_refused(self):
+        token, _ = issue_content_token(
+            _OTHER_KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        with self.assertRaises(InvalidContentToken):
+            read_session_run(_KEY, token)
+
+    def test_an_altered_package_is_refused(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+        payload, signature = _split(token)
+        claims = json.loads(_decode_segment(payload))
+        claims["p"] = _PACKAGE_ID + 1
+
+        forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+        with self.assertRaises(InvalidContentToken):
+            read_session_run(_KEY, forged)
+
+    def test_read_session_run_answers_both_halves_past_expiry(self):
+        token, _ = issue_content_token(
+            _KEY, None, 7, package_id=42, now=1_000, lifetime_seconds=1
+        )
+        run = read_session_run(_KEY, token)
+        self.assertIsNone(run.training_id)
+        self.assertEqual(42, run.package_id)
+
+    def test_a_learner_token_still_names_its_assignment(self):
+        token, _ = issue_content_token(_KEY, 3, 7, package_id=42, now=1_000)
+        self.assertEqual(3, read_session_run(_KEY, token).training_id)
+
+
+class TestRunIdentity(unittest.TestCase):
+    """Which opening of an assignment a token belongs to. Two tabs on the same
+    assignment hold tokens that agree on everything else, so this is the only
+    claim that tells them apart when both post progress back."""
+
+    def test_the_run_id_comes_back(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, run_id="run-a"
+        )
+
+        self.assertEqual("run-a", read_session_run(_KEY, token).run_id)
+        self.assertEqual("run-a", verify_content_token(_KEY, token).run_id)
+
+    def test_a_token_minted_without_one_names_no_run(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        self.assertIsNone(read_session_run(_KEY, token).run_id)
+        self.assertNotIn("r", _payload(token))
+
+    def test_a_token_from_before_run_ids_still_reads(self):
+        """Tabs open across the deploy hold tokens of exactly this shape, and
+        refusing them would strand every one of those sittings."""
+        token = _sign(
+            _KEY,
+            {"p": _PACKAGE_ID, "t": _TRAINING_ID, "u": _USER_ID, "e": _NOW + 100},
+        )
+
+        run = read_session_run(_KEY, token)
+        self.assertIsNone(run.run_id)
+        self.assertEqual(_TRAINING_ID, run.training_id)
+
+    def test_a_run_id_that_is_not_a_string_is_refused(self):
+        for value in (5, ["run-a"], {"id": "run-a"}, ""):
+            with self.subTest(value=value):
+                token = _sign(
+                    _KEY,
+                    {
+                        "p": _PACKAGE_ID,
+                        "t": _TRAINING_ID,
+                        "u": _USER_ID,
+                        "e": _NOW + 100,
+                        "r": value,
+                    },
+                )
+                with self.assertRaises(InvalidContentToken):
+                    read_session_run(_KEY, token)
+
+    def test_an_altered_run_id_is_refused(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, run_id="run-a"
+        )
+        payload, signature = _split(token)
+        claims = json.loads(_decode_segment(payload))
+        claims["r"] = "run-b"
+
+        forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+        with self.assertRaises(InvalidContentToken):
+            read_session_run(_KEY, forged)
+
+
+if __name__ == "__main__":
+    unittest.main()

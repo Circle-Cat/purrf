@@ -29,6 +29,29 @@ class RetryUtils:
         """
         return self._retry_on_transient
 
+    def execute_pipeline(self, pipeline) -> list:
+        """
+        Executes a Redis pipeline, retrying transient errors with its commands intact.
+
+        Do not pass ``pipeline.execute`` to ``get_retry_on_transient``: redis-py
+        empties the command stack when ``execute`` finishes, failed or not, so a
+        retry replays an empty pipeline and answers ``[]`` without sending
+        anything. This puts the queued commands back before every attempt.
+
+        Args:
+            pipeline: A redis-py pipeline with its commands queued.
+
+        Returns:
+            list: What ``pipeline.execute()`` returned on the attempt that succeeded.
+        """
+        queued = list(pipeline.command_stack)
+
+        def attempt():
+            pipeline.command_stack = list(queued)
+            return pipeline.execute()
+
+        return self._retry_on_transient(attempt)
+
     @property
     def get_async_retry_on_transient(self) -> AsyncRetrying:
         """

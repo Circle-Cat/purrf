@@ -49,6 +49,7 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
         self.microsoft_service = MagicMock()
         self.retry_utils = MagicMock()
         self.retry_utils.get_retry_on_transient = lambda fn, *a, **kw: fn(*a, **kw)
+        self.retry_utils.execute_pipeline = lambda pipeline: pipeline.execute()
         self.session = MagicMock()
         self.session.commit = AsyncMock()
         self.database = MagicMock()
@@ -158,8 +159,9 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
         self.assertFalse(written["account_enabled"])
 
     async def test_an_entitlement_change_is_recorded_on_the_ledger(self):
-        """The accrual engine needs the date its rate changed; Azure keeps only
-        the current value. Zero hours, because the row is read for its date."""
+        """The accrual engine needs the date its rate changed and the rate on
+        either side; Azure keeps only the current value. Zero hours, because
+        the row is a marker and not a grant."""
         self.microsoft_service.get_all_microsoft_members = AsyncMock(
             return_value=[make_graph_user("id-alice", "alice@circlecat.org")]
         )
@@ -175,6 +177,8 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
         self.assertEqual(entry.user_id, 10)
         self.assertEqual(entry.hours, Decimal("0.00"))
         self.assertEqual(entry.note, "L1 -> L3")
+        self.assertEqual(entry.annual_hours_before, 0)
+        self.assertEqual(entry.annual_hours_after, 80)
 
     async def test_the_ledger_row_lands_before_redis_is_overwritten(self):
         """Detection compares against last night's cached profile. Writing

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MeetingLogForm from "@/pages/PersonalDashboard/components/MeetingLogForm";
 import { postMyMentorshipMeetingLog } from "@/api/mentorshipApi";
 
@@ -21,6 +21,30 @@ vi.mock("@/components/ui/select", () => ({
   ),
 }));
 
+// The calendar and its popover stand in as two buttons, so a test can move the
+// form between today and yesterday without driving the real day picker.
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }) => children,
+  PopoverTrigger: () => null,
+  PopoverContent: ({ children }) => children,
+}));
+
+vi.mock("@/components/ui/calendar", () => ({
+  Calendar: ({ onSelect }) => (
+    <div>
+      <button onClick={() => onSelect(new Date(2026, 2, 9))}>
+        pick-yesterday
+      </button>
+      <button onClick={() => onSelect(new Date(2026, 2, 10))}>
+        pick-today
+      </button>
+    </div>
+  ),
+}));
+
+// 15:00 on 2026-03-10 in Asia/Shanghai.
+const NOW = new Date("2026-03-10T07:00:00Z");
+
 const defaultProps = {
   roundId: "1",
   partnerId: 7,
@@ -39,6 +63,12 @@ function selectTimes(startTime, endTime) {
 describe("MeetingLogForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("should render all form fields", () => {
@@ -82,6 +112,7 @@ describe("MeetingLogForm", () => {
 
     render(<MeetingLogForm {...defaultProps} />);
 
+    fireEvent.click(screen.getByText("pick-yesterday"));
     selectTimes("23:00", "01:00");
     fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
 
@@ -156,6 +187,110 @@ describe("MeetingLogForm", () => {
       expect(
         screen.getByText("This time slot already exists."),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("should refuse an overnight meeting from today that has not ended", async () => {
+    render(<MeetingLogForm {...defaultProps} />);
+
+    selectTimes("23:00", "00:30");
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Cannot log a meeting that has not ended yet."),
+      ).toBeInTheDocument();
+    });
+    expect(postMyMentorshipMeetingLog).not.toHaveBeenCalled();
+  });
+
+  it("should refuse times kept from an earlier date that are later than now today", async () => {
+    render(<MeetingLogForm {...defaultProps} />);
+
+    fireEvent.click(screen.getByText("pick-yesterday"));
+    selectTimes("16:00", "17:00");
+    fireEvent.click(screen.getByText("pick-today"));
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Cannot log a meeting that has not ended yet."),
+      ).toBeInTheDocument();
+    });
+    expect(postMyMentorshipMeetingLog).not.toHaveBeenCalled();
+  });
+
+  it("should refuse a slot overlapping a manual meeting already logged", async () => {
+    // 10:30-11:30 Shanghai overlaps the 10:00-11:00 slot chosen below.
+    render(
+      <MeetingLogForm
+        {...defaultProps}
+        existingMeetings={[
+          {
+            startDatetime: "2026-03-10T02:30:00Z",
+            endDatetime: "2026-03-10T03:30:00Z",
+            meetLink: null,
+          },
+        ]}
+      />,
+    );
+
+    selectTimes("10:00", "11:00");
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("This time slot already exists."),
+      ).toBeInTheDocument();
+    });
+    expect(postMyMentorshipMeetingLog).not.toHaveBeenCalled();
+  });
+
+  it("should leave an overlap with a Google meeting to the server", async () => {
+    postMyMentorshipMeetingLog.mockResolvedValue({});
+
+    render(
+      <MeetingLogForm
+        {...defaultProps}
+        existingMeetings={[
+          {
+            startDatetime: "2026-03-10T02:00:00Z",
+            endDatetime: "2026-03-10T03:00:00Z",
+            meetLink: "https://meet.google.com/abc-defg-hij",
+          },
+        ]}
+      />,
+    );
+
+    selectTimes("10:00", "11:00");
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(postMyMentorshipMeetingLog).toHaveBeenCalled();
+    });
+  });
+
+  it("should accept a slot that starts when a logged meeting ends", async () => {
+    postMyMentorshipMeetingLog.mockResolvedValue({});
+
+    render(
+      <MeetingLogForm
+        {...defaultProps}
+        existingMeetings={[
+          {
+            startDatetime: "2026-03-10T01:00:00Z",
+            endDatetime: "2026-03-10T02:00:00Z",
+            meetLink: null,
+          },
+        ]}
+      />,
+    );
+
+    selectTimes("10:00", "11:00");
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(postMyMentorshipMeetingLog).toHaveBeenCalled();
     });
   });
 

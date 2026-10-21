@@ -8,6 +8,7 @@ from backend.entity.users_entity import UsersEntity
 from backend.notification_management.notification_event_email_service import (
     NotificationEventEmailService,
 )
+from backend.repository.event_repository import EventRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -52,6 +53,7 @@ class NotificationEventEmailServiceTest(BaseRepositoryTestLib):
         service = NotificationEventEmailService(
             user_emails_repository=user_emails_repository,
             email_service=AsyncMock(),
+            event_repository=EventRepository(),
             render=render,
         )
 
@@ -68,6 +70,7 @@ class NotificationEventEmailServiceTest(BaseRepositoryTestLib):
         service = NotificationEventEmailService(
             user_emails_repository=user_emails_repository,
             email_service=email_service,
+            event_repository=EventRepository(),
             render=render,
         )
 
@@ -84,6 +87,7 @@ class NotificationEventEmailServiceTest(BaseRepositoryTestLib):
         service = NotificationEventEmailService(
             user_emails_repository=user_emails_repository,
             email_service=email_service,
+            event_repository=EventRepository(),
             render=render,
         )
 

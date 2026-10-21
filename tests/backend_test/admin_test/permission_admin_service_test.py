@@ -37,19 +37,6 @@ def _marker(id, user_id, granted_by=9):
     return row
 
 
-def _route(holders, markers):
-    """
-    side_effect for get_users_with_permission: the reverse-lookup uses one call
-    for the requested permission and a second (name='*') for the super-admin
-    markers; route each to its own canned result.
-    """
-
-    def _impl(session, name, *, include_revoked=False, granted_source=None):
-        return markers if name == "*" else holders
-
-    return _impl
-
-
 class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.users = AsyncMock()
@@ -58,10 +45,11 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.user_emails = AsyncMock()
         self.user_emails.get_contact_emails_by_user_ids.return_value = {}
         self.user_emails.get_contact_email.return_value = None
+        # Name resolution is a batched lookup; default to "nobody found" so the
+        # tests that are not about names keep asserting on ids alone.
+        self.users.get_all_by_ids.return_value = []
         self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
         self.session = AsyncMock()
-        # Default: no super admins (most tests are about plain grant rows).
-        self.users.get_super_admins.return_value = []
 
     def test_catalog_is_full_enum_sorted(self):
         catalog = self.service.list_permission_catalog()
@@ -89,141 +77,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.get_user_permissions(self.session, 999)
 
-    async def test_list_permission_users_rejects_unknown_permission(self):
-        with self.assertRaises(ValueError):
-            await self.service.list_permission_users(
-                self.session,
-                "not.a.real.permission",
-                include_revoked=False,
-                granted_source=None,
-            )
-
-    async def test_list_permission_users_returns_grant_dtos(self):
-        self.perms.get_users_with_permission.return_value = [
-            _grant(5, 7, "permission.manage")
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 7)
-        self.assertTrue(out[0].is_active)
-        self.assertFalse(out[0].is_super_admin)
-
-    async def test_list_permission_users_super_admin_appears_as_derived(self):
-        """A super admin with no real grant shows up as a derived holder."""
-        self.perms.get_users_with_permission.side_effect = _route([], [_marker(1, 7)])
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 7)
-        self.assertEqual(out[0].granted_source, "super_admin")
-        self.assertEqual(out[0].permission_name, "permission.manage")
-        self.assertTrue(out[0].is_super_admin)
-        self.assertTrue(out[0].is_active)
-        # Metadata sourced from the audit marker.
-        self.assertEqual(out[0].id, 1)
-        self.assertEqual(out[0].granted_by, 9)
-        self.assertIsNotNone(out[0].granted_timestamp)
-
-    async def test_list_permission_users_super_admin_with_grant_not_duplicated(self):
-        """A super admin holding a real active grant shows once, source-flagged."""
-        self.perms.get_users_with_permission.side_effect = _route(
-            [_grant(5, 7, "permission.manage")], [_marker(1, 7)]
-        )
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].granted_source, "admin")  # real source kept
-        self.assertTrue(out[0].is_super_admin)  # still annotated
-
-    async def test_list_permission_users_derived_without_marker_uses_sentinels(self):
-        """A seeded super admin (no marker) gets sentinel id and null metadata."""
-        self.perms.get_users_with_permission.side_effect = _route([], [])
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].id, -7)
-        self.assertIsNone(out[0].granted_by)
-        self.assertIsNone(out[0].granted_timestamp)
-        self.assertTrue(out[0].is_super_admin)
-
-    async def test_list_permission_users_source_filter_excludes_derived(self):
-        """A non-super_admin source filter never surfaces derived holders."""
-        self.perms.get_users_with_permission.side_effect = _route(
-            [_grant(5, 7, "permission.manage")], [_marker(1, 8)]
-        )
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=8, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source="admin",
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 7)
-        self.users.get_super_admins.assert_not_awaited()
-
-    async def test_list_permission_users_source_filter_super_admin_only_derived(self):
-        """granted_source='super_admin' returns only the derived holders."""
-        self.perms.get_users_with_permission.side_effect = _route([], [_marker(1, 8)])
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=8, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source="super_admin",
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 8)
-        self.assertEqual(out[0].granted_source, "super_admin")
-
-    async def test_list_permission_users_revoked_grant_coexists_with_derived(self):
-        """A super admin with only a revoked grant: revoked row plus derived row."""
-        self.perms.get_users_with_permission.side_effect = _route(
-            [_grant(5, 7, "permission.manage", revoked=True)], [_marker(1, 7)]
-        )
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session, "permission.manage", include_revoked=True, granted_source=None
-        )
-        self.assertEqual(len(out), 2)
-        by_source = {g.granted_source: g for g in out}
-        self.assertEqual(set(by_source), {"admin", "super_admin"})
-        self.assertFalse(by_source["admin"].is_active)
-        self.assertTrue(by_source["super_admin"].is_active)
-        self.assertTrue(all(g.is_super_admin for g in out))
-
     async def test_list_users_wraps_repo_result(self):
         self.users.list_users.return_value = (
             [
@@ -233,6 +86,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                         first_name="A",
                         last_name="B",
                         is_active=True,
+                        is_blocked=False,
                         is_super_admin=False,
                     ),
                     False,  # is_internal
@@ -249,6 +103,37 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.users[0].user_type, "external")
         self.assertIsNone(out.users[0].preferred_name)
 
+    async def test_list_users_carries_the_blocked_flag(self):
+        """A row has to say when its account is locked out, not only inactive.
+
+        Blocking leaves is_active True on purpose -- the two flags are
+        orthogonal -- so a row carrying only is_active reads as a perfectly
+        normal active account on every page that renders it.
+        """
+        self.users.list_users.return_value = (
+            [
+                (
+                    UsersEntity(
+                        user_id=3,
+                        first_name="C",
+                        last_name="D",
+                        is_active=True,
+                        is_blocked=True,
+                        is_super_admin=False,
+                    ),
+                    False,  # is_internal
+                )
+            ],
+            1,
+        )
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {3: "c@x.com"}
+
+        out = await self.service.list_users(
+            self.session, search=None, limit=20, offset=0
+        )
+
+        self.assertTrue(out.users[0].is_blocked)
+
     async def test_list_users_internal_user_gets_internal_type(self):
         self.users.list_users.return_value = (
             [
@@ -258,6 +143,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                         first_name="B",
                         last_name="C",
                         is_active=True,
+                        is_blocked=False,
                         is_super_admin=False,
                         preferred_name="Bee",
                     ),
@@ -387,6 +273,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             first_name="S",
             last_name="A",
             is_active=True,
+            is_blocked=False,
             is_super_admin=False,
         )
         self.users.set_super_admin.return_value = 1
@@ -423,6 +310,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             first_name="S",
             last_name="A",
             is_active=True,
+            is_blocked=False,
             is_super_admin=True,
         )
         self.users.set_super_admin.return_value = 1
@@ -437,6 +325,152 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dto.is_super_admin)
         self.assertEqual(dto.user_type, "external")
         self.session.commit.assert_awaited_once()
+
+
+class TestListUsersPermissionFilter(unittest.IsolatedAsyncioTestCase):
+    """PUR-626: the permission is a filter on the user list, not a second view."""
+
+    def setUp(self):
+        self.users = AsyncMock()
+        self.perms = AsyncMock()
+        self.user_emails = AsyncMock()
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {}
+        self.users.list_users.return_value = ([], 0)
+        self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
+        self.session = AsyncMock()
+
+    async def test_passes_the_permission_through_to_the_repository(self):
+        await self.service.list_users(
+            self.session,
+            search=None,
+            limit=20,
+            offset=0,
+            permission_name="permission.manage",
+        )
+        _, kwargs = self.users.list_users.await_args
+        self.assertEqual(kwargs["permission_name"], "permission.manage")
+
+    async def test_unknown_permission_is_rejected_before_the_query(self):
+        with self.assertRaises(ValueError):
+            await self.service.list_users(
+                self.session,
+                search=None,
+                limit=20,
+                offset=0,
+                permission_name="not.a.real.permission",
+            )
+        self.users.list_users.assert_not_awaited()
+
+    async def test_no_permission_filter_passes_none(self):
+        await self.service.list_users(self.session, search=None, limit=20, offset=0)
+        _, kwargs = self.users.list_users.await_args
+        self.assertIsNone(kwargs["permission_name"])
+
+    async def test_the_holders_view_is_gone(self):
+        """The reverse lookup folded into list_users; nothing should call it."""
+        self.assertFalse(hasattr(self.service, "list_permission_users"))
+
+
+def _person(user_id, first, last, preferred=None):
+    row = UsersEntity(
+        user_id=user_id, first_name=first, last_name=last, preferred_name=preferred
+    )
+    return row
+
+
+class TestGrantNameResolution(unittest.IsolatedAsyncioTestCase):
+    """PUR-625: every user id a grant row carries comes back with a name.
+
+    Both surfaces fed by GrantDto -- the Audit tab and the per-user grant
+    history -- rendered bare integers for both the holder and the actor, so an
+    operator had to leave the tab to learn who a row was about.
+    """
+
+    def setUp(self):
+        self.users = AsyncMock()
+        self.perms = AsyncMock()
+        self.user_emails = AsyncMock()
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {}
+        self.user_emails.get_contact_email.return_value = None
+        self.users.get_all_by_ids.return_value = [
+            _person(7, "Zhao", "Min", "Min"),
+            _person(9, "Wang", "Yanpei"),
+        ]
+        self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
+        self.session = AsyncMock()
+
+    async def test_audit_carries_names(self):
+        self.perms.list_audit.return_value = ([_grant(5, 7, "permission.manage")], 1)
+        out = await self.service.list_audit(
+            self.session,
+            user_id=None,
+            permission_name=None,
+            action=None,
+            limit=20,
+            offset=0,
+        )
+        self.assertEqual(out.entries[0].user.last_name, "Min")
+        self.assertEqual(out.entries[0].granted_by_user.last_name, "Yanpei")
+
+    async def test_revoked_row_carries_revoker_name(self):
+        self.perms.list_audit.return_value = (
+            [_grant(5, 7, "permission.manage", revoked=True)],
+            1,
+        )
+        out = await self.service.list_audit(
+            self.session,
+            user_id=None,
+            permission_name=None,
+            action=None,
+            limit=20,
+            offset=0,
+        )
+        self.assertEqual(out.entries[0].revoked_by_user.last_name, "Yanpei")
+
+    async def test_grant_history_carries_actor_names(self):
+        self.users.get_user_by_user_id.return_value = UsersEntity(user_id=7)
+        self.perms.get_grants_for_user.return_value = [
+            _grant(1, 7, "internal_activity.read")
+        ]
+        view = await self.service.get_user_permissions(self.session, 7)
+        self.assertEqual(view.history[0].granted_by_user.last_name, "Yanpei")
+
+    async def test_one_batched_lookup_for_the_whole_page(self):
+        """Resolving per row would be a query per id; pin the batch."""
+        self.perms.list_audit.return_value = (
+            [
+                _grant(1, 7, "permission.manage"),
+                _grant(2, 7, "internal_activity.read"),
+                _grant(3, 9, "permission.manage"),
+            ],
+            3,
+        )
+        await self.service.list_audit(
+            self.session,
+            user_id=None,
+            permission_name=None,
+            action=None,
+            limit=20,
+            offset=0,
+        )
+        self.users.get_all_by_ids.assert_awaited_once()
+        _, requested = self.users.get_all_by_ids.await_args.args
+        self.assertEqual(sorted(requested), [7, 9])
+
+    async def test_unknown_id_resolves_to_none_rather_than_raising(self):
+        self.users.get_all_by_ids.return_value = []
+        self.perms.list_audit.return_value = ([_grant(5, 7, "permission.manage")], 1)
+        out = await self.service.list_audit(
+            self.session,
+            user_id=None,
+            permission_name=None,
+            action=None,
+            limit=20,
+            offset=0,
+        )
+        self.assertIsNone(out.entries[0].user)
+        self.assertIsNone(out.entries[0].granted_by_user)
+        self.assertEqual(out.entries[0].user_id, 7)
 
 
 if __name__ == "__main__":

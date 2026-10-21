@@ -20,6 +20,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from backend.leave.leave_accrual import (
+    LevelChange,
     accrual_start_date,
     accrual_target_hours,
     carryover_effective_date,
@@ -301,52 +302,52 @@ class TestCarryoverEffectiveDate(unittest.TestCase):
 
 class TestALevelChange(unittest.TestCase):
     """An L1 has no entitlement at all, so the only level move that changes any
-    number is the one across that line -- L2, L3 and L4 all sit at 80h. The
-    target formula reads the level as it is now and applies it to the whole
-    year, so without being told when the level changed it cannot tell a
-    promotion apart from a run that never happened: both look like "owed more
-    than granted"."""
+    number is the one across that line -- L2, L3 and L4 all sit at 80h.
+
+    The credited days are the whole weeks since the start of accrual, as for
+    everybody, and each of those days is paid at the entitlement held on it.
+    2026 starts on a Thursday and 1 July is its 182nd day, so a change on 7/1
+    leaves 181 days before it."""
+
+    PROMOTION = LevelChange(date(2026, 7, 1), L1_ANNUAL_HOURS, L3_ANNUAL_HOURS)
+    DEMOTION = LevelChange(date(2026, 7, 1), L3_ANNUAL_HOURS, L1_ANNUAL_HOURS)
 
     def test_a_promotion_pays_from_the_promotion_and_not_before(self):
-        """An L1 promoted to L3 on 7/1, first run a week later. 40h would be
-        six months of an entitlement they did not hold."""
+        """26 whole weeks by 7/8 credit days up to and including 7/1, the one
+        day at 80h. 40h would be six months of an entitlement they did not
+        hold."""
         owed = weekly_accrual_hours(
             L3_ANNUAL_HOURS,
             date(2026, 1, 1),
             date(2026, 7, 8),
             Decimal("0.00"),
-            level_since=date(2026, 7, 1),
-            granted_before_level_since=Decimal("0.00"),
+            level_changes=[self.PROMOTION],
         )
 
-        self.assertEqual(owed, Decimal("1.54"))
-        self.assertNotEqual(owed, Decimal("40.00"))
+        self.assertEqual(owed, Decimal("0.22"))
 
-    def test_hours_earned_before_the_change_are_kept_not_recomputed(self):
-        """An L3 who has been accruing all year and changes level in July keeps
-        what the ledger already holds; only the weeks after the change are
-        computed at the new rate."""
+    def test_the_week_after_a_promotion_catches_up_to_the_weekly_rate(self):
+        """By 7/15 eight days are at 80h: 1.76 in all, 1.54 more than the
+        0.22 already paid."""
         owed = weekly_accrual_hours(
             L3_ANNUAL_HOURS,
             date(2026, 1, 1),
-            date(2026, 7, 8),
-            Decimal("40.00"),
-            level_since=date(2026, 7, 1),
-            granted_before_level_since=Decimal("40.00"),
+            date(2026, 7, 15),
+            Decimal("0.22"),
+            level_changes=[self.PROMOTION],
         )
 
         self.assertEqual(owed, Decimal("1.54"))
 
     def test_a_demotion_stops_accrual_without_clawing_anything_back(self):
-        """L3 down to L1 on 7/1. The target freezes at what was already
-        granted, so the run owes nothing -- and never a negative number."""
+        """The 181 days at 80h come to 39.78. A ledger already ahead of that
+        owes nothing, and never a negative number."""
         owed = weekly_accrual_hours(
             L1_ANNUAL_HOURS,
             date(2026, 1, 1),
             date(2026, 9, 2),
             Decimal("40.00"),
-            level_since=date(2026, 7, 1),
-            granted_before_level_since=Decimal("40.00"),
+            level_changes=[self.DEMOTION],
         )
 
         self.assertEqual(owed, Decimal("0.00"))
@@ -360,21 +361,49 @@ class TestALevelChange(unittest.TestCase):
 
         self.assertEqual(with_defaults, Decimal("40.00"))
 
-    def test_a_change_observed_before_the_accrual_start_is_not_a_split(self):
-        """A change dated in a previous year, or before go-live, is simply how
-        this year begins: the whole year is already at that entitlement. The
-        hours passed for "before the change" are not part of this year and must
-        not be added on top of it -- doing so would pay them twice."""
+    def test_a_change_before_the_accrual_start_sets_the_whole_year(self):
+        """A change in a previous year is simply how this year begins."""
         owed = weekly_accrual_hours(
             L3_ANNUAL_HOURS,
             date(2026, 1, 1),
             date(2026, 7, 8),
             Decimal("0.00"),
-            level_since=date(2025, 11, 3),
-            granted_before_level_since=Decimal("60.00"),
+            level_changes=[
+                LevelChange(date(2025, 11, 3), L1_ANNUAL_HOURS, L3_ANNUAL_HOURS)
+            ],
         )
 
         self.assertEqual(owed, Decimal("40.00"))
+
+    def test_the_entitlement_comes_from_the_ledger_not_the_current_level(self):
+        """Once a change is on record, the hours it recorded decide each day.
+        The current level is only for somebody with no change at all."""
+        owed = weekly_accrual_hours(
+            L1_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 7, 8),
+            Decimal("0.00"),
+            level_changes=[
+                LevelChange(date(2025, 11, 3), L1_ANNUAL_HOURS, L3_ANNUAL_HOURS)
+            ],
+        )
+
+        self.assertEqual(owed, Decimal("40.00"))
+
+    def test_a_level_raised_and_put_back_on_one_day_ends_where_it_was_put(self):
+        """Two rows on one date are read in the order they were written."""
+        owed = weekly_accrual_hours(
+            L1_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Decimal("0.00"),
+            level_changes=[
+                self.PROMOTION,
+                LevelChange(date(2026, 7, 1), L3_ANNUAL_HOURS, L1_ANNUAL_HOURS),
+            ],
+        )
+
+        self.assertEqual(owed, Decimal("0.00"))
 
 
 class TestSettlingTheOldYear(unittest.TestCase):
@@ -421,19 +450,65 @@ class TestSettlingTheOldYear(unittest.TestCase):
             Decimal("0.00"),
         )
 
-    def test_a_settlement_respects_a_level_change_in_the_closing_year(self):
-        """Someone promoted in July closes the year on the weeks they held the
-        higher level, not on the whole year."""
+    def test_a_settlement_pays_a_promotion_from_its_day_to_the_year_end(self):
+        """Promoted on 7/1: 183 of the year's 364 credited days at 80h. Counting
+        whole weeks from the promotion instead left the last day unpaid at
+        40.00."""
         settlement = weekly_accrual_hours(
             L3_ANNUAL_HOURS,
             date(2026, 1, 1),
             date(2026, 12, 31),
             Decimal("0.00"),
-            level_since=date(2026, 7, 1),
-            granted_before_level_since=Decimal("0.00"),
+            level_changes=[TestALevelChange.PROMOTION],
         )
 
-        self.assertEqual(settlement, Decimal("40.00"))
+        self.assertEqual(settlement, Decimal("40.22"))
+
+    def test_a_settlement_pays_the_days_before_a_demotion(self):
+        """The last weekly run before a 7/1 demotion, on 6/25, had paid 25
+        weeks: 38.46. The six days from then to the change are still owed at
+        80h, which brings the year to 39.78."""
+        settlement = weekly_accrual_hours(
+            L1_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Decimal("38.46"),
+            level_changes=[TestALevelChange.DEMOTION],
+        )
+
+        self.assertEqual(settlement, Decimal("1.32"))
+
+    def test_a_settlement_reads_every_change_in_the_year(self):
+        """Down to L1 on 4/10 (day 100) and back up on 9/7 (day 250): 99 days
+        and then 115 days at 80h."""
+        settlement = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Decimal("0.00"),
+            level_changes=[
+                LevelChange(date(2026, 4, 10), L3_ANNUAL_HOURS, L1_ANNUAL_HOURS),
+                LevelChange(date(2026, 9, 7), L1_ANNUAL_HOURS, L3_ANNUAL_HOURS),
+            ],
+        )
+
+        self.assertEqual(settlement, Decimal("47.03"))
+
+    def test_a_late_settlement_ignores_a_promotion_made_after_the_year(self):
+        """An L1 all year, promoted on 1 January. A settlement re-run on the
+        2nd reads the current level as 80h, but the change on record says the
+        year being closed was at 0h."""
+        settlement = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Decimal("0.00"),
+            level_changes=[
+                LevelChange(date(2027, 1, 1), L1_ANNUAL_HOURS, L3_ANNUAL_HOURS)
+            ],
+        )
+
+        self.assertEqual(settlement, Decimal("0.00"))
 
 
 class TestFormatHours(unittest.TestCase):

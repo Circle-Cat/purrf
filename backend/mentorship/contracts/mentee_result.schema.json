@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "Candidate": {
+      "additionalProperties": false,
+      "description": "A mentor the admin can swap in, in a list whose order is the ranking.\n\nThere is no rank field. With the assigned mentor left out of the list, a\nstored rank could mean either the position here or the position in the full\nranking, and nothing would catch the two being read apart.",
+      "properties": {
+        "mentor_id": {
+          "title": "Mentor Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "integer"
+        },
+        "diagnostic_reason": {
+          "default": "",
+          "title": "Diagnostic Reason",
+          "type": "string"
+        }
+      },
+      "required": ["mentor_id", "score"],
+      "title": "Candidate",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One mentee's outcome, stored under that mentee's id.\n\n``recommendation_reason`` is the mentee-facing text and is editable;\n``diagnostic_reason`` is the scoring breakdown and belongs only on the review\nscreen. They are named apart because the old CSV import mapped the breakdown\ninto the mentee-facing field and truncated it.\n\n``score`` carries real scores only. The matcher decides its hard rules with\nsentinels (+1000 for a mutual choice, -1000 when either side refused), and a\nsentinel that reached this field would be read as a score by whoever is\ncomparing the assignment against its alternatives.",
+  "properties": {
+    "mentor_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mentor Id"
+    },
+    "score": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Score"
+    },
+    "match_type": {
+      "anyOf": [
+        {
+          "enum": ["mutual_yes", "hungarian"],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Match Type"
+    },
+    "recommendation_reason": {
+      "default": "",
+      "title": "Recommendation Reason",
+      "type": "string"
+    },
+    "diagnostic_reason": {
+      "default": "",
+      "title": "Diagnostic Reason",
+      "type": "string"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/Candidate"
+      },
+      "maxItems": 3,
+      "title": "Candidates",
+      "type": "array"
+    }
+  },
+  "title": "MenteeResult",
+  "type": "object"
+}

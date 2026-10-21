@@ -1,6 +1,14 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "constants_test",
+    srcs = ["constants_test.py"],
+    deps = [
+        "//backend/common:constants",
+    ],
+)
+
+py_test(
     name = "logger_test",
     srcs = ["logger_test.py"],
     deps = [
@@ -21,6 +29,14 @@ py_test(
     srcs = ["permissions_test.py"],
     deps = [
         "//backend/common:permissions",
+    ],
+)
+
+py_test(
+    name = "communication_enums_test",
+    srcs = ["communication_enums_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
     ],
 )
 
@@ -95,6 +111,7 @@ py_test(
     srcs = ["fast_api_response_wrapper_test.py"],
     deps = [
         "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
         "@pypi//fastapi",
         "@pypi//httpx",
     ],
@@ -129,14 +146,6 @@ py_test(
     srcs = ["json_schema_validator_test.py"],
     deps = [
         "//backend/common:json_schema_validator",
-    ],
-)
-
-py_test(
-    name = "asyncio_event_loop_manager_test",
-    srcs = ["asyncio_event_loop_manager_test.py"],
-    deps = [
-        "//backend/common:asyncio_event_loop_manager",
     ],
 )
 
@@ -185,5 +194,53 @@ py_test(
     srcs = ["identity_type_test.py"],
     deps = [
         "//backend/common:identity_type",
+    ],
+)
+
+py_test(
+    name = "training_links_test",
+    srcs = ["training_links_test.py"],
+    deps = ["//backend/common:training_links"],
+)
+
+py_test(
+    name = "wall_clock_test",
+    srcs = ["wall_clock_test.py"],
+    deps = [
+        "//backend/common:wall_clock",
+    ],
+)
+
+py_test(
+    name = "matching_job_client_test",
+    srcs = ["matching_job_client_test.py"],
+    deps = [
+        "//backend/common:matching_job_client",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_enums_test",
+    srcs = ["mentorship_email_enums_test.py"],
+    deps = ["//backend/common:mentorship_email_enums"],
+)
+
+py_test(
+    name = "kit_html_checks_test",
+    srcs = ["kit_html_checks_test.py"],
+    deps = ["//backend/common:kit_html_checks"],
+)
+
+py_test(
+    name = "kit_client_test",
+    srcs = ["kit_client_test.py"],
+    deps = ["//backend/common:kit_client"],
+)
+
+py_test(
+    name = "html_text_test",
+    srcs = ["html_text_test.py"],
+    deps = [
+        "//backend/common:html_text",
     ],
 )

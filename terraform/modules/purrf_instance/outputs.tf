@@ -113,3 +113,12 @@ output "auth0_backend_management_m2m_client_secret" {
 output "notification_pusher_sub" {
   value = google_service_account.notification_pusher.unique_id
 }
+
+# Numeric unique_id of the matcher job's service account, for the same Worker
+# allow-list. The job signs its own completion callback, so its sub has to be
+# there beside the pusher's -- ALLOWED_SUBS is a comma-separated list and the
+# Worker rejects anything absent from it. Empty where no matcher is
+# provisioned, so the manual step has nothing to add.
+output "matcher_job_sub" {
+  value = var.enable_matcher ? google_service_account.matcher_job[0].unique_id : ""
+}

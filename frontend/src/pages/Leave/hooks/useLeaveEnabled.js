@@ -1,5 +1,6 @@
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useFeatureFlagsReady } from "@/hooks/useFeatureFlagsReady";
 
 /**
  * Whether the leave feature is switched on for this viewer.
@@ -16,11 +17,14 @@ import { useFeatureFlags } from "@/hooks/useFeatureFlags";
  * Off until LaunchDarkly answers -- flag values start as an empty map, so an
  * unresolved flag reads as false. That is the safe direction for something not
  * yet released: the cost is a card appearing a moment late, against the whole
- * feature appearing to everybody if the SDK never answers.
+ * feature appearing to everybody if the SDK never answers. Pages that redirect
+ * when the feature is off wait for `isReady` first, so a direct link is not
+ * bounced before LaunchDarkly has answered.
  *
- * @returns {boolean} True when the feature is on.
+ * @returns {{ isEnabled: boolean, isReady: boolean }}
  */
 export const useLeaveEnabled = () => {
   const { [FEATURE_FLAGS.LEAVE_MANAGEMENT]: isEnabled } = useFeatureFlags();
-  return !!isEnabled;
+  const isReady = useFeatureFlagsReady();
+  return { isEnabled: !!isEnabled, isReady };
 };

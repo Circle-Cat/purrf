@@ -28,25 +28,32 @@ from datetime import datetime
 
 from types import SimpleNamespace
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import display_name_of, display_name_or_id
 from backend.common.recruiting_enums import ApplicationStage
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.job_entity import JobEntity
-from backend.entity.users_entity import UsersEntity
 from backend.notification_management.render_registry import register_render
 from backend.recruiting import notification_email_copy as copy
+from backend.recruiting.candidate_names import candidate_name_of
+from backend.repository.application_repository import ApplicationRepository
+from backend.repository.application_submission_repository import (
+    ApplicationSubmissionRepository,
+)
+from backend.repository.job_repository import JobRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.users_repository import UsersRepository
 
 # Stateless, so one module-level instance serves every render.
 _user_emails_repository = UserEmailsRepository()
+_users_repository = UsersRepository()
+_application_repository = ApplicationRepository()
+_application_submission_repository = ApplicationSubmissionRepository()
+_job_repository = JobRepository()
 
 
 async def _candidate_name(session: AsyncSession, user_id: int) -> str:
-    """Resolve a candidate id to their legal "First Last", or "".
+    """Resolve a candidate id to their name as a candidate, or "".
 
     A candidate is named the way their application names them, so a preferred
     name on their profile does not apply to mail about them.
@@ -56,15 +63,11 @@ async def _candidate_name(session: AsyncSession, user_id: int) -> str:
         user_id (int): The candidate to resolve.
 
     Returns:
-        str: "First Last" (whitespace-trimmed), or "" if no such user.
+        str: Their legal "First Last", else the name they typed into their
+            latest application, else "User <id>"; "" if no such user.
     """
-    result = await session.execute(
-        select(UsersEntity.first_name, UsersEntity.last_name).where(
-            UsersEntity.user_id == user_id
-        )
-    )
-    row = result.first()
-    return f"{row[0]} {row[1]}".strip() if row is not None else ""
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return await candidate_name_of(session, _application_submission_repository, user)
 
 
 async def _actor_name(session: AsyncSession, user_id: int) -> str:
@@ -80,17 +83,25 @@ async def _actor_name(session: AsyncSession, user_id: int) -> str:
     Returns:
         str: The resolved display name, or "" if no such user.
     """
-    result = await session.execute(
-        select(
-            UsersEntity.first_name,
-            UsersEntity.last_name,
-            UsersEntity.preferred_name,
-        ).where(UsersEntity.user_id == user_id)
-    )
-    row = result.first()
-    if row is None:
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_of(user) if user is not None else ""
+
+
+async def _assignee_name(session: AsyncSession, user_id: int | None) -> str:
+    """Name the evaluator an assignment event hands the application to.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        user_id (int | None): ``assigneeId`` from the event's details.
+
+    Returns:
+        str: The evaluator's display name, ``"User <id>"`` when they have no
+            name, or "" when the event names nobody or the user is gone.
+    """
+    if user_id is None:
         return ""
-    return user_display_name(first_name=row[0], last_name=row[1], preferred_name=row[2])
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_or_id(user) if user is not None else ""
 
 
 async def _application_context(session: AsyncSession, application_id: int):
@@ -106,30 +117,22 @@ async def _application_context(session: AsyncSession, application_id: int):
     with the board and the blacklist page, and a second copy of it would
     drift.
     """
-    result = await session.execute(
-        select(JobEntity.title, JobEntity.kind, ApplicationEntity.user_id)
-        .join(ApplicationEntity, ApplicationEntity.job_id == JobEntity.job_id)
-        .where(ApplicationEntity.application_id == application_id)
-    )
-    row = result.first()
-    if row is None:
+    pair = await _application_repository.get_with_job(session, application_id)
+    if pair is None:
         return "", None, "", None
-    job_title, job_kind, candidate_id = row
+    application, job = pair
     return (
-        job_title,
-        job_kind,
-        await _candidate_name(session, candidate_id),
-        await _user_emails_repository.get_contact_email(session, candidate_id),
+        job.title,
+        job.kind,
+        await _candidate_name(session, application.user_id),
+        await _user_emails_repository.get_contact_email(session, application.user_id),
     )
 
 
 async def _job_context(session: AsyncSession, job_id: int):
     """job_title/job_kind for a job-scoped event. ("", None) if the job is gone."""
-    result = await session.execute(
-        select(JobEntity.title, JobEntity.kind).where(JobEntity.job_id == job_id)
-    )
-    row = result.first()
-    return row if row is not None else ("", None)
+    job = await _job_repository.get_by_job_id(session, job_id)
+    return (job.title, job.kind) if job is not None else ("", None)
 
 
 async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespace:
@@ -206,11 +209,27 @@ async def _render_application_submitted(session, event):
     They read differently to an owner though -- one is work waiting on the
     board, the other is already decided -- so the auto-hire marker in the
     details selects the copy.
+
+    A plain submission also says what became of the stage's default
+    interviewer: ``autoAssigneeId`` names who got it, and
+    ``unavailableDefaultAssigneeId`` says the default could not be assigned.
+    Both are optional, since a stage need not have a default.
     """
     dto = await _base_dto(session, event)
     stage = _stage(event.details)
     if "screenAutoHireRuleId" in event.details:
         return _with_footer(copy._application_auto_hired(dto, stage))
+    auto_assignee_id = event.details.get("autoAssigneeId")
+    dto.auto_assignee_name = None
+    if auto_assignee_id is not None:
+        # A row that no longer resolves still gets a handle, so the sentence
+        # never reads "assigned to  automatically".
+        dto.auto_assignee_name = (
+            await _actor_name(session, auto_assignee_id) or f"User {auto_assignee_id}"
+        )
+    dto.unavailable_default_assignee_id = event.details.get(
+        "unavailableDefaultAssigneeId"
+    )
     return _with_footer(copy._application_submitted(dto, stage))
 
 
@@ -226,6 +245,7 @@ async def _render_auto_rejected(session, event):
 async def _render_assigned_to_evaluate(session, event):
     dto = await _base_dto(session, event)
     dto.round = event.details.get("round")
+    dto.assignee_name = await _assignee_name(session, event.details.get("assigneeId"))
     return _with_footer(copy._assigned_to_evaluate(dto, _stage(event.details)))
 
 
@@ -242,7 +262,39 @@ async def _render_mentioned(session, event):
     return _with_footer(copy._mentioned(dto, None))
 
 
-# --- review_opened / review_decided (subject is the job) ----------------
+# --- email_received -------------------------------------------------------
+
+
+@register_render("recruiting.email_received")
+async def _render_email_received(session, event):
+    """A reply on a thread the recipient sent into.
+
+    The sender and subject come from the event: they are what the message
+    said when it arrived, and the candidate typed them, so the copy escapes
+    them like any other field.
+    """
+    dto = await _base_dto(session, event)
+    dto.email_from = event.details.get("from") or ""
+    dto.email_subject = event.details.get("subject") or ""
+    return _with_footer(copy._email_received(dto, None))
+
+
+# --- email_bounced --------------------------------------------------------
+
+
+@register_render("recruiting.email_bounced")
+async def _render_email_bounced(session, event):
+    """A delivery failure on a thread the recipient sent into.
+
+    The addresses come from the bounce report, which a remote mail server
+    wrote, so the copy escapes them like any other field.
+    """
+    dto = await _base_dto(session, event)
+    dto.email_failed_recipients = ", ".join(event.details.get("failedRecipients") or [])
+    return _with_footer(copy._email_bounced(dto, None))
+
+
+# --- review_opened / review_reassigned / review_decided (subject is the job) --
 
 
 @register_render("recruiting.review_opened")
@@ -251,14 +303,19 @@ async def _render_review_opened(session, event):
     return _with_footer(copy._job_review_requested(dto, None))
 
 
+@register_render("recruiting.review_reassigned")
+async def _render_review_reassigned(session, event):
+    dto = await _base_dto(session, event)
+    return _with_footer(copy._job_review_reassigned(dto, None))
+
+
 @register_render("recruiting.review_decided")
 async def _render_review_decided(session, event):
     dto = await _base_dto(session, event)
-    template = (
-        copy._job_review_approved
-        if event.details["decision"] == "approved"
-        else copy._job_review_rejected
-    )
+    template = {
+        "approved": copy._job_review_approved,
+        "withdrawn": copy._job_review_withdrawn,
+    }.get(event.details["decision"], copy._job_review_rejected)
     return _with_footer(template(dto, None))
 
 

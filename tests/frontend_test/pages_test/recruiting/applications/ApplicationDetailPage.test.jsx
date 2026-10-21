@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -11,8 +12,12 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
 import * as api from "@/api/recruitingApi";
+import * as adminApi from "@/api/adminAccountsApi";
 
 vi.mock("@/api/recruitingApi");
+// Blocking is no longer a recruiting call: the page raises a request against
+// the account-admin API and never blocks anyone itself.
+vi.mock("@/api/adminAccountsApi");
 // Bazel-sandbox module resolution: `vi.mock("sonner", factory)` doesn't
 // intercept the module the component resolved at import time. Spy on the
 // real toast instead, matching the rest of the recruiting page tests.
@@ -21,9 +26,9 @@ vi.spyOn(toast, "success").mockImplementation(() => {});
 
 // The current user id is read via useAuth(); a hoisted mutable holder lets
 // each test flip who is viewing (owner / assignee / neither) before render.
-// `permissions` defaults to holding the blacklist grant (see beforeEach) so
-// owner-flow tests exercise a fully-empowered owner; the permission-gating
-// tests empty it explicitly.
+// `permissions` defaults to holding the recruiting advance grant (see
+// beforeEach) so owner-flow tests exercise a fully-empowered owner; the
+// permission-gating tests empty it explicitly.
 const authState = vi.hoisted(() => ({ userId: 999, permissions: [] }));
 vi.mock("@/context/auth/AuthContext", () => ({
   useAuth: () => ({
@@ -210,7 +215,15 @@ const confirmedEval = (stage, round = 1, evaluatorId = ASSIGNEE_ID) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   authState.userId = 999;
-  authState.permissions = ["recruiting.blacklist.write"];
+  authState.permissions = ["recruiting.application.advance"];
+  adminApi.getBlockPreflight.mockResolvedValue({
+    data: { applicationCount: 0, interviewTimes: [] },
+  });
+  adminApi.getUserAdmins.mockResolvedValue({ data: [] });
+  // The page reads back any open block request this caller raised, so the
+  // automocked module needs a promise here or every test on this page dies in
+  // the effect before it renders.
+  adminApi.getRaisedBlockRequests.mockResolvedValue({ data: [] });
   api.resumeUrl.mockImplementation(
     (id) => `/api/recruiting/applications/${id}/resume`,
   );
@@ -429,7 +442,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 
     // Decision footer (owner)
     expect(
-      screen.getByRole("button", { name: "Blacklist" }),
+      screen.getByRole("button", { name: "Request block" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(
@@ -495,30 +508,27 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.getByRole("button", { name: "Status:" })).toBeInTheDocument();
   });
 
-  it("states how far blacklisting reaches before it is confirmed", async () => {
+  it("states how far the block reaches before the request is sent", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
-    authState.permissions = [
-      ...authState.permissions,
-      "recruiting.blacklist.write",
-    ];
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
     });
-    // Opening the dialog also fetches the applicant's upcoming interviews to
-    // list them; an empty list is what proves the blast-radius sentence is
-    // unconditional rather than riding on that list.
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    // An empty pre-flight is what proves the blast-radius wording is
+    // unconditional rather than riding on the counts it comes back with.
+    adminApi.getBlockPreflight.mockResolvedValue({
+      data: { applicationCount: 0, interviewTimes: [] },
+    });
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
+    await user.click(screen.getByRole("button", { name: "Request block" }));
 
     expect(
-      await screen.findByText(/closes every other application they hold/),
+      await screen.findByText(/including any already hired/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/including any that already reached Hired/),
+      screen.getByText(/reinstates none of the above/),
     ).toBeInTheDocument();
   });
 
@@ -621,7 +631,10 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     renderPage();
     await waitLoaded();
 
-    expect(screen.getByText(/Evaluated by: User 77/)).toBeInTheDocument();
+    // Bare, unlike an owner/assignee site's unresolved label: a historical
+    // evaluator can't be removed, so no action suffix belongs here. Exact
+    // match (not a substring regex) so an appended suffix would fail this.
+    expect(screen.getByText("Evaluated by: User 77")).toBeInTheDocument();
   });
 
   it("assignee-only viewer sees the rubric form pre-filled from their draft, no decision footer", async () => {
@@ -654,7 +667,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 
     // No owner decision footer
     expect(
-      screen.queryByRole("button", { name: "Blacklist" }),
+      screen.queryByRole("button", { name: "Request block" }),
     ).not.toBeInTheDocument();
     // Owner-only follow-up fetches are skipped for a non-owner...
     expect(api.getJob).not.toHaveBeenCalled();
@@ -673,7 +686,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     await waitLoaded();
 
     expect(
-      screen.getByRole("button", { name: "Blacklist" }),
+      screen.getByRole("button", { name: "Request block" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm & Submit" }),
@@ -689,7 +702,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     await waitLoaded();
 
     expect(
-      screen.queryByRole("button", { name: "Blacklist" }),
+      screen.queryByRole("button", { name: "Request block" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Confirm & Submit" }),
@@ -710,7 +723,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Blacklist" }),
+      screen.queryByRole("button", { name: "Request block" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm & Submit" }),
@@ -1034,7 +1047,7 @@ describe("ApplicationDetailPage — reassign dialog", () => {
 });
 
 describe("ApplicationDetailPage — operate row", () => {
-  it("labels the decision row Operate, with Blacklist/Reject/Advance on it", async () => {
+  it("labels the decision row Operate, with Request block/Reject/Advance on it", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
@@ -1044,7 +1057,7 @@ describe("ApplicationDetailPage — operate row", () => {
 
     expect(screen.getByText("Operate:")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Blacklist" }),
+      screen.getByRole("button", { name: "Request block" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(
@@ -1052,7 +1065,9 @@ describe("ApplicationDetailPage — operate row", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables Blacklist for an owner without recruiting.blacklist.write", async () => {
+  it("disables Request block for an owner without the recruiting advance grant", async () => {
+    // Disabled and explained, not hidden: an owner who cannot raise one still
+    // needs to see that raising one is a thing this page does.
     authState.userId = OWNER_ID;
     authState.permissions = [];
     api.getApplicationDetail.mockResolvedValue({
@@ -1061,24 +1076,26 @@ describe("ApplicationDetailPage — operate row", () => {
     renderPage();
     await waitLoaded();
 
-    const blacklistButton = screen.getByRole("button", { name: "Blacklist" });
-    expect(blacklistButton).toBeDisabled();
-    expect(blacklistButton).toHaveAttribute(
+    const requestButton = screen.getByRole("button", { name: "Request block" });
+    expect(requestButton).toBeDisabled();
+    expect(requestButton).toHaveAttribute(
       "title",
-      "Requires the blacklist permission",
+      "Requires the recruiting advance permission",
     );
   });
 
-  it("keeps Blacklist enabled for an owner holding recruiting.blacklist.write", async () => {
+  it("keeps Request block enabled for an owner holding the recruiting advance grant", async () => {
     authState.userId = OWNER_ID;
-    authState.permissions = ["recruiting.blacklist.write"];
+    authState.permissions = ["recruiting.application.advance"];
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
     });
     renderPage();
     await waitLoaded();
 
-    expect(screen.getByRole("button", { name: "Blacklist" })).toBeEnabled();
+    const requestButton = screen.getByRole("button", { name: "Request block" });
+    expect(requestButton).toBeEnabled();
+    expect(requestButton).not.toHaveAttribute("title");
   });
 
   it("shows a single Advance button that advances the round while one remains, not both round and stage buttons", async () => {
@@ -1110,6 +1127,189 @@ describe("ApplicationDetailPage — operate row", () => {
     expect(
       screen.queryByRole("button", { name: "Advance to Behavioral" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — owner without the advance grant", () => {
+  // Every write on this page sits behind the advance grant at the route, so
+  // an owner who lost it keeps seeing the controls but cannot press them.
+  const HINT = "Requires the recruiting advance permission";
+
+  const expectClosed = (button) => {
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", HINT);
+  };
+
+  const THREAD = {
+    threadId: 1,
+    subject: "Interview Availability",
+    messages: [
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        bodyHtml: "<p>Hello there</p>",
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    authState.userId = OWNER_ID;
+    authState.permissions = [];
+  });
+
+  it("disables sub-status, Reassign, Reject and Advance with the hint", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Pending" }));
+    expectClosed(screen.getByRole("button", { name: "Evaluated" }));
+    expectClosed(screen.getByRole("button", { name: "Reassign" }));
+    expectClosed(screen.getByRole("button", { name: "Reject" }));
+    expectClosed(screen.getByRole("button", { name: "Advance to Behavioral" }));
+  });
+
+  it("disables the round advance with the hint", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: JOB.pipelineConfig.stages.map((s) =>
+            s.stage === "recruiter_screening" ? { ...s, rounds: 2 } : s,
+          ),
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "recruiter_screening",
+        currentRound: 1,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Advance to Session 2" }));
+  });
+
+  it("disables Edit and Cancel on a booked interview", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Edit" }));
+    expectClosed(screen.getByRole("button", { name: "Cancel" }));
+  });
+
+  it("disables Schedule meeting when nothing is booked", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "behavioral" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Schedule meeting" }));
+  });
+
+  it("disables Send email and Reply and never asks for templates", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [THREAD] },
+    });
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    const send = await screen.findByRole("button", { name: "Send email" });
+    expectClosed(send);
+    expectClosed(
+      screen.getByRole("button", { name: "Reply to Interview Availability" }),
+    );
+    fireEvent.click(send);
+    expect(api.getApplicationEmailTemplates).not.toHaveBeenCalled();
+  });
+
+  it("keeps Send email and Reply disabled with the hint when the conversation cannot send", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [THREAD], canSend: false },
+    });
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    expectClosed(await screen.findByRole("button", { name: "Send email" }));
+    expectClosed(screen.getByRole("button", { name: /^Reply/ }));
+  });
+
+  it("leaves every control live and untitled for an owner holding the grant", async () => {
+    const user = userEvent.setup();
+    authState.permissions = ["recruiting.application.advance"];
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [THREAD] },
+    });
+    renderPage();
+    await waitLoaded();
+
+    for (const name of [
+      "Pending",
+      "Reassign",
+      "Reject",
+      "Advance to Behavioral",
+    ]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeEnabled();
+      expect(button).not.toHaveAttribute("title");
+    }
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    for (const name of ["Send email", "Reply to Interview Availability"]) {
+      const button = await screen.findByRole("button", { name });
+      expect(button).toBeEnabled();
+      expect(button).not.toHaveAttribute("title");
+    }
+  });
+
+  it("gives a read.all non-owner without the grant no hint and no extra controls", async () => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    const pending = screen.getByRole("button", { name: "Pending" });
+    expect(pending).toBeDisabled();
+    expect(pending).not.toHaveAttribute("title");
+    expect(
+      screen.queryByRole("button", { name: "Reassign" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
   });
 });
 
@@ -1546,7 +1746,6 @@ describe("ApplicationDetailPage — activity timeline", () => {
           details: {
             subject: "Interview Availability",
             to: ["cand@x.com"],
-            cc: ["boss@x.com"],
             direction: "outbound",
           },
           actorId: OWNER_ID,
@@ -1574,13 +1773,58 @@ describe("ApplicationDetailPage — activity timeline", () => {
 
     expect(
       screen.getByText(
-        /Sent email "Interview Availability" to cand@x\.com, cc boss@x\.com, by Owen Owner/,
+        /Sent email "Interview Availability" to cand@x\.com, by Owen Owner/,
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
         /Received reply "Re: Interview Availability" from cand@x\.com, by Cara Candidate/,
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("narrates email_bounced as a delivery failure by the system", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.email_bounced",
+          details: {
+            subject: "Delivery Status Notification (Failure)",
+            failedRecipients: ["bad@x.com", "gone@y.com"],
+            direction: "inbound",
+          },
+          actorId: null,
+          actorName: null,
+          createdAt: "2026-10-03T12:00:00Z",
+        },
+        {
+          id: 2,
+          eventType: "recruiting.email_bounced",
+          details: { failedRecipients: [], direction: "inbound" },
+          actorId: null,
+          actorName: null,
+          createdAt: "2026-10-03T13:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Email could not be delivered to bad@x\.com, gone@y\.com, by the system/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/— Email could not be delivered, by the system/),
     ).toBeInTheDocument();
   });
 
@@ -2397,6 +2641,75 @@ describe("ApplicationDetailPage — read.all non-owner view", () => {
   });
 });
 
+describe("ApplicationDetailPage — read.all non-owner comments", () => {
+  // The backend lets a read.all holder list, post and @-mention on any
+  // application's comments. Super admins hold read.all implicitly, so this is
+  // also what an admin who neither owns the job nor holds the stage sees.
+  beforeEach(() => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+  });
+
+  it("reads and shows the comments others posted", async () => {
+    const user = userEvent.setup();
+    api.getApplicationComments.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          authorId: OWNER_ID,
+          authorName: "Owen Owner",
+          body: "Strong candidate.",
+          createdAt: "2026-07-07T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    expect(
+      await screen.findByText(/Owen Owner: Strong candidate\./),
+    ).toBeInTheDocument();
+    expect(api.getMentionableUsers).toHaveBeenCalledWith("101");
+  });
+
+  it("can post a comment", async () => {
+    const user = userEvent.setup();
+    api.postComment.mockResolvedValue({
+      data: {
+        id: 2,
+        authorId: 42,
+        authorName: "Rae Reader",
+        body: "Looks fine",
+        createdAt: "2026-07-07T13:00:00Z",
+        mentions: [],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(
+      screen.getByPlaceholderText("Add a comment…"),
+      "Looks fine",
+    );
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() =>
+      expect(api.postComment).toHaveBeenCalledWith("101", {
+        body: "Looks fine",
+      }),
+    );
+  });
+});
+
 describe("ApplicationDetailPage — candidate aggregation", () => {
   it("does not render the other-applications section when there are none", async () => {
     authState.userId = OWNER_ID;
@@ -2717,7 +3030,6 @@ describe("ApplicationDetailPage — history row emails", () => {
                 messageId: "m9",
                 from: "hr@circlecat.org",
                 to: ["cand@example.com"],
-                cc: [],
                 subject: "Interview invite",
                 bodyText: "Are you free Thursday?",
                 bodyHtml: null,
@@ -2727,7 +3039,6 @@ describe("ApplicationDetailPage — history row emails", () => {
           },
         ],
         defaultTo: "cand@example.com",
-        defaultCc: [],
       },
     });
 
@@ -2768,7 +3079,7 @@ describe("ApplicationDetailPage — history row emails", () => {
       makeOtherApplication({ emailsVisible: true }),
     );
     api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: "cand@example.com", defaultCc: [] },
+      data: { threads: [], defaultTo: "cand@example.com" },
     });
 
     await user.click(within(row).getByRole("tab", { name: "Emails" }));
@@ -2793,7 +3104,6 @@ describe("ApplicationDetailPage — history row emails", () => {
                 messageId: "m9",
                 from: "hr@circlecat.org",
                 to: ["cand@example.com"],
-                cc: [],
                 subject: "Interview invite",
                 bodyText: "Are you free Thursday?",
                 bodyHtml: null,
@@ -2803,7 +3113,6 @@ describe("ApplicationDetailPage — history row emails", () => {
           },
         ],
         defaultTo: "cand@example.com",
-        defaultCc: [],
       },
     });
 
@@ -2814,7 +3123,7 @@ describe("ApplicationDetailPage — history row emails", () => {
       within(row).queryByRole("button", { name: "Send email" }),
     ).not.toBeInTheDocument();
     expect(
-      within(row).queryByRole("button", { name: "Reply" }),
+      within(row).queryByRole("button", { name: /^Reply/ }),
     ).not.toBeInTheDocument();
     expect(
       within(row).queryByRole("button", { name: "Refresh" }),
@@ -2828,7 +3137,7 @@ describe("ApplicationDetailPage — history row emails", () => {
       makeOtherApplication({ emailsVisible: true }),
     );
     api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: null, defaultCc: [] },
+      data: { threads: [], defaultTo: null },
     });
 
     await user.click(within(row).getByRole("tab", { name: "Emails" }));
@@ -3466,6 +3775,116 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.getByText("Hello there")).toBeInTheDocument();
   });
 
+  const kindThread = (overrides = {}) => ({
+    threadId: 1,
+    subject: "Interview Availability",
+    needsReply: true,
+    openBounce: { bouncedTo: "a@x.example" },
+    replyAlias: "recruiting@circlecat.org",
+    messages: [
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        toAddresses: "Cand <a@x.example>",
+        inboundKind: null,
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
+      {
+        messageId: 12,
+        direction: "inbound",
+        fromAddress: "cand@x.example",
+        toAddresses: "recruiting@circlecat.org",
+        inboundKind: "human",
+        bodyText: "Sounds good",
+        createdAt: "2026-07-23T00:01:00Z",
+      },
+      {
+        messageId: 13,
+        direction: "inbound",
+        fromAddress: "noreply@x.example",
+        toAddresses: "recruiting@circlecat.org",
+        inboundKind: "auto_reply",
+        bodyText: "Out of office",
+        createdAt: "2026-07-23T00:02:00Z",
+      },
+      {
+        messageId: 14,
+        direction: "inbound",
+        fromAddress: "mailer-daemon@googlemail.com",
+        toAddresses: "recruiting@circlecat.org",
+        inboundKind: "bounce",
+        bodyText: "Address not found",
+        createdAt: "2026-07-23T00:03:00Z",
+      },
+    ],
+    ...overrides,
+  });
+
+  const openEmails = async (thread) => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [thread] },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+  };
+
+  it("shows From and To, kind tags, the bounce banner and Needs reply", async () => {
+    await openEmails(kindThread());
+
+    expect(screen.getAllByText("From")).toHaveLength(4);
+    expect(screen.getAllByText("To")).toHaveLength(4);
+    expect(screen.getByText("Cand <a@x.example>")).toBeInTheDocument();
+    expect(screen.getByText("cand@x.example")).toBeInTheDocument();
+    expect(screen.getAllByText("Auto-reply")).toHaveLength(1);
+    expect(screen.getAllByText("Delivery failed")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Delivery failed: your email to a@x.example was not delivered",
+    );
+    expect(screen.getByText("Needs reply")).toBeInTheDocument();
+    expect(screen.queryByText("Not delivered")).not.toBeInTheDocument();
+  });
+
+  it("tags a message with failedRecipients as a bounce when inboundKind is absent", async () => {
+    await openEmails(
+      kindThread({
+        openBounce: null,
+        messages: [
+          {
+            messageId: 21,
+            direction: "inbound",
+            fromAddress: "mailer-daemon@googlemail.com",
+            toAddresses: "recruiting@circlecat.org",
+            failedRecipients: ["a@x.example"],
+            bodyText: "Address not found",
+            createdAt: "2026-07-23T00:03:00Z",
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getAllByText("Delivery failed")).toHaveLength(1);
+  });
+
+  it("shows no banner or Needs reply when the thread has neither", async () => {
+    await openEmails(
+      kindThread({
+        needsReply: false,
+        openBounce: null,
+        messages: kindThread().messages.slice(0, 2),
+      }),
+    );
+
+    expect(screen.queryByText("Needs reply")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auto-reply")).not.toBeInTheDocument();
+    expect(screen.getByText("Sounds good")).toBeInTheDocument();
+  });
+
   it("shows each message's timestamp with the viewer's timezone name", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
@@ -3519,6 +3938,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
                 direction: "inbound",
                 fromAddress: "cand@x.com",
                 bodyHtml:
+                  "<style>body{display:none}</style>" +
                   "<p>first para</p><p>second para</p><ul><li>bullet</li></ul>" +
                   '<p><a href="https://x.test">a link</a></p>',
                 bodyText: "first para",
@@ -3538,6 +3958,8 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(body.className).toContain("[&_ul]:list-disc");
     expect(body.className).toContain("[&_ol]:list-decimal");
     expect(body.className).toContain("[&_a]:underline");
+    expect(body.className).toContain("[contain:paint]");
+    expect(body.querySelector("style")).toBeNull();
   });
 
   it("spaces the paragraphs of a template applied into the compose body", async () => {
@@ -3573,7 +3995,6 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitFor(() =>
       expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
         to: ["cand@x.com"],
-        cc: [],
         subject: "Hi there",
         body: "welcome",
         threadId: null,
@@ -3582,45 +4003,15 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(toast.success).toHaveBeenCalledWith("Email sent.");
   });
 
-  it("new compose prefills Cc from conversation defaultCc, editable", async () => {
-    ownerViewing();
-    api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: "cand@x.com", defaultCc: ["rec@x.com"] },
-    });
-    const user = userEvent.setup();
-    renderPage();
-    await waitLoaded();
-    await user.click(screen.getByRole("tab", { name: "Emails" }));
-    await user.click(screen.getByRole("button", { name: "Send email" }));
-    const ccField = screen.getByLabelText("Cc");
-    expect(ccField).toHaveValue("rec@x.com");
-    // still editable
-    await user.type(ccField, ", extra@x.com");
-    await user.type(screen.getByLabelText("Subject"), "Hi");
-    await user.type(screen.getByLabelText("Message"), "welcome");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() =>
-      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
-        to: ["cand@x.com"],
-        cc: ["rec@x.com", "extra@x.com"],
-        subject: "Hi",
-        body: "welcome",
-        threadId: null,
-      }),
-    );
-  });
-
-  it("reply prefills Cc from the thread defaultCc", async () => {
+  it("compose has no Cc field, for a new email or a reply", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
       data: {
         defaultTo: "cand@x.com",
-        defaultCc: ["rec@x.com"],
         threads: [
           {
             threadId: 1,
             subject: "Interview Availability",
-            defaultCc: ["rec@x.com", "boss@x.com"],
             messages: [
               {
                 messageId: 11,
@@ -3639,24 +4030,33 @@ describe("ApplicationDetailPage — Emails tab", () => {
     renderPage();
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
-    await user.click(screen.getByRole("button", { name: "Reply" }));
-    expect(screen.getByLabelText("Cc")).toHaveValue("rec@x.com, boss@x.com");
+
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    expect(screen.getByRole("checkbox", { name: /cand@x\.com/ })).toBeChecked();
+    expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await user.click(
+      screen.getByRole("button", { name: "Reply to Interview Availability" }),
+    );
+    expect(screen.getByLabelText("Subject")).toHaveValue(
+      "Re: Interview Availability",
+    );
+    expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
   });
 
-  it("Refresh re-fetches with refresh=true", async () => {
+  it("the Emails tab has no Refresh button, for an owner either", async () => {
     ownerViewing();
     const user = userEvent.setup();
     renderPage();
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
-    api.getApplicationEmails.mockClear();
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() =>
-      expect(api.getApplicationEmails).toHaveBeenCalledWith("101", {
-        refresh: true,
-      }),
-    );
-    expect(toast.success).toHaveBeenCalledWith("Refreshed.");
+    expect(
+      await screen.findByRole("button", { name: "Send email" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Refresh" }),
+    ).not.toBeInTheDocument();
   });
 
   /**
@@ -3674,7 +4074,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     await user.click(
       screen.getByRole("button", {
-        name: replyThread ? "Reply" : "Send email",
+        name: replyThread ? /^Reply to / : "Send email",
       }),
     );
     return user;
@@ -3818,7 +4218,6 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitFor(() =>
       expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
         to: ["cand@x.com"],
-        cc: [],
         subject: "Hi",
         body: '<p>Hello <b>Ana</b>, see <a href="https://x.com">this</a></p>',
         threadId: null,
@@ -3907,7 +4306,6 @@ describe("ApplicationDetailPage — Emails tab", () => {
           {
             threadId: 9,
             subject: "Circle Cat Program - Interview Availability",
-            defaultCc: [],
             messages: [
               {
                 messageId: 1,
@@ -4167,10 +4565,15 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.queryByText(/1 placeholders/i)).not.toBeInTheDocument();
   });
 
-  it("keeps Send disabled while the recipient or subject is empty, body text notwithstanding", async () => {
-    // A candidate with no contact email: the composer opens with To empty.
+  it("keeps Send disabled while no recipient is ticked or the subject is empty, body text notwithstanding", async () => {
+    // A candidate with no contact email: nothing is ticked when the composer
+    // opens, and the Purrf address has to be ticked by hand.
     api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: null },
+      data: {
+        threads: [],
+        defaultTo: null,
+        recipientOptions: [{ address: "cand@x.com", label: "Alternative" }],
+      },
     });
     const user = await renderComposeOpen();
     setEditorHtml("<p>Ready to go</p>");
@@ -4182,7 +4585,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.type(screen.getByLabelText(/subject/i), "Hi");
     expect(send).toBeDisabled();
 
-    await user.type(screen.getByLabelText("To"), "cand@x.com");
+    await user.click(screen.getByRole("checkbox", { name: /cand@x\.com/ }));
     expect(send).toBeEnabled();
 
     await user.clear(screen.getByLabelText(/subject/i));
@@ -4342,6 +4745,211 @@ describe("ApplicationDetailPage — Emails tab", () => {
         screen.queryByRole("dialog", { name: /unfilled placeholders/i }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  const threadChanged = () =>
+    Object.assign(new Error("This thread has new messages."), {
+      response: {
+        status: 409,
+        data: {
+          success: false,
+          message: "This thread has new messages.",
+          data: { code: "THREAD_CHANGED" },
+        },
+      },
+    });
+
+  const replyableThread = (extraMessages = []) => ({
+    threadId: 1,
+    subject: "Interview Availability",
+    needsReply: true,
+    replyTo: "cand.reply@x.com",
+    messages: [
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        toAddresses: "cand@x.com",
+        bodyHtml: "<p>Hello there</p>",
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
+      {
+        messageId: 12,
+        direction: "inbound",
+        fromAddress: "cand.reply@x.com",
+        toAddresses: "recruiting@circlecat.org",
+        bodyHtml: "<p>Sounds good</p>",
+        bodyText: "Sounds good",
+        createdAt: "2026-07-23T01:00:00Z",
+        attachments: [{ name: "resume.pdf", size: 2048 }],
+      },
+      ...extraMessages,
+    ],
+  });
+
+  it("ticks the contact email by default and sends to every ticked address", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        threads: [],
+        defaultTo: "cand@x.com",
+        canSend: true,
+        recipientOptions: [
+          { address: "cand@x.com", label: "Primary contact" },
+          { address: "ana@purrf.example", label: "Alternative" },
+        ],
+      },
+    });
+    const user = await renderComposeOpen();
+    expect(screen.getByRole("checkbox", { name: /cand@x\.com/ })).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /ana@purrf\.example/ }),
+    ).not.toBeChecked();
+    await user.click(
+      screen.getByRole("checkbox", { name: /ana@purrf\.example/ }),
+    );
+    setEditorHtml("<p>hello</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand@x.com", "ana@purrf.example"],
+        subject: "Hi",
+        body: "<p>hello</p>",
+        threadId: null,
+      }),
+    );
+  });
+
+  it("replies to the thread's reply address with the last message seen", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [replyableThread()], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen({ replyThread: true });
+    const dialog = screen.getByRole("dialog", { name: "Reply" });
+    expect(within(dialog).getByText("cand.reply@x.com")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    setEditorHtml("<p>Thanks</p>");
+    await user.click(within(dialog).getByRole("button", { name: /^send$/i }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand.reply@x.com"],
+        subject: "Re: Interview Availability",
+        body: "<p>Thanks</p>",
+        threadId: 1,
+        lastSeenMessageId: 12,
+      }),
+    );
+  });
+
+  it("keeps the reply draft and shows the new message when the thread changed", async () => {
+    const newer = {
+      messageId: 13,
+      direction: "inbound",
+      fromAddress: "cand.reply@x.com",
+      toAddresses: "recruiting@circlecat.org",
+      bodyHtml: "<p>One more question</p>",
+      bodyText: "One more question",
+      createdAt: "2026-07-23T02:00:00Z",
+    };
+    api.getApplicationEmails
+      .mockResolvedValueOnce({
+        data: { threads: [replyableThread()], defaultTo: "cand@x.com" },
+      })
+      .mockResolvedValueOnce({
+        data: { threads: [replyableThread([newer])], defaultTo: "cand@x.com" },
+      });
+    api.sendApplicationEmail.mockRejectedValueOnce(threadChanged());
+    const user = await renderComposeOpen({ replyThread: true });
+    const dialog = screen.getByRole("dialog", { name: "Reply" });
+    setEditorHtml("<p>Thanks</p>");
+    await user.click(within(dialog).getByRole("button", { name: /^send$/i }));
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "Not sent: this thread has new messages since you opened it.",
+    );
+    expect(within(dialog).getByText("One more question")).toBeInTheDocument();
+    expect(editorEl().innerHTML).toContain("Thanks");
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: /^send$/i }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenLastCalledWith(
+        "101",
+        expect.objectContaining({ threadId: 1, lastSeenMessageId: 13 }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Reply" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("links each attachment to the application's download endpoint", async () => {
+    api.applicationEmailAttachmentUrl.mockImplementation(
+      (id, messageId, index) =>
+        `/api/recruiting/applications/${id}/emails/messages/${messageId}/attachments/${index}`,
+    );
+    await openEmails(replyableThread());
+    const link = screen.getByRole("link", { name: /resume\.pdf/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "/api/recruiting/applications/101/emails/messages/12/attachments/0",
+    );
+    expect(link).toHaveAttribute("download");
+  });
+
+  it("disables Send email and Reply with a setup hint when the conversation cannot send", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        threads: [replyableThread()],
+        defaultTo: "cand@x.com",
+        canSend: false,
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await screen.findByText("Interview Availability");
+    for (const button of [
+      screen.getByRole("button", { name: "Send email" }),
+      screen.getByRole("button", { name: /^Reply/ }),
+    ]) {
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute(
+        "title",
+        "Sending email is not set up here",
+      );
+    }
+  });
+
+  it("closes the compose dialog on moving to another application", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [replyableThread()], defaultTo: "cand@x.com" },
+    });
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(screen.getByRole("button", { name: /^Reply/ }));
+    expect(screen.getByRole("dialog", { name: "Reply" })).toBeInTheDocument();
+
+    await act(() => router.navigate("/recruiting/applications/102"));
+    await waitFor(() =>
+      expect(api.getApplicationDetail).toHaveBeenCalledWith("102"),
+    );
+    await waitLoaded();
+    // A dialog left open would make the rest of the page inert to user.click.
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Emails" }));
+    await screen.findByText("Interview Availability");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Reply" }),
+    ).not.toBeInTheDocument();
   });
 
   it("read.all viewer who is not an owner sees no compose control", async () => {
@@ -5125,107 +5733,53 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
   });
 });
 
-describe("ApplicationDetailPage — blacklist cancels the upcoming interviews", () => {
-  const UPCOMING = [
-    {
-      applicationId: 101,
-      jobTitle: "Mentor",
-      stage: "behavioral",
-      round: 1,
-      startAt: "2099-08-05T21:00:00Z",
-    },
-    {
-      applicationId: 202,
-      jobTitle: "Backend Engineer",
-      stage: "tech",
-      round: 2,
-      startAt: "2099-08-06T22:00:00Z",
-    },
-  ];
-
+describe("ApplicationDetailPage — block-request reads are deferred", () => {
   beforeEach(() => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
     });
-    api.blacklistUser.mockResolvedValue({ data: {} });
   });
 
-  it("lists every interview the block is about to cancel", async () => {
-    const user = userEvent.setup();
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: UPCOMING });
+  it("reads neither the pre-flight nor the reviewer list on page load", async () => {
+    // Every owner loads this page; nobody should pay for two account-admin
+    // queries unless they actually reach for the button.
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
-
-    expect(
-      await screen.findByText(
-        /Mentor — Behavioral session 1 — 2099-08-05 14:00 America\/Los_Angeles/,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      // Rendered in the READER's zone (pinned to Los Angeles by makeDetail),
-      // not in whatever zone each meeting was booked in: 22:00Z is 15:00 there.
-      screen.getByText(
-        /Backend Engineer — Tech session 2 — 2099-08-06 15:00 America\/Los_Angeles/,
-      ),
-    ).toBeInTheDocument();
-    // Scoped to the candidate, not the application being viewed: a block is
-    // org-wide, so it sweeps their other postings too.
-    expect(api.listBlacklistUpcomingInterviews).toHaveBeenCalledWith(5);
+    expect(adminApi.getBlockPreflight).not.toHaveBeenCalled();
+    expect(adminApi.getUserAdmins).not.toHaveBeenCalled();
   });
 
-  it("says nothing about interviews when the candidate has none booked", async () => {
+  it("still lets the request go out when the pre-flight cannot be read", async () => {
+    // The reviewer sees the same pre-flight before they decide, so a failed
+    // read here is a caveat, not a gate.
     const user = userEvent.setup();
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    adminApi.getBlockPreflight.mockRejectedValue(new Error("boom"));
+    adminApi.getUserAdmins.mockResolvedValue({
+      data: [{ userId: 77, name: "Rita Reviewer" }],
+    });
+    adminApi.createBlockRequest.mockResolvedValue({
+      data: { id: 3, reviewerId: 77, reviewerName: "Rita Reviewer" },
+    });
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
-
+    await user.click(screen.getByRole("button", { name: "Request block" }));
     expect(
-      screen.getByRole("button", { name: "Confirm blacklist" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/scheduled interview/i)).not.toBeInTheDocument();
-  });
-
-  it("still lets the block through when the preview cannot be loaded", async () => {
-    // The backend cancels the meetings either way -- a failed pre-flight read
-    // must not stand between a recruiter and an org-level sanction.
-    const user = userEvent.setup();
-    api.listBlacklistUpcomingInterviews.mockRejectedValue(new Error("boom"));
-    renderPage();
-    await waitLoaded();
-
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
-    expect(
-      await screen.findByText(/Couldn't check for scheduled interviews/i),
+      await screen.findByText(/Couldn't read what this will affect/i),
     ).toBeInTheDocument();
 
-    await user.type(
-      screen.getByPlaceholderText("Reason (required)"),
-      "spamming",
-    );
-    await user.click(screen.getByRole("button", { name: "Confirm blacklist" }));
+    await user.selectOptions(await screen.findByLabelText("Reviewer"), "77");
+    await user.type(screen.getByLabelText(/^Reason/), "spamming");
+    await user.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() =>
-      expect(api.blacklistUser).toHaveBeenCalledWith({
-        userId: 5,
-        applicationId: "101",
-        reason: "spamming",
-      }),
+      expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
+        { userId: 5, reason: "spamming", reviewerId: 77 },
+        "recruiting_application",
+      ),
     );
-  });
-
-  it("only reads the preview once the dialog is opened", async () => {
-    // Every owner loads this page; nobody should pay for a blacklist-only
-    // query unless they actually reach for the button.
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
-    renderPage();
-    await waitLoaded();
-
-    expect(api.listBlacklistUpcomingInterviews).not.toHaveBeenCalled();
   });
 });
 

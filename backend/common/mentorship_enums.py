@@ -6,6 +6,7 @@ class ApprovalStatus(str, Enum):
     MATCHED = "matched"
     UN_MATCHED = "un_matched"
     REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
 
 
 class MatchStatus(str, Enum):
@@ -16,6 +17,7 @@ class MatchStatus(str, Enum):
     MATCHED = "matched"  # Successfully matched with partner(s)
     UNMATCHED = "unmatched"  # Matching process finished but no partner found
     REJECTED = "rejected"  # Application to participate was denied
+    WITHDRAWN = "withdrawn"  # Withdrawn from the round by an approved request
     UNKNOWN = "unknown"  # Fallback for undefined internal states
 
 
@@ -57,6 +59,45 @@ class MentorshipEvent(StrEnum):
     """
 
     MENTOR_ADMITTED = "mentorship.mentor_admitted"
+    MATCHING_RUN_COMPLETED = "mentorship.matching_run_completed"
+    # The three events of a mentorship approval request. Which request, and
+    # what it asks for, is in the event's details.
+    APPROVAL_REQUESTED = "mentorship.approval_requested"
+    APPROVAL_REASSIGNED = "mentorship.approval_reassigned"
+    APPROVAL_DECIDED = "mentorship.approval_decided"
+    # A Kit notification send finished preparing: scheduled in Kit, or failed.
+    EMAIL_SEND_PREPARED = "mentorship.email_send_prepared"
+    # Mail on a person's round thread: a reply now needs an answer, or one of
+    # our sends bounced. Subject is the email thread.
+    EMAIL_RECEIVED = "mentorship.email_received"
+    EMAIL_BOUNCED = "mentorship.email_bounced"
+
+
+class RoundStatus(str, Enum):
+    """Where a round's meeting window stands relative to now."""
+
+    ACTIVE = "active"
+    UPCOMING = "upcoming"
+    COMPLETED = "completed"
+
+
+class MatchingRunStatus(StrEnum):
+    """What a round's most recent matching run can be showing an admin.
+
+    Five states rather than a boolean and a progress figure. The matcher scores
+    and assigns over the whole cohort before it writes anything, so there is no
+    moment at which some fraction of the work is done and readable -- "running"
+    is everything up to the last write.
+    """
+
+    NEVER_RUN = "never_run"
+    RUNNING = "running"
+    FAILED = "failed"
+    # Reported as succeeded, but the result does not hold one row per mentee.
+    # Its own state because it is neither a run to review nor one the matcher
+    # calls failed, and publishing it would mark the missing people unmatched.
+    UNUSABLE = "unusable"
+    SUCCEEDED = "succeeded"
 
 
 class ParticipantRole(Enum):
@@ -81,6 +122,28 @@ MENTORSHIP_ONBOARDING_CATEGORIES: frozenset[TrainingCategory] = frozenset({
 })
 
 
+class ScormVersion(str, Enum):
+    """The version a package declares in its manifest.
+
+    2004 is recognised only so an upload can be rejected by name; nothing
+    runs it.
+    """
+
+    SCORM_12 = "1.2"
+    SCORM_2004 = "2004"
+
+
+class TrainingPackageState(str, Enum):
+    """Which slot a course package occupies.
+
+    A course serves its live package and nothing else. A pending one has been
+    uploaded but not published, and only a verifier ever reaches it.
+    """
+
+    LIVE = "live"
+    PENDING = "pending"
+
+
 class TrainingStatus(str, Enum):
     TO_DO = "to_do"
     IN_PROGRESS = "in_progress"
@@ -95,6 +158,17 @@ class MeetingNoteTag(str, Enum):
     UNKNOWN_LATE = "unknown_late"
     MENTOR_LATE = "mentor_late"
     MENTEE_LATE = "mentee_late"
+
+
+class ParticipantNoteTag(StrEnum):
+    """What a tagged mentorship_participant_note records. A note without a
+    tag is a plain remark; one with a tag is a mark someone acts on."""
+
+    STATUS_CHANGE = "status_change"
+    MATCHING_EXEMPTION = "matching_exemption"
+    NO_SHOW = "no_show"
+    RED_FLAG = "red_flag"
+    NOTIFIED = "notified"
 
 
 class MeetingSource(str, Enum):

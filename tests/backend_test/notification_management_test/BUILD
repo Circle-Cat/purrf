@@ -97,6 +97,7 @@ py_test(
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
         "//backend/notification_management:notification_event_email_service",
+        "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
@@ -110,6 +111,7 @@ py_test(
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/notification_management:delivery_service",
+        "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
@@ -123,5 +125,21 @@ py_test(
         "//backend/notification_management:delivery_service",
         "@pypi//fastapi",
         "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "user_recipient_resolvers_test",
+    srcs = ["user_recipient_resolvers_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/common:approval_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+        "//backend/notification_management:recipient_registry",
+        "//backend/user_identity:user_recipient_resolvers",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )

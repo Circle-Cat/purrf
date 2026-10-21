@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -22,11 +23,21 @@ from backend.common.api_endpoints import (
     SUMMARY_ENDPOINT,
     MY_SUMMARY_ENDPOINT,
 )
+from backend.common.exceptions import ActivityDataUnavailableError
+from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.utils.auth_middleware import AuthMiddleware
 from backend.internal_activity_service.internal_activity_controller import (
     InternalActivityController,
 )
 from backend.dto.internal_activity_summary_response_dto import ActivitySummaryDto
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
+from backend.internal_activity_service.gerrit_analytics_service import (
+    GerritAnalyticsService,
+)
+from backend.internal_activity_service.ldap_service import LdapService
+from backend.internal_activity_service.summary_service import SummaryService
 
 
 class TestInternalActivityControllerIntegration(unittest.TestCase):
@@ -44,6 +55,17 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.summary_service = MagicMock()
         self.launchdarkly_service = MagicMock()
 
+        self.mock_session = MagicMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=self.mock_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        begin_cm = MagicMock()
+        begin_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        begin_cm.__aexit__ = AsyncMock(return_value=False)
+        self.mock_session.begin = MagicMock(return_value=begin_cm)
+        self.mock_database = MagicMock()
+        self.mock_database.session = MagicMock(return_value=session_cm)
+
         self.controller = InternalActivityController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -55,21 +77,17 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
             gerrit_analytics_service=self.gerrit_analytics_service,
             summary_service=self.summary_service,
             launchdarkly_service=self.launchdarkly_service,
+            database=self.mock_database,
         )
 
-        mock_session = MagicMock()
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-        session_cm.__aexit__ = AsyncMock(return_value=False)
-        begin_cm = MagicMock()
-        begin_cm.__aenter__ = AsyncMock(return_value=MagicMock())
-        begin_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_session.begin = MagicMock(return_value=begin_cm)
-        self.mock_database = MagicMock()
-        self.mock_database.session = MagicMock(return_value=session_cm)
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(
-            return_value=MagicMock(user_id=1, is_super_admin=False)
+            return_value=MagicMock(
+                user_id=1,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+            )
         )
         self.mock_user_permissions_repository = MagicMock()
         self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(
@@ -110,7 +128,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_ldaps_and_names(self):
         """Test MICROSOFT_LDAPS_ENDPOINT (GET)."""
-        self._set_auth([Permission.DIRECTORY_MICROSOFT_LDAP_READ])
+        self._set_auth([Permission.INTERNAL_ACTIVITY_READ])
         self.ldap_service.get_ldaps_by_status_and_group.return_value = {"data": "test"}
 
         path = MICROSOFT_LDAPS_ENDPOINT.replace("{status}", "active")
@@ -302,10 +320,26 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.summary_service.get_summary.assert_called_once()
 
+    def test_get_summary_refuses_an_empty_group_list(self):
+        """No group means no members to sum; it used to reach the LDAP lookup
+        and fail there with a 500. The app maps this validation error to 400;
+        this bare test app leaves FastAPI's 422."""
+        self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
+
+        response = self.client.post(
+            SUMMARY_ENDPOINT,
+            json={"startDate": "2023-01-01", "groups": []},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.summary_service.get_summary.assert_not_called()
+
     def test_get_my_summary_success(self):
         """Test MY_SUMMARY_ENDPOINT (POST) returns 200 when LD flag is enabled."""
         self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
         self.launchdarkly_service.is_view_personal_summary_enabled.return_value = True
+        self.summary_service.get_my_summary = AsyncMock()
         self.summary_service.get_my_summary.return_value = ActivitySummaryDto(
             ldap="test",
             chat_count=0,
@@ -324,7 +358,10 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.summary_service.get_my_summary.assert_called_once()
+        self.summary_service.get_my_summary.assert_awaited_once()
+        self.assertIs(
+            self.summary_service.get_my_summary.await_args.args[0], self.mock_session
+        )
 
     def test_get_my_summary_when_ld_flag_disabled(self):
         """Test MY_SUMMARY_ENDPOINT (POST) is blocked when LD flag is disabled."""
@@ -356,6 +393,111 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.jira_analytics_service.get_all_jira_projects.assert_not_called()
+
+    def _client_with_exception_handlers(self):
+        register_exception_handlers(self.app)
+        return TestClient(self.app, raise_server_exceptions=False)
+
+    def test_get_summary_returns_503_when_redis_answers_short(self):
+        self._set_auth([Permission.DASHBOARD_ACTIVITY_SUMMARY_READ])
+        self.summary_service.get_summary.side_effect = ActivityDataUnavailableError(
+            "Redis pipeline returned 1 results for 2 commands."
+        )
+        client = self._client_with_exception_handlers()
+
+        response = client.post(
+            SUMMARY_ENDPOINT,
+            json={"startDate": "2023-01-01", "groups": ["employees"]},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json()["message"], "Activity data is temporarily unavailable."
+        )
+
+    def test_get_gerrit_stats_returns_503_when_redis_answers_short(self):
+        self._set_auth([Permission.INTERNAL_ACTIVITY_READ])
+        self.gerrit_analytics_service.get_gerrit_stats.side_effect = (
+            ActivityDataUnavailableError("short")
+        )
+        client = self._client_with_exception_handlers()
+
+        response = client.post(
+            GERRIT_STATS_ENDPOINT, json={"ldaps": ["a"]}, headers=self.headers
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json()["message"], "Activity data is temporarily unavailable."
+        )
+
+    def _wire_real_ldap_read_failing_with(self, reply):
+        """Real ldap, Gerrit and summary services over a Redis whose pipelines
+        all answer ``reply``."""
+        redis_client = MagicMock()
+        redis_client.pipeline.return_value.execute.return_value = reply
+        retry_utils = MagicMock()
+        retry_utils.get_retry_on_transient.side_effect = lambda fn, *args, **kwargs: fn(
+            *args, **kwargs
+        )
+        date_time_util = MagicMock()
+        date_time_util.get_start_end_timestamps.return_value = (
+            datetime(2025, 10, 21, tzinfo=timezone.utc),
+            datetime(2025, 10, 28, tzinfo=timezone.utc),
+        )
+        cache = ActivityQueryCache(logger=MagicMock())
+        ldap_service = LdapService(
+            logger=MagicMock(), redis_client=redis_client, retry_utils=retry_utils
+        )
+        self.controller.gerrit_analytics_service = GerritAnalyticsService(
+            logger=MagicMock(),
+            redis_client=redis_client,
+            retry_utils=retry_utils,
+            ldap_service=ldap_service,
+            date_time_util=date_time_util,
+            gerrit_client=MagicMock(),
+            activity_query_cache=cache,
+        )
+        self.controller.summary_service = SummaryService(
+            ldap_service=ldap_service,
+            microsoft_chat_analytics_service=MagicMock(),
+            google_calendar_analytics_service=MagicMock(),
+            google_chat_analytics_service=MagicMock(),
+            gerrit_analytics_service=self.controller.gerrit_analytics_service,
+            jira_analytics_service=MagicMock(),
+            date_time_util=date_time_util,
+            user_emails_repository=MagicMock(),
+            activity_query_cache=cache,
+        )
+        return cache
+
+    def test_failed_ldap_read_answers_503_and_caches_nothing(self):
+        # An empty reply is what a retried pipeline gives back after a Redis
+        # error; before, it read as "nobody" and the empty result was cached.
+        self._set_auth([
+            Permission.INTERNAL_ACTIVITY_READ,
+            Permission.DASHBOARD_ACTIVITY_SUMMARY_READ,
+        ])
+        requests = {
+            "gerrit stats": (GERRIT_STATS_ENDPOINT, {}),
+            "summary": (
+                SUMMARY_ENDPOINT,
+                {"startDate": "2025-10-21", "groups": ["employees"]},
+            ),
+        }
+        for name, (url, body) in requests.items():
+            for reply in ([], [Exception("connection reset")]):
+                with self.subTest(request=name, reply=reply):
+                    cache = self._wire_real_ldap_read_failing_with(reply)
+                    client = self._client_with_exception_handlers()
+
+                    response = client.post(url, json=body, headers=self.headers)
+
+                    self.assertEqual(
+                        response.status_code, HTTPStatus.SERVICE_UNAVAILABLE
+                    )
+                    self.assertEqual(len(cache), 0)
 
 
 if __name__ == "__main__":

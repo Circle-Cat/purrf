@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from fastapi import APIRouter
-from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_dto import RoundSlotsDto, RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.meeting_dto import MeetingDto
@@ -15,6 +15,7 @@ from backend.common.mentorship_enums import ParticipantRole
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_ENDPOINT,
+    MENTORSHIP_ROUND_SLOTS_ENDPOINT,
     MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
     MENTORSHIP_PARTNERS_ENDPOINT,
     MENTORSHIP_MATCH_RESULT_ENDPOINT,
@@ -28,6 +29,7 @@ from backend.common.api_endpoints import (
 from backend.common.permissions import Permission
 from backend.dto.meeting_batch_create_dto import MeetingBatchCreateDto
 from backend.dto.google_meeting_delete_dto import GoogleMeetingDeleteDto
+from backend.dto.meeting_reschedule_dto import MeetingRescheduleDto
 
 
 class MentorshipController:
@@ -67,6 +69,13 @@ class MentorshipController:
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
             endpoint=authenticate()(self.get_all_rounds),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUND_SLOTS_ENDPOINT,
+            endpoint=authenticate()(self.get_round_slots),
             methods=["GET"],
             response_model=None,
         )
@@ -143,6 +152,12 @@ class MentorshipController:
             MENTORSHIP_MEETING_V2_SINGLE_ENDPOINT,
             endpoint=authenticate()(self.delete_single_google_meeting),
             methods=["DELETE"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            MENTORSHIP_MEETING_V2_SINGLE_ENDPOINT,
+            endpoint=authenticate()(self.reschedule_google_meeting),
+            methods=["PATCH"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -272,6 +287,24 @@ class MentorshipController:
         return api_response(
             message="Successfully fetched all mentorship rounds.",
             data=rounds,
+        )
+
+    async def get_round_slots(self, current_user: UserContextDto):
+        """
+        Retrieve the rounds the Personal Dashboard acts on right now.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+
+        Return:
+            API response containing a RoundSlotsDto.
+        """
+        async with self.database.session() as session:
+            slots: RoundSlotsDto = await self.rounds_service.get_round_slots(session)
+
+        return api_response(
+            message="Successfully fetched mentorship round slots.",
+            data=slots,
         )
 
     async def get_partners_for_user(
@@ -480,6 +513,45 @@ class MentorshipController:
                 )
             return api_response(
                 message="Meeting deletion processed.",
+                data=result,
+            )
+        raise PermissionError("Google meeting feature is not yet available.")
+
+    async def reschedule_google_meeting(
+        self,
+        current_user: UserContextDto,
+        meeting_id: str,
+        payload: MeetingRescheduleDto,
+    ):
+        """
+        Move one already-booked mentorship meeting to a new slot.
+
+        The wall-clock inputs are converted server-side, and the Calendar
+        event is patched in place rather than deleted and recreated.
+
+        Args:
+            current_user (UserContextDto): The currently authenticated user.
+            meeting_id (str): The Google Calendar event ID to move.
+            payload (MeetingRescheduleDto): The new slot.
+
+        Returns:
+            ApiResponse: The moved meeting.
+        """
+        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                result = await self.meeting_service.reschedule_google_meeting(
+                    session=session,
+                    user_context=current_user,
+                    meeting_id=meeting_id,
+                    round_id=payload.round_id,
+                    partner_id=payload.partner_id,
+                    timezone=payload.timezone,
+                    start_date=payload.start_date,
+                    start_time=payload.start_time,
+                    duration_minutes=payload.duration_minutes,
+                )
+            return api_response(
+                message="Successfully rescheduled mentorship meeting.",
                 data=result,
             )
         raise PermissionError("Google meeting feature is not yet available.")

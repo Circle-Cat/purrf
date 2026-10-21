@@ -48,14 +48,6 @@ PUBLICLY_VISIBLE_JOB_STATUSES: frozenset[JobStatus] = frozenset({
 })
 
 
-class JobReviewStatus(StrEnum):
-    """State of a single job-review request."""
-
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
 class JobReviewKind(StrEnum):
     """The gate a review covers: first publication, a later revision, or lifecycle transitions."""
 
@@ -122,7 +114,7 @@ class RecruitingEvent(StrEnum):
 
     Membership here says nothing about notifications. Which types have
     recipients is decided by what registers a resolver in
-    ``recipient_registry``; the four below that no resolver claims belong on
+    ``recipient_registry``; the three below that no resolver claims belong on
     the timeline and notify nobody, by design rather than by omission.
     """
 
@@ -139,11 +131,13 @@ class RecruitingEvent(StrEnum):
     INTERVIEW_UPDATED = "recruiting.interview_updated"
     INTERVIEW_CANCELLED = "recruiting.interview_cancelled"
     REVIEW_OPENED = "recruiting.review_opened"
+    REVIEW_REASSIGNED = "recruiting.review_reassigned"
     REVIEW_DECIDED = "recruiting.review_decided"
     MENTIONED = "recruiting.mentioned"
 
     EMAIL_SENT = "recruiting.email_sent"
     EMAIL_RECEIVED = "recruiting.email_received"
+    EMAIL_BOUNCED = "recruiting.email_bounced"
     JOB_CREATED = "recruiting.job_created"
     PENDING_EDIT_DISCARDED = "recruiting.pending_edit_discarded"
 

@@ -3,7 +3,7 @@ from typing import Literal
 
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
-from backend.common.recruiting_enums import JobReviewKind, JobReviewStatus
+from backend.common.recruiting_enums import JobReviewKind
 
 
 class JobSubmitDto(BaseRequestDto):
@@ -20,6 +20,17 @@ class JobReviewDecisionDto(BaseRequestDto):
     comment: str | None = None
 
 
+class JobReviewReassignDto(BaseRequestDto):
+    """Request body for moving an open review to a different approver.
+
+    Carries only the destination: who may do this is the authenticated
+    caller, read from the token rather than the body, and which review is
+    the path parameter.
+    """
+
+    reviewer_id: int
+
+
 class JobReviewDto(BaseDto):
     """Response shape for a single review cycle."""
 
@@ -27,7 +38,8 @@ class JobReviewDto(BaseDto):
     job_id: int
     submitted_by: int
     reviewer_id: int
-    status: JobReviewStatus
+    # pending, approved, rejected or withdrawn.
+    status: str
     kind: JobReviewKind
     submit_message: str | None = None
     reject_comment: str | None = None

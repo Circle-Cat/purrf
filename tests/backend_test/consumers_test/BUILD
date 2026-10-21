@@ -9,44 +9,6 @@ py_test(
 )
 
 py_test(
-    name = "pubsub_puller_test",
-    srcs = ["pubsub_puller_test.py"],
-    deps = [
-        "//backend/common:asyncio_event_loop_manager",
-        "//backend/consumers:pubsub_puller",
-    ],
-)
-
-py_test(
-    name = "pubsub_pull_manager_test",
-    srcs = ["pubsub_pull_manager_test.py"],
-    deps = [
-        "//backend/consumers:pubsub_pull_manager",
-        "//backend/consumers:pubsub_puller",
-    ],
-)
-
-py_test(
-    name = "microsoft_message_processor_service_test",
-    srcs = ["microsoft_message_processor_service_test.py"],
-    deps = [
-        "//backend/consumers:microsoft_message_processor_service",
-    ],
-)
-
-py_test(
-    name = "consumer_controller_test",
-    srcs = ["consumer_controller_test.py"],
-    deps = [
-        "//backend/common:api_endpoints",
-        "//backend/common:permissions",
-        "//backend/consumers:consumer_controller",
-        "//backend/dto",
-        "@pypi//httpx",
-    ],
-)
-
-py_test(
     name = "gerrit_processor_service_test",
     srcs = ["gerrit_processor_service_test.py"],
     deps = [
@@ -55,17 +17,23 @@ py_test(
 )
 
 py_test(
-    name = "pubsub_puller_factory_test",
-    srcs = ["pubsub_puller_factory_test.py"],
+    name = "pubsub_push_service_test",
+    srcs = ["pubsub_push_service_test.py"],
     deps = [
-        "//backend/consumers:pubsub_puller_factory",
+        "//backend/common:constants",
+        "//backend/consumers:pubsub_push_service",
+        "//backend/internal_activity_service:activity_query_cache",
     ],
 )
 
 py_test(
-    name = "pubsub_sync_pull_service_test",
-    srcs = ["pubsub_sync_pull_service_test.py"],
+    name = "pubsub_push_controller_test",
+    srcs = ["pubsub_push_controller_test.py"],
     deps = [
-        "//backend/consumers:pubsub_sync_pull_service",
+        "//backend/common:api_endpoints",
+        "//backend/consumers:pubsub_push_controller",
+        "//backend/consumers:pubsub_push_service",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )

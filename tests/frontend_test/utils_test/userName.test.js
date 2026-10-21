@@ -41,4 +41,25 @@ describe("userDisplayName", () => {
   it("returns an empty string when given nothing", () => {
     expect(userDisplayName(undefined)).toBe("");
   });
+
+  it("names a nameless search row by its user id", () => {
+    expect(userDisplayName({ userId: 270, firstName: "", lastName: "" })).toBe(
+      "User 270",
+    );
+  });
+
+  it("names a nameless partner by its id", () => {
+    expect(
+      userDisplayName({
+        id: 268,
+        firstName: " ",
+        lastName: "",
+        preferredName: null,
+      }),
+    ).toBe("User 268");
+  });
+
+  it("returns an empty string for a nameless person with no id", () => {
+    expect(userDisplayName({ firstName: "", lastName: "" })).toBe("");
+  });
 });

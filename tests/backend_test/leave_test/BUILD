@@ -89,6 +89,8 @@ py_test(
     srcs = ["leave_admin_controller_test.py"],
     deps = [
         "//backend/leave:leave_admin_controller",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 
@@ -105,6 +107,7 @@ py_test(
     srcs = ["leave_engine_service_test.py"],
     deps = [
         "//backend/common:leave_enums",
+        "//backend/entity:entities",
         "//backend/leave:leave_engine_service",
     ],
 )
@@ -127,12 +130,38 @@ py_test(
 )
 
 py_test(
-    name = "leave_request_service_test",
-    srcs = ["leave_request_service_test.py"],
+    name = "leave_balance_service_test",
+    srcs = ["leave_balance_service_test.py"],
     deps = [
         "//backend/common:leave_enums",
         "//backend/entity:entities",
+        "//backend/leave:leave_balance_service",
+    ],
+)
+
+py_test(
+    name = "leave_balance_controller_test",
+    srcs = ["leave_balance_controller_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_balance_controller",
+    ],
+)
+
+py_test(
+    name = "leave_request_service_test",
+    srcs = ["leave_request_service_test.py"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:leave_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/leave:leave_participants",
+        "//backend/leave:leave_request_handler",
         "//backend/leave:leave_request_service",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -140,7 +169,71 @@ py_test(
     name = "leave_request_controller_test",
     srcs = ["leave_request_controller_test.py"],
     deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
         "//backend/common:leave_enums",
+        "//backend/dto",
         "//backend/leave:leave_request_controller",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "recipient_resolvers_test",
+    srcs = ["recipient_resolvers_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/leave:notifications",
+        "//backend/notification_management:recipient_registry",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "notification_renderers_test",
+    srcs = ["notification_renderers_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/leave:notifications",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "leave_request_handler_test",
+    srcs = ["leave_request_handler_test.py"],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/leave:leave_request_handler",
+        "//backend/leave:leave_workdays",
+    ],
+)
+
+py_test(
+    name = "leave_request_flow_test",
+    srcs = ["leave_request_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/leave:leave_request_handler",
+        "//backend/leave:leave_request_service",
+        "//backend/leave:notifications",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
     ],
 )

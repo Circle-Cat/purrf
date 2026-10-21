@@ -1,5 +1,5 @@
 from google.auth.impersonated_credentials import Credentials as ImpersonatedCredentials
-from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
+from google.cloud.pubsub_v1 import PublisherClient
 from googleapiclient.discovery import build
 from google.apps import meet_v2
 from google.auth import default
@@ -278,16 +278,6 @@ class GoogleClient:
         """
 
         return self._create_client("workspaceevents", "v1")
-
-    def create_subscriber_client(self):
-        """
-        Creates a Google Cloud Pub/Sub subscriber client.
-
-        Returns:
-            pubsub_v1.SubscriberClient object if successful, else None.
-        """
-
-        return SubscriberClient()
 
     def create_publisher_client(self):
         """

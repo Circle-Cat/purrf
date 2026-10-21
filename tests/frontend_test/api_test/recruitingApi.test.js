@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "@/utils/request";
 import {
+  withdrawReview,
   listJobs,
   getJob,
   createJob,
@@ -30,7 +31,6 @@ import {
   changeApplicationStage,
   setApplicationRound,
   setApplicationSubStatus,
-  blacklistUser,
   reassignApplication,
   resumeUrl,
   listMyEvaluations,
@@ -39,6 +39,7 @@ import {
   getApplicationEmails,
   sendApplicationEmail,
   getApplicationEmailTemplates,
+  applicationEmailAttachmentUrl,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -48,6 +49,7 @@ vi.mock("@/utils/request", () => ({
     put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
+    defaults: { baseURL: "/api" },
   },
 }));
 
@@ -86,27 +88,17 @@ describe("recruitingApi", () => {
     expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/9/activity");
   });
 
-  it("getApplicationEmails GETs the emails endpoint (no refresh by default)", async () => {
+  it("getApplicationEmails GETs the emails endpoint with no params", async () => {
     request.get.mockResolvedValue({ data: { threads: [] } });
     await getApplicationEmails(10);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/10/emails",
-      { params: {} },
-    );
-  });
-
-  it("getApplicationEmails passes refresh=true when requested", async () => {
-    request.get.mockResolvedValue({ data: { threads: [] } });
-    await getApplicationEmails(10, { refresh: true });
-    expect(request.get).toHaveBeenCalledWith(
-      "/recruiting/applications/10/emails",
-      { params: { refresh: true } },
     );
   });
 
   it("sendApplicationEmail POSTs the compose payload", async () => {
     request.post.mockResolvedValue({ data: { threads: [] } });
-    const body = { to: ["c@x.com"], cc: [], subject: "Hi", body: "hello" };
+    const body = { to: ["c@x.com"], subject: "Hi", body: "hello" };
     await sendApplicationEmail(10, body);
     expect(request.post).toHaveBeenCalledWith(
       "/recruiting/applications/10/emails",
@@ -119,6 +111,12 @@ describe("recruitingApi", () => {
     await getApplicationEmailTemplates(10);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/10/email-templates",
+    );
+  });
+
+  it("applicationEmailAttachmentUrl points at the attachment download endpoint", () => {
+    expect(applicationEmailAttachmentUrl(10, 55, 2)).toBe(
+      "/api/recruiting/applications/10/emails/messages/55/attachments/2",
     );
   });
 
@@ -319,15 +317,6 @@ describe("recruitingApi", () => {
     );
   });
 
-  it("blacklistUser POSTs to /recruiting/blacklist with body", async () => {
-    request.post.mockResolvedValue({ data: {} });
-    await blacklistUser({ userId: 42, reason: "spam" });
-    expect(request.post).toHaveBeenCalledWith("/recruiting/blacklist", {
-      userId: 42,
-      reason: "spam",
-    });
-  });
-
   it("reassigns an application's interviewer", async () => {
     request.patch.mockResolvedValueOnce({ data: {} });
     await reassignApplication(9, 42);
@@ -339,7 +328,6 @@ describe("recruitingApi", () => {
 
   it("resumeUrl returns correctly formatted URL", () => {
     const url = resumeUrl(7);
-    // In test (dev-mode), baseURL is "/api", so full URL should be exact
     expect(url).toBe("/api/recruiting/applications/7/resume");
   });
 
@@ -364,6 +352,14 @@ describe("recruitingApi", () => {
     await getEvaluationsForApplication(7);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/7/evaluations",
+    );
+  });
+
+  it("withdrawReview POSTs to the posting's review", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await withdrawReview(41);
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/41/review/withdraw",
     );
   });
 });

@@ -48,3 +48,12 @@ export const LEAVE_STATUS_LABELS = {
   [LEAVE_REQUEST_STATUS.REJECTED]: "Rejected",
   [LEAVE_REQUEST_STATUS.WITHDRAWN]: "Withdrawn",
 };
+
+export const ENTRY_TYPE_LABELS = {
+  weekly_accrual: "Weekly accrual",
+  leave_deduction: "Leave taken",
+  level_change: "Level change",
+  manual_adjustment: "Adjustment by administrator",
+  exchange_credit: "Holiday worked",
+  carryover_forfeit: "Carry-over cap",
+};

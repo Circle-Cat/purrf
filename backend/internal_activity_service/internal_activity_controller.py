@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.internal_activity_summary_request_dto import MySummaryRequest
 
@@ -76,7 +76,7 @@ class GoogleChatCountRequest(BaseModel):
 class SummaryRequest(BaseModel):
     startDate: str | None = None
     endDate: str | None = None
-    groups: list[str]
+    groups: list[str] = Field(min_length=1)
     includeTerminated: bool | None = False
 
 
@@ -93,6 +93,7 @@ class InternalActivityController:
         gerrit_analytics_service,
         summary_service,
         launchdarkly_service,
+        database,
     ):
         """
         Initialize the InternalActivityController with required dependencies.
@@ -107,6 +108,7 @@ class InternalActivityController:
             gerrit_analytics_service: GerritAnalyticsService instance.
             summary_service: SummaryService instance.
             launchdarkly_service: LaunchDarklyService instance.
+            database: Async session provider.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -120,14 +122,15 @@ class InternalActivityController:
         self.gerrit_analytics_service = gerrit_analytics_service
         self.summary_service = summary_service
         self.launchdarkly_service = launchdarkly_service
+        self.database = database
 
         self.router = APIRouter(tags=["internal_activity"])
 
         self.router.add_api_route(
             MICROSOFT_LDAPS_ENDPOINT,
-            endpoint=authenticate(
-                permissions=[Permission.DIRECTORY_MICROSOFT_LDAP_READ]
-            )(self.get_ldaps_and_names),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_ldaps_and_names
+            ),
             methods=["GET"],
         )
         self.router.add_api_route(
@@ -431,11 +434,13 @@ class InternalActivityController:
             PermissionError: When the view_personal_summary LaunchDarkly flag is disabled for the user.
         """
         if self.launchdarkly_service.is_view_personal_summary_enabled(current_user):
-            summary_data = self.summary_service.get_my_summary(
-                user=current_user,
-                start_date=body.start_date,
-                end_date=body.end_date,
-            )
+            async with self.database.session() as session:
+                summary_data = await self.summary_service.get_my_summary(
+                    session,
+                    user=current_user,
+                    start_date=body.start_date,
+                    end_date=body.end_date,
+                )
             return api_response(
                 success=True,
                 message="My summary fetched successfully",

@@ -9,7 +9,6 @@ import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/u
 import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
-import LeaveApprovalsCard from "@/pages/PersonalDashboard/components/LeaveApprovalsCard";
 import { useLeaveApprovals } from "@/pages/Leave/hooks/useLeaveApprovals";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
@@ -103,7 +102,7 @@ const PersonalDashboard = () => {
   // asking: it is not a permission, and a manager who is outside the leave
   // population has no employment profile to read it off. So this fetch is
   // unconditional, unlike the sections gated on data we already hold.
-  const isLeaveEnabled = useLeaveEnabled();
+  const { isEnabled: isLeaveEnabled } = useLeaveEnabled();
   const { isApprover, pendingCount } = useLeaveApprovals({
     enabled: isLeaveEnabled,
   });
@@ -164,17 +163,20 @@ const PersonalDashboard = () => {
         </>
       )}
 
-      {/* Leave approvals. A sibling of the employee-facing leave blocks,
-          never nested inside them: a manager outside the leave population
-          decides their reports' requests and has no balance of their own. */}
-      {isCovered && (
+      {/* One card for both sides of leave. It is shown to anybody covered and
+          to anybody who approves; a manager outside the leave population
+          decides their reports' requests with no balance of their own, and
+          the card itself decides what they see. */}
+      {isLeaveEnabled && (
         <TimeOffCard
+          isCovered={isCovered}
+          isApprover={isApprover}
+          approvalsPendingCount={pendingCount}
           availableHours={availableHours}
           pendingHours={pendingHours}
           usedHours={usedHours}
         />
       )}
-      {isApprover && <LeaveApprovalsCard pendingCount={pendingCount} />}
 
       {/* Work Activity Data Card */}
       {canViewActivitySummary && (

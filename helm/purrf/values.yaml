@@ -70,8 +70,26 @@ resources:
     cpu: 50m
     memory: 325Mi
 
-livenessProbe: null
-readinessProbe: null
+# Both probe /fastapi/health, which answers without credentials and reads
+# nothing. Readiness keeps a new pod out of the Service until the app listens,
+# and with one replica the default rolling update then keeps the old pod
+# serving until then. Liveness waits long enough for a slow start.
+readinessProbe:
+  httpGet:
+    path: /fastapi/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+livenessProbe:
+  httpGet:
+    path: /fastapi/health
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
 
 autoscaling:
   enabled: false
@@ -180,17 +198,11 @@ cronjobs:
     # accrual runs for a year without this, every one of those years ends about
     # 1.54h short per person and nothing reports it.
     suspend: true
-  - name: pubsub-sync-hourly
-    schedule: "0 * * * *"   # every hour at minute 00
-    url: "/api/pubsub/sync"
-  - name: sync-recruiting-emails-recent
-    schedule: "5 11 * * *"   # 11:05 UTC = 04:05 GMT-7, before HR's workday
-    url: "/api/recruiting/emails/sync/recent"
-  - name: sync-recruiting-emails-reconcile
-    schedule: "35 11 * * 0"  # Sundays 11:35 UTC — backstop for the nightly delta
-    url: "/api/recruiting/emails/sync"
+  - name: gmail-watch-maintain
+    schedule: "15 11 * * *"  # daily: renew the 7-day Gmail watch, then catch up from the cursor
+    url: "/api/email/gmail/maintain"
   - name: sync-meet-attendance
-    schedule: "15 */2 * * *"   # every 2 hours at :15, off the hour to avoid pubsub-sync-hourly
+    schedule: "15 */2 * * *"   # every 2 hours at :15
     url: "/api/mentorship/v2/meetings/attendance/sync?lookback_hours=4"
     # A meeting is offered while [now - lookback - 3h, now + 3h] overlaps its
     # own slot (3h = ATTENDANCE_WINDOW_DELTA), so at lookback_hours=4 that is

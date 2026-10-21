@@ -23,6 +23,7 @@ py_test(
     ],
     deps = [
         "//backend/utils:retry_utils",
+        "@pypi//redis",
         "@pypi//tenacity",
     ],
 )
@@ -31,6 +32,7 @@ py_test(
     name = "app_dependency_builder_test",
     srcs = ["app_dependency_builder_test.py"],
     deps = [
+        "//backend/internal_activity_service:activity_query_cache",
         "//backend/utils:app_dependency_builder",
     ],
 )
@@ -39,6 +41,7 @@ py_test(
     name = "fast_app_factory_test",
     srcs = ["fast_app_factory_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/notification_management:delivery_controller",
         "//backend/recruiting",
         "//backend/utils:fast_app_factory",
@@ -61,6 +64,7 @@ py_test(
         "//backend/common:api_endpoints",
         "//backend/common:identity_type",
         "//backend/common:permissions",
+        "//backend/training:content_host",
         "//backend/utils:auth_middleware",
         "@pypi//httpx",
         "@pypi//sqlalchemy",

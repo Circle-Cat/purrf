@@ -71,6 +71,10 @@ jobs:
     timeout-minutes: 35
     env:
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/testdb
+      # Every bazel call in this job shares one server. Each gap between calls
+      # (a `bazel run` tool such as format.check) must stay well under this,
+      # or the next call connects to a server that is shutting down (exit 37).
+      BAZEL_MAX_IDLE_SECS: 60
       RUN_BACKEND: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true' }}
       RUN_FRONTEND: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.build == 'true' }}
       RUN_WORKERS: ${{ github.event_name == 'push' || needs.changes.outputs.workers == 'true' || needs.changes.outputs.build == 'true' }}
@@ -98,19 +102,19 @@ jobs:
 
       - name: Init postgres
         if: env.RUN_BACKEND == 'true'
-        run: bazel --max_idle_secs=10 run //tools:init_db
+        run: bazel --max_idle_secs=$BAZEL_MAX_IDLE_SECS run //tools:init_db
 
       - name: Backend tests
         if: env.RUN_BACKEND == 'true'
         run: >-
-          bazel --max_idle_secs=10 test
+          bazel --max_idle_secs=$BAZEL_MAX_IDLE_SECS test
           --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
           //tests/backend_test/... //tests/tools_test/...
 
       - name: Frontend tests
         if: env.RUN_FRONTEND == 'true'
         run: >-
-          bazel --max_idle_secs=10 test
+          bazel --max_idle_secs=$BAZEL_MAX_IDLE_SECS test
           --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
           --test_output=errors
           //tests/frontend_test/...
@@ -120,7 +124,7 @@ jobs:
       - name: Worker tests
         if: env.RUN_WORKERS == 'true'
         run: >-
-          bazel --max_idle_secs=10 test
+          bazel --max_idle_secs=$BAZEL_MAX_IDLE_SECS test
           --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
           --test_output=errors
           //workers/...

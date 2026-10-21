@@ -41,6 +41,12 @@ resource "kubernetes_secret" "purrf_app" {
     MENTORSHIP_MENTEE_ONBOARDING_LINK = "https://learn.circlecat.cn/course/view.php?id=16"
     RESUME_BUCKET                     = google_storage_bucket.resumes.name
 
+    # The content host is a separate origin so course JavaScript cannot read
+    # the app's Access cookie; see local.domains.training_content.
+    TRAINING_BUCKET            = google_storage_bucket.training.name
+    TRAINING_CONTENT_HOST      = local.domains.training_content
+    TRAINING_TOKEN_SIGNING_KEY = random_password.training_token_signing_key.result
+
     # Per-environment Google Calendar isolation. Event ids are scoped per
     # calendar, so pointing each environment at its own secondary calendars is
     # what stops a delete or a reschedule driven by restored prod data from
@@ -70,17 +76,44 @@ resource "kubernetes_secret" "purrf_app" {
     GMAIL_REFRESH_TOKEN       = var.gmail_refresh_token
     GMAIL_SENDER_RECRUITING   = var.gmail_sender_recruiting
     GMAIL_SENDER_NOTIFICATION = var.gmail_sender_notification
+    GMAIL_SENDER_MENTORSHIP   = var.gmail_sender_mentorship
+    GMAIL_SENDER_INQUIRIES    = var.gmail_sender_inquiries
+    GMAIL_INBOX_ENABLED       = var.gmail_inbox_enabled ? "true" : "false"
+
+    # Kit v4 API key for mentorship notifications. Read only when a send is
+    # made, so an empty value boots fine with the mentorship-kit-email flag off.
+    # Kit sends from GMAIL_SENDER_NOTIFICATION, which must be a verified sender
+    # in that Kit account.
+    KIT_API_KEY = var.kit_api_key
 
     # Where notification messages are published. The full
     # projects/<project>/topics/<topic> path, not the bare name, because that
     # is what the publisher takes. The backend refuses to start without it, so
     # this apply has to land before the image that reads it rolls out.
     NOTIFICATION_TOPIC = google_pubsub_topic.notifications.id
+    GMAIL_WATCH_TOPIC  = local.gmail_push_enabled ? local.gmail_watch_topic_id : ""
 
     # The service accounts whose tokens the delivery route accepts.
     NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
 
+    # The service accounts whose tokens the matching completion route accepts.
+    # Asserted by the backend as well as the Worker: a request that arrives by
+    # some other path carries nothing either of them will take.
+    MATCHER_JOB_SUBS = var.enable_matcher ? google_service_account.matcher_job[0].unique_id : ""
+
     GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
+
+    # The job that reads a run. The full resource name, because that is what
+    # the Cloud Run REST call takes, and empty where no matcher is provisioned:
+    # the endpoint then refuses to start a run instead of reaching for
+    # something that is not there. A run's input needs no variable of its own --
+    # it goes to the Redis the backend is already configured for, above.
+    MATCHER_JOB_RESOURCE = local.matcher_job_enabled ? "projects/${var.gcp_project_id}/locations/${var.gcp_region}/jobs/${google_cloud_run_v2_job.matcher[0].name}" : ""
+
+    # Every origin this environment answers on. The backend reads these only to
+    # refuse a TRAINING_CONTENT_HOST that matches one of them. Course hosting
+    # stays disabled until this is set.
+    APP_ORIGINS = "https://${local.domains.main},https://${local.domains.api}"
   }
 }
 

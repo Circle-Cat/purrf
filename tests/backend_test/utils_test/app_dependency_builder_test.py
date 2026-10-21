@@ -1,6 +1,11 @@
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock, ANY
 from backend.utils.app_dependency_builder import AppDependencyBuilder
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
+from backend.common.communication_enums import ContextType
+from backend.communication.inbox_sync_handler import INBOX_CONTEXT_TYPES
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
@@ -9,6 +14,7 @@ from backend.common.environment_constants import (
     GMAIL_REFRESH_TOKEN,
     GMAIL_SENDER_RECRUITING,
     GMAIL_SENDER_NOTIFICATION,
+    GMAIL_WATCH_TOPIC,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
     NOTIFICATION_TOPIC,
@@ -55,8 +61,6 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.AuthenticationService")
 @patch("backend.utils.app_dependency_builder.FastAppFactory")
 @patch("backend.utils.app_dependency_builder.SummaryService")
-@patch("backend.utils.app_dependency_builder.PubSubPullManager")
-@patch("backend.utils.app_dependency_builder.AsyncioEventLoopManager")
 @patch("backend.utils.app_dependency_builder.GoogleChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.GerritProcessorService")
@@ -79,10 +83,6 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.EmploymentSyncService")
 @patch("backend.utils.app_dependency_builder.MicrosoftMemberSyncService")
 @patch("backend.utils.app_dependency_builder.HistoricalController")
-@patch("backend.utils.app_dependency_builder.ConsumerController")
-@patch("backend.utils.app_dependency_builder.MicrosoftMessageProcessorService")
-@patch("backend.utils.app_dependency_builder.PubSubPullerFactory")
-@patch("backend.utils.app_dependency_builder.PubSubPuller")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatMessageUtil")
 @patch("backend.utils.app_dependency_builder.DateTimeUtil")
 @patch("backend.utils.app_dependency_builder.NotificationController")
@@ -114,10 +114,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_notification_controller,
         mock_date_time_util_cls,
         mock_microsoft_chat_message_util_cls,
-        mock_pubsub_puller_cls,
-        mock_pubsub_puller_factory_cls,
-        mock_microsoft_message_processor_service_cls,
-        mock_consumer_controller_cls,
         mock_historical_controller_cls,
         mock_microsoft_member_sync_service_cls,
         mock_employment_sync_service_cls,
@@ -140,8 +136,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_processor_service_cls,
         mock_google_chat_analytics_service_cls,
         mock_google_chat_history_sync_service_cls,
-        mock_asyncio_event_loop_manager_cls,
-        mock_pubsub_pull_manager_cls,
         mock_summary_service_cls,
         mock_fast_app_factory_cls,
         mock_authentication_service_cls,
@@ -200,10 +194,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance = MagicMock()
         mock_google_chat_client = MagicMock()
         mock_google_people_client = MagicMock()
-        mock_google_subscriber_client = MagicMock()
-        mock_google_client_instance.create_subscriber_client.return_value = (
-            mock_google_subscriber_client
-        )
         mock_notification_publisher_client = MagicMock()
         mock_google_client_instance.create_publisher_client.return_value = (
             mock_notification_publisher_client
@@ -232,10 +222,6 @@ class TestAppDependencyBuilder(TestCase):
             mock_google_reports_client
         )
         mock_google_client_cls.return_value = mock_google_client_instance
-        mock_asyncio_event_loop_manager = MagicMock()
-        mock_asyncio_event_loop_manager_cls.return_value = (
-            mock_asyncio_event_loop_manager
-        )
         mock_google_client_cls.return_value = mock_google_client_instance
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
@@ -260,6 +246,7 @@ class TestAppDependencyBuilder(TestCase):
             GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
             GMAIL_SENDER_RECRUITING: "recruiting@circlecat.org",
             GMAIL_SENDER_NOTIFICATION: "notification@circlecat.org",
+            GMAIL_WATCH_TOPIC: "projects/p/topics/gmail",
             # Both scenario calendars must be configured for the app to build:
             # the builder raises on a missing one rather than letting a service
             # fall back to the impersonated account's primary calendar.
@@ -327,35 +314,12 @@ class TestAppDependencyBuilder(TestCase):
             retry_utils=mock_retry_utils_instance,
         )
 
-        mock_pubsub_puller_factory_cls.assert_called_once_with(
-            puller_creator=mock_pubsub_puller_cls,
-            logger=mock_logger,
-            redis_client=mock_redis_client,
-            subscriber_client=mock_google_subscriber_client,
-            asyncio_event_loop_manager=mock_asyncio_event_loop_manager,
-        )
-
-        mock_pubsub_pull_manager_cls.assert_called_once_with(
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
-        )
-
-        mock_microsoft_message_processor_service_cls.assert_called_once_with(
-            logger=mock_logger,
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
-            microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
-        )
-
         mock_gerrit_processor_service_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
             retry_utils=mock_retry_utils_instance,
             date_time_util=mock_date_time_util_cls.return_value,
             gerrit_client=mock_gerrit_client,
-        )
-
-        mock_consumer_controller_cls.assert_called_once_with(
-            pubsub_sync_pull_service=builder.pubsub_sync_pull_service,
         )
 
         mock_microsoft_member_sync_service_cls.assert_called_once_with(
@@ -412,6 +376,11 @@ class TestAppDependencyBuilder(TestCase):
             google_service=mock_google_service.return_value,
             google_chat_message_utils=mock_google_chat_messages_utils.return_value,
         )
+        activity_query_cache = builder.activity_query_cache
+        self.assertIsInstance(activity_query_cache, ActivityQueryCache)
+        self.assertIs(
+            builder.pubsub_push_service.activity_query_cache, activity_query_cache
+        )
         mock_historical_controller_cls.assert_called_once_with(
             logger=mock_logger,
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
@@ -422,6 +391,7 @@ class TestAppDependencyBuilder(TestCase):
             gerrit_sync_service=mock_gerrit_sync_service,
             google_chat_history_sync_service=mock_google_chat_history_sync_service,
             employment_sync_service=mock_employment_sync_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -434,6 +404,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
             retry_utils=mock_retry_utils_instance,
+            activity_query_cache=activity_query_cache,
         )
         mock_microsoft_meeting_chat_topic_cache_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -447,12 +418,14 @@ class TestAppDependencyBuilder(TestCase):
             retry_utils=mock_retry_utils_instance,
             date_time_util=mock_date_time_util_cls.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_google_calendar_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_gerrit_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -461,6 +434,7 @@ class TestAppDependencyBuilder(TestCase):
             ldap_service=mock_ldap_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
             gerrit_client=mock_gerrit_client,
+            activity_query_cache=activity_query_cache,
         )
         mock_google_chat_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -469,6 +443,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             google_service=mock_google_service.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_summary_service_cls.assert_called_once_with(
             ldap_service=mock_ldap_service_cls.return_value,
@@ -478,6 +453,8 @@ class TestAppDependencyBuilder(TestCase):
             gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
         mock_launchdarkly_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -512,6 +489,19 @@ class TestAppDependencyBuilder(TestCase):
             user_identities_repository=mock_user_identities_repo_cls.return_value,
             user_emails_repository=mock_user_emails_repo_cls.return_value,
             user_permissions_repository=mock_user_permissions_repo_cls.return_value,
+            internal_onboarding_training_service=(
+                builder.internal_onboarding_training_service
+            ),
+        )
+        # Reads the Azure snapshot the daily cron leaves in Redis, and creates
+        # the rows through the same service every other onboarding path uses.
+        self.assertIs(
+            builder.internal_onboarding_training_service.redis_client,
+            mock_redis_client_cls.return_value.get_redis_client.return_value,
+        )
+        self.assertIs(
+            builder.internal_onboarding_training_service.onboarding_training_service,
+            builder.onboarding_training_service,
         )
         mock_profile_service_cls.assert_called_once_with(
             query_service=mock_profile_query_service_cls.return_value,
@@ -548,19 +538,124 @@ class TestAppDependencyBuilder(TestCase):
             training_repository=mock_training_repo_cls.return_value,
             pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
-            date_time_util=mock_date_time_util_cls.return_value,
-            database=mock_database_cls.return_value,
             logger=mock_logger,
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
+            application_repository=builder.application_repository,
+            matching_eligibility_service=builder.matching_eligibility_service,
+            mentorship_approval_service=builder.mentorship_approval_service,
+            note_repository=builder.mentorship_participant_note_repository,
+            approval_service=builder.approval_service,
+            mentorship_email_service=builder.mentorship_email_service,
+            meeting_service=mock_meeting_service_cls.return_value,
+        )
+        # Eligibility reads the exemptions the exemption handler writes, and
+        # the handler asks the same service who needs one.
+        self.assertIs(
+            builder.matching_eligibility_service.note_repository,
+            builder.exempt_matching_handler.note_repository,
+        )
+        self.assertIs(
+            builder.approval_service.handler_for("exempt_matching"),
+            builder.exempt_matching_handler,
+        )
+        self.assertIs(
+            builder.exempt_matching_handler.matching_eligibility_service,
+            builder.matching_eligibility_service,
+        )
+        self.assertIs(
+            builder.exempt_matching_handler.participants_repository,
+            mock_mentorship_round_participants_repo_cls.return_value,
+        )
+        self.assertIs(
+            builder.approval_service.handler_for("withdraw_participant"),
+            builder.withdraw_participant_handler,
+        )
+        self.assertIs(
+            builder.withdraw_participant_handler.meeting_service,
+            mock_meeting_service_cls.return_value,
+        )
+        self.assertIs(
+            builder.approval_service.handler_for("end_pair"),
+            builder.end_pair_handler,
+        )
+        self.assertIs(
+            builder.end_pair_handler.meeting_service,
+            mock_meeting_service_cls.return_value,
+        )
+        self.assertIs(
+            builder.mentorship_approval_service.pairs_repository,
+            mock_mentorship_pairs_repo_cls.return_value,
+        )
+        for action, handler in (
+            ("mark_no_show", builder.mark_no_show_handler),
+            ("mark_red_flag", builder.mark_red_flag_handler),
+        ):
+            self.assertIs(builder.approval_service.handler_for(action), handler)
+            self.assertIs(
+                handler.note_repository,
+                builder.mentorship_participant_note_repository,
+            )
+            self.assertIs(
+                handler.pairs_repository,
+                mock_mentorship_pairs_repo_cls.return_value,
+            )
+        self.assertIs(
+            builder.mentorship_email_controller.mark_service,
+            builder.notification_mark_service,
+        )
+        self.assertIs(
+            builder.notification_mark_service.note_repository,
+            builder.mentorship_participant_note_repository,
+        )
+        self.assertIs(
+            builder.notification_mark_service.email_repository,
+            builder.mentorship_email_repository,
+        )
+        self.assertIs(
+            builder.matching_run_service.matching_eligibility_service,
+            builder.matching_eligibility_service,
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
+            matching_run_service=builder.matching_run_service,
+            matching_run_read_service=builder.matching_run_read_service,
+            matching_draft_service=builder.matching_draft_service,
+            mentorship_approval_service=builder.mentorship_approval_service,
+            launchdarkly_service=builder.launchdarkly_service,
+            participant_email_service=builder.participant_email_service,
             database=mock_database_cls.return_value,
         )
+        # One approval service, holding the publish handler, is what locks
+        # editing, a new run and the overview to the same pending request.
+        self.assertIs(
+            builder.matching_run_service.approval_service, builder.approval_service
+        )
+        self.assertIs(
+            builder.matching_draft_service.approval_service, builder.approval_service
+        )
+        self.assertIs(
+            builder.matching_run_read_service.approval_service,
+            builder.approval_service,
+        )
+        self.assertIs(
+            builder.approval_service.handler_for("publish_matching"),
+            builder.publish_matching_handler,
+        )
+        self.assertIs(
+            builder.publish_matching_handler.matching_eligibility_service,
+            builder.matching_eligibility_service,
+        )
+        # One approval service serves recruiting too.
+        self.assertIs(
+            builder.approval_service.handler_for("job_review"),
+            builder.job_review_handler,
+        )
+        self.assertIs(builder.job_service.approval_service, builder.approval_service)
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
+            mentorship_round_participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
         )
         mock_participation_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -594,6 +689,7 @@ class TestAppDependencyBuilder(TestCase):
             meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
+            mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
@@ -603,30 +699,57 @@ class TestAppDependencyBuilder(TestCase):
             user_permissions_repository=mock_user_permissions_repo_cls.return_value,
             notification_controller=mock_notification_controller.return_value,
             historical_controller=mock_historical_controller_cls.return_value,
-            consumer_controller=mock_consumer_controller_cls.return_value,
             internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             mentorship_admin_controller=mock_mentorship_admin_controller_cls.return_value,
+            mentorship_email_controller=builder.mentorship_email_controller,
+            matching_run_complete_controller=builder.matching_run_complete_controller,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
+            user_account_controller=ANY,
+            block_controller=ANY,
             recruiting_controller=ANY,
             application_controller=ANY,
             board_controller=ANY,
-            blacklist_controller=ANY,
             evaluation_controller=ANY,
             audit_controller=ANY,
             recruiting_notification_controller=ANY,
             leave_admin_controller=ANY,
+            training_admin_controller=ANY,
+            training_content_controller=ANY,
+            training_content_host=ANY,
             leave_job_controller=ANY,
             leave_request_controller=ANY,
             leave_calendar_controller=ANY,
+            leave_balance_controller=ANY,
             notification_delivery_controller=ANY,
+            gmail_push_controller=ANY,
+            gmail_sync_controller=ANY,
+            inbox_controller=builder.inbox_controller,
+            pubsub_push_controller=ANY,
             notification_publisher=mock_notification_publisher_client,
             notification_topic_path="projects/test-project/topics/notifications",
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
+        )
+
+        inbox = builder.inbox_thread_service
+        self.assertIs(builder.inbox_controller.inbox_thread_service, inbox)
+        self.assertIs(inbox._applications, builder.application_repository)
+        self.assertIs(inbox._person_email, builder.person_email_service)
+        person_email = builder.person_email_service
+        self.assertIs(person_email._gmail, builder.gmail_client)
+        self.assertIs(person_email._conversation, builder.email_conversation_service)
+        self.assertIs(person_email._registry, builder.email_context_registry)
+        self.assertIs(person_email._threads, builder.email_thread_repository)
+        self.assertIs(person_email._messages, builder.email_message_repository)
+        self.assertIs(inbox._participants, builder.mentorship_round_participants_repo)
+        self.assertIs(inbox._rounds_service, builder.rounds_service)
+        self.assertIs(inbox._rounds, builder.mentorship_round_repository)
+        self.assertIs(
+            builder.board_service.person_email_service, builder.person_email_service
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -652,7 +775,6 @@ class TestAppDependencyBuilder(TestCase):
 
         mock_google_chat_processor_service.assert_called_once_with(
             logger=mock_logger,
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
             google_chat_messages_utils=mock_google_chat_messages_utils.return_value,
             google_service=mock_google_service.return_value,
         )
@@ -664,6 +786,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             google_service=mock_google_service.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
+            activity_query_cache=activity_query_cache,
         )
 
         mock_internal_activity_controller_cls.assert_called_once_with(
@@ -677,6 +800,7 @@ class TestAppDependencyBuilder(TestCase):
             google_chat_analytics_service=mock_google_chat_analytics_service_cls.return_value,
             summary_service=mock_summary_service_cls.return_value,
             launchdarkly_service=mock_launchdarkly_service_cls.return_value,
+            database=mock_database_cls.return_value,
         )
         mock_users_repo_cls.assert_called_once()
         mock_experience_repo_cls.assert_called_once()
@@ -746,18 +870,8 @@ class TestAppDependencyBuilder(TestCase):
             mock_microsoft_chat_message_util_cls.return_value,
         )
         self.assertEqual(
-            builder.pubsub_puller_factory, mock_pubsub_puller_factory_cls.return_value
-        )
-        self.assertEqual(
-            builder.microsoft_message_processor_service,
-            mock_microsoft_message_processor_service_cls.return_value,
-        )
-        self.assertEqual(
             builder.gerrit_processor_service,
             mock_gerrit_processor_service_cls.return_value,
-        )
-        self.assertEqual(
-            builder.consumer_controller, mock_consumer_controller_cls.return_value
         )
         self.assertEqual(
             builder.microsoft_member_sync_service,
@@ -892,6 +1006,79 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(
             builder.board_service.notification_repository,
             builder.notification_repository,
+        )
+        # One evaluator-eligibility rule: submit's default-assignee check and
+        # the board's manual-assignment validation must read the same object,
+        # so ApplicationAccess has to exist before ApplicationService is built.
+        self.assertIs(
+            builder.application_service.application_access,
+            builder.application_access,
+        )
+        self.assertIs(
+            builder.board_service.application_access,
+            builder.application_access,
+        )
+
+        # The account console. BlockService is built after
+        # interview_scheduling_service, not next to the permission controller:
+        # it needs that service, and a builder reading a not-yet-assigned
+        # attribute fails at startup, where no test would be looking.
+        self.assertIsNotNone(builder.user_account_controller)
+        self.assertIsNotNone(builder.block_controller)
+        self.assertIs(
+            builder.block_service._interview_scheduling,
+            builder.interview_scheduling_service,
+        )
+        # Block requests run through the shared approval service; the
+        # handler is registered late because it needs the scheduling service.
+        self.assertIs(builder.block_service._approvals, builder.approval_service)
+        self.assertIs(builder.user_account_service._approvals, builder.approval_service)
+        self.assertIs(
+            builder.approval_service.handler_for("block_user"),
+            builder.block_user_handler,
+        )
+        self.assertIs(
+            builder.block_user_handler._interview_scheduling,
+            builder.interview_scheduling_service,
+        )
+        self.assertIs(
+            builder.block_service._mentorship, builder.mentorship_block_service
+        )
+        self.assertIs(
+            builder.block_user_handler._mentorship, builder.mentorship_block_service
+        )
+        self.assertIs(
+            builder.mentorship_block_service.meeting_service, builder.meeting_service
+        )
+
+        # Inbox threads: one sweeping handler, the other Inbox contexts only sync.
+        registry = builder.email_context_registry
+        self.assertIs(
+            registry.get(ContextType.MENTORSHIP_INBOX), builder.inbox_sync_handler
+        )
+        self.assertIs(registry.get(ContextType.APPLICATION), builder.email_sync_service)
+        for context_type in (ContextType.RECRUITING_INBOX, ContextType.INQUIRIES_INBOX):
+            alias = registry.get(context_type)
+            self.assertIs(alias._handler, builder.inbox_sync_handler)
+        self.assertIs(builder.inbox_sync_handler._notifier, builder.inbox_notifier)
+        self.assertIs(builder.inbox_notifier._services, builder.thread_service_resolver)
+        # A person's round threads tell mentorship, not the Inbox.
+        self.assertNotIn(ContextType.ACTIVITY, INBOX_CONTEXT_TYPES)
+        self.assertIsNot(registry.get(ContextType.ACTIVITY), builder.inbox_sync_handler)
+        self.assertIs(
+            registry.get(ContextType.ACTIVITY), builder.participant_email_sync_handler
+        )
+        self.assertIs(
+            builder.participant_email_sync_handler._notifier,
+            builder.participant_email_notifier,
+        )
+        self.assertEqual(
+            builder.participant_email_sync_handler._context_types,
+            [ContextType.ACTIVITY],
+        )
+        self.assertIs(
+            builder.participant_email_service._person_email,
+            builder.person_email_service,
         )
 
 

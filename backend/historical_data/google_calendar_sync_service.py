@@ -558,7 +558,7 @@ class GoogleCalendarSyncService:
             pipeline.hset(GOOGLE_CALENDAR_LIST_INDEX_KEY, cid, cal.summary)
             filtered_ids.append(cid)
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         return filtered_ids
 
     def _cache_calendar_events(
@@ -605,7 +605,7 @@ class GoogleCalendarSyncService:
                 }),
             )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         return all_events
 
     def _cache_events_attendees(
@@ -669,7 +669,7 @@ class GoogleCalendarSyncService:
                     {eid: score},
                 )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
 
     def pull_calendar_history(self, time_min: str = None, time_max: str = None):
         """

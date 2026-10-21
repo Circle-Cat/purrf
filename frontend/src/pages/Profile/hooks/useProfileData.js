@@ -75,6 +75,16 @@ export const useProfileData = () => {
       company: currentJob.companyOrOrganization || "",
       completedTraining: training.map((t) => ({
         id: t.id,
+        // Names the row, and says whether it opens in the app at all.
+        courseId: t.courseId,
+        name: t.name,
+        // Whether the course has a package we serve -- gates the in-app
+        // Start/Continue/Review link.
+        isHosted: t.isHosted,
+        // Whether the course is still open. A deactivated one closes to the
+        // people already assigned it, so this gates the link too, and says
+        // something different when it is what stopped them.
+        isCourseActive: t.isCourseActive,
         category: t.category,
         status: t.status,
         // Pass the API timestamps through unchanged. TrainingSection wants

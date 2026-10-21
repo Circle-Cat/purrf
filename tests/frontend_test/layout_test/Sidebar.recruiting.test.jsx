@@ -6,6 +6,9 @@ let mockPermissions = ["recruiting.job.write"];
 vi.mock("@/context/auth", () => ({
   useAuth: () => ({ permissions: mockPermissions }),
 }));
+vi.mock("@/api/inboxApi", () => ({
+  getInboxCount: vi.fn(() => Promise.resolve({ data: { needsReply: 0 } })),
+}));
 
 import Sidebar from "@/components/layout/Sidebar";
 
@@ -43,15 +46,6 @@ describe("Sidebar recruiting entries", () => {
     expect(screen.getByText("Job Postings")).toBeInTheDocument();
   });
 
-  it("hides My Posting Reviews without job.approve", () => {
-    render(
-      <MemoryRouter>
-        <Sidebar />
-      </MemoryRouter>,
-    );
-    expect(screen.queryByText("My Posting Reviews")).not.toBeInTheDocument();
-  });
-
   it("hides My Interview Evaluations without recruiting.interview.evaluate", () => {
     render(
       <MemoryRouter>
@@ -71,5 +65,34 @@ describe("Sidebar recruiting entries", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("My Interview Evaluations")).toBeInTheDocument();
+  });
+
+  it("shows Applications Board to a read.all holder who cannot advance", () => {
+    mockPermissions = ["recruiting.application.read.all"];
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Applications Board")).toBeInTheDocument();
+  });
+
+  it("shows Applications Board with recruiting.application.advance alone", () => {
+    mockPermissions = ["recruiting.application.advance"];
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Applications Board")).toBeInTheDocument();
+  });
+
+  it("hides Applications Board with neither advance nor read.all", () => {
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText("Applications Board")).not.toBeInTheDocument();
   });
 });

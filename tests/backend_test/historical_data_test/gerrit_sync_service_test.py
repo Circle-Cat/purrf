@@ -392,9 +392,7 @@ class TestGerritSyncService(unittest.TestCase):
         for expected_call in expected_zadd_calls:
             self.assertIn(expected_call, actual_zadd_calls)
 
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(self.mock_pipe)
 
     def test_fetch_changes_pagination(self):
         fake_pages = [[{"id": 1}, {"id": 2}], [{"id": 3}], []]

@@ -6,6 +6,7 @@ import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import * as api from "@/api/leaveApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { FlagsContext } from "@/context/flags";
 
 vi.mock("@/api/leaveApi");
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
@@ -37,6 +38,17 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+const pageWithFlags = (ready) => (
+  <FlagsContext.Provider value={{ flags: {}, setFlags: () => {}, ready }}>
+    <MemoryRouter initialEntries={["/leave/requests"]}>
+      <Routes>
+        <Route path="/leave/requests" element={<LeaveRequestsPage />} />
+        <Route path="/dashboard/me" element={<p>Personal dashboard</p>} />
+      </Routes>
+    </MemoryRouter>
+  </FlagsContext.Provider>
+);
+
 describe("LeaveRequestsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -54,6 +66,36 @@ describe("LeaveRequestsPage", () => {
 
     expect(screen.getByText("Personal dashboard")).toBeInTheDocument();
     expect(api.getMyLeaveRequests).not.toHaveBeenCalled();
+  });
+
+  it("stays put while flags load, then sends somebody away once they load as off", () => {
+    // A bookmark or email link lands here before LaunchDarkly has answered;
+    // the empty flag map then must not be read as "switched off".
+    useFeatureFlags.mockReturnValue({});
+    const { rerender } = render(pageWithFlags(false));
+
+    expect(screen.queryByText("Personal dashboard")).not.toBeInTheDocument();
+    expect(api.getMyLeaveRequests).not.toHaveBeenCalled();
+
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.LEAVE_MANAGEMENT]: false,
+    });
+    rerender(pageWithFlags(true));
+
+    expect(screen.getByText("Personal dashboard")).toBeInTheDocument();
+  });
+
+  it("shows the page once flags load as on", async () => {
+    useFeatureFlags.mockReturnValue({});
+    const { rerender } = render(pageWithFlags(false));
+
+    useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.LEAVE_MANAGEMENT]: true });
+    rerender(pageWithFlags(true));
+
+    await waitFor(() =>
+      expect(screen.getByText(/24\.00 h/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Personal dashboard")).not.toBeInTheDocument();
   });
 
   it("says leave is not tracked rather than showing an empty list", async () => {
@@ -82,6 +124,21 @@ describe("LeaveRequestsPage", () => {
 
     expect(screen.queryByText(/isn't tracked/i)).not.toBeInTheDocument();
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  });
+
+  it("tells the employee why their manager decided as they did", async () => {
+    api.getMyLeaveRequests.mockResolvedValue(
+      envelope([
+        row({ status: "rejected", decisionComment: "Team is short that week" }),
+      ]),
+    );
+    renderPage();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Your manager's reason: Team is short that week"),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("lists what has been asked for, with the hours the server computed", async () => {

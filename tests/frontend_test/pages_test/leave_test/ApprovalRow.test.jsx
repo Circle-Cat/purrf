@@ -138,7 +138,7 @@ describe("ApprovalRow", () => {
     expect(onDecide).toHaveBeenCalledWith(1, true);
   });
 
-  it("rejects without a second question", () => {
+  it("asks for the reason the employee is told before rejecting", () => {
     const onDecide = vi.fn();
     render(
       <ApprovalRow
@@ -150,8 +150,39 @@ describe("ApprovalRow", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(onDecide).not.toHaveBeenCalled();
 
-    expect(onDecide).toHaveBeenCalledWith(1, false);
+    const confirm = screen.getByRole("button", { name: "Reject" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/Reason/), {
+      target: { value: "   " },
+    });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Reason/), {
+      target: { value: "  Team is short that week  " },
+    });
+    fireEvent.click(confirm);
+    expect(onDecide).toHaveBeenCalledWith(1, false, "Team is short that week");
+  });
+
+  it("goes back to both choices when rejecting is cancelled", () => {
+    const onDecide = vi.fn();
+    render(
+      <ApprovalRow
+        row={row()}
+        isDecidable
+        isDeciding={false}
+        onDecide={onDecide}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Reason/)).not.toBeInTheDocument();
+    expect(onDecide).not.toHaveBeenCalled();
   });
 
   it("says where the balance lands and where it came from", () => {
@@ -251,25 +282,67 @@ describe("ApprovalRow", () => {
     expect(screen.getByText(/10 working days/)).toBeInTheDocument();
   });
 
-  it("does not repeat the overdraft flag beside the live balance figures", () => {
-    // The flag was computed when the request was filed; the figures on the
-    // right are computed now. Weekly accrual keeps raising a balance, so a
-    // stale flag can contradict the number next to it.
+  it("flags a waiting request the balance cannot cover, without blocking it", () => {
+    // Worked out by the server against the balance as it stands now, counting
+    // every paid hour still waiting -- so it can be set while the figures on
+    // the right, which count this request alone, stay positive.
     render(
       <ApprovalRow
-        row={row({
-          isOverdraft: true,
-          balanceBefore: "88.25",
-          balanceAfter: "80.25",
-        })}
+        row={row({ isOverdraft: true })}
         isDecidable
         isDeciding={false}
         onDecide={vi.fn()}
       />,
     );
 
-    expect(screen.queryByText(/below zero/i)).not.toBeInTheDocument();
-    expect(screen.getByText("80.25h")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Over the balance, counting their other waiting requests",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+  });
+
+  it("says a decided request was approved over the balance", () => {
+    render(
+      <ApprovalRow
+        row={row({ status: "approved", isOverdraft: true })}
+        isDecidable={false}
+        isDeciding={false}
+      />,
+    );
+
+    expect(screen.getByText("Approved over the balance")).toBeInTheDocument();
+  });
+
+  it("drops the overdraft flag from a request that was not approved", () => {
+    // Nothing left the balance, so there is nothing it went over.
+    render(
+      <ApprovalRow
+        row={row({ status: "rejected", isOverdraft: true })}
+        isDecidable={false}
+        isDeciding={false}
+      />,
+    );
+
+    expect(screen.queryByText(/over the balance/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the reason a decided request was given", () => {
+    render(
+      <ApprovalRow
+        row={row({
+          status: "rejected",
+          decisionComment: "Team is short that week",
+        })}
+        isDecidable={false}
+        isDeciding={false}
+      />,
+    );
+
+    expect(
+      screen.getByText("Reason: Team is short that week"),
+    ).toBeInTheDocument();
   });
 
   it("offers no decision on something already settled", () => {

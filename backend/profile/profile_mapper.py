@@ -17,7 +17,7 @@ class ProfileMapper:
         self,
         user: UsersEntity,
         experience: ExperienceEntity | None,
-        trainings: list[TrainingEntity] | None,
+        trainings: list[tuple[TrainingEntity, str | None, bool]] | None,
         include_work_history: bool = True,
         include_education: bool = True,
         primary_email: str = "",
@@ -34,7 +34,12 @@ class ProfileMapper:
             if include_work_history
             else [],
             education=self._map_education(experience) if include_education else [],
-            training=[self._map_training(t) for t in (trainings or [])],
+            training=[
+                self._map_training(entity, course_name, has_live_package, course_active)
+                for entity, course_name, has_live_package, course_active in (
+                    trainings or []
+                )
+            ],
         )
 
     def _map_user(self, entity: UsersEntity, primary_email: str) -> UsersDto:
@@ -88,10 +93,30 @@ class ProfileMapper:
             for item in entity.education
         ]
 
-    def _map_training(self, entity: TrainingEntity) -> TrainingDto:
-        """Map a training record."""
+    def _map_training(
+        self,
+        entity: TrainingEntity,
+        course_name: str | None,
+        has_live_package: bool,
+        course_active: bool,
+    ) -> TrainingDto:
+        """Map a training record and the course it points at.
+
+        ``has_live_package`` is whether the course has a live package, not
+        whether it has ever had one uploaded: a pending, unverified upload
+        must not be offered to a learner.
+
+        ``course_active`` is whether that course is still open at all. It is
+        a separate answer from having a package: a deactivated course can
+        still have a perfectly good one, and the learner still cannot take
+        it.
+        """
         return TrainingDto(
             id=entity.training_id,
+            course_id=entity.course_id,
+            name=course_name,
+            is_hosted=has_live_package,
+            is_course_active=course_active,
             category=entity.category,
             status=entity.status,
             link=entity.link,

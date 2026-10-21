@@ -149,6 +149,10 @@ class LeaveRequestController:
         """Approve or reject a request filed against the signed-in employee."""
         async with self.database.session() as session:
             request = await self.leave_request_service.decide(
-                session, request_id, current_user.user_id, approve=payload.approve
+                session,
+                request_id,
+                current_user.user_id,
+                approve=payload.approve,
+                comment=payload.comment,
             )
         return api_response(message="Leave request decided.", data=request)

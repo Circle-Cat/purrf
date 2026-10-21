@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime
+from datetime import date, datetime
 
 from backend.common.constants import ProfileField
 from backend.common.mentorship_enums import CommunicationMethod
@@ -107,8 +107,23 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
                 timezone="America/Los_Angeles",
                 communication_method=CommunicationMethod.EMAIL,
             ),
-            education=[MagicMock(spec=EducationRequestDto)],
-            work_history=[MagicMock(spec=WorkHistoryRequestDto)],
+            education=[
+                EducationRequestDto(
+                    degree="Bachelor",
+                    school="State University",
+                    field_of_study="Physics",
+                    start_date=date(2016, 9, 1),
+                    end_date=date(2020, 6, 1),
+                )
+            ],
+            work_history=[
+                WorkHistoryRequestDto(
+                    title="Engineer",
+                    company_or_organization="Acme",
+                    start_date=date(2020, 7, 1),
+                    is_current_job=True,
+                )
+            ],
         )
 
         result = await self.service.update_profile(

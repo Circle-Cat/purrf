@@ -335,7 +335,7 @@ class JiraHistorySyncService:
             self.logger.info(
                 f"Stored {stored_count} issues (batch size: {len(issues_batch)})"
             )
-            self.retry_utils.get_retry_on_transient(pipeline.execute)
+            self.retry_utils.execute_pipeline(pipeline)
             total_stored += stored_count
 
         self.logger.info(f"Backfill complete. Total issues stored: {total_stored}")
@@ -374,9 +374,7 @@ class JiraHistorySyncService:
                 search_pipeline.hgetall(
                     JIRA_ISSUE_DETAILS_KEY.format(issue_id=issue_id)
                 )
-            old_issue_detail_raw = self.retry_utils.get_retry_on_transient(
-                search_pipeline.execute
-            )
+            old_issue_detail_raw = self.retry_utils.execute_pipeline(search_pipeline)
 
             updated_pipeline = self.redis_client.pipeline()
             issues_to_store = []
@@ -446,7 +444,7 @@ class JiraHistorySyncService:
                 )
                 self._queue_issues_in_redis_pipeline(issues_to_store, updated_pipeline)
 
-            self.retry_utils.get_retry_on_transient(updated_pipeline.execute)
+            self.retry_utils.execute_pipeline(updated_pipeline)
             total_processed += len(issues_to_store)
 
         self.logger.info(

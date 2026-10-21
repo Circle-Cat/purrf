@@ -6,10 +6,16 @@ from backend.mentorship.onboarding_training_service import OnboardingTrainingSer
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
+    TrainingPackageState,
     TrainingStatus,
 )
 from backend.common.recruiting_enums import JobKind
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
+
+_MENTEE_COURSE_ID = 5
+_MENTOR_COURSE_ID = 6
+_CULTURE_COURSE_ID = 7
 
 
 def _job(kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTEE):
@@ -17,6 +23,21 @@ def _job(kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTEE):
     job.kind = kind
     job.mentorship_role = mentorship_role
     return job
+
+
+def _seed_course(category, is_active=True):
+    """The catalogue row the migration seeds for a category."""
+    ids = {
+        TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: _MENTEE_COURSE_ID,
+        TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: _MENTOR_COURSE_ID,
+        TrainingCategory.CORPORATE_CULTURE_COURSE: _CULTURE_COURSE_ID,
+    }
+    return TrainingCourseEntity(
+        course_id=ids[category],
+        name=category.value,
+        category=category,
+        is_active=is_active,
+    )
 
 
 class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
@@ -28,9 +49,17 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
             return_value=None
         )
         self.mock_training_repo.upsert_training = AsyncMock()
+        self.mock_course_repo = MagicMock()
+        self.mock_course_repo.get_course_by_category = AsyncMock(
+            side_effect=lambda session, category: _seed_course(category)
+        )
+        self.mock_package_repo = MagicMock()
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=None)
         self.service = OnboardingTrainingService(
             logger=self.mock_logger,
             training_repository=self.mock_training_repo,
+            training_course_repository=self.mock_course_repo,
+            training_course_package_repository=self.mock_package_repo,
         )
 
     async def test_creates_mentee_onboarding_with_no_deadline(self):
@@ -49,6 +78,53 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity.status, TrainingStatus.TO_DO)
         self.assertIsNone(entity.deadline)
         self.assertIsNone(entity.completed_timestamp)
+        self.assertEqual(entity.link, "https://mentee")
+
+    async def test_a_hosted_course_is_assigned_without_the_external_link(self):
+        """Once we serve the package, the row must not send anybody outside.
+
+        TrainingSection prefers a stored link over the in-app course, so a
+        link written here after an upload is what a learner follows -- and
+        nothing they do out there is ever recorded.
+        """
+        self.mock_package_repo.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                MagicMock(course_id=course_id)
+                if course_id == _MENTEE_COURSE_ID and state == TrainingPackageState.LIVE
+                else None
+            )
+        )
+
+        with patch.dict(
+            "os.environ", {"MENTORSHIP_MENTEE_ONBOARDING_LINK": "https://mentee"}
+        ):
+            await self.service.ensure_for_admitted(
+                session=self.mock_session, user_id=7, job=_job()
+            )
+
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertIsNone(entity.link)
+        self.assertEqual(entity.course_id, _MENTEE_COURSE_ID)
+
+    async def test_a_course_with_only_a_pending_package_still_gets_the_external_link(
+        self,
+    ):
+        """A pending package has not been published: nothing about it should
+        change what the learner is offered."""
+        self.mock_package_repo.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                None if state == TrainingPackageState.LIVE else MagicMock()
+            )
+        )
+
+        with patch.dict(
+            "os.environ", {"MENTORSHIP_MENTEE_ONBOARDING_LINK": "https://mentee"}
+        ):
+            await self.service.ensure_for_admitted(
+                session=self.mock_session, user_id=7, job=_job()
+            )
+
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
         self.assertEqual(entity.link, "https://mentee")
 
     async def test_creates_mentor_onboarding_with_the_mentor_link(self):
@@ -86,7 +162,7 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
 
     async def test_is_idempotent_when_a_row_already_exists(self):
         self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
-            TrainingEntity(user_id=7)
+            TrainingEntity(user_id=7, course_id=_MENTEE_COURSE_ID)
         )
 
         await self.service.ensure_for_admitted(
@@ -156,6 +232,7 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
             completed_timestamp=None,
             deadline=original,
             link="https://mentee",
+            course_id=_MENTEE_COURSE_ID,
         )
         self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
             existing
@@ -179,6 +256,7 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
             completed_timestamp=None,
             deadline=None,
             link="https://mentee",
+            course_id=_MENTEE_COURSE_ID,
         )
         self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
             existing
@@ -192,6 +270,193 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_training_repo.upsert_training.assert_not_awaited()
         self.assertIs(result, existing)
+
+    async def test_the_created_row_carries_the_course_its_category_stands_for(self):
+        # Without this the learner cannot open the course at all, and the
+        # admin page counts nobody as assigned to it.
+        with patch.dict(
+            "os.environ", {"MENTORSHIP_MENTEE_ONBOARDING_LINK": "https://mentee"}
+        ):
+            await self.service.ensure_for_admitted(
+                session=self.mock_session, user_id=7, job=_job()
+            )
+
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertEqual(entity.course_id, _MENTEE_COURSE_ID)
+        self.mock_course_repo.get_course_by_category.assert_awaited_once_with(
+            session=self.mock_session,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+        )
+
+    async def test_a_mentor_row_carries_the_mentor_course(self):
+        with patch.dict(
+            "os.environ", {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://mentor"}
+        ):
+            await self.service.ensure_for_admitted(
+                session=self.mock_session,
+                user_id=7,
+                job=_job(mentorship_role=ParticipantRole.MENTOR),
+            )
+
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertEqual(entity.course_id, _MENTOR_COURSE_ID)
+
+    async def test_a_category_no_course_carries_still_records_the_task(self):
+        """The task is what admission owes; the course can be seeded later."""
+        self.mock_course_repo.get_course_by_category.side_effect = None
+        self.mock_course_repo.get_course_by_category.return_value = None
+
+        with patch.dict(
+            "os.environ", {"MENTORSHIP_MENTEE_ONBOARDING_LINK": "https://mentee"}
+        ):
+            await self.service.ensure_for_admitted(
+                session=self.mock_session, user_id=7, job=_job()
+            )
+
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertIsNone(entity.course_id)
+        self.assertEqual(entity.category, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
+        self.mock_logger.warning.assert_called_once()
+
+    async def test_attaches_the_course_to_a_row_that_has_none(self):
+        """A row written before this path attached a course is unopenable
+        until one is."""
+        existing = TrainingEntity(
+            user_id=7,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            deadline=None,
+            course_id=None,
+        )
+        self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
+            existing
+        )
+
+        await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+        )
+
+        saved = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertIs(saved, existing)
+        self.assertEqual(saved.course_id, _MENTEE_COURSE_ID)
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_never_repoints_a_row_that_already_has_a_course(self):
+        existing = TrainingEntity(
+            user_id=7,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            deadline=None,
+            course_id=99,
+        )
+        self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
+            existing
+        )
+
+        result = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+        )
+
+        self.assertEqual(result.course_id, 99)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_creates_the_row_when_one_is_live(self):
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNotNone(created)
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertEqual(entity.category, TrainingCategory.CORPORATE_CULTURE_COURSE)
+        self.assertEqual(entity.course_id, _CULTURE_COURSE_ID)
+        self.assertIsNone(entity.deadline)
+        self.assertIsNone(entity.link)
+
+    async def test_requiring_a_live_package_builds_nothing_when_none_is_live(self):
+        """The same gate TrainingAssignmentService._assignable_course
+        applies. Without it
+        the automatic path would create rows the manual path refuses."""
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=None)
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNone(created)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_builds_nothing_for_a_deactivated_course(
+        self,
+    ):
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+        self.mock_course_repo.get_course_by_category = AsyncMock(
+            side_effect=lambda session, category: _seed_course(
+                category, is_active=False
+            )
+        )
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNone(created)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_builds_nothing_when_no_course_carries_it(
+        self,
+    ):
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+        self.mock_course_repo.get_course_by_category = AsyncMock(return_value=None)
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNone(created)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_leaves_an_existing_row_alone(self):
+        """Idempotent like every other path: a row already held is returned."""
+        existing = TrainingEntity(
+            training_id=3,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            status=TrainingStatus.TO_DO,
+            deadline=None,
+            course_id=_CULTURE_COURSE_ID,
+        )
+        self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
+            existing
+        )
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+
+        result = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIs(result, existing)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
 
@@ -18,6 +18,30 @@ const mockOverview = {
       startDatetime: "2026-04-01T05:00:00Z",
       endDatetime: "2026-04-01T06:00:00Z",
       isCompleted: true,
+    },
+  ],
+};
+
+const mixedOverview = {
+  ...mockOverview,
+  meetingTimeList: [
+    {
+      meetingId: "m-scheduled",
+      startDatetime: "2026-04-01T02:00:00Z",
+      endDatetime: "2026-04-01T03:00:00Z",
+      isCompleted: false,
+    },
+    {
+      meetingId: "m-completed",
+      startDatetime: "2026-02-10T02:00:00Z",
+      endDatetime: "2026-02-10T03:00:00Z",
+      isCompleted: true,
+    },
+    {
+      meetingId: "m-past-incomplete",
+      startDatetime: "2026-02-20T02:00:00Z",
+      endDatetime: "2026-02-20T03:00:00Z",
+      isCompleted: false,
     },
   ],
 };
@@ -246,5 +270,201 @@ describe("MeetingOverviewCard", () => {
     expect(
       screen.queryByRole("link", { name: /join/i }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("meeting ordering", () => {
+    it("should list meetings newest start time first", () => {
+      render(
+        <MeetingOverviewCard
+          overview={{
+            ...mockOverview,
+            meetingTimeList: [
+              {
+                meetingId: "march",
+                startDatetime: "2026-03-18T02:00:00Z",
+                endDatetime: "2026-03-18T03:00:00Z",
+                isCompleted: false,
+              },
+              {
+                meetingId: "may",
+                startDatetime: "2026-05-18T02:00:00Z",
+                endDatetime: "2026-05-18T03:00:00Z",
+                isCompleted: false,
+              },
+              {
+                meetingId: "april",
+                startDatetime: "2026-04-18T02:00:00Z",
+                endDatetime: "2026-04-18T03:00:00Z",
+                isCompleted: false,
+              },
+            ],
+          }}
+          userTimezone="UTC"
+        />,
+      );
+
+      const shown = screen
+        .getAllByText(/^2026-0[345]-18$/)
+        .map((node) => node.textContent);
+      expect(shown).toEqual(["2026-05-18", "2026-04-18", "2026-03-18"]);
+    });
+
+    it("should leave a meeting with no usable start time at the end", () => {
+      render(
+        <MeetingOverviewCard
+          overview={{
+            ...mockOverview,
+            meetingTimeList: [
+              {
+                meetingId: "broken",
+                startDatetime: "not a date",
+                endDatetime: "not a date",
+                isCompleted: false,
+              },
+              {
+                meetingId: "real",
+                startDatetime: "2026-05-18T02:00:00Z",
+                endDatetime: "2026-05-18T03:00:00Z",
+                isCompleted: false,
+              },
+            ],
+          }}
+          userTimezone="UTC"
+        />,
+      );
+
+      const rows = screen.getAllByText(/SCHEDULED|INCOMPLETE/);
+      expect(rows).toHaveLength(2);
+      expect(screen.getByText("2026-05-18")).toBeInTheDocument();
+    });
+  });
+
+  describe("cancelling a meeting", () => {
+    it("should offer a cancel control for the scheduled meeting only", () => {
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={vi.fn()}
+        />,
+      );
+
+      // One control for m-scheduled; none for the completed or the past
+      // uncompleted slot, which are history rather than something to call off.
+      const controls = screen.getAllByRole("button", {
+        name: /cancel meeting on/i,
+      });
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toHaveAccessibleName(/2026-04-01/);
+    });
+
+    it("should not offer a cancel control when cancelling is not available to this viewer", () => {
+      render(
+        <MeetingOverviewCard overview={mixedOverview} userTimezone="UTC" />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: /cancel meeting on/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("should hand the meeting over only after the confirmation is accepted", async () => {
+      const onDeleteMeeting = vi.fn().mockResolvedValue(undefined);
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={onDeleteMeeting}
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /cancel meeting on/i }),
+      );
+
+      expect(screen.getByText("Cancel this meeting?")).toBeInTheDocument();
+      expect(onDeleteMeeting).not.toHaveBeenCalled();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Cancel meeting" }));
+      });
+
+      expect(onDeleteMeeting).toHaveBeenCalledTimes(1);
+      expect(onDeleteMeeting).toHaveBeenCalledWith(
+        expect.objectContaining({ meetingId: "m-scheduled" }),
+      );
+    });
+
+    it("should keep the meeting when the confirmation is declined", () => {
+      const onDeleteMeeting = vi.fn();
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={onDeleteMeeting}
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /cancel meeting on/i }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+
+      expect(
+        screen.queryByText("Cancel this meeting?"),
+      ).not.toBeInTheDocument();
+      expect(onDeleteMeeting).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("rescheduling a meeting", () => {
+    it("should offer a reschedule control for the scheduled meeting only", () => {
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={vi.fn()}
+          onRescheduleMeeting={vi.fn()}
+        />,
+      );
+
+      const controls = screen.getAllByRole("button", {
+        name: /reschedule meeting on/i,
+      });
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toHaveAccessibleName(/2026-04-01/);
+    });
+
+    it("should not offer a reschedule control when managing is unavailable", () => {
+      render(
+        <MeetingOverviewCard overview={mixedOverview} userTimezone="UTC" />,
+      );
+      expect(
+        screen.queryByRole("button", { name: /reschedule meeting on/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("should hand the meeting to the reschedule callback when the control is used", () => {
+      const onRescheduleMeeting = vi.fn();
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={vi.fn()}
+          onRescheduleMeeting={onRescheduleMeeting}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /reschedule meeting on/i }),
+      );
+      expect(onRescheduleMeeting).toHaveBeenCalledWith(
+        expect.objectContaining({ meetingId: "m-scheduled" }),
+      );
+    });
   });
 });

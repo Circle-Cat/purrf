@@ -12,6 +12,7 @@ from backend.dto.admin_permission_dto import (
     AdminUserDto,
     AuditListDto,
     GrantDto,
+    GrantPersonDto,
     PermissionCatalogEntryDto,
     UserListDto,
     UserPermissionsViewDto,
@@ -24,7 +25,6 @@ _SUPER_ADMIN_MARKER = "*"
 # granted_source value stamped on synthesized rows for a super admin who holds a
 # permission purely by derivation (no real grant row). Distinct from the
 # audit-marker source above.
-_SUPER_ADMIN_DERIVED_SOURCE = "super_admin"
 
 
 class PermissionAdminService:
@@ -65,6 +65,7 @@ class PermissionAdminService:
         order: str = "asc",
         is_super_admin: bool | None = None,
         user_type: str | None = None,
+        permission_name: str | None = None,
     ) -> UserListDto:
         """
         Paginated user list for the admin UI.
@@ -83,10 +84,24 @@ class PermissionAdminService:
             is_super_admin (bool | None): When not None, restricts to matching
                 super-admin flag.
             user_type (str | None): ``"internal"`` / ``"external"`` / None.
+            permission_name (str | None): When set, keeps only holders of that
+                permission -- an unrevoked grant row, or super-admin status,
+                which confers every permission without a grant row. This
+                replaces the separate holders view: a permission is a filter on
+                the population, not a second projection of it.
 
         Returns:
             UserListDto: The page of users plus the total match count.
+
+        Raises:
+            ValueError: If ``permission_name`` is not a known permission
+                (surfaces as 400).
         """
+        if (
+            permission_name is not None
+            and permission_name not in _VALID_PERMISSION_VALUES
+        ):
+            raise ValueError("Unknown permission")
         rows, total = await self._users.list_users(
             session,
             search=search,
@@ -97,6 +112,7 @@ class PermissionAdminService:
             order=order,
             is_super_admin=is_super_admin,
             user_type=user_type,
+            permission_name=permission_name,
         )
         contact_by_user_id = await self._user_emails.get_contact_emails_by_user_ids(
             session, [u.user_id for u, _ in rows]
@@ -137,86 +153,9 @@ class PermissionAdminService:
             session, user_id, include_revoked=True
         )
         history = [self._to_grant_dto(g) for g in grants]
+        await self._resolve_grant_people(session, history)
         active = [g.permission_name for g in history if g.is_active]
         return UserPermissionsViewDto(user_id=user_id, active=active, history=history)
-
-    async def list_permission_users(
-        self,
-        session,
-        permission_name: str,
-        *,
-        include_revoked: bool,
-        granted_source: str | None,
-    ) -> list[GrantDto]:
-        """
-        Reverse lookup: the grants holding a given permission.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            permission_name (str): Permission to find holders of; validated
-                against the code enum.
-            include_revoked (bool): Include soft-deleted grants when True.
-            granted_source (str | None): Restrict to one source, or None for any.
-
-        Returns:
-            list[GrantDto]: Matching grant rows, newest first. Current super
-            admins are included as synthesized "derived" holders (real grant
-            rows for a super admin are instead flagged ``is_super_admin``), since
-            they hold every permission via the ``is_super_admin`` flag rather
-            than per-permission grant rows.
-
-        Raises:
-            ValueError: If ``permission_name`` is not a known permission
-                (surfaces as 400).
-        """
-        if permission_name not in _VALID_PERMISSION_VALUES:
-            raise ValueError("Unknown permission")
-        rows = await self._perms.get_users_with_permission(
-            session,
-            permission_name,
-            include_revoked=include_revoked,
-            granted_source=granted_source,
-        )
-
-        # A source filter for anything other than the derived source must not
-        # surface super-admin-derived holders.
-        include_derived = (
-            granted_source is None or granted_source == _SUPER_ADMIN_DERIVED_SOURCE
-        )
-        super_admins = (
-            await self._users.get_super_admins(session) if include_derived else []
-        )
-        super_admin_ids = {u.user_id for u in super_admins}
-
-        # Flag real grant rows held by a current super admin (shown as their real
-        # grant, plus the super-admin annotation — not duplicated as a derived row).
-        result = [
-            self._to_grant_dto(r, is_super_admin=r.user_id in super_admin_ids)
-            for r in rows
-        ]
-
-        if super_admins:
-            markers = await self._perms.get_users_with_permission(
-                session,
-                _SUPER_ADMIN_MARKER,
-                granted_source=_SUPER_ADMIN_SOURCE,
-            )
-            marker_by_user = {m.user_id: m for m in markers}
-            active_holder_ids = {r.user_id for r in rows if r.revoked_timestamp is None}
-            for sa in super_admins:
-                if sa.user_id in active_holder_ids:
-                    continue
-                result.append(
-                    self._to_super_admin_grant_dto(
-                        sa.user_id, permission_name, marker_by_user.get(sa.user_id)
-                    )
-                )
-
-        # Newest first; derived rows without a marker timestamp sort last.
-        dated = [g for g in result if g.granted_timestamp is not None]
-        undated = [g for g in result if g.granted_timestamp is None]
-        dated.sort(key=lambda g: g.granted_timestamp, reverse=True)
-        return dated + undated
 
     async def list_audit(
         self,
@@ -250,7 +189,9 @@ class PermissionAdminService:
             limit=limit,
             offset=offset,
         )
-        return AuditListDto(entries=[self._to_grant_dto(r) for r in rows], total=total)
+        entries = [self._to_grant_dto(r) for r in rows]
+        await self._resolve_grant_people(session, entries)
+        return AuditListDto(entries=entries, total=total)
 
     def _validate_names(self, permission_names: list[str]) -> list[str]:
         """
@@ -443,10 +384,60 @@ class PermissionAdminService:
             first_name=user.first_name,
             last_name=user.last_name,
             is_active=user.is_active,
+            is_blocked=user.is_blocked,
             is_super_admin=user.is_super_admin,
             preferred_name=user.preferred_name,
             user_type=user_type,
         )
+
+    async def _resolve_grant_people(self, session, grants: list[GrantDto]) -> None:
+        """
+        Fill in the people behind every user id on a page of grants, in place.
+
+        A grant row carries three ids -- the holder, whoever granted it and
+        whoever revoked it -- and the views built on it rendered all of them as
+        bare integers, so reading one row meant leaving the tab. Every distinct
+        id on the page is resolved in **one** users lookup; doing it per row
+        would be a query per id.
+
+        An id with no users row leaves its field None rather than raising: a
+        grant can outlive the account it names, and a super-admin-derived row
+        seeded without a marker has no actor at all.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            grants (list[GrantDto]): The page to annotate. Mutated in place.
+        """
+        if not grants:
+            return
+
+        ids = set()
+        for grant in grants:
+            ids.update(
+                i
+                for i in (grant.user_id, grant.granted_by, grant.revoked_by)
+                if i is not None
+            )
+        if not ids:
+            return
+
+        users = await self._users.get_all_by_ids(session, sorted(ids))
+        person_by_id = {
+            u.user_id: GrantPersonDto(
+                user_id=u.user_id,
+                first_name=u.first_name,
+                last_name=u.last_name,
+                preferred_name=u.preferred_name,
+            )
+            for u in users
+        }
+
+        for grant in grants:
+            grant.user = person_by_id.get(grant.user_id)
+            if grant.granted_by is not None:
+                grant.granted_by_user = person_by_id.get(grant.granted_by)
+            if grant.revoked_by is not None:
+                grant.revoked_by_user = person_by_id.get(grant.revoked_by)
 
     @staticmethod
     def _to_grant_dto(row, *, is_super_admin: bool = False) -> GrantDto:
@@ -474,39 +465,4 @@ class PermissionAdminService:
             revoked_timestamp=row.revoked_timestamp,
             is_active=row.revoked_timestamp is None,
             is_super_admin=is_super_admin,
-        )
-
-    @staticmethod
-    def _to_super_admin_grant_dto(
-        user_id: int, permission_name: str, marker
-    ) -> GrantDto:
-        """
-        Synthesize a derived holder row for a super admin who holds a permission
-        purely via the ``is_super_admin`` flag (no real grant row).
-
-        Args:
-            user_id (int): The super admin's user id.
-            permission_name (str): The permission being looked up.
-            marker (UserPermissionsEntity | None): The user's active
-                ``super_admin_set`` audit-marker row, used to source the
-                promotion metadata (id / granted_by / granted_timestamp) when
-                present. None for a super admin seeded without a marker.
-
-        Returns:
-            GrantDto: An active, super-admin-derived holder view. When no marker
-            exists, ``id`` falls back to ``-user_id`` (a unique negative sentinel
-            that never collides with real positive ids) and ``granted_by`` /
-            ``granted_timestamp`` are None.
-        """
-        return GrantDto(
-            id=marker.id if marker else -user_id,
-            user_id=user_id,
-            permission_name=str(permission_name),
-            granted_source=_SUPER_ADMIN_DERIVED_SOURCE,
-            granted_by=marker.granted_by if marker else None,
-            granted_timestamp=marker.granted_timestamp if marker else None,
-            revoked_by=None,
-            revoked_timestamp=None,
-            is_active=True,
-            is_super_admin=True,
         )

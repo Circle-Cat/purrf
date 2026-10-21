@@ -68,11 +68,17 @@ py_library(
 )
 
 py_library(
+    name = "html_text",
+    srcs = ["html_text.py"],
+)
+
+py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
     deps = [
         ":environment_constants",
         ":exceptions",
+        ":html_text",
         "@pypi//google_api_python_client",
         "@pypi//google_auth",
     ],
@@ -158,11 +164,6 @@ py_library(
 )
 
 py_library(
-    name = "asyncio_event_loop_manager",
-    srcs = ["asyncio_event_loop_manager.py"],
-)
-
-py_library(
     name = "microsoft_graph_service_client",
     srcs = [
         "microsoft_graph_service_client.py",
@@ -194,6 +195,16 @@ py_library(
 )
 
 py_library(
+    name = "kit_html_checks",
+    srcs = ["kit_html_checks.py"],
+)
+
+py_library(
+    name = "mentorship_email_enums",
+    srcs = ["mentorship_email_enums.py"],
+)
+
+py_library(
     name = "mentorship_enums",
     srcs = ["mentorship_enums.py"],
 )
@@ -204,8 +215,28 @@ py_library(
 )
 
 py_library(
+    name = "user_enums",
+    srcs = ["user_enums.py"],
+)
+
+py_library(
+    name = "approval_enums",
+    srcs = ["approval_enums.py"],
+)
+
+py_library(
+    name = "ops_enums",
+    srcs = ["ops_enums.py"],
+)
+
+py_library(
     name = "communication_enums",
     srcs = ["communication_enums.py"],
+)
+
+py_library(
+    name = "inbox_enums",
+    srcs = ["inbox_enums.py"],
 )
 
 py_library(
@@ -231,6 +262,11 @@ py_library(
 )
 
 py_library(
+    name = "wall_clock",
+    srcs = ["wall_clock.py"],
+)
+
+py_library(
     name = "launchdarkly_client",
     srcs = ["launchdarkly_client.py"],
     deps = [
@@ -243,4 +279,38 @@ py_library(
 py_library(
     name = "trusted_connections",
     srcs = ["trusted_connections.py"],
+)
+
+py_library(
+    name = "training_links",
+    srcs = ["training_links.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":environment_constants",
+        ":mentorship_enums",
+    ],
+)
+
+py_library(
+    name = "mentorship_survey_codes",
+    srcs = ["mentorship_survey_codes.py"],
+)
+
+py_library(
+    name = "matching_job_client",
+    srcs = ["matching_job_client.py"],
+    deps = [
+        "@pypi//google_auth",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
+    name = "kit_client",
+    srcs = ["kit_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//requests",
+    ],
 )

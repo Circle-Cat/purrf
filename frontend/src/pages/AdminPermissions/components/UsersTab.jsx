@@ -37,6 +37,8 @@ const UsersTab = ({ catalog }) => {
     setIsSuperAdmin,
     userType,
     setUserType,
+    permissionName,
+    setPermissionName,
   } = useUserAdmin();
 
   return (
@@ -63,6 +65,9 @@ const UsersTab = ({ catalog }) => {
         onSuperAdminFilterChange={setIsSuperAdmin}
         userType={userType}
         onUserTypeChange={setUserType}
+        permissionName={permissionName}
+        onPermissionNameChange={setPermissionName}
+        catalog={catalog}
       />
 
       <Dialog

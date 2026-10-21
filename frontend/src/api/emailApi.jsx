@@ -42,7 +42,9 @@ export async function verifyEmailOtp(state, otp) {
  *
  * @returns {Promise<{ data: {
  *   emails: Array<{ emailId: number, email: string, otpConfirmed: boolean,
- *     isPrimary: boolean, addedAt: string, linkedIdentityCount: number }>,
+ *     isPrimary: boolean, addedAt: string, linkedIdentityCount: number,
+ *     isCorp: boolean, lastLoginAt: (string|null),
+ *     isCurrentSession: boolean }>,
  *   internalIdentities: Array<object>,
  *   externalIdentities: Array<object>,
  * } }>}

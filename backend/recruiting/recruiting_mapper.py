@@ -1,9 +1,9 @@
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_interview_entity import ApplicationInterviewEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import JobReviewEntity
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import candidate_name, display_name_or_id
 from backend.common.recruiting_enums import PUBLICLY_VISIBLE_JOB_STATUSES
 from backend.dto.board_dto import BoardApplicantHitDto, BoardCardDto
 from backend.dto.interview_dto import InterviewDto
@@ -18,7 +18,8 @@ class RecruitingMapper:
         """Map a user to an ApproverDto (display name + contact email).
 
         An approver is an internal colleague, so their name resolves through
-        ``user_display_name``: preferred name first, full name as the fallback.
+        ``display_name_or_id``: preferred name first, full name as the fallback,
+        and ``User <id>`` for a person with no name.
 
         Args:
             user (UsersEntity): The approver row.
@@ -31,30 +32,41 @@ class RecruitingMapper:
         """
         return ApproverDto(
             user_id=user.user_id,
-            name=user_display_name(
-                first_name=user.first_name,
-                last_name=user.last_name,
-                preferred_name=user.preferred_name,
-            ),
+            name=display_name_or_id(user),
             email=email,
         )
 
     def to_job_review_dto(
-        self, review: JobReviewEntity, job_title: str | None = None
+        self, review: ApprovalRequestEntity, job_title: str | None = None
     ) -> JobReviewDto:
-        """Map a JobReviewEntity to a JobReviewDto, optionally including the posting title.
+        """Map a job review's approval request to a JobReviewDto, optionally
+        including the posting title.
+
+        Keeps the review's API shape: ``reviewId`` is the request id, and the
+        submitter, message and reject comment are the request's raiser,
+        reason and decision comment.
 
         Args:
-            review (JobReviewEntity): The review entity to convert.
+            review (ApprovalRequestEntity): A ``job_review`` request.
             job_title (str | None): Title of the associated job posting, when
                 available. Serialised as ``jobTitle`` in API responses.
 
         Returns:
             JobReviewDto: The mapped DTO with ``job_title`` set if provided.
         """
-        dto = JobReviewDto.model_validate(review)
-        dto.job_title = job_title
-        return dto
+        return JobReviewDto(
+            review_id=review.request_id,
+            job_id=int(review.target_id),
+            submitted_by=review.raised_by,
+            reviewer_id=review.reviewer_id,
+            status=review.status.value,
+            kind=review.payload["kind"],
+            submit_message=review.reason,
+            reject_comment=review.decision_comment,
+            created_at=review.created_at,
+            decided_at=review.decided_at,
+            job_title=job_title,
+        )
 
     def to_job_dto(
         self,
@@ -62,6 +74,7 @@ class RecruitingMapper:
         last_reject_comment: str | None = None,
         last_reject_kind: str | None = None,
         reviewer_id: int | None = None,
+        submitted_by: int | None = None,
         submit_message: str | None = None,
         submit_blockers: list[str] | None = None,
     ) -> JobDto:
@@ -79,6 +92,8 @@ class RecruitingMapper:
             reviewer_id (int | None): The user_id of the posting's currently
                 assigned reviewer, when it has an open (PENDING) review
                 cycle, otherwise ``None``. Serialised as ``reviewerId``.
+            submitted_by (int | None): The user_id who opened the posting's
+                currently-open review, or None when none is open.
             submit_message (str | None): The note the requester wrote to the
                 reviewer when opening that same review cycle, or ``None``
                 when there is no open cycle or it carried no note.
@@ -107,6 +122,7 @@ class RecruitingMapper:
             was_published=job.was_published or False,
             cooldown_days=job.cooldown_days,
             reviewer_id=reviewer_id,
+            submitted_by=submitted_by,
             submit_message=submit_message,
             submit_blockers=submit_blockers or [],
         )
@@ -164,6 +180,7 @@ class RecruitingMapper:
         user: UsersEntity,
         reviewer_name: str | None = None,
         applicant_email: str = "",
+        applicant_name: str | None = None,
     ) -> BoardCardDto:
         """Map an application + its joined applicant to a board card.
 
@@ -177,13 +194,17 @@ class RecruitingMapper:
                 or nobody is assigned yet).
             applicant_email (str): The applicant's contact address from
                 user_emails; empty when they have none.
+            applicant_name (str | None): The applicant's resolved name (see
+                ``candidate_names``); None names them from ``user`` alone.
 
         Returns:
             BoardCardDto: The board's applicant-card projection.
         """
         return BoardCardDto(
             id=application.application_id,
-            applicant_name=f"{user.first_name} {user.last_name}".strip(),
+            applicant_name=(
+                applicant_name if applicant_name is not None else candidate_name(user)
+            ),
             applicant_email=applicant_email,
             stage=application.stage,
             sub_status=application.sub_status,
@@ -200,6 +221,7 @@ class RecruitingMapper:
         user: UsersEntity,
         job: JobEntity,
         applicant_email: str = "",
+        applicant_name: str | None = None,
     ) -> BoardApplicantHitDto:
         """Map an application + its applicant + its job to a search hit.
 
@@ -214,13 +236,17 @@ class RecruitingMapper:
                 user_emails; empty when they have none. Note this is the
                 DISPLAY address, which need not be the address the search
                 term matched.
+            applicant_name (str | None): The applicant's resolved name (see
+                ``candidate_names``); None names them from ``user`` alone.
 
         Returns:
             BoardApplicantHitDto: The search-result projection.
         """
         return BoardApplicantHitDto(
             application_id=application.application_id,
-            applicant_name=f"{user.first_name} {user.last_name}".strip(),
+            applicant_name=(
+                applicant_name if applicant_name is not None else candidate_name(user)
+            ),
             applicant_email=applicant_email,
             job_id=job.job_id,
             job_title=job.title,

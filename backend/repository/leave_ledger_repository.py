@@ -23,7 +23,6 @@ class LeaveLedgerRepository:
         session: AsyncSession,
         user_id: int,
         year: int,
-        before: datetime.date | None = None,
     ) -> Decimal:
         """What the accrual engine has already granted this person this year.
 
@@ -43,9 +42,6 @@ class LeaveLedgerRepository:
             session: Active async session.
             user_id: Whose ledger.
             year: The year being accrued for.
-            before: Optional cut, exclusive. Used to total the part of the year
-                that came before a level change; a row dated on the day of the
-                change belongs to the new level.
 
         Returns:
             Hours, or ``0.00`` when there are none -- never None, since the
@@ -58,8 +54,6 @@ class LeaveLedgerRepository:
             LeaveLedgerEntity.entry_type == LeaveEntryType.WEEKLY_ACCRUAL,
             extract("year", LeaveLedgerEntity.effective_date) == year,
         )
-        if before is not None:
-            query = query.where(LeaveLedgerEntity.effective_date < before)
         result = await session.execute(query)
         return result.scalar_one()
 
@@ -171,36 +165,36 @@ class LeaveLedgerRepository:
         )
         return {user_id: total for user_id, total in result.all()}
 
-    async def latest_level_change_date(
-        self,
-        session: AsyncSession,
-        user_id: int,
-        on_or_before: datetime.date | None = None,
-    ) -> datetime.date | None:
-        """The date this person's annual entitlement last changed.
+    async def list_level_changes(
+        self, session: AsyncSession, user_id: int
+    ) -> list[LeaveLedgerEntity]:
+        """Every entitlement change on record for this person, oldest first.
+
+        Not bounded by year on purpose. A change before the year says what it
+        started at, and one after it says what it ended at -- which is what a
+        settlement run after a 1 January promotion has to read, rather than the
+        level as it stands now.
 
         Args:
             session: Active async session.
             user_id: Whose ledger.
-            on_or_before: Latest date to consider, inclusive. The annual job
-                closes out the previous year and passes its 31 December: a
-                change made after that year ended would otherwise split the
-                closing year at a date outside it and pay the wrong
-                proportion.
 
         Returns:
-            The most recent ``level_change`` date, or None when there is none
-            -- almost everybody. The arithmetic reads None as "the whole year
-            at the current entitlement", which is the plain formula.
+            The ``level_change`` rows by date, and in the order they were written
+            within one date, since a level raised and put back on one day ends
+            where it was put. Empty for almost everybody.
         """
-        query = select(func.max(LeaveLedgerEntity.effective_date)).where(
-            LeaveLedgerEntity.user_id == user_id,
-            LeaveLedgerEntity.entry_type == LeaveEntryType.LEVEL_CHANGE,
+        result = await session.execute(
+            select(LeaveLedgerEntity)
+            .where(
+                LeaveLedgerEntity.user_id == user_id,
+                LeaveLedgerEntity.entry_type == LeaveEntryType.LEVEL_CHANGE,
+            )
+            .order_by(
+                LeaveLedgerEntity.effective_date, LeaveLedgerEntity.leave_ledger_id
+            )
         )
-        if on_or_before is not None:
-            query = query.where(LeaveLedgerEntity.effective_date <= on_or_before)
-        result = await session.execute(query)
-        return result.scalar_one()
+        return list(result.scalars().all())
 
     async def add_entries(
         self, session: AsyncSession, entries: list[LeaveLedgerEntity]
@@ -217,3 +211,57 @@ class LeaveLedgerRepository:
         """
         session.add_all(entries)
         await session.flush()
+
+    async def list_entries(
+        self,
+        session: AsyncSession,
+        user_id: int | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[LeaveLedgerEntity]:
+        """Lists ledger entries for all users or a specific user in reverse chronological order.
+
+        Args:
+            session: Active async session.
+            user_id: Whose ledger entries to retrieve. If None, retrieves entries across all users.
+            limit: Maximum number of entries to return for pagination. If None, retrieves all matching entries.
+            offset: Number of entries to skip before starting to collect the result set.
+
+        Returns:
+            A list of LeaveLedgerEntity objects ordered by effective_date and id descending.
+        """
+        stmt = select(LeaveLedgerEntity)
+        if user_id is not None:
+            stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
+
+        stmt = (
+            stmt.order_by(
+                LeaveLedgerEntity.effective_date.desc(),
+                LeaveLedgerEntity.leave_ledger_id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_entries(
+        self, session: AsyncSession, user_id: int | None = None
+    ) -> int:
+        """Counts total ledger entries for a user or across the whole company.
+
+        Args:
+            session: Active async session.
+            user_id: Whose ledger entries to count. None means everybody.
+
+        Returns:
+            Total count of matching ledger entries.
+        """
+        stmt = select(func.count()).select_from(LeaveLedgerEntity)
+        if user_id is not None:
+            stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
+
+        result = await session.execute(stmt)
+        return result.scalar_one()

@@ -1,102 +1,59 @@
-import csv
-import io
-from collections.abc import AsyncIterator
+from collections import Counter
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from backend.dto.participant_search_dto import ParticipantRowDto, ParticipantSearchDto
-from backend.dto.participant_search_row_dto import ParticipantSearchRow
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
+from backend.dto.mentorship_approval_dto import ApprovalPersonDto
+from backend.dto.participant_detail_dto import (
+    DetailRoundDto,
+    ParticipantDetailDto,
+    ParticipantNoteDto,
+    ParticipationHistoryRowDto,
+    PendingRequestDto,
+)
+from backend.dto.participant_search_dto import (
+    AttendanceIssueDto,
+    ExemptionFindingDto,
+    MarkCountsDto,
+    ParticipantPairDto,
+    ParticipantRowDto,
+    ParticipantSearchDto,
+    PersonRowDto,
+    UnregisteredRowDto,
+    UnregisteredSearchDto,
+)
+from backend.dto.participant_search_row_dto import (
+    ParticipantSearchPairRow,
+    ParticipantSearchRow,
+    PersonSearchRow,
+)
 from backend.dto.partner_dto import PartnerDto
-from backend.dto.admin_meeting_log_dto import AdminMeetingDto, AdminMeetingLogDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
+from backend.dto.round_feedback_dto import (
+    AdminPartnerFeedbackDto,
+    ParticipantFeedbackDto,
+    RoundFeedbackDto,
+)
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
-from backend.common.exceptions import ConflictError
+from backend.admin.block_service import pending_block_summary
+from backend.common.exceptions import ConflictError, NotFoundError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
-    ApprovalStatus,
     MeetingNoteTag,
     MeetingSource,
     PairStatus,
+    ParticipantNoteTag,
     ParticipantRole,
     TrainingCategory,
 )
-from backend.common.name_utils import user_display_name
+from backend.common.mentorship_email_enums import MentorshipEmailNotificationState
+from backend.common.name_utils import display_name_or_id, user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
-
-_EXPORT_BATCH_SIZE = 500
-_UTF8_BOM = "\ufeff".encode("utf-8")
-_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
-
-
-def _sanitize_csv_field(value: str | None) -> str | None:
-    """
-    Neutralize CSV formula injection in a text cell.
-
-    If the value starts with a formula-triggering character ('=', '+', '-',
-    or '@') after leading whitespace is ignored, prefix it with a single
-    quote so spreadsheet applications treat it as literal text.
-
-    Args:
-        value (str | None): The raw cell value.
-
-    Returns:
-        str | None: The sanitized value, or the original value if no
-        sanitization is required.
-    """
-    if value and value.lstrip().startswith(_CSV_FORMULA_PREFIXES):
-        return f"'{value}"
-    return value
-
-
-def _participation_status_label(
-    approval_status: ApprovalStatus | None, has_pair: bool
-) -> str:
-    """The participation outcome as an admin should read it.
-
-    ``rejected`` is stored for two different outcomes: the person applied and
-    was not accepted, or they took part and then left -- quit, removed, or a
-    mentor suspended mid-round. Holding a pair in that round is what tells
-    them apart, since a pairing only exists once they took part.
-
-    Someone who left after registering but before being paired is
-    indistinguishable and reads as not accepted. The data genuinely does not
-    say which, so it is not guessed at.
-    """
-    if approval_status is None:
-        return ""
-    if approval_status == ApprovalStatus.REJECTED and has_pair:
-        return "ended"
-    return approval_status.value
-
-
-_EXPORT_COMMON_COLUMNS = [
-    "User ID",
-    "First Name",
-    "Last Name",
-    "Preferred Name",
-    "Primary Email",
-    "Alternative Emails",
-]
-_EXPORT_PARTICIPANT_COLUMNS = [
-    "Round",
-    "Participant Role",
-    "Approval Status",
-    "Onboarding Status",
-    "Matched User ID",
-    "Matched User Name",
-]
-_EXPORT_NON_PARTICIPANT_COLUMNS = [
-    "Mentor Onboarding Status",
-    "Mentee Onboarding Status",
-]
-_EXPORT_MEETING_SUMMARY_COLUMNS = [
-    "Completed Meetings",
-    "Required Meetings",
-]
-_EXPORT_MEETING_DETAIL_COLUMNS = [
-    "Complete Status",
-    "Start Datetime (PT)",
-    "End Datetime (PT)",
-    "Note",
-]
+from backend.mentorship.round_windows import is_in_progress
+from backend.repository.user_id_condition import UserIdCondition
 
 
 class MentorshipAdminService:
@@ -117,10 +74,15 @@ class MentorshipAdminService:
         training_repository,
         pairs_repository,
         mentorship_mapper,
-        date_time_util,
-        database,
         logger,
         mentorship_meeting_repository,
+        application_repository,
+        matching_eligibility_service,
+        mentorship_approval_service,
+        note_repository,
+        approval_service,
+        mentorship_email_service,
+        meeting_service,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -128,10 +90,41 @@ class MentorshipAdminService:
         self.training_repository = training_repository
         self.pairs_repository = pairs_repository
         self.mentorship_mapper = mentorship_mapper
-        self.date_time_util = date_time_util
-        self.database = database
         self.logger = logger
         self.mentorship_meeting_repository = mentorship_meeting_repository
+        self.application_repository = application_repository
+        self.matching_eligibility_service = matching_eligibility_service
+        self.mentorship_approval_service = mentorship_approval_service
+        self.note_repository = note_repository
+        self.approval_service = approval_service
+        self.mentorship_email_service = mentorship_email_service
+        self.meeting_service = meeting_service
+
+    async def _notification_condition(
+        self, session: AsyncSession, round_id: int | None, filters
+    ) -> UserIdCondition | None:
+        """The people a notification filter keeps (Notified, Scheduled) or
+        leaves out (Not notified), or None without one.
+
+        Raises:
+            ValueError: Only one of stage and state was given, or no round.
+        """
+        stage, state = filters.notification_stage, filters.notification_state
+        if stage is None and state is None:
+            return None
+        if stage is None or state is None:
+            raise ValueError("Pick both a notification and its state.")
+        if round_id is None:
+            raise ValueError("The notification filter needs a round.")
+        S = MentorshipEmailNotificationState
+        query = await self.mentorship_email_service.notified_user_ids(
+            session,
+            round_id,
+            stage,
+            sent=state != S.SCHEDULED,
+            scheduled=state != S.NOTIFIED,
+        )
+        return UserIdCondition(query, exclude=state == S.NOT_NOTIFIED)
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -153,6 +146,38 @@ class MentorshipAdminService:
                 alternative_emails.append(e.email)
         return primary_email, alternative_emails
 
+    def _person_fields(
+        self, row: PersonSearchRow, users_map: dict, emails_map: dict
+    ) -> dict:
+        """
+        The PersonRowDto fields for a search row: the user's names and
+        emails, and the account flags the row was read with.
+
+        Args:
+            row (PersonSearchRow): The row; its user must be in users_map.
+            users_map (dict[int, UsersEntity]): Users keyed by user_id.
+            emails_map (dict[int, list[UserEmailsEntity]]): Emails keyed by
+                user_id; a user with none may be absent.
+
+        Returns:
+            dict: Keyword arguments for any PersonRowDto subclass.
+        """
+        user = users_map[row.user_id]
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(row.user_id, [])
+        )
+        return {
+            "user_id": row.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "preferred_name": user.preferred_name,
+            "primary_email": primary_email,
+            "alternative_emails": alternative_emails,
+            "is_blocked": row.is_blocked,
+            "is_deactivated": row.is_deactivated,
+            "is_internal": row.is_internal,
+        }
+
     async def _fetch_batch_relations(
         self, session: AsyncSession, rows: list[ParticipantSearchRow]
     ) -> tuple[dict, dict, dict]:
@@ -172,10 +197,9 @@ class MentorshipAdminService:
         training_user_ids: set[int] = set()
         for row in rows:
             mentorship_user_ids.add(row.user_id)
-            if row.mentor_id is not None:
-                mentorship_user_ids.add(row.mentor_id)
-            if row.mentee_id is not None:
-                mentorship_user_ids.add(row.mentee_id)
+            for pair in row.pairs:
+                mentorship_user_ids.add(pair.mentor_id)
+                mentorship_user_ids.add(pair.mentee_id)
             training_user_ids.add(row.user_id)
 
         users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
@@ -195,174 +219,98 @@ class MentorshipAdminService:
 
         return users_map, emails_map, trainings_map
 
-    def _get_partner_user(self, row: ParticipantSearchRow, users_map: dict):
+    def _get_partner_user(
+        self, user_id: int, pair: ParticipantSearchPairRow, users_map: dict
+    ):
         """
-        Resolve the matched partner's user record for a participant search row.
+        Resolve the other side of one of a participant's pairs.
 
         Args:
-            row (ParticipantSearchRow): The row to resolve a partner for.
+            user_id (int): The participant the row is about.
+            pair (ParticipantSearchPairRow): One of that participant's pairs.
             users_map (dict[int, UsersEntity]): User records keyed by user_id.
 
         Returns:
-            The partner's user record, or None if the row has no pair or
-            the partner isn't in users_map.
+            The partner's user record, or None if the partner isn't in
+            users_map.
         """
-        if row.pair_id is None:
-            return None
-        partner_id = row.mentee_id if row.user_id == row.mentor_id else row.mentor_id
+        partner_id = pair.mentee_id if user_id == pair.mentor_id else pair.mentor_id
         return users_map.get(partner_id)
 
-    def _build_common_export_columns(
+    def _attendance_issues(
+        self, pair: ParticipantSearchPairRow, meetings: list[MentorshipMeetingEntity]
+    ) -> list[AttendanceIssueDto]:
+        """
+        The pair's meetings that carry any note tag, in the repository's
+        start_datetime order, tagged the same way the meeting log shows them.
+
+        Args:
+            pair (ParticipantSearchPairRow): The pair the meetings belong to.
+            meetings (list[MentorshipMeetingEntity]): That pair's meetings.
+
+        Returns:
+            list[AttendanceIssueDto]: One entry per tagged meeting.
+        """
+        issues: list[AttendanceIssueDto] = []
+        for meeting in meetings:
+            note = self._resolve_meeting_notes_from_row(
+                meeting, pair.mentor_id, pair.mentee_id
+            )
+            if note:
+                issues.append(
+                    AttendanceIssueDto(start_datetime=meeting.start_datetime, note=note)
+                )
+        return issues
+
+    def _build_pair_dtos(
         self,
         row: ParticipantSearchRow,
         users_map: dict,
-        emails_map: dict,
-    ) -> list:
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
+    ) -> list[ParticipantPairDto]:
         """
-        Build the CSV columns shared by every export row, participant or not.
+        Build the Pair column entries for a participant search row, keeping
+        the row's pair_id order and skipping any pair whose partner can't be
+        resolved.
 
         Args:
-            row (ParticipantSearchRow): The row to build columns for.
+            row (ParticipantSearchRow): The row whose pairs to build.
             users_map (dict[int, UsersEntity]): User records keyed by user_id.
-            emails_map (dict[int, list[UserEmailsEntity]]): Email records keyed by user_id.
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]): The
+                page's meetings keyed by pair_id; a pair with none is absent.
+                Also gives each pair its earliest meeting.
 
         Returns:
-            list: Columns in _EXPORT_COMMON_COLUMNS order.
+            list[ParticipantPairDto]: One entry per resolvable pair.
         """
-        user = users_map[row.user_id]
-        primary_email, alternative_emails = self._extract_emails(
-            emails_map.get(row.user_id, [])
-        )
-        return [
-            row.user_id,
-            _sanitize_csv_field(user.first_name),
-            _sanitize_csv_field(user.last_name),
-            _sanitize_csv_field(user.preferred_name),
-            _sanitize_csv_field(primary_email),
-            _sanitize_csv_field(";".join(alternative_emails)),
-        ]
-
-    def _build_participant_export_columns(
-        self,
-        row: ParticipantSearchRow,
-        users_map: dict,
-        trainings_map: dict,
-        rounds_map: dict,
-    ) -> list:
-        """
-        Build the CSV columns specific to a participant export row.
-
-        Onboarding Status reflects the row's own participant role: mentee
-        onboarding status if the row is a mentee, otherwise mentor
-        onboarding status. The matched user's name follows the existing
-        partner display-name convention (preferred name if available;
-        otherwise "first last").
-
-        Args:
-            row (ParticipantSearchRow): The row to build columns for.
-            users_map (dict[int, UsersEntity]): User records keyed by user_id.
-            trainings_map (dict[int, dict[TrainingCategory, TrainingStatus]]): Training status keyed by user_id, then category.
-            rounds_map (dict[int, MentorshipRoundEntity]): Round records keyed by round_id.
-
-        Returns:
-            list: Columns in _EXPORT_PARTICIPANT_COLUMNS order.
-        """
-        round_entity = rounds_map.get(row.round_id) if row.round_id else None
-
-        statuses = trainings_map.get(row.user_id, {})
-        mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
-        mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
-        if row.participant_role == ParticipantRole.MENTEE:
-            onboarding_status = mentee_status
-        else:
-            onboarding_status = mentor_status
-
-        matched_user_id = ""
-        matched_user_name = ""
-        partner = self._get_partner_user(row, users_map)
-        if partner:
-            matched_user_id = partner.user_id
-            matched_user_name = user_display_name(
-                first_name=partner.first_name,
-                last_name=partner.last_name,
-                preferred_name=partner.preferred_name,
+        pair_dtos: list[ParticipantPairDto] = []
+        for pair in row.pairs:
+            partner = self._get_partner_user(row.user_id, pair, users_map)
+            if partner is None:
+                continue
+            meetings = meetings_by_pair.get(pair.pair_id, [])
+            pair_dtos.append(
+                ParticipantPairDto(
+                    pair_id=pair.pair_id,
+                    partner=PartnerDto(
+                        id=partner.user_id,
+                        first_name=partner.first_name or "",
+                        last_name=partner.last_name or "",
+                        preferred_name=partner.preferred_name or "",
+                        primary_email=None,
+                        participant_role=None,
+                        recommendation_reason=None,
+                        is_active=pair.pair_status == PairStatus.ACTIVE,
+                    ),
+                    completed_meeting_count=pair.completed_count,
+                    attendance_issues=self._attendance_issues(pair, meetings),
+                    first_meeting_at=min(
+                        (m.start_datetime for m in meetings if m.start_datetime),
+                        default=None,
+                    ),
+                )
             )
-
-        return [
-            _sanitize_csv_field(round_entity.name) if round_entity else "",
-            row.participant_role.value if row.participant_role else "",
-            _participation_status_label(row.approval_status, row.pair_id is not None),
-            onboarding_status.value if onboarding_status else "",
-            matched_user_id,
-            _sanitize_csv_field(matched_user_name),
-        ]
-
-    def _build_non_participant_export_columns(
-        self,
-        row: ParticipantSearchRow,
-        trainings_map: dict,
-    ) -> list:
-        """
-        Build the CSV columns specific to a non-participant export row.
-
-        Args:
-            row (ParticipantSearchRow): The row to build columns for.
-            trainings_map (dict[int, dict[TrainingCategory, TrainingStatus]]): Training status keyed by user_id, then category.
-
-        Returns:
-            list: Columns in _EXPORT_NON_PARTICIPANT_COLUMNS order.
-        """
-        statuses = trainings_map.get(row.user_id, {})
-        mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
-        mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
-        return [
-            mentor_status.value if mentor_status else "",
-            mentee_status.value if mentee_status else "",
-        ]
-
-    def _extract_meetings_for_row(
-        self,
-        row: ParticipantSearchRow,
-        meetings: list[MentorshipMeetingEntity],
-    ) -> list[AdminMeetingDto]:
-        """
-        Build a row's meetings from its pair's pre-fetched `mentorship_meeting`
-        rows.
-
-        `meetings` is expected to already be this row's pair's slice of a
-        batched `MentorshipMeetingRepository.get_meetings_by_pairs` result
-        (the caller looks it up per row, keyed by pair_id, from one page-wide
-        call) -- this method itself issues no query and does not re-sort:
-        it trusts the repository's own order (`start_datetime` ascending,
-        then `created_datetime`, then `meeting_id`), the same order
-        `_build_meeting_log_dto` now trusts. That is a deliberate change from
-        this method's old JSONB-era created_datetime sort, made so the two
-        read paths agree.
-
-        MANUAL and GOOGLE rows are shown together in whatever order they
-        arrive in -- there is no priority branch that hides one generation
-        in favor of the other. LEGACY rows (NULL times) are expected to
-        already be excluded by the caller's `get_meetings_by_pairs` call.
-
-        Args:
-            row (ParticipantSearchRow): The row meetings are being extracted
-                for (used only for mentor_id/mentee_id to resolve note tags).
-            meetings (list[MentorshipMeetingEntity]): This row's pair's
-                meeting rows, already ordered.
-
-        Returns:
-            list[AdminMeetingDto]: This row's meetings, in the given order.
-        """
-        return [
-            self.mentorship_mapper.map_to_admin_meeting_dto(
-                self._meeting_row_to_admin_dict(m),
-                is_completed=m.is_completed,
-                note_tags=self._resolve_meeting_notes_from_row(
-                    m, row.mentor_id, row.mentee_id
-                ),
-            )
-            for m in meetings
-        ]
+        return pair_dtos
 
     def _get_required_meetings(
         self, row: ParticipantSearchRow, rounds_map: dict
@@ -392,8 +340,8 @@ class MentorshipAdminService:
         """
         Search mentorship participants and non-participants for admin with pagination.
 
-        Executes the participant query, batch-fetches related user, email, round, and
-        training data, then assembles the response.
+        Executes the participant query, batch-fetches related user, email, round,
+        training and meeting data, then assembles the response.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -406,9 +354,35 @@ class MentorshipAdminService:
 
         Returns:
             ParticipantSearchDto: Assembled participant rows and total count.
+
+        Raises:
+            ValueError: ``eligible`` or ``needs_exemption`` was asked for
+                without a round, for a round that does not exist, or for one
+                not in progress; or both were asked for at once; or a
+                notification filter missing its stage, state or round.
         """
+        if filters.eligible and filters.needs_exemption:
+            raise ValueError("Ask for eligible or needs exemption, not both.")
+        condition = await self._notification_condition(
+            session, filters.round_id, filters
+        )
+        findings: dict[int, list] = {}
+        if filters.eligible:
+            only_user_ids = await self._eligible_user_ids(session, filters.round_id)
+        elif filters.needs_exemption:
+            findings = await self._needs_exemption(session, filters.round_id)
+            only_user_ids = set(findings)
+        else:
+            only_user_ids = None
         rows, total = await self.participants_repository.search_participants_for_admin(
-            session, filters, limit, offset, sort_by, order
+            session,
+            filters,
+            limit,
+            offset,
+            sort_by,
+            order,
+            only_user_ids=only_user_ids,
+            user_id_condition=condition,
         )
         if not rows:
             return ParticipantSearchDto(participant_rows=[], total=total)
@@ -420,55 +394,472 @@ class MentorshipAdminService:
         rounds = await self.rounds_repository.get_all_rounds(session)
         rounds_map = {r.round_id: r for r in rounds}
 
+        meetings_by_pair = (
+            await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                session, sorted({p.pair_id for row in rows for p in row.pairs})
+            )
+        )
+
+        requests = (
+            await self.mentorship_approval_service.pending_exemptions(
+                session, filters.round_id, [row.user_id for row in rows]
+            )
+            if filters.needs_exemption
+            else {}
+        )
+        marked = Counter(
+            (note.user_id, note.round_id, note.tag)
+            for note in await self.note_repository.list_tagged(
+                session,
+                sorted({row.user_id for row in rows}),
+                [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+            )
+        )
+
         participant_rows: list[ParticipantRowDto] = []
         for row in rows:
             statuses = trainings_map.get(row.user_id, {})
             mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
             mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
 
-            user = users_map[row.user_id]
-            primary_email, alternative_emails = self._extract_emails(
-                emails_map.get(row.user_id, [])
-            )
-
-            partner = self._get_partner_user(row, users_map)
-            matched_user = None
-            if partner:
-                matched_user = PartnerDto(
-                    id=partner.user_id,
-                    first_name=partner.first_name or "",
-                    last_name=partner.last_name or "",
-                    preferred_name=partner.preferred_name or "",
-                    primary_email=None,
-                    participant_role=None,
-                    recommendation_reason=None,
-                    is_active=row.pair_status == PairStatus.ACTIVE,
-                )
-
             round_entity = rounds_map.get(row.round_id) if row.round_id else None
 
             participant_rows.append(
                 ParticipantRowDto(
-                    user_id=row.user_id,
+                    **self._person_fields(row, users_map, emails_map),
                     round_id=row.round_id,
                     round_name=round_entity.name if round_entity else None,
-                    pair_id=row.pair_id,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    preferred_name=user.preferred_name,
-                    primary_email=primary_email,
-                    alternative_emails=alternative_emails,
-                    matched_user=matched_user,
                     participant_role=row.participant_role,
                     approval_status=row.approval_status,
                     mentor_onboarding_status=mentor_status,
                     mentee_onboarding_status=mentee_status,
-                    completed_meeting_count=row.completed_count,
+                    pairs=self._build_pair_dtos(row, users_map, meetings_by_pair),
                     required_meetings=self._get_required_meetings(row, rounds_map),
+                    exemption_findings=[
+                        ExemptionFindingDto(
+                            reason=f.reason.value,
+                            round_id=f.round_id,
+                            round_name=rounds_map[f.round_id].name
+                            if f.round_id in rounds_map
+                            else None,
+                            completed=f.completed,
+                            required=f.required,
+                        )
+                        for f in findings.get(row.user_id, [])
+                    ],
+                    exemption_request=requests.get(row.user_id),
+                    marks=MarkCountsDto(
+                        no_show=marked[
+                            (row.user_id, row.round_id, ParticipantNoteTag.NO_SHOW)
+                        ],
+                        red_flag=marked[
+                            (row.user_id, row.round_id, ParticipantNoteTag.RED_FLAG)
+                        ],
+                    ),
                 )
             )
 
         return ParticipantSearchDto(participant_rows=participant_rows, total=total)
+
+    async def _eligible_user_ids(
+        self, session: AsyncSession, round_id: int | None
+    ) -> set[int]:
+        """The people eligible for matching in a round in progress.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int | None): The round searched.
+
+        Returns:
+            set[int]: Their user_ids.
+
+        Raises:
+            ValueError: No round, an unknown round, or one not in progress.
+        """
+        if round_id is None:
+            raise ValueError("Eligible for matching needs a round.")
+        await self._get_round_in_progress(session, round_id)
+        return await self.matching_eligibility_service.eligible_user_ids(
+            session, round_id
+        )
+
+    async def _needs_exemption(
+        self, session: AsyncSession, round_id: int | None
+    ) -> dict[int, list]:
+        """The people only their history keeps out of matching in a round in
+        progress, with what in their history does.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int | None): The round searched.
+
+        Returns:
+            dict[int, list[HistoryFinding]]: user_id -> findings.
+
+        Raises:
+            ValueError: No round, an unknown round, or one not in progress.
+        """
+        if round_id is None:
+            raise ValueError("Needs exemption needs a round.")
+        await self._get_round_in_progress(session, round_id)
+        return await self.matching_eligibility_service.needs_exemption(
+            session, round_id
+        )
+
+    async def _get_round_in_progress(self, session: AsyncSession, round_id: int):
+        """The round, if it is in progress: the lists that act on a round --
+        who is eligible for matching, who has not registered -- are only
+        offered then.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+
+        Returns:
+            MentorshipRoundEntity: The round.
+
+        Raises:
+            ValueError: The round does not exist or is not in progress.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+        if not is_in_progress(round_entity, datetime.now(timezone.utc)):
+            raise ValueError(f"Mentorship round {round_id} is not in progress.")
+        return round_entity
+
+    async def _round_in_progress(self, session: AsyncSession, round_id: int) -> bool:
+        """Whether a round exists and is in progress now.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+
+        Returns:
+            bool: False for an unknown round too.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        return round_entity is not None and is_in_progress(
+            round_entity, datetime.now(timezone.utc)
+        )
+
+    async def search_unregistered(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        filters: UnregisteredFilterDto,
+        limit: int = 100,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> UnregisteredSearchDto:
+        """
+        List the people admitted as a mentor or mentee who have not
+        registered for a round, with what an admin chasing them needs: who
+        they are, what they were admitted as, and how much they have taken
+        part before.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round they have not registered for.
+            filters (UnregisteredFilterDto): Person and admitted-role filters.
+            limit (int): Maximum number of rows to return. Defaults to 100.
+            offset (int): Number of rows to skip for pagination. Defaults to 0.
+            order (str): "asc" or "desc" by user ID (default "asc").
+
+        Returns:
+            UnregisteredSearchDto: One row per person and the total count.
+
+        Raises:
+            ValueError: If the round does not exist or is not in progress, or
+                a notification filter is missing its stage or state.
+        """
+        await self._get_round_in_progress(session, round_id)
+        condition = await self._notification_condition(session, round_id, filters)
+
+        rows, total = await self.participants_repository.search_unregistered_for_admin(
+            session,
+            round_id,
+            filters,
+            limit,
+            offset,
+            order,
+            user_id_condition=condition,
+        )
+        if not rows:
+            return UnregisteredSearchDto(rows=[], total=total)
+
+        user_ids = [row.user_id for row in rows]
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, user_ids
+        )
+        roles_map = (
+            await self.application_repository.list_hired_activity_roles_by_user_ids(
+                session, user_ids
+            )
+        )
+        rounds_map = (
+            await self.participants_repository.list_registered_rounds_by_user_ids(
+                session, user_ids
+            )
+        )
+
+        result: list[UnregisteredRowDto] = []
+        for row in rows:
+            roles = roles_map.get(row.user_id, set())
+            past_rounds = rounds_map.get(row.user_id, [])
+            result.append(
+                UnregisteredRowDto(
+                    **self._person_fields(row, users_map, emails_map),
+                    admitted_roles=[
+                        role
+                        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE)
+                        if role in roles
+                    ],
+                    rounds_taken_part=len(past_rounds),
+                    last_round_name=past_rounds[0].name if past_rounds else None,
+                )
+            )
+        return UnregisteredSearchDto(rows=result, total=total)
+
+    async def get_participant_detail(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> ParticipantDetailDto:
+        """Everything the admin console's page for one person in one round
+        shows, registered for it or not.
+
+        Reuses the participant search for the registration and history rows,
+        so the page and the list cannot disagree about a pair or a status.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round the page is about.
+            user_id (int): The person.
+
+        Returns:
+            ParticipantDetailDto: The page's data.
+
+        Raises:
+            NotFoundError: The round or the user does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise NotFoundError(f"Mentorship round {round_id} does not exist.")
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, [user_id]
+        )
+        user = users_map.get(user_id)
+        if user is None:
+            raise NotFoundError(f"User {user_id} does not exist.")
+        in_progress = is_in_progress(round_entity, datetime.now(timezone.utc))
+
+        rows = (
+            await self.search_participants(
+                session, ParticipantSearchFilterDto(user_id=user_id)
+            )
+        ).participant_rows
+        registration = next((r for r in rows if r.round_id == round_id), None)
+        if registration is not None and in_progress:
+            # The Needs exemption search is what fills in the findings and
+            # the request waiting on them; it returns nothing for someone
+            # whose history is clean.
+            flagged = (
+                await self.search_participants(
+                    session,
+                    ParticipantSearchFilterDto(
+                        user_id=user_id, round_id=round_id, needs_exemption=True
+                    ),
+                )
+            ).participant_rows
+            if flagged:
+                registration = flagged[0]
+
+        exempted_rounds = (
+            await self.note_repository.list_round_ids_by_tag(
+                session, [user_id], ParticipantNoteTag.MATCHING_EXEMPTION
+            )
+        ).get(user_id, set())
+
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(user_id, [])
+        )
+        return ParticipantDetailDto(
+            person=PersonRowDto(
+                user_id=user_id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                preferred_name=user.preferred_name,
+                primary_email=primary_email,
+                alternative_emails=alternative_emails,
+                is_blocked=bool(user.is_blocked),
+                is_deactivated=not user.is_active,
+                is_internal=bool(user.is_internal),
+            ),
+            round=DetailRoundDto(
+                round_id=round_entity.round_id,
+                name=round_entity.name,
+                required_meetings=round_entity.required_meetings,
+                in_progress=in_progress,
+            ),
+            registration=registration,
+            exempted=round_id in exempted_rounds,
+            feedback=await self._feedback_of(session, round_id, user_id),
+            notes=await self._notes_of(session, round_id, user_id),
+            pending_block_request=await pending_block_summary(
+                session,
+                approval_service=self.approval_service,
+                users_repository=self.users_repository,
+                user_id=user_id,
+            ),
+            pending_requests=[
+                PendingRequestDto.model_validate(r)
+                for r in await self.mentorship_approval_service.pending_for_participant(
+                    session,
+                    round_id,
+                    user_id,
+                    pair_ids=[p.pair_id for p in registration.pairs]
+                    if registration is not None
+                    else [],
+                )
+            ],
+            history=await self._history(session, round_entity, rows, exempted_rounds),
+        )
+
+    async def add_participant_note(
+        self,
+        session: AsyncSession,
+        *,
+        round_id: int,
+        user_id: int,
+        author_id: int,
+        body: str,
+    ) -> ParticipantNoteDto:
+        """Write a plain note on a person in a round. Commits.
+
+        The person need not have registered: a note hangs on the person and
+        the round, not on a registration.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round, which must be in progress.
+            user_id (int): Who the note is about.
+            author_id (int): Who is writing it.
+            body (str): What it says, already validated by the request DTO.
+
+        Returns:
+            ParticipantNoteDto: The new note.
+
+        Raises:
+            NotFoundError: The round or the user does not exist.
+            ConflictError: The round is not in progress (code
+                ``round_not_in_progress``).
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise NotFoundError(f"Mentorship round {round_id} does not exist.")
+        if not is_in_progress(round_entity, datetime.now(timezone.utc)):
+            raise ConflictError(
+                "Notes can only be added while the round is in progress.",
+                code="round_not_in_progress",
+            )
+        if await self.users_repository.get_user_by_user_id(session, user_id) is None:
+            raise NotFoundError(f"User {user_id} does not exist.")
+
+        note = await self.note_repository.create(
+            session,
+            user_id=user_id,
+            round_id=round_id,
+            author_user_id=author_id,
+            body=body,
+        )
+        await session.commit()
+        # created_at is filled in by the database; read it back before the
+        # attribute is touched, or the async session cannot load it.
+        await session.refresh(note)
+        return self._note_dto(note, await self._names(session, {author_id}))
+
+    async def _names(self, session: AsyncSession, user_ids) -> dict[int, str]:
+        """Display names of these people, keyed by user_id."""
+        users = await self.users_repository.get_all_by_ids(session, list(user_ids))
+        return {u.user_id: display_name_or_id(u) for u in users}
+
+    def _note_dto(self, note, names: dict[int, str]) -> ParticipantNoteDto:
+        return ParticipantNoteDto(
+            note_id=note.note_id,
+            tag=note.tag,
+            body=note.body,
+            pair_id=note.pair_id,
+            request_id=note.request_id,
+            notification_stage=note.notification_stage,
+            author=ApprovalPersonDto(
+                user_id=note.author_user_id, name=names.get(note.author_user_id)
+            ),
+            created_at=note.created_at,
+        )
+
+    async def _notes_of(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> list[ParticipantNoteDto]:
+        """The person's notes in the round, newest first."""
+        notes = await self.note_repository.list_for_user_round(
+            session, user_id, round_id
+        )
+        names = await self._names(session, {n.author_user_id for n in notes})
+        return [self._note_dto(n, names) for n in reversed(notes)]
+
+    async def _feedback_of(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> ParticipantFeedbackDto | None:
+        """The person's feedback for the round, if the round asks them for
+        any -- the same people the round's Feedback page lists."""
+        owed = await self.participants_repository.get_feedback_owed_in_round(
+            session, round_id
+        )
+        mine = next(((p, u) for p, u in owed if u.user_id == user_id), None)
+        if mine is None:
+            return None
+        participant, user = mine
+        partners = {
+            u.user_id: u
+            for u in await self.users_repository.get_all_by_ids(
+                session,
+                [e["partner_id"] for e in self._pair_feedback_entries(participant)],
+            )
+        }
+        return self._participant_feedback(participant, user, partners)
+
+    async def _history(
+        self,
+        session: AsyncSession,
+        round_entity,
+        rows: list[ParticipantRowDto],
+        exempted_rounds: set[int],
+    ) -> list[ParticipationHistoryRowDto]:
+        """The person's rounds that ended before this one, newest first.
+
+        "Ended before" compares meetings_completion_deadline_at; a round
+        missing it has no place on the timeline and is left out, and so is
+        every round when this one is missing it.
+        """
+        cutoff = round_entity.meetings_completion_deadline_at
+        if cutoff is None:
+            return []
+        rounds_map = {
+            r.round_id: r for r in await self.rounds_repository.get_all_rounds(session)
+        }
+
+        def deadline(row):
+            r = rounds_map.get(row.round_id)
+            return r.meetings_completion_deadline_at if r else None
+
+        earlier = [r for r in rows if deadline(r) is not None and deadline(r) < cutoff]
+        earlier.sort(key=deadline, reverse=True)
+        return [
+            ParticipationHistoryRowDto.model_validate({
+                **r.model_dump(),
+                "exempted": r.round_id in exempted_rounds,
+            })
+            for r in earlier
+        ]
 
     def _resolve_meeting_notes(
         self, meeting: dict, mentor_id: int, mentee_id: int
@@ -578,6 +969,104 @@ class MentorshipAdminService:
             "created_datetime": meeting.created_datetime.isoformat(),
         }
 
+    async def get_round_feedback(
+        self, session: AsyncSession, round_id: int
+    ) -> RoundFeedbackDto:
+        """
+        Everyone a round's feedback is asked of, with what each of them sent.
+
+        What someone wrote about a partner stays on the writer's row: it is
+        their view of the partner, not the partner's feedback.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+
+        Returns:
+            RoundFeedbackDto: The round, its counts, and one row per person.
+
+        Raises:
+            ValueError: The round does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+
+        owed = await self.participants_repository.get_feedback_owed_in_round(
+            session, round_id
+        )
+        partner_ids = {
+            entry["partner_id"]
+            for participant, _ in owed
+            for entry in self._pair_feedback_entries(participant)
+        }
+        partners = {
+            user.user_id: user
+            for user in await self.users_repository.get_all_by_ids(
+                session, list(partner_ids)
+            )
+        }
+
+        rows = [
+            self._participant_feedback(participant, user, partners)
+            for participant, user in owed
+        ]
+        return RoundFeedbackDto(
+            round_id=round_entity.round_id,
+            round_name=round_entity.name,
+            owed=len(rows),
+            sent=sum(row.has_submitted for row in rows),
+            participants=rows,
+        )
+
+    def _pair_feedback_entries(self, participant) -> list[dict]:
+        """The participant's partner entries that name a partner."""
+        entries = participant.pair_feedback
+        if not isinstance(entries, list):
+            return []
+        return [
+            e
+            for e in entries
+            if isinstance(e, dict) and e.get("partner_id") is not None
+        ]
+
+    def _participant_feedback(
+        self, participant, user, partners: dict
+    ) -> ParticipantFeedbackDto:
+        """Map one owed participant and their feedback, if any."""
+        program = participant.program_feedback
+        submitted = isinstance(program, dict)
+        program = program if submitted else {}
+
+        partner_feedback = []
+        for entry in self._pair_feedback_entries(participant):
+            partner = partners.get(entry["partner_id"])
+            partner_feedback.append(
+                AdminPartnerFeedbackDto(
+                    partner_id=entry["partner_id"],
+                    partner_name=user_display_name(
+                        first_name=partner.first_name,
+                        last_name=partner.last_name,
+                        preferred_name=partner.preferred_name,
+                    )
+                    if partner
+                    else None,
+                    rating=entry.get("rating"),
+                    feedback=entry.get("feedback"),
+                )
+            )
+
+        return ParticipantFeedbackDto(
+            user_id=user.user_id,
+            name=display_name_or_id(user),
+            role=participant.participant_role,
+            has_submitted=submitted,
+            most_valuable_aspects=program.get("most_valuable_aspects"),
+            challenges=program.get("challenges"),
+            program_rating=program.get("program_rating"),
+            partner_feedback=partner_feedback,
+        )
+
     async def get_meeting_log(
         self, session: AsyncSession, pair_id: int
     ) -> AdminMeetingLogDto | None:
@@ -623,7 +1112,7 @@ class MentorshipAdminService:
         Args:
             session (AsyncSession): Active database async session.
             pair: The pair to build a meeting log for. Must have `pair_id`,
-                `mentor_id`, and `mentee_id` populated.
+                `round_id`, `mentor_id`, and `mentee_id` populated.
 
         Returns:
             AdminMeetingLogDto: The pair's meeting log built from rows.
@@ -649,7 +1138,11 @@ class MentorshipAdminService:
             for m in meetings
         ]
 
-        return AdminMeetingLogDto(round_version=round_version, meetings=meeting_dtos)
+        return AdminMeetingLogDto(
+            round_version=round_version,
+            meetings=meeting_dtos,
+            round_in_progress=await self._round_in_progress(session, pair.round_id),
+        )
 
     def _validate_note_tags(self, note: list[MeetingNoteTag] | None) -> None:
         """
@@ -735,6 +1228,24 @@ class MentorshipAdminService:
             late_user_ids.append(mentee_id)
         meeting.late_user_ids = late_user_ids
 
+    @staticmethod
+    def _attendance_outcome(meeting: MentorshipMeetingEntity) -> tuple:
+        """
+        The attendance result of a meeting row, as the admin editor sees it.
+
+        NULL flags and a NULL late list read the same as False and empty --
+        the editor cannot tell them apart, so turning one into the other is
+        not a change the admin made.
+        """
+        return (
+            bool(meeting.is_completed),
+            meeting.absent_user_id,
+            sorted(meeting.late_user_ids or []),
+            bool(meeting.has_unknown_absent),
+            bool(meeting.has_unknown_late),
+            bool(meeting.has_insufficient_duration),
+        )
+
     async def apply_v2_meeting_batch(
         self,
         session: AsyncSession,
@@ -747,7 +1258,9 @@ class MentorshipAdminService:
         Locks the pair row for the duration of the transaction, applies all
         deletes then all updates against the current DB state (not the
         client's snapshot), recalculates completed_count, and returns the
-        pair's latest meeting log.
+        pair's latest meeting log. A row whose attendance result changes is
+        stamped with ``attendance_set_by_admin_at`` so the Meet attendance
+        sweep stops re-deriving it.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -765,7 +1278,12 @@ class MentorshipAdminService:
                 to a MANUAL row (v1, read-only history). The check is
                 per-row, not per-pair -- a pair holding both MANUAL and
                 GOOGLE rows may still have its GOOGLE rows edited freely;
-                only a targeted row that is itself MANUAL is rejected.
+                only a targeted row that is itself MANUAL is rejected. Also
+                raised, with code ``round_not_in_progress``, when the pair's
+                round is not in progress: a past round's log is read-only.
+                Also raised, with code ``calendar_cancel_failed``, when
+                Calendar refuses to cancel a deleted upcoming GOOGLE
+                meeting's event; nothing is written then.
         """
         if not batch.updates and not batch.deletes:
             raise ValueError("updates and deletes must not both be empty.")
@@ -785,6 +1303,11 @@ class MentorshipAdminService:
         )
         if pair is None:
             raise ValueError(f"Mentorship pair {pair_id} not found.")
+        if not await self._round_in_progress(session, pair.round_id):
+            raise ConflictError(
+                "Meetings of a round that is not in progress cannot be edited.",
+                code="round_not_in_progress",
+            )
 
         meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
             session, pair_id
@@ -804,11 +1327,25 @@ class MentorshipAdminService:
             raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
 
         if delete_ids:
+            # An upcoming meeting still has a live invite; a started one is
+            # history, and cancelling it would mail everyone a cancellation.
+            now = datetime.now(timezone.utc)
+            upcoming_ids = sorted(
+                mid
+                for mid in delete_ids
+                if by_id[mid].source == MeetingSource.GOOGLE
+                and by_id[mid].start_datetime is not None
+                and by_id[mid].start_datetime > now
+            )
+            if upcoming_ids:
+                await self.meeting_service.cancel_calendar_events(upcoming_ids)
             await self.mentorship_meeting_repository.delete_meetings(
                 session, pair_id, list(delete_ids)
             )
+        edited_at = datetime.now(timezone.utc)
         for item in batch.updates:
             meeting = by_id[item.meeting_id]
+            before = self._attendance_outcome(meeting)
             if item.is_completed is not None:
                 meeting.is_completed = item.is_completed
             if item.note is not None:
@@ -817,6 +1354,8 @@ class MentorshipAdminService:
                 )
             if item.is_completed is not None or item.note is not None:
                 self._validate_no_absent_if_completed(meeting)
+            if self._attendance_outcome(meeting) != before:
+                meeting.attendance_set_by_admin_at = edited_at
 
         # Assigned directly rather than left for the ORM to refresh -- same
         # rationale as MeetingService.upsert_meetings: the UPDATE issued here
@@ -840,171 +1379,3 @@ class MentorshipAdminService:
         )
 
         return await self._build_meeting_log_dto(session, pair)
-
-    async def stream_export_csv(
-        self,
-        filters: ParticipantSearchFilterDto,
-        expand_meetings: bool = False,
-    ) -> AsyncIterator[bytes]:
-        """
-        Stream participant search results as BOM-prefixed UTF-8 CSV data chunks.
-
-        Uses its own database session because StreamingResponse consumes
-        this generator after the controller returns.
-
-        An export row that fails to build is logged and skipped instead of
-        aborting the stream. When expanding meetings, a pair's meeting rows
-        are built before writing to avoid partially exporting a participant
-        when one meeting fails.
-
-        When expand_meetings needs meeting data, it is fetched with exactly
-        one `mentorship_meeting_repository.get_meetings_by_pairs` call per
-        page (grouped by pair_id, up to _EXPORT_BATCH_SIZE pairs), not one
-        query per row -- the same batching this method already applies to
-        users/emails/trainings via `_fetch_batch_relations`.
-
-        Args:
-            filters (ParticipantSearchFilterDto): Same filters as the search
-                endpoint. filters.participation_status must be set, since it
-                decides which column set the export uses.
-            expand_meetings (bool): False (default) yields one row per
-                participant record. True yields one row per meeting (a
-                participant with no meetings still gets one row, with the
-                meeting columns left blank). Ignored for a non-participant
-                export, which has no meeting data.
-
-        Yields:
-            bytes: UTF-8 encoded CSV batch bytes.
-
-        Raises:
-            ValueError: If filters.participation_status is not set.
-        """
-        if filters.participation_status is None:
-            raise ValueError("filters.participation_status is required for CSV export.")
-        is_participant = filters.participation_status == "participant"
-        need_meetings = is_participant and expand_meetings
-        buffer = io.StringIO()
-        writer = csv.writer(buffer)
-
-        def drain_buffer() -> bytes:
-            data = buffer.getvalue()
-            buffer.seek(0)
-            buffer.truncate(0)
-            return data.encode("utf-8")
-
-        if is_participant:
-            meeting_columns = (
-                _EXPORT_MEETING_DETAIL_COLUMNS
-                if expand_meetings
-                else _EXPORT_MEETING_SUMMARY_COLUMNS
-            )
-            header = (
-                _EXPORT_COMMON_COLUMNS + _EXPORT_PARTICIPANT_COLUMNS + meeting_columns
-            )
-        else:
-            header = _EXPORT_COMMON_COLUMNS + _EXPORT_NON_PARTICIPANT_COLUMNS
-        writer.writerow(header)
-        yield _UTF8_BOM + drain_buffer()
-
-        async with self.database.session() as session:
-            rounds = await self.rounds_repository.get_all_rounds(session)
-            rounds_map = {r.round_id: r for r in rounds}
-
-            offset = 0
-            while True:
-                rows = await self.participants_repository.iter_search_participants_for_admin(
-                    session,
-                    filters,
-                    limit=_EXPORT_BATCH_SIZE,
-                    offset=offset,
-                )
-                if not rows:
-                    break
-
-                (
-                    users_map,
-                    emails_map,
-                    trainings_map,
-                ) = await self._fetch_batch_relations(session, rows)
-
-                # One batched call for the whole page instead of a per-row
-                # query -- get_meetings_by_pairs excludes LEGACY rows (NULL
-                # times) by default, which must never reach a meeting column
-                # that expects a real datetime.
-                meetings_by_pair: dict[int, list[MentorshipMeetingEntity]] = {}
-                if need_meetings:
-                    pair_ids = [row.pair_id for row in rows if row.pair_id is not None]
-                    meetings_by_pair = (
-                        await self.mentorship_meeting_repository.get_meetings_by_pairs(
-                            session=session, pair_ids=pair_ids
-                        )
-                    )
-
-                for row in rows:
-                    try:
-                        common = self._build_common_export_columns(
-                            row, users_map, emails_map
-                        )
-                        if is_participant:
-                            participant = self._build_participant_export_columns(
-                                row, users_map, trainings_map, rounds_map
-                            )
-                            if not expand_meetings:
-                                csv_rows = [
-                                    common
-                                    + participant
-                                    + [
-                                        row.completed_count,
-                                        self._get_required_meetings(row, rounds_map),
-                                    ]
-                                ]
-                            else:
-                                meetings = self._extract_meetings_for_row(
-                                    row, meetings_by_pair.get(row.pair_id, [])
-                                )
-                                if meetings:
-                                    csv_rows = [
-                                        common
-                                        + participant
-                                        + [
-                                            "Completed"
-                                            if meeting.is_completed
-                                            else "Incomplete",
-                                            self.date_time_util.format_iso_utc_to_pt(
-                                                meeting.start_datetime,
-                                                fmt="%Y-%m-%d %H:%M %Z",
-                                            ),
-                                            self.date_time_util.format_iso_utc_to_pt(
-                                                meeting.end_datetime,
-                                                fmt="%Y-%m-%d %H:%M %Z",
-                                            ),
-                                            "; ".join(
-                                                tag.value for tag in meeting.note
-                                            ),
-                                        ]
-                                        for meeting in meetings
-                                    ]
-                                else:
-                                    csv_rows = [common + participant + ["", "", "", ""]]
-                        else:
-                            non_participant = (
-                                self._build_non_participant_export_columns(
-                                    row, trainings_map
-                                )
-                            )
-                            csv_rows = [common + non_participant]
-                    except Exception:
-                        self.logger.exception(
-                            "Failed to build CSV row during export, "
-                            "skipping row: user_id=%s, pair_id=%s, "
-                            "round_id=%s",
-                            row.user_id,
-                            row.pair_id,
-                            row.round_id,
-                        )
-                        continue
-
-                    for csv_row in csv_rows:
-                        writer.writerow(csv_row)
-                yield drain_buffer()
-                offset += _EXPORT_BATCH_SIZE

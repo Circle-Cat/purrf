@@ -47,12 +47,16 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         self.other_user = _make_user()
         await self.insert_entities([self.user, self.other_user])
 
-    def _entry(self, entry_type, hours, day, user=None):
+    def _entry(self, entry_type, hours, day, user=None, annual_hours=(0, 80)):
+        # A level change has to carry both entitlements; nothing else may.
+        is_level_change = entry_type == LeaveEntryType.LEVEL_CHANGE
         return LeaveLedgerEntity(
             user_id=(user or self.user).user_id,
             entry_type=entry_type,
             hours=Decimal(hours),
             effective_date=day,
+            annual_hours_before=annual_hours[0] if is_level_change else None,
+            annual_hours_after=annual_hours[1] if is_level_change else None,
         )
 
     async def test_the_engine_sum_counts_only_what_the_engine_granted(self):
@@ -131,29 +135,6 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(granted, Decimal("0.00"))
-
-    async def test_the_engine_sum_can_stop_at_a_level_change(self):
-        """A promotion splits the year: what came before it stands as recorded,
-        and the weeks after are computed at the new entitlement. The cut is
-        strictly before the change date -- a row dated on the day of the change
-        belongs to the new level."""
-        await self.insert_entities([
-            self._entry(
-                LeaveEntryType.WEEKLY_ACCRUAL, "20.00", datetime.date(2026, 6, 30)
-            ),
-            self._entry(
-                LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 7, 1)
-            ),
-            self._entry(
-                LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 7, 8)
-            ),
-        ])
-
-        granted_before = await self.repository.sum_weekly_accrual(
-            self.session, self.user.user_id, 2026, before=datetime.date(2026, 7, 1)
-        )
-
-        self.assertEqual(granted_before, Decimal("20.00"))
 
     async def test_a_balance_is_every_row_regardless_of_type(self):
         """There is no balance column and no second source of truth, so this
@@ -292,58 +273,85 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
 
         self.assertEqual(balance, Decimal("-16.00"))
 
-    async def test_the_level_change_date_is_the_most_recent_one(self):
+    async def test_level_changes_come_back_oldest_first_with_their_hours(self):
         await self.insert_entities([
-            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 3, 2)),
-            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1)),
+            self._entry(
+                LeaveEntryType.LEVEL_CHANGE,
+                "0.00",
+                datetime.date(2026, 7, 1),
+                annual_hours=(0, 80),
+            ),
+            self._entry(
+                LeaveEntryType.LEVEL_CHANGE,
+                "0.00",
+                datetime.date(2026, 3, 2),
+                annual_hours=(80, 0),
+            ),
         ])
 
-        level_since = await self.repository.latest_level_change_date(
+        changes = await self.repository.list_level_changes(
             self.session, self.user.user_id
         )
 
-        self.assertEqual(level_since, datetime.date(2026, 7, 1))
-
-    async def test_the_level_change_date_can_be_bounded(self):
-        """The annual job closes out last year, so it must not see a change
-        that happened after that year ended -- it would split the closing year
-        at a date outside it and pay the wrong proportion."""
-        await self.insert_entities([
-            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1)),
-            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2027, 2, 3)),
-        ])
-
-        level_since = await self.repository.latest_level_change_date(
-            self.session, self.user.user_id, on_or_before=datetime.date(2026, 12, 31)
+        self.assertEqual(
+            [
+                (c.effective_date, c.annual_hours_before, c.annual_hours_after)
+                for c in changes
+            ],
+            [(datetime.date(2026, 3, 2), 80, 0), (datetime.date(2026, 7, 1), 0, 80)],
         )
 
-        self.assertEqual(level_since, datetime.date(2026, 7, 1))
-
-    async def test_a_bound_on_the_change_date_is_inclusive(self):
+    async def test_level_changes_include_those_after_the_year(self):
+        """A settlement run late, after a 1 January promotion, has to see that
+        change to know the closing year was at the lower entitlement."""
         await self.insert_entities([
-            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1))
+            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2027, 1, 1))
         ])
 
-        level_since = await self.repository.latest_level_change_date(
-            self.session, self.user.user_id, on_or_before=datetime.date(2026, 7, 1)
+        changes = await self.repository.list_level_changes(
+            self.session, self.user.user_id
         )
 
-        self.assertEqual(level_since, datetime.date(2026, 7, 1))
+        self.assertEqual(
+            [c.effective_date for c in changes], [datetime.date(2027, 1, 1)]
+        )
 
-    async def test_no_level_change_reads_as_none(self):
-        """Almost everybody. The arithmetic treats None as "the whole year at
-        the current entitlement", which is the plain formula."""
+    async def test_level_changes_are_only_this_persons_level_change_rows(self):
+        """Almost everybody has none. Another type of row, or somebody else's
+        change, must not read as one."""
         await self.insert_entities([
             self._entry(
                 LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
-            )
+            ),
+            self._entry(
+                LeaveEntryType.LEVEL_CHANGE,
+                "0.00",
+                datetime.date(2026, 7, 1),
+                self.other_user,
+            ),
         ])
 
-        level_since = await self.repository.latest_level_change_date(
+        changes = await self.repository.list_level_changes(
             self.session, self.user.user_id
         )
 
-        self.assertIsNone(level_since)
+        self.assertEqual(changes, [])
+
+    async def test_a_level_change_without_its_hours_is_refused(self):
+        """The check constraint behind "a change can always be recomputed":
+        the arithmetic has no fallback for a change of unknown size."""
+        with self.assertRaises(IntegrityError):
+            await self.repository.add_entries(
+                self.session,
+                [
+                    LeaveLedgerEntity(
+                        user_id=self.user.user_id,
+                        entry_type=LeaveEntryType.LEVEL_CHANGE,
+                        hours=Decimal("0.00"),
+                        effective_date=datetime.date(2026, 7, 1),
+                    )
+                ],
+            )
 
     async def test_entries_are_written_without_being_committed(self):
         """The caller owns the transaction: a job writes for many people and
@@ -390,25 +398,240 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
     async def test_a_level_may_change_twice_in_one_day(self):
         """Deliberately outside that index. A level raised and put back inside
         one day is two real events; rejecting the second would drop an event
-        rather than deduplicate a payment."""
+        rather than deduplicate a payment. They come back in the order they
+        were written, since the later one is where the level ended up."""
         await self.repository.add_entries(
             self.session,
             [
                 self._entry(
-                    LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1)
+                    LeaveEntryType.LEVEL_CHANGE,
+                    "0.00",
+                    datetime.date(2026, 7, 1),
+                    annual_hours=(0, 80),
                 ),
                 self._entry(
-                    LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1)
+                    LeaveEntryType.LEVEL_CHANGE,
+                    "0.00",
+                    datetime.date(2026, 7, 1),
+                    annual_hours=(80, 0),
                 ),
             ],
         )
 
-        self.assertEqual(
-            await self.repository.latest_level_change_date(
-                self.session, self.user.user_id
-            ),
-            datetime.date(2026, 7, 1),
+        changes = await self.repository.list_level_changes(
+            self.session, self.user.user_id
         )
+
+        self.assertEqual(
+            [(c.annual_hours_before, c.annual_hours_after) for c in changes],
+            [(0, 80), (80, 0)],
+        )
+
+    async def test_list_entries_returns_entries_in_reverse_chronological_order(self):
+        """list_entries returns all rows for a user in reverse chronological order
+        by effective_date and leave_ledger_id."""
+        # Insert entries in random date order to verify sorting
+        entry1 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 1, 1)
+        )
+        entry2 = self._entry(
+            LeaveEntryType.LEAVE_DEDUCTION, "-8.00", datetime.date(2026, 6, 1)
+        )
+        # Two entries on the same day to verify ID secondary ordering
+        entry3_first = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
+        )
+        entry3_second = self._entry(
+            LeaveEntryType.MANUAL_ADJUSTMENT, "40.00", datetime.date(2026, 3, 1)
+        )
+
+        await self.insert_entities([entry1, entry2, entry3_first, entry3_second])
+
+        entries = await self.repository.list_entries(self.session, self.user.user_id)
+
+        # Assert total count
+        self.assertEqual(len(entries), 4)
+
+        # Assert reverse chronological order by date: Jun 1 -> Mar 1 -> Mar 1 -> Jan 1
+        self.assertEqual(entries[0].effective_date, datetime.date(2026, 6, 1))
+        self.assertEqual(entries[1].effective_date, datetime.date(2026, 3, 1))
+        self.assertEqual(entries[2].effective_date, datetime.date(2026, 3, 1))
+        self.assertEqual(entries[3].effective_date, datetime.date(2026, 1, 1))
+
+        # Assert same-day tie-breaker orders by leave_ledger_id descending (newer row first)
+        self.assertGreater(entries[1].leave_ledger_id, entries[2].leave_ledger_id)
+        self.assertEqual(entries[1].entry_type, LeaveEntryType.MANUAL_ADJUSTMENT)
+        self.assertEqual(entries[2].entry_type, LeaveEntryType.WEEKLY_ACCRUAL)
+
+    async def test_list_entries_filters_by_user_id(self):
+        """list_entries only returns rows belonging to the specified user and returns
+        an empty list for a user with no ledger entries."""
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "80.00",
+                datetime.date(2026, 3, 1),
+                user=self.other_user,
+            ),
+        ])
+
+        # Assert querying one user isolates their records from others
+        user_entries = await self.repository.list_entries(
+            self.session, self.user.user_id
+        )
+        self.assertEqual(len(user_entries), 1)
+        self.assertEqual(user_entries[0].hours, Decimal("1.54"))
+
+        # Assert querying a user with no ledger rows returns [] rather than None
+        empty_user = _make_user()
+        await self.insert_entities([empty_user])
+
+        empty_entries = await self.repository.list_entries(
+            self.session, empty_user.user_id
+        )
+        self.assertEqual(empty_entries, [])
+
+    async def test_list_and_count_entries_no_rows(self):
+        """No rows in DB returns [] and count 0."""
+        entries = await self.repository.list_entries(self.session)
+        count = await self.repository.count_entries(self.session)
+        self.assertEqual(entries, [])
+        self.assertEqual(count, 0)
+
+    async def test_list_entries_unfiltered_returns_all_users_newest_first(self):
+        """user_id=None returns every user's rows, newest first."""
+        third_user = _make_user()
+        await self.insert_entities([third_user])
+
+        e1 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL,
+            "1.54",
+            datetime.date(2026, 1, 1),
+            user=self.user,
+        )
+        e2 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL,
+            "1.54",
+            datetime.date(2026, 2, 1),
+            user=self.other_user,
+        )
+        e3 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL,
+            "1.54",
+            datetime.date(2026, 3, 1),
+            user=third_user,
+        )
+        await self.insert_entities([e1, e2, e3])
+
+        entries = await self.repository.list_entries(self.session, user_id=None)
+        count = await self.repository.count_entries(self.session, user_id=None)
+
+        self.assertEqual(len(entries), 3)
+        self.assertEqual(count, 3)
+        self.assertEqual(entries[0].user_id, third_user.user_id)
+        self.assertEqual(entries[1].user_id, self.other_user.user_id)
+        self.assertEqual(entries[2].user_id, self.user.user_id)
+
+    async def test_list_and_count_entries_filtered_by_user_id(self):
+        """userId specified isolates rows AND filtered count."""
+        third_user = _make_user()
+        await self.insert_entities([third_user])
+
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 1, 1),
+                user=self.user,
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 2, 1),
+                user=self.user,
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 1, 1),
+                user=self.other_user,
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "1.54",
+                datetime.date(2026, 1, 1),
+                user=third_user,
+            ),
+        ])
+
+        entries = await self.repository.list_entries(
+            self.session, user_id=self.user.user_id
+        )
+        count = await self.repository.count_entries(
+            self.session, user_id=self.user.user_id
+        )
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(count, 2)
+        self.assertTrue(all(e.user_id == self.user.user_id for e in entries))
+
+    async def test_list_entries_stable_secondary_sort_on_same_date(self):
+        """Two rows on same effective_date ordered by leave_ledger_id desc."""
+        e1 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
+        )
+        e2 = self._entry(
+            LeaveEntryType.MANUAL_ADJUSTMENT, "5.00", datetime.date(2026, 3, 1)
+        )
+        await self.insert_entities([e1, e2])
+
+        entries = await self.repository.list_entries(
+            self.session, user_id=self.user.user_id
+        )
+        self.assertEqual(len(entries), 2)
+        self.assertGreater(entries[0].leave_ledger_id, entries[1].leave_ledger_id)
+        self.assertEqual(entries[0].entry_type, LeaveEntryType.MANUAL_ADJUSTMENT)
+
+    async def test_list_entries_pagination_union_has_no_duplicates(self):
+        """5 rows, pageSize=2 -> page 1, 2, 3 cover all 5 rows without overlaps."""
+        rows = [
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.00", datetime.date(2026, 1, i)
+            )
+            for i in range(1, 6)
+        ]
+        await self.insert_entities(rows)
+
+        page1 = await self.repository.list_entries(self.session, limit=2, offset=0)
+        page2 = await self.repository.list_entries(self.session, limit=2, offset=2)
+        page3 = await self.repository.list_entries(self.session, limit=2, offset=4)
+
+        self.assertEqual(len(page1), 2)
+        self.assertEqual(len(page2), 2)
+        self.assertEqual(len(page3), 1)
+
+        all_ids = [e.leave_ledger_id for e in (page1 + page2 + page3)]
+        self.assertEqual(len(all_ids), 5)
+        self.assertEqual(len(set(all_ids)), 5)
+
+    async def test_list_entries_page_beyond_end_returns_empty(self):
+        """Asking for page 4 of a 5-row result returns [] with real count 5."""
+        rows = [
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.00", datetime.date(2026, 1, i)
+            )
+            for i in range(1, 6)
+        ]
+        await self.insert_entities(rows)
+
+        entries = await self.repository.list_entries(self.session, limit=2, offset=6)
+        count = await self.repository.count_entries(self.session)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(count, 5)
 
 
 if __name__ == "__main__":

@@ -1,13 +1,18 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import { PERMISSIONS } from "@/constants/Permissions";
+import { INBOX_PERMISSIONS, PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { Badge } from "@/components/ui/badge";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useInboxCount } from "@/hooks/useInboxCount";
 
 const Sidebar = () => {
   const { permissions } = useAuth();
   const flags = useFeatureFlags();
+  const { count: inboxCount } = useInboxCount(
+    permissions.some((p) => INBOX_PERMISSIONS.includes(p)),
+  );
 
   /**
    * Checks if the user may access a page. An empty list means the item is open
@@ -62,6 +67,11 @@ const Sidebar = () => {
       ],
     },
     {
+      label: "Accounts",
+      to: ROUTE_PATHS.ADMIN_ACCOUNTS,
+      permissions: [PERMISSIONS.USER_ADMIN],
+    },
+    {
       label: "User Permissions",
       to: ROUTE_PATHS.ADMIN_USERS,
       permissions: [PERMISSIONS.PERMISSION_MANAGE],
@@ -72,9 +82,18 @@ const Sidebar = () => {
       permissions: [],
     },
     {
+      label: "Inbox",
+      to: ROUTE_PATHS.INBOX,
+      permissions: INBOX_PERMISSIONS,
+      badgeKey: "inbox",
+    },
+    {
       label: "Applications Board",
       to: ROUTE_PATHS.RECRUITING_BOARD,
-      permissions: [PERMISSIONS.RECRUITING_APPLICATION_ADVANCE],
+      permissions: [
+        PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+        PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+      ],
     },
     {
       label: "My Interview Evaluations",
@@ -91,16 +110,6 @@ const Sidebar = () => {
       ],
     },
     {
-      label: "My Posting Reviews",
-      to: ROUTE_PATHS.RECRUITING_REVIEWS,
-      permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
-    },
-    {
-      label: "Blacklist",
-      to: ROUTE_PATHS.RECRUITING_BLACKLIST,
-      permissions: [PERMISSIONS.RECRUITING_BLACKLIST_WRITE],
-    },
-    {
       label: "Recruiting Audit",
       to: ROUTE_PATHS.RECRUITING_AUDIT,
       permissions: [PERMISSIONS.RECRUITING_AUDIT_READ],
@@ -113,6 +122,14 @@ const Sidebar = () => {
       to: ROUTE_PATHS.LEAVE_ADMIN,
       permissions: [PERMISSIONS.LEAVE_ADMIN],
       flag: FEATURE_FLAGS.LEAVE_MANAGEMENT,
+    },
+    {
+      // Same shape as Leave Administration above: this is the admin-only
+      // catalogue, not the learner-facing course page, which has no nav
+      // entry of its own -- it's reached from a training assignment.
+      label: "Training Administration",
+      to: ROUTE_PATHS.ADMIN_TRAINING,
+      permissions: [PERMISSIONS.TRAINING_ADMIN_READ],
     },
   ];
 
@@ -136,6 +153,11 @@ const Sidebar = () => {
                     }
                   >
                     {item.label}
+                    {item.badgeKey === "inbox" && inboxCount > 0 && (
+                      <Badge className="ml-auto rounded-full px-2 py-0 text-xs">
+                        {inboxCount}
+                      </Badge>
+                    )}
                   </NavLink>
                 </li>
               ),

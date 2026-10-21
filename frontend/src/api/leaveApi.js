@@ -26,11 +26,14 @@ export async function getLeaveApprovals() {
  *
  * @param {number} requestId - The request being decided.
  * @param {boolean} approve - True to approve, false to reject.
+ * @param {string|null} [comment] - Why. Required to reject; the employee is
+ *   told it.
  * @returns {Promise<object>} The API envelope; `data` is the decided request.
  */
-export async function decideLeaveRequest(requestId, approve) {
+export async function decideLeaveRequest(requestId, approve, comment = null) {
   return await request.post(API_ENDPOINTS.LEAVE_REQUEST_DECISION(requestId), {
     approve,
+    comment,
   });
 }
 
@@ -163,4 +166,16 @@ export async function getLeaveBalances() {
  */
 export async function adjustLeaveBalance(payload) {
   return await request.post(API_ENDPOINTS.LEAVE_ADJUSTMENTS, payload);
+}
+
+/**
+ * Fetches the signed-in employee's own leave ledger entries and current balance.
+ *
+ * Takes no parameters and reads directly from the user ID in the token.
+ * Hours are returned as server-formatted strings and should not be calculated locally.
+ *
+ * @returns {Promise<object>} The API envelope; `data` contains `balanceHours` and `entries`.
+ */
+export async function getMyLeaveLedger() {
+  return await request.get(API_ENDPOINTS.LEAVE_ME_LEDGER);
 }

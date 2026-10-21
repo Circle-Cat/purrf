@@ -45,7 +45,7 @@ class GoogleChatMessagesUtils:
         Args:
             logger: logger with debug/info/warning/error
             redis_client: redis client with get/set/zadd/zrem/zscore/pipeline
-            retry_utils: exposes get_retry_on_transient(callable_or_fn)
+            retry_utils: exposes execute_pipeline(pipeline)
         """
         self.logger = logger
         self.redis_client = redis_client
@@ -203,7 +203,7 @@ class GoogleChatMessagesUtils:
             return
 
         try:
-            self.retry_utils.get_retry_on_transient(pipeline.execute)
+            self.retry_utils.execute_pipeline(pipeline)
         except Exception as e:
             self.logger.error(
                 "Redis pipeline failed for sync Google Chat real time messages, error: %s",
@@ -541,7 +541,7 @@ class GoogleChatMessagesUtils:
             )
 
         try:
-            self.retry_utils.get_retry_on_transient(pipeline.execute)
+            self.retry_utils.execute_pipeline(pipeline)
         except Exception as e:
             self.logger.error(
                 "Redis pipeline failed for batch sync: %s", e, exc_info=True

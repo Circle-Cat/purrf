@@ -20,6 +20,7 @@ export const getUsers = ({
   order,
   isSuperAdmin,
   userType,
+  permissionName,
 } = {}) =>
   request.get(API_ENDPOINTS.ADMIN_USERS, {
     params: {
@@ -31,25 +32,13 @@ export const getUsers = ({
       order,
       is_super_admin: isSuperAdmin,
       user_type: userType,
+      permission_name: permissionName,
     },
   });
 
 /** A user's active permissions plus full grant/revoke history. */
 export const getUserPermissions = (userId) =>
   request.get(API_ENDPOINTS.ADMIN_USER_PERMISSIONS(userId));
-
-/**
- * Reverse lookup: who holds a given permission.
- * @param {string} name
- * @param {{includeRevoked?: boolean, grantedSource?: string}} [filters]
- */
-export const getPermissionHolders = (
-  name,
-  { includeRevoked, grantedSource } = {},
-) =>
-  request.get(API_ENDPOINTS.ADMIN_PERMISSION_USERS(name), {
-    params: { include_revoked: includeRevoked, granted_source: grantedSource },
-  });
 
 /**
  * Global permission-change audit feed.

@@ -28,14 +28,32 @@ that count has two limits which are each easy to drop -- see
 :func:`weekly_accrual_hours`.
 """
 
-from datetime import date
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 WEEKS_PER_YEAR = 52
 
+DAYS_PER_YEAR = 7 * WEEKS_PER_YEAR
+
 HOURS_QUANTUM = Decimal("0.01")
 
 NO_HOURS = Decimal("0.00")
+
+
+@dataclass(frozen=True)
+class LevelChange:
+    """One change of annual entitlement, as the ledger recorded it.
+
+    The hours on either side are recorded rather than looked up from the level,
+    so a year can be recomputed later from the ledger alone: the cached profile
+    only says what somebody is entitled to now.
+    """
+
+    effective_date: date
+    annual_hours_before: int
+    annual_hours_after: int
 
 
 def format_hours(value: Decimal) -> str:
@@ -118,8 +136,7 @@ def weekly_accrual_hours(
     start_date: date,
     today: date,
     granted_this_year: Decimal,
-    level_since: date | None = None,
-    granted_before_level_since: Decimal = NO_HOURS,
+    level_changes: Sequence[LevelChange] = (),
 ) -> Decimal:
     """What this run owes one person, or zero when it owes nothing.
 
@@ -142,53 +159,79 @@ def weekly_accrual_hours(
     something a scheduled job should do unattended.
 
     Args:
-        annual_hours: Their level's annual entitlement, as it stands now.
+        annual_hours: Their level's annual entitlement, as it stands now. Only
+            read for somebody with no level change on record.
         start_date: From :func:`accrual_start_date`.
         today: The Beijing date this run is accruing for.
         granted_this_year: Sum of their ``weekly_accrual`` hours dated in the
             year of ``today``.
-        level_since: The date their annual entitlement last changed, if it
-            has. Defaults to None, which is almost everybody.
-        granted_before_level_since: Of ``granted_this_year``, the part dated
-            before ``level_since``. Ignored without one.
+        level_changes: Every entitlement change on record for them, oldest
+            first, including any dated after ``today``. Empty for almost
+            everybody.
 
     Returns:
         Hours to write, or zero to write nothing.
     """
-    target = accrual_target_hours(
-        annual_hours, weeks_passed(_proportion_from(start_date, level_since), today)
+    owed = (
+        _target_hours(annual_hours, start_date, today, level_changes)
+        - granted_this_year
     )
-    if level_since is not None and level_since > start_date:
-        target += granted_before_level_since
-    owed = target - granted_this_year
     return owed if owed > NO_HOURS else NO_HOURS
 
 
-def _proportion_from(start_date: date, level_since: date | None) -> date:
-    """Where the proportion of the annual entitlement starts counting.
+def _target_hours(
+    annual_hours: int,
+    start_date: date,
+    today: date,
+    level_changes: Sequence[LevelChange],
+) -> Decimal:
+    """Everything this person should have been granted by ``today``.
 
-    A level change splits the year: hours earned before it stand as the ledger
-    recorded them, and the weeks after it are counted at the new entitlement.
-    Without that split the formula reads the current level and applies it to
-    the whole year, which pays an L1 promoted in July for the six months they
-    spent on no entitlement at all -- it cannot otherwise tell a promotion
-    apart from a run that never happened, since both look like "owed more than
-    granted".
+    The credited days are the whole weeks since ``start_date``, as for anybody,
+    and each is paid at the entitlement held on it. With no change on record
+    that is :func:`accrual_target_hours`, since ``annual * 7w / 364`` is
+    ``annual * w / 52``.
 
-    A change dated at or before the start of accrual is not a split: it is
-    simply how this year begins, and the whole year is already at that
-    entitlement.
-
-    Args:
-        start_date: From :func:`accrual_start_date`.
-        level_since: The date the entitlement changed, or None.
-
-    Returns:
-        The later of the two dates, or ``start_date`` when there was no change.
+    Splitting by days rather than counting whole weeks on each side of a change
+    is what keeps both edges: the days between the last run and the change are
+    paid at the old rate, and a change does not restart the week count, so the
+    year still ends on week 52.
     """
-    if level_since is None:
-        return start_date
-    return max(start_date, level_since)
+    weeks = weeks_passed(start_date, today)
+    if not level_changes:
+        return accrual_target_hours(annual_hours, weeks)
+    end = start_date + timedelta(days=7 * weeks)
+    boundaries = sorted({
+        change.effective_date
+        for change in level_changes
+        if start_date < change.effective_date < end
+    })
+    day_hours = 0
+    segment_start = start_date
+    for segment_end in [*boundaries, end]:
+        rate = _annual_hours_on(segment_start, annual_hours, level_changes)
+        day_hours += rate * (segment_end - segment_start).days
+        segment_start = segment_end
+    return (Decimal(day_hours) / DAYS_PER_YEAR).quantize(HOURS_QUANTUM, ROUND_HALF_UP)
+
+
+def _annual_hours_on(
+    day: date, annual_hours: int, level_changes: Sequence[LevelChange]
+) -> int:
+    """The annual entitlement somebody held on ``day``.
+
+    The latest change on or before the day says what it became. Failing that,
+    the earliest change after it says what it was before -- which is what keeps
+    a year being closed late from reading a promotion made after it ended.
+    Only somebody with no change at all falls back to the current level.
+    """
+    held = [change for change in level_changes if change.effective_date <= day]
+    if held:
+        return held[-1].annual_hours_after
+    later = [change for change in level_changes if change.effective_date > day]
+    if later:
+        return later[0].annual_hours_before
+    return annual_hours
 
 
 def carryover_forfeit_hours(balance: Decimal, cap: Decimal | None) -> Decimal:

@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from http import HTTPStatus
@@ -6,7 +8,7 @@ from http import HTTPStatus
 def api_response(
     message: str,
     success: bool = True,
-    data: dict | None = None,
+    data: Any = None,
     status_code: HTTPStatus = HTTPStatus.OK,
 ) -> JSONResponse:
     """
@@ -20,8 +22,10 @@ def api_response(
     Args:
         message (str): A descriptive message explaining the result of the API call.
         success (bool): Whether the API call succeeded (True) or failed (False).
-        data (dict | None): Optional payload to include in the response body.
-                            Can be None.
+        data (Any): Optional payload to include in the response body. A DTO,
+                    or a list of them, is serialised by alias -- hand the DTO
+                    over rather than a dict built from it, or the body answers
+                    in snake_case and its readers see undefined.
         status_code (HTTPStatus): The HTTP status code for the response.
                                   Defaults to HTTPStatus.OK (200).
 

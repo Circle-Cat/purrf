@@ -4,11 +4,15 @@ from datetime import datetime, timezone
 
 
 from backend.repository.users_repository import UsersRepository
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
+from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -143,7 +147,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertFalse(user.is_active)
 
-    def _make_user(self, *, first_name="T", last_name=None, email):
+    def _make_user(self, *, first_name="T", last_name=None, email, preferred_name=None):
         # last_name defaults to the email's local part so tests that isolate
         # their rows with a token-bearing email still match search=token via
         # the name leg: the email leg of the search reads user_emails, which
@@ -156,7 +160,29 @@ class TestUsersRepository(BaseRepositoryTestLib):
             communication_channel=CommunicationMethod.EMAIL,
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
+            preferred_name=preferred_name,
         )
+
+    async def test_list_users_search_matches_the_preferred_name(self):
+        """The name a person chose is searchable, not just their legal one.
+
+        The list renders all three names, so searching only first_name and
+        last_name leaves a row visible but unfindable by the name it shows.
+        """
+        token = uuid.uuid4().hex[:10]
+        elsewhere = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name="Ann",
+            last_name=elsewhere,
+            email=f"{elsewhere}@example.com",
+            preferred_name=f"Pref{token}",
+        )
+        await self.insert_entities([target])
+
+        rows, total = await self.repo.list_users(self.session, search=token)
+
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
 
     async def test_list_users_search_matches_and_paginates(self):
         """A unique token isolates these rows from any pre-existing DB data.
@@ -365,76 +391,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
     async def test_set_internal_missing_user_updates_nothing(self):
         updated = await self.repo.set_internal(self.session, 9_999_999)
         self.assertEqual(updated, 0)
-
-    async def test_list_blocked_users_returns_only_blocked(self):
-        token = uuid.uuid4().hex[:10]
-        blocked = self._make_user(
-            first_name=f"Blocked{token}", email=f"blocked-{token}@example.com"
-        )
-        blocked.is_blocked = True
-        blocked.blocked_by = 1
-        blocked.blocked_at = datetime.now(timezone.utc)
-        blocked.blocked_reason = "cheated"
-        not_blocked = self._make_user(
-            first_name=f"Clean{token}", email=f"clean-{token}@example.com"
-        )
-        await self.insert_entities([blocked, not_blocked])
-
-        rows = await self.repo.list_blocked_users(self.session)
-        ids = {u.user_id for u in rows}
-        self.assertIn(blocked.user_id, ids)
-        self.assertNotIn(not_blocked.user_id, ids)
-
-    async def test_list_blocked_users_search_matches_name(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(
-            first_name=f"Name{token}", email=f"n-{token}@example.com"
-        )
-        user.is_blocked = True
-        user.blocked_reason = "spam"
-        await self.insert_entities([user])
-
-        rows = await self.repo.list_blocked_users(self.session, search=token)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].user_id, user.user_id)
-
-    async def test_list_blocked_users_search_matches_email(self):
-        # The token appears only in a user_emails row — the email leg of the
-        # search reads user_emails, not the legacy users.primary_email column.
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"{uuid.uuid4()}@example.com")
-        user.is_blocked = True
-        user.blocked_reason = "spam"
-        await self.insert_entities([user])
-        await self.insert_entities([
-            UserEmailsEntity(
-                user_id=user.user_id,
-                email=f"findme-{token}@example.com",
-                otp_confirmed=True,
-                is_primary=True,
-            )
-        ])
-
-        rows = await self.repo.list_blocked_users(self.session, search=token)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].user_id, user.user_id)
-
-    async def test_list_blocked_users_search_matches_reason_case_insensitive(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"reason-{token}@example.com")
-        user.is_blocked = True
-        user.blocked_reason = f"Fraud-{token}"
-        await self.insert_entities([user])
-
-        rows = await self.repo.list_blocked_users(self.session, search=token.upper())
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].user_id, user.user_id)
-
-    async def test_list_blocked_users_search_with_no_match_is_empty(self):
-        rows = await self.repo.list_blocked_users(
-            self.session, search="no-such-token-xyz"
-        )
-        self.assertEqual(rows, [])
 
     async def test_clear_block_resets_all_block_columns(self):
         token = uuid.uuid4().hex[:10]
@@ -814,27 +770,357 @@ class TestUsersRepository(BaseRepositoryTestLib):
             msg="desc should list internal before external",
         )
 
-    async def test_get_super_admins_returns_only_flagged_users(self):
-        """get_super_admins returns exactly the users with is_super_admin True."""
-        super_admin = UsersEntity(
-            first_name="Sa",
-            last_name="Admin",
-            timezone="UTC",
-            timezone_updated_at=datetime.now(timezone.utc),
-            communication_channel=CommunicationMethod.EMAIL,
-            is_active=True,
-            is_super_admin=True,
-            updated_timestamp=datetime.now(timezone.utc),
+    def _grant_row(self, user_id, name, *, revoked=False, source="admin"):
+        """A grant row for the permission filter's fixtures."""
+        row = UserPermissionsEntity(
+            user_id=user_id,
+            permission_name=name,
+            granted_source=source,
+            granted_by=None,
         )
-        await self.insert_entities([super_admin])
+        if revoked:
+            row.revoked_timestamp = datetime.now(timezone.utc)
+        return row
 
-        result = await self.repo.get_super_admins(self.session)
+    async def test_list_users_filter_permission_name_keeps_only_holders(self):
+        """PUR-626: the permission is a filter on the user list, not a second view."""
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([holder, other])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
 
-        ids = {u.user_id for u in result}
-        self.assertIn(super_admin.user_id, ids)
-        # The non-super-admin users from setUp must not be returned.
-        self.assertNotIn(self.users[0].user_id, ids)
-        self.assertTrue(all(u.is_super_admin for u in result))
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [holder.user_id])
+
+    async def test_list_users_filter_permission_name_includes_super_admins(self):
+        """A super admin holds every permission via the flag, with no grant row."""
+        token = uuid.uuid4().hex[:10]
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([super_user, other])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [super_user.user_id])
+
+    async def test_list_users_filter_permission_name_ignores_revoked_grants(self):
+        """A revoked grant is not held. The audit feed is where it still shows."""
+        token = uuid.uuid4().hex[:10]
+        former = self._make_user(email=f"gone-{token}@example.com")
+        await self.insert_entities([former])
+        await self.insert_entities([
+            self._grant_row(former.user_id, "permission.manage", revoked=True)
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 0)
+        self.assertEqual(rows, [])
+
+    async def test_list_users_permission_with_super_admin_false_means_real_grants(self):
+        """The two filters compose into "real holders only" with no special case.
+
+        ``is_super_admin = false AND (is_super_admin OR grant_exists)`` reduces
+        to ``is_super_admin = false AND grant_exists``, which is exactly the
+        question "who was actually granted this" -- the one the old holders view
+        needed a source filter to answer.
+        """
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        await self.insert_entities([holder, super_user])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            permission_name="permission.manage",
+            is_super_admin=False,
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [holder.user_id])
+
+    async def test_list_users_filter_permission_name_dedupes_multiple_grants(self):
+        """Two grant rows for one person is one row on the page, not two.
+
+        This is what an EXISTS buys over a join: a join would multiply the
+        person by their grant rows and break both the page size and the total.
+        """
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        await self.insert_entities([holder])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage"),
+            self._grant_row(
+                holder.user_id, "permission.manage", source="system_internal"
+            ),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+
+    async def test_list_users_filter_permission_name_composes_with_user_type(self):
+        """The combination neither tab could answer: external holders of X."""
+        token = uuid.uuid4().hex[:10]
+        internal_holder = self._make_user(email=f"int-{token}@example.com")
+        external_holder = self._make_user(email=f"ext-{token}@example.com")
+        await self.insert_entities([internal_holder, external_holder])
+        await self.repo.set_internal(self.session, internal_holder.user_id)
+        await self.insert_entities([
+            self._grant_row(internal_holder.user_id, "permission.manage"),
+            self._grant_row(external_holder.user_id, "permission.manage"),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            permission_name="permission.manage",
+            user_type="external",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [external_holder.user_id])
+
+    async def test_list_users_without_permission_filter_is_unchanged(self):
+        """The filter defaults off: a non-holder still appears when it is unset."""
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([holder, other])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        _, total = await self.repo.list_users(self.session, search=token)
+        self.assertEqual(total, 2)
+
+    async def test_list_users_filter_is_blocked_three_ways(self):
+        """True keeps only blocked rows, False only unblocked, None neither.
+
+        Blocking and deactivation are independent: a row that is both must
+        answer the is_blocked question on its block flag alone.
+        """
+        token = uuid.uuid4().hex[:10]
+        clean = self._make_user(email=f"clean-{token}@example.com")
+        blocked = self._make_user(email=f"blocked-{token}@example.com")
+        blocked.is_blocked = True
+        blocked.blocked_reason = "no-show twice"
+        gone = self._make_user(email=f"gone-{token}@example.com")
+        gone.is_active = False
+        both = self._make_user(email=f"both-{token}@example.com")
+        both.is_active = False
+        both.is_blocked = True
+        await self.insert_entities([clean, blocked, gone, both])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, is_blocked=True, limit=50
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {blocked.user_id, both.user_id})
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, is_blocked=False, limit=50
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {clean.user_id, gone.user_id})
+
+        rows, _ = await self.repo.list_users(self.session, search=token, limit=50)
+        self.assertEqual(
+            {u.user_id for u, _ in rows},
+            {clean.user_id, blocked.user_id, gone.user_id, both.user_id},
+        )
+
+    async def test_list_users_filter_is_active(self):
+        """The account console's status filter has to reach SQL: filtering a
+        page in Python would leave both the page size and the total wrong."""
+        token = uuid.uuid4().hex[:10]
+        live = self._make_user(email=f"live-{token}@example.com")
+        gone = self._make_user(email=f"off-{token}@example.com")
+        gone.is_active = False
+        await self.insert_entities([live, gone])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=False, limit=50
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {gone.user_id})
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=True, limit=50
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {live.user_id})
+
+    async def test_list_users_is_active_and_is_blocked_compose(self):
+        """ "Active" on the console means neither deactivated nor blocked, so
+        the two filters have to hold at once."""
+        token = uuid.uuid4().hex[:10]
+        clean = self._make_user(email=f"ok-{token}@example.com")
+        blocked = self._make_user(email=f"bad-{token}@example.com")
+        blocked.is_blocked = True
+        await self.insert_entities([clean, blocked])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=True, is_blocked=False, limit=50
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {clean.user_id})
+
+    async def test_list_users_blocked_reason_search_is_off_by_default(self):
+        """Pins that the existing list endpoint's result set does not change.
+
+        A user whose only match is a word someone else wrote in their block
+        reason must not surface until the caller asks for that leg.
+        """
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(last_name="Bb", email=f"{uuid.uuid4()}@example.com")
+        target.is_blocked = True
+        target.blocked_reason = f"repeated {token} incidents"
+        await self.insert_entities([target])
+
+        rows, _ = await self.repo.list_users(self.session, search=token, limit=50)
+        self.assertNotIn(target.user_id, {u.user_id for u, _ in rows})
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, search_blocked_reason=True, limit=50
+        )
+        self.assertIn(target.user_id, {u.user_id for u, _ in rows})
+
+    async def test_deactivate_sets_all_four_fields(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"deact-{token}@example.com")
+        actor = self._make_user(email=f"actor-{token}@example.com")
+        await self.insert_entities([user, actor])
+
+        await self.repo.deactivate(
+            self.session, user.user_id, actor.user_id, "requested by email"
+        )
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_active)
+        self.assertEqual(refetched.deactivated_by, actor.user_id)
+        self.assertIsNotNone(refetched.deactivated_at)
+        self.assertEqual(refetched.deactivated_reason, "requested by email")
+
+    async def test_reactivate_clears_all_four_fields(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"react-{token}@example.com")
+        actor = self._make_user(email=f"reactor-{token}@example.com")
+        await self.insert_entities([user, actor])
+        await self.repo.deactivate(self.session, user.user_id, actor.user_id, "note")
+
+        await self.repo.reactivate(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertTrue(refetched.is_active)
+        self.assertIsNone(refetched.deactivated_by)
+        self.assertIsNone(refetched.deactivated_at)
+        self.assertIsNone(refetched.deactivated_reason)
+
+    async def test_reactivate_on_active_user_is_a_noop_success(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"already-active-{token}@example.com")
+        await self.insert_entities([user])
+
+        await self.repo.reactivate(self.session, user.user_id)
+        await self.repo.reactivate(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertTrue(refetched.is_active)
+
+    async def test_reactivate_missing_user_is_a_noop_success(self):
+        await self.repo.reactivate(self.session, 9_999_999)  # must not raise
+
+    async def test_filter_reachable_ids_keeps_only_active_unblocked_users(self):
+        """Both flags are read, and they are read independently.
+
+        Blocking never writes ``is_active``, so a blocked account is still
+        active and a filter on activity alone would let it through.
+        """
+        token = uuid.uuid4().hex[:10]
+        reachable = self._make_user(email=f"reachable-{token}@example.com")
+        deactivated = self._make_user(email=f"off-{token}@example.com")
+        deactivated.is_active = False
+        blocked = self._make_user(email=f"blocked-{token}@example.com")
+        blocked.is_blocked = True
+        both = self._make_user(email=f"both-{token}@example.com")
+        both.is_active = False
+        both.is_blocked = True
+        await self.insert_entities([reachable, deactivated, blocked, both])
+
+        result = await self.repo.filter_reachable_ids(
+            self.session,
+            [
+                reachable.user_id,
+                deactivated.user_id,
+                blocked.user_id,
+                both.user_id,
+            ],
+        )
+
+        self.assertEqual(result, {reachable.user_id})
+
+    async def test_filter_reachable_ids_drops_an_id_with_no_user_row(self):
+        """A stored id can outlive the account it names."""
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"present-{token}@example.com")
+        await self.insert_entities([user])
+
+        result = await self.repo.filter_reachable_ids(
+            self.session, [user.user_id, 9_999_999]
+        )
+
+        self.assertEqual(result, {user.user_id})
+
+    async def test_filter_reachable_ids_returns_empty_for_no_ids(self):
+        self.assertEqual(await self.repo.filter_reachable_ids(self.session, []), set())
+
+    async def _application_of(self, user: UsersEntity) -> ApplicationEntity:
+        """One application belonging to ``user``, with the job it needs."""
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        await self.insert_entities([job])
+        application = ApplicationEntity(
+            job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+        )
+        await self.insert_entities([application])
+        return application
+
+    async def test_get_by_application_id_returns_the_applicant(self):
+        """The mentorship copy greets the applicant, who is reached only
+        through the application the event names."""
+        user = self._make_user(
+            first_name="Ada", email=f"{uuid.uuid4().hex[:10]}@example.com"
+        )
+        await self.insert_entities([user])
+        application = await self._application_of(user)
+
+        found = await self.repo.get_by_application_id(
+            self.session, application.application_id
+        )
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.user_id, user.user_id)
+        self.assertEqual(found.first_name, "Ada")
+
+    async def test_get_by_application_id_returns_none_when_there_is_no_application(
+        self,
+    ):
+        """The copy greets without a name rather than failing the send."""
+        self.assertIsNone(await self.repo.get_by_application_id(self.session, 999_999))
 
 
 if __name__ == "__main__":

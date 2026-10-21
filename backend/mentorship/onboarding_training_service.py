@@ -1,28 +1,21 @@
-import os
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.environment_constants import (
-    MENTORSHIP_MENTEE_ONBOARDING_LINK,
-    MENTORSHIP_MENTOR_ONBOARDING_LINK,
-)
+from backend.common.training_links import external_link_for
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
+    TrainingPackageState,
     TrainingStatus,
 )
 from backend.common.recruiting_enums import JobKind
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 
 _ROLE_TO_CATEGORY = {
     ParticipantRole.MENTOR: TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
     ParticipantRole.MENTEE: TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-}
-
-_CATEGORY_LINK_ENV_VAR = {
-    TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: MENTORSHIP_MENTOR_ONBOARDING_LINK,
-    TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: MENTORSHIP_MENTEE_ONBOARDING_LINK,
 }
 
 
@@ -36,14 +29,26 @@ class OnboardingTrainingService:
     the first time the user registers for a round.
     """
 
-    def __init__(self, logger, training_repository):
+    def __init__(
+        self,
+        logger,
+        training_repository,
+        training_course_repository,
+        training_course_package_repository,
+    ):
         """
         Args:
             logger: Application logger.
             training_repository (TrainingRepository): Training data access.
+            training_course_repository (TrainingCourseRepository): Resolves the
+                category into the course the row must point at.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Reads whether the course has a live package.
         """
         self.logger = logger
         self.training_repo = training_repository
+        self.training_course_repo = training_course_repository
+        self.training_course_package_repo = training_course_package_repository
 
     async def ensure_for_admitted(
         self, session: AsyncSession, user_id: int, job
@@ -81,7 +86,8 @@ class OnboardingTrainingService:
         user_id: int,
         category: TrainingCategory,
         deadline: datetime | None = None,
-    ) -> TrainingEntity:
+        require_live_package: bool = False,
+    ) -> TrainingEntity | None:
         """Make sure a user holds an onboarding task, recording a known deadline.
 
         One rule shared by both moments that can produce the task:
@@ -94,33 +100,71 @@ class OnboardingTrainingService:
         - Row exists with a deadline: left alone. Later registrations never
           recompute it.
 
+        Either way the row ends up carrying the course its category stands
+        for: that is what the learner opens, what the admin page counts, and
+        what an overwrite clears resume state by.
+
         Does not commit. The caller owns the transaction, so the training row
         and the decision that caused it stand or fall together.
+
+        Callers that assign nobody a course they could not finish pass
+        `require_live_package`, applying the same gate as
+        `TrainingAssignmentService._assignable_course` -- a live package and
+        an active course -- and getting None instead of a row when it fails.
+        The check costs nothing extra here: the live package is already read
+        to decide whether the row carries an external link.
 
         Args:
             session (AsyncSession): Active database async session.
             user_id (int): The user who owes the training.
             category (TrainingCategory): Which onboarding training.
             deadline (datetime | None): The due date, when one is known yet.
+            require_live_package (bool): Refuse to create the row unless the
+                category's course is active and has a live package.
 
         Returns:
-            TrainingEntity: The existing or newly created row.
+            TrainingEntity | None: The existing or newly created row, or None
+            when `require_live_package` refused to create one.
         """
         existing = await self.training_repo.get_training_by_user_id_and_category(
             session=session, user_id=user_id, category=category
         )
+        course = await self._course_for(session=session, category=category)
+        course_id = course.course_id if course is not None else None
+        has_live_package = course is not None and (
+            await self.training_course_package_repo.get_by_state(
+                session, course.course_id, TrainingPackageState.LIVE
+            )
+            is not None
+        )
+        # Nothing once we serve the package ourselves. The profile page prefers
+        # a stored link over the in-app course, so a link written here after an
+        # upload is what the learner follows -- and nothing out there is ever
+        # recorded against this row.
+        link = None if has_live_package else (external_link_for(category))
 
         if existing is None:
-            link_env_var = _CATEGORY_LINK_ENV_VAR[category]
+            if require_live_package and not (
+                has_live_package and course is not None and course.is_active
+            ):
+                self.logger.info(
+                    "[OnboardingTrainingService] not assigning %s to user %s: "
+                    "the course has nothing live to finish.",
+                    category.value,
+                    user_id,
+                )
+                return None
+
             created = await self.training_repo.upsert_training(
                 session=session,
                 entity=TrainingEntity(
                     user_id=user_id,
                     category=category,
+                    course_id=course_id,
                     status=TrainingStatus.TO_DO,
                     completed_timestamp=None,
                     deadline=deadline,
-                    link=os.getenv(link_env_var),
+                    link=link,
                 ),
             )
             self.logger.info(
@@ -130,10 +174,44 @@ class OnboardingTrainingService:
             )
             return created
 
+        changed = False
+
+        # A row from before this path attached a course carries none, and
+        # without one its owner cannot open the course at all. Attaching it on
+        # the next touch heals those rows in place.
+        if existing.course_id is None and course_id is not None:
+            existing.course_id = course_id
+            changed = True
+
         if deadline is not None and existing.deadline is None:
             existing.deadline = deadline
+            changed = True
+
+        if changed:
             return await self.training_repo.upsert_training(
                 session=session, entity=existing
             )
 
         return existing
+
+    async def _course_for(
+        self, session: AsyncSession, category: TrainingCategory
+    ) -> TrainingCourseEntity | None:
+        """The seed course this category stands for, if the catalogue holds it.
+
+        None rather than an error when it does not: the training task itself
+        is what admission owes the participant, and refusing to record it
+        because the catalogue is short a row would cost more than the course
+        being unopenable until somebody seeds it.
+        """
+        course = await self.training_course_repo.get_course_by_category(
+            session=session, category=category
+        )
+        if course is None:
+            self.logger.warning(
+                "[OnboardingTrainingService] no course carries category %s; "
+                "the row for this user will not be openable.",
+                category.value,
+            )
+            return None
+        return course

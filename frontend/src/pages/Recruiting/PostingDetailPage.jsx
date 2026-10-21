@@ -21,6 +21,8 @@ import {
   listInterviewPool,
   listJobActivity,
   listMyReviews,
+  reassignReviewer,
+  withdrawReview,
   submitForReview,
   requestClose,
   requestReopen,
@@ -28,13 +30,15 @@ import {
   deleteJob,
   decideReview,
 } from "@/api/recruitingApi";
-import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
+import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
+import EmptyState from "@/pages/Recruiting/components/EmptyState";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
 import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
+import { unavailablePersonLabel } from "@/pages/Recruiting/components/personLabel";
 import {
   OPERABLE_STATUSES,
   PENDING_HEADLINE,
@@ -83,6 +87,9 @@ const REVIEW_ACTION = {
  * text everywhere. It's shown to every viewer of this page, exactly like the
  * badge and the Review history tab already are.
  */
+/** An approver as the reviewer pickers show them: name and email. */
+const approverLabel = (a) => `${a.name} (${a.email})`;
+
 const PostingDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -107,6 +114,9 @@ const PostingDetailPage = () => {
   const [deleting, setDeleting] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [deciding, setDeciding] = useState(false);
 
@@ -117,7 +127,7 @@ const PostingDetailPage = () => {
     // It's how this page learns the *actual* review_id to decide on: JobDto
     // only exposes reviewerId (the assigned user), never the review cycle's
     // own id, and only the assigned reviewer's own listMyReviews() call can
-    // see it (mirrors MyReviews.jsx's existing self-scoped fetch).
+    // see it (the same self-scoped fetch as the postings page's review card).
     Promise.all([
       getJob(id),
       listApprovers(),
@@ -192,6 +202,11 @@ const PostingDetailPage = () => {
   const reviewerName = job.reviewerId
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
+  // Only the submitter may move their own open review, so only they are
+  // offered the action. submittedBy is null unless a review is open, which
+  // makes this false everywhere else without a status check of its own.
+  const canReassignReviewer =
+    job.submittedBy != null && job.submittedBy === user?.userId;
   const ownerIds = job.pipelineConfig?.ownerIds ?? [];
   /** The staged edit merged onto the live job, or null when nothing is staged. */
   const proposedJob = job.pendingPayload
@@ -230,18 +245,22 @@ const PostingDetailPage = () => {
         initial: {
           approved: `${who} approved the review — posting published`,
           rejected: `${who} rejected the review: "${details.comment}" — sent back to draft`,
+          withdrawn: `${who} withdrew the review — back to draft`,
         },
         revision: {
           approved: `${who} approved the revision — changes published`,
           rejected: `${who} rejected the revision: "${details.comment}" — posting stays published`,
+          withdrawn: `${who} withdrew the revision — posting stays published`,
         },
         close: {
           approved: `${who} approved the close request — posting closed`,
           rejected: `${who} rejected the close request: "${details.comment}" — posting stays published`,
+          withdrawn: `${who} withdrew the close request — posting stays published`,
         },
         reopen: {
           approved: `${who} approved the reopen request — posting republished`,
           rejected: `${who} rejected the reopen request: "${details.comment}" — posting stays closed`,
+          withdrawn: `${who} withdrew the reopen request — posting stays closed`,
         },
       };
       return (
@@ -266,6 +285,22 @@ const PostingDetailPage = () => {
     }
   };
 
+  // Fetched on open, the same as openReview does, rather than read from the
+  // page load: the pool excludes deactivated and blocked accounts, and an
+  // account being turned off is the whole reason this action exists, so a
+  // list read at page load is exactly the one that can be stale. Without the
+  // fetch the dialog opens on an empty pool and reports that there is nobody
+  // to move the review to.
+  const openReassign = async () => {
+    try {
+      const { data } = await listApprovers();
+      setApprovers(data ?? []);
+      setReassignOpen(true);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
   const handleReviewSubmit = async (body) => {
     if (submitting || !reviewAction) return;
     const action = REVIEW_ACTION[reviewAction];
@@ -277,6 +312,37 @@ const PostingDetailPage = () => {
     } catch (e) {
       toast.error(e.message);
       setSubmitting(false);
+    }
+  };
+
+  const handleReassign = async (reviewerId) => {
+    if (reassigning) return;
+    setReassigning(true);
+    try {
+      await reassignReviewer(id, { reviewerId });
+      toast.success("Reviewer changed.");
+      setReassignOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setReassigning(false);
+    }
+  };
+
+  // The submitter takes their review back; the posting returns to where it
+  // was, the same as on a rejection, and the reviewer is told.
+  const handleWithdraw = async () => {
+    if (withdrawing) return;
+    setWithdrawing(true);
+    try {
+      await withdrawReview(id);
+      toast.success("Review withdrawn.");
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWithdrawing(false);
     }
   };
 
@@ -357,7 +423,7 @@ const PostingDetailPage = () => {
                 {i === 0 ? " " : ", "}
                 {ownersById[oid] == null ? (
                   <span className="text-red-600">
-                    {`#${oid} — no permission, remove`}
+                    {unavailablePersonLabel(oid)}
                   </span>
                 ) : (
                   ownersById[oid]
@@ -369,6 +435,25 @@ const PostingDetailPage = () => {
         {reviewerName && (
           <p className="text-sm text-slate-500">
             Assigned reviewer: {reviewerName}
+            {canReassignReviewer && (
+              <>
+                <Button
+                  variant="link"
+                  className="h-auto p-0 pl-2 text-sm"
+                  onClick={openReassign}
+                >
+                  Change reviewer
+                </Button>
+                <Button
+                  variant="link"
+                  className="h-auto p-0 pl-2 text-sm"
+                  onClick={handleWithdraw}
+                  disabled={withdrawing}
+                >
+                  Withdraw
+                </Button>
+              </>
+            )}
           </p>
         )}
       </div>
@@ -636,16 +721,54 @@ const PostingDetailPage = () => {
         </TabsContent>
       </Tabs>
 
-      <SubmitReviewDialog
+      <ApprovalRequestDialog
+        open={reassignOpen}
+        onOpenChange={setReassignOpen}
+        title="Change reviewer"
+        description="Only the new reviewer is told. The posting stays where it is."
+        reviewers={approvers}
+        excludeUserIds={[job.reviewerId, user?.userId]}
+        reviewerHint="The reviewer who has it now, and you, are both left out of this list."
+        optionLabel={approverLabel}
+        emptyContent={
+          <EmptyState
+            what="There is nobody else to review this posting."
+            how="Reassignment needs another colleague with posting-approval access, and you can't review your own posting."
+            who="Ask an admin to grant someone that access."
+          />
+        }
+        confirmLabel="Reassign"
+        submitting={reassigning}
+        onConfirm={({ reviewerId }) => handleReassign(reviewerId)}
+      />
+
+      <ApprovalRequestDialog
         open={submitOpen}
-        approvers={approvers}
-        currentUserId={user?.userId}
+        onOpenChange={setSubmitOpen}
         title={
           reviewAction ? REVIEW_ACTION[reviewAction].title : "Submit for review"
         }
+        description="The reviewer you pick decides; you can change the reviewer or withdraw while it waits."
+        reviewers={approvers}
+        excludeUserIds={[user?.userId]}
+        reviewerHint="You cannot review your own posting, so you are not in this list."
+        optionLabel={approverLabel}
+        emptyContent={
+          <EmptyState
+            what="No one else can approve this posting."
+            how="Approval needs a colleague with posting-approval access, and you can't approve your own posting."
+            who="Ask an admin to grant someone that access."
+          />
+        }
+        askReason
+        reasonLabel="Message (optional)"
+        confirmLabel={
+          reviewAction ? REVIEW_ACTION[reviewAction].title : "Submit for review"
+        }
         submitting={submitting}
-        onSubmit={handleReviewSubmit}
-        onOpenChange={setSubmitOpen}
+        onConfirm={({ reviewerId, reason }) =>
+          handleReviewSubmit({ reviewerId, message: reason || null })
+        }
       />
 
       <Dialog
