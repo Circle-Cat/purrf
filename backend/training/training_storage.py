@@ -8,6 +8,14 @@ import mimetypes
 import posixpath
 
 from google.api_core.exceptions import NotFound
+from requests.adapters import HTTPAdapter
+
+# How many course-file reads may be in flight at once. One opened course asks
+# for about fifty files together, so the default executor's handful of threads
+# (cpu_count + 4) and requests' ten pooled connections per host both queue a
+# second learner behind the first. The executor serving these reads and the
+# client's connection pool are both sized from this.
+CONCURRENT_READS = 32
 
 # Extensions the standard table gets wrong or does not know, and that real
 # course packages contain. A wrong Content-Type here is not cosmetic: a font or
@@ -70,6 +78,9 @@ class TrainingStorage:
             from google.cloud import storage
 
             self._client = storage.Client()
+            self._client._http.mount(
+                "https://", HTTPAdapter(pool_maxsize=CONCURRENT_READS)
+            )
         return self._client.bucket(self._bucket_name)
 
     def put(self, object_key: str, data: bytes, content_type: str) -> None:

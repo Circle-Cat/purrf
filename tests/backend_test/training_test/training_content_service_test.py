@@ -5,6 +5,7 @@ import datetime
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -998,6 +999,54 @@ class TestReadAssetLeavesTheEventLoopFree(_ContentServiceCase):
         )
 
         self.assertEqual(self.storage.get.call_count, 2)
+
+
+class TestReadAssetUsesTheStorageExecutor(_ContentServiceCase):
+    """Reads go to the executor sized for a course load, not the default one."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="storage-under-test"
+        )
+        self.addCleanup(self.executor.shutdown)
+        self.service.storage_executor = self.executor
+
+    async def test_a_whole_file_read_runs_on_the_storage_executor(self):
+        seen = []
+
+        def get(object_key):
+            seen.append(threading.current_thread().name)
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        await self.service.read_asset(self.session, self.valid_token(), "a.css")
+
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(seen[0].startswith("storage-under-test"), msg=seen)
+
+    async def test_both_halves_of_a_range_read_run_on_the_storage_executor(self):
+        seen = []
+
+        def stat(object_key):
+            seen.append(threading.current_thread().name)
+            return len(_VIDEO), "video/mp4"
+
+        def get_range(object_key, start, end):
+            seen.append(threading.current_thread().name)
+            return _VIDEO[start : end + 1]
+
+        self.storage.stat = MagicMock(side_effect=stat)
+        self.storage.get_range = MagicMock(side_effect=get_range)
+
+        await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(0, 15)
+        )
+
+        self.assertEqual(len(seen), 2)
+        for name in seen:
+            self.assertTrue(name.startswith("storage-under-test"), msg=seen)
 
 
 class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
