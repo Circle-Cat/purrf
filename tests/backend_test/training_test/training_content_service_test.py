@@ -5,14 +5,16 @@ import datetime
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.byte_range import RangeSpec, UnsatisfiableRange
+import backend.training.training_content_service as content_service_module
 from backend.training.training_content_service import (
     PLAYER_PATH,
     TrainingContentService,
@@ -505,13 +507,20 @@ class TestReadAssetResolvesTheTokensOwnPackage(_ContentServiceCase):
 
         self.storage.get.assert_not_called()
 
-    async def test_the_package_is_re_read_on_every_asset_request(self):
+    async def test_the_package_is_read_once_for_the_files_of_one_course_load(self):
         token = self.valid_token()
 
         await self.service.read_asset(self.session, token, "scormcontent/index.html")
         await self.service.read_asset(self.session, token, "scormcontent/styles.css")
 
-        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+        self.assertEqual(self.package_repository.get_by_id.await_count, 1)
+        self.assertEqual(
+            self.fetched_keys(),
+            [
+                _OLD_PREFIX + "scormcontent/index.html",
+                _OLD_PREFIX + "scormcontent/styles.css",
+            ],
+        )
 
 
 class TestReadAssetRejections(_ContentServiceCase):
@@ -1000,6 +1009,362 @@ class TestReadAssetLeavesTheEventLoopFree(_ContentServiceCase):
         self.assertEqual(self.storage.get.call_count, 2)
 
 
+class TestReadAssetUsesTheStorageExecutor(_ContentServiceCase):
+    """Reads go to the executor sized for a course load, not the default one."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="storage-under-test"
+        )
+        self.addCleanup(self.executor.shutdown)
+        self.service.storage_executor = self.executor
+
+    async def test_a_whole_file_read_runs_on_the_storage_executor(self):
+        seen = []
+
+        def get(object_key):
+            seen.append(threading.current_thread().name)
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        await self.service.read_asset(self.session, self.valid_token(), "a.css")
+
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(seen[0].startswith("storage-under-test"), msg=seen)
+
+    async def test_both_halves_of_a_range_read_run_on_the_storage_executor(self):
+        seen = []
+
+        def stat(object_key):
+            seen.append(threading.current_thread().name)
+            return len(_VIDEO), "video/mp4"
+
+        def get_range(object_key, start, end):
+            seen.append(threading.current_thread().name)
+            return _VIDEO[start : end + 1]
+
+        self.storage.stat = MagicMock(side_effect=stat)
+        self.storage.get_range = MagicMock(side_effect=get_range)
+
+        await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(0, 15)
+        )
+
+        self.assertEqual(len(seen), 2)
+        for name in seen:
+            self.assertTrue(name.startswith("storage-under-test"), msg=seen)
+
+
+class TestReadAssetRemembersThePackagePrefix(_ContentServiceCase):
+    """A course load is fifty files from one package; the database is asked
+    for its prefix once, so serving them holds no pooled connection.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.now = 1000.0
+        self.service._clock = lambda: self.now
+        self.token = self.valid_token()
+
+    async def test_the_prefix_is_looked_up_again_once_it_is_a_minute_old(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.now += 59
+        await self.service.read_asset(self.session, self.token, "b.css")
+        self.assertEqual(self.package_repository.get_by_id.await_count, 1)
+
+        self.now += 1
+        await self.service.read_asset(self.session, self.token, "c.css")
+
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+
+    async def test_a_package_that_is_gone_is_not_remembered(self):
+        self.package_repository.get_by_id.return_value = None
+
+        for name in ("a.css", "b.css"):
+            with self.assertRaises(FileNotFoundError):
+                await self.service.read_asset(self.session, self.token, name)
+
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+        self.storage.get.assert_not_called()
+
+    async def test_each_package_has_its_own_prefix(self):
+        other = MagicMock(
+            package_id=_PENDING_PACKAGE_ID, storage_prefix="training/9/other/"
+        )
+        self.package_repository.get_by_id.side_effect = lambda session, package_id: (
+            self.package if package_id == _PACKAGE_ID else other
+        )
+        other_token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PENDING_PACKAGE_ID
+        )
+
+        await self.service.read_asset(self.session, self.token, "a.css")
+        await self.service.read_asset(self.session, other_token, "a.css")
+
+        self.assertEqual(
+            self.fetched_keys(), [_OLD_PREFIX + "a.css", "training/9/other/a.css"]
+        )
+
+    async def test_a_replaced_package_reads_as_gone_not_as_a_missing_file(self):
+        """Publishing deletes the old row and then its files; a tab still on
+        the old token must get the reload message, not a storage warning.
+        """
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        self.storage.get = MagicMock(return_value=None)
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            await self.service.read_asset(self.session, self.token, "b.css")
+
+        self.assertEqual(str(caught.exception), "This package is no longer served.")
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
+        self.logger.warning.assert_not_called()
+
+    async def test_a_missing_file_in_a_live_package_still_warns(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.storage.get = MagicMock(return_value=None)
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(self.session, self.token, "missing.css")
+
+        self.logger.warning.assert_called_once()
+        self.assertIn("no object", self.logger.warning.call_args.args[0])
+
+    async def test_two_reads_that_find_a_replaced_package_together_both_say_gone(self):
+        # Both find their file missing before either asks the database, so
+        # the second goes to forget a prefix the first already forgot.
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        both_missed = asyncio.Barrier(2)
+
+        async def missing(*args):
+            await both_missed.wait()
+            return None
+
+        self.service._off_loop = missing
+
+        results = await asyncio.gather(
+            self.service.read_asset(self.session, self.token, "b.css"),
+            self.service.read_asset(self.session, self.token, "c.css"),
+            return_exceptions=True,
+        )
+
+        for result in results:
+            self.assertIsInstance(result, FileNotFoundError)
+            self.assertEqual(str(result), "This package is no longer served.")
+
+    async def test_a_range_read_from_a_replaced_package_reads_as_gone(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        self.storage.stat = MagicMock(return_value=None)
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            await self.service.read_asset(
+                self.session, self.token, _VIDEO_PATH, RangeSpec(0, 15)
+            )
+
+        self.assertEqual(str(caught.exception), "This package is no longer served.")
+        self.logger.warning.assert_not_called()
+
+    async def test_the_player_files_never_ask_for_the_package(self):
+        await self.service.read_asset(self.session, self.token, PLAYER_PATH)
+
+        self.package_repository.get_by_id.assert_not_awaited()
+
+
+class TestSlowCourseFilesSayWhereTheTimeWent(_ContentServiceCase):
+    """One line per slow file, split by stage, so a queueing course load can
+    be pinned on the database, the thread pool, storage or the event loop.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.now = 1000.0
+        self.service._clock = lambda: self.now
+        self.token = self.valid_token()
+
+    def advance(self, seconds, result):
+        def step(*args):
+            self.now += seconds
+            return result
+
+        return step
+
+    def slow_lines(self):
+        return [
+            call
+            for call in self.logger.info.call_args_list
+            if "slow course file" in call.args[0]
+        ]
+
+    async def test_a_slow_file_logs_each_stage(self):
+        self.package_repository.get_by_id = AsyncMock(
+            side_effect=self.advance(0.1, self.package)
+        )
+        self.storage.get = MagicMock(
+            side_effect=self.advance(0.7, (b"x" * 5, "text/css"))
+        )
+
+        await self.service.read_asset(self.session, self.token, "a.css")
+
+        (line,) = self.slow_lines()
+        _, package_id, path, size, total, lookup, queued, storage, resumed = line.args
+        self.assertEqual((package_id, path, size), (_PACKAGE_ID, "a.css", 5))
+        self.assertAlmostEqual(total, 800)
+        self.assertAlmostEqual(lookup, 100)
+        self.assertAlmostEqual(storage, 700)
+        self.assertAlmostEqual(queued, 0)
+        self.assertAlmostEqual(resumed, 0)
+
+    async def test_a_fast_file_logs_nothing(self):
+        self.storage.get = MagicMock(side_effect=self.advance(0.4, (b"x", "text/css")))
+
+        await self.service.read_asset(self.session, self.token, "a.css")
+
+        self.assertEqual(self.slow_lines(), [])
+
+    async def test_waiting_for_a_busy_thread_counts_as_queued(self):
+        executor = ThreadPoolExecutor(max_workers=1)
+        self.addCleanup(executor.shutdown)
+        self.service.storage_executor = executor
+        # The first read holds the only thread until both have been handed to
+        # the executor; otherwise it can finish before the second is queued.
+        both_submitted = threading.Event()
+
+        def get(object_key):
+            both_submitted.wait(timeout=5)
+            self.now += 0.6
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        reads = [
+            asyncio.create_task(self.service.read_asset(self.session, self.token, name))
+            for name in ("a.css", "b.css")
+        ]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        both_submitted.set()
+        await asyncio.gather(*reads)
+
+        queued = sorted(line.args[6] for line in self.slow_lines())
+        self.assertEqual(len(queued), 2)
+        self.assertAlmostEqual(queued[0], 0)
+        self.assertAlmostEqual(queued[1], 600)
+
+    async def test_both_storage_calls_of_a_range_read_count(self):
+        self.storage.stat = MagicMock(
+            side_effect=self.advance(0.3, (len(_VIDEO), "video/mp4"))
+        )
+        self.storage.get_range = MagicMock(
+            side_effect=lambda key, start, end: self.advance(
+                0.4, _VIDEO[start : end + 1]
+            )()
+        )
+
+        await self.service.read_asset(
+            self.session, self.token, _VIDEO_PATH, RangeSpec(0, 15)
+        )
+
+        (line,) = self.slow_lines()
+        self.assertAlmostEqual(line.args[7], 700)
+
+
+class TestReadAssetKeepsCourseFilesInMemory(_ContentServiceCase):
+    """A cohort opening one course asks for the same files over and over;
+    after the first read they come from memory, not storage.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.now = 1000.0
+        self.service._clock = lambda: self.now
+        self.token = self.valid_token()
+
+    async def test_a_file_read_twice_comes_from_storage_once(self):
+        first = await self.service.read_asset(self.session, self.token, "a.css")
+        second = await self.service.read_asset(self.session, self.token, "a.css")
+
+        self.assertEqual(self.storage.get.call_count, 1)
+        self.assertEqual(second.data, first.data)
+        self.assertEqual(second.content_type, first.content_type)
+
+    async def test_a_large_file_is_read_from_storage_every_time(self):
+        self.storage.get = MagicMock(return_value=(b"x" * 11, "video/mp4"))
+
+        with patch.object(content_service_module, "_FILE_CACHE_LARGEST", 10):
+            for _ in range(2):
+                await self.service.read_asset(self.session, self.token, "big.mp4")
+
+        self.assertEqual(self.storage.get.call_count, 2)
+
+    async def test_the_least_recently_served_file_goes_first(self):
+        self.storage.get = MagicMock(return_value=(b"x" * 4, "text/css"))
+
+        with patch.object(content_service_module, "_FILE_CACHE_BYTES", 8):
+            for name in ("a.css", "b.css", "a.css", "c.css"):
+                await self.service.read_asset(self.session, self.token, name)
+            self.storage.get.reset_mock()
+            for name in ("a.css", "c.css", "b.css"):
+                await self.service.read_asset(self.session, self.token, name)
+
+        # a was served again before c arrived, so b was the one dropped.
+        self.assertEqual(self.fetched_keys(), [_OLD_PREFIX + "b.css"])
+
+    async def test_requests_for_a_file_being_read_share_that_read(self):
+        both_asked = threading.Event()
+
+        def get(object_key):
+            both_asked.wait(timeout=5)
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        reads = [
+            asyncio.create_task(
+                self.service.read_asset(self.session, self.token, "a.css")
+            )
+            for _ in range(2)
+        ]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        both_asked.set()
+        first, second = await asyncio.gather(*reads)
+
+        self.assertEqual(self.storage.get.call_count, 1)
+        self.assertEqual(first.data, second.data)
+
+    async def test_a_missing_file_is_not_remembered(self):
+        self.storage.get = MagicMock(return_value=None)
+
+        for _ in range(2):
+            with self.assertRaises(FileNotFoundError):
+                await self.service.read_asset(self.session, self.token, "gone.css")
+
+        self.assertEqual(self.storage.get.call_count, 2)
+
+    async def test_a_gone_package_stops_being_served_once_its_prefix_expires(self):
+        await self.service.read_asset(self.session, self.token, "a.css")
+        self.package_repository.get_by_id.return_value = None
+        self.now += 60
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            await self.service.read_asset(self.session, self.token, "a.css")
+
+        self.assertEqual(str(caught.exception), "This package is no longer served.")
+        self.assertEqual(self.storage.get.call_count, 1)
+
+    async def test_a_range_read_still_goes_to_storage(self):
+        for _ in range(2):
+            await self.service.read_asset(
+                self.session, self.token, _VIDEO_PATH, RangeSpec(0, 15)
+            )
+
+        self.assertEqual(self.storage.get_range.call_count, 2)
+
+
 class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
     """The token names the package outright, so serving a file asks the
     database one question instead of two -- and a course load asks for
@@ -1014,13 +1379,13 @@ class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
 
         self.training_repository.get_training_by_id.assert_not_awaited()
 
-    async def test_one_package_read_per_file_and_nothing_else(self):
+    async def test_one_package_read_for_the_whole_load_and_nothing_else(self):
         token = self.valid_token()
 
         for name in ("a.css", "b.css", "c.js"):
             await self.service.read_asset(self.session, token, name)
 
-        self.assertEqual(self.package_repository.get_by_id.await_count, 3)
+        self.assertEqual(self.package_repository.get_by_id.await_count, 1)
 
 
 if __name__ == "__main__":

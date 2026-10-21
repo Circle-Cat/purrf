@@ -1,11 +1,11 @@
 """Course package objects, and what an unconfigured bucket says to whom."""
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from google.api_core.exceptions import NotFound
 
-from backend.training.training_storage import TrainingStorage
+from backend.training.training_storage import CONCURRENT_READS, TrainingStorage
 
 _BUCKET = "purrf-test-training"
 _KEY = "training/9/package/scormcontent/index.html"
@@ -43,6 +43,32 @@ class TestConfiguredBucket(unittest.TestCase):
 
         self.client.bucket.assert_called_once_with(_BUCKET)
         self.client.bucket.return_value.blob.assert_called_once_with(_KEY)
+
+
+class TestBuiltClient(unittest.TestCase):
+    """A client built here must not cap concurrent reads below the executor."""
+
+    @patch("google.cloud.storage.Client")
+    def test_the_connection_pool_holds_as_many_reads_as_may_run(self, client_cls):
+        storage = TrainingStorage(_BUCKET, logger=MagicMock())
+
+        storage.get(_KEY)
+
+        mount = client_cls.return_value._http.mount
+        mount.assert_called_once()
+        prefix, adapter = mount.call_args.args
+        self.assertEqual(prefix, "https://")
+        self.assertEqual(adapter._pool_maxsize, CONCURRENT_READS)
+
+    @patch("google.cloud.storage.Client")
+    def test_the_client_is_built_once(self, client_cls):
+        storage = TrainingStorage(_BUCKET, logger=MagicMock())
+
+        storage.get(_KEY)
+        storage.get(_KEY)
+
+        client_cls.assert_called_once_with()
+        client_cls.return_value._http.mount.assert_called_once()
 
 
 class TestPartialReads(unittest.TestCase):

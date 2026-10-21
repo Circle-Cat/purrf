@@ -4,6 +4,8 @@ import asyncio
 import pathlib
 import posixpath
 import secrets
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from backend.common.exceptions import ConflictError
@@ -28,6 +30,50 @@ from backend.training.training_content_token import (
 PLAYER_PATH = "__player.html"
 
 _PLAYER_DIR = pathlib.Path(__file__).parent / "player"
+
+# A package's storage prefix is fixed when the package is created, so serving
+# a file needs the database only to learn it -- once, not once per file. The
+# one thing a remembered prefix can get wrong is whether the package still
+# exists, and read_asset asks again whenever a remembered prefix turns up no
+# file. The bound only stops a long-lived process collecting dead packages.
+_PREFIX_TTL_SECONDS = 60
+_PREFIX_CACHE_LIMIT = 256
+
+
+# A package's files never change either -- a new upload is a new package under
+# a new prefix -- and a cohort opening the same course asks for the same fifty
+# files at once. Each read from storage holds a thread and pulls the bytes
+# through this process, and enough of those at once starve the event loop, so
+# a file is fetched once and served from memory after that. Only reachable
+# once the prefix above resolves, so a gone package stops being served on the
+# same schedule as before. Large files (videos) stay on ranged storage reads.
+_FILE_CACHE_BYTES = 32 * 1024 * 1024
+_FILE_CACHE_LARGEST = 2 * 1024 * 1024
+
+
+class _ObjectMissing(Exception):
+    """Storage has no object at the key a read resolved to."""
+
+
+# A course file slower than this gets one log line saying where the time went.
+# Each course load is fifty requests, so a healthy one logs nothing and a
+# queueing one logs enough to tell which stage the queue is in.
+_SLOW_READ_SECONDS = 0.5
+
+
+@dataclass
+class _ReadTimings:
+    """Seconds one course-file request spent in each stage."""
+
+    # Reading the package row; zero when its prefix was remembered.
+    lookup: float = 0.0
+    # Handed to the storage executor, before a thread picked it up.
+    queued: float = 0.0
+    # Inside the storage SDK call itself.
+    storage: float = 0.0
+    # From the storage call returning to this coroutine running again.
+    resumed: float = 0.0
+
 
 # Ours to serve, by exact name. Everything else under the reserved prefix is
 # refused: the reservation exists so a package can never answer for one of
@@ -118,6 +164,8 @@ class TrainingContentService:
         training_course_package_repository,
         training_progress_repository,
         training_storage,
+        storage_executor=None,
+        clock=time.monotonic,
     ):
         """
         Args:
@@ -137,6 +185,12 @@ class TrainingContentService:
             training_progress_repository (TrainingProgressRepository): The
                 learner's stored progress, seeded back into the page.
             training_storage (TrainingStorage): Object storage.
+            storage_executor (concurrent.futures.Executor | None): Runs the
+                synchronous storage reads behind each served file. None uses
+                the event loop's default executor, which on a two-core pod has
+                six threads -- one opened course alone asks for more.
+            clock (Callable[[], float]): Monotonic seconds, for how long a
+                package's storage prefix is remembered.
         """
         self.logger = logger
         self.signing_key = signing_key
@@ -146,6 +200,132 @@ class TrainingContentService:
         self.training_course_package_repository = training_course_package_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
+        self.storage_executor = storage_executor
+        self._clock = clock
+        # package_id -> (storage_prefix, monotonic time it is forgotten at)
+        self._prefixes: dict[int, tuple[str, float]] = {}
+        # object_key -> (bytes, content type), least recently served first
+        self._files: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+        self._files_size = 0
+        # object_key -> the storage read every request for it is waiting on
+        self._file_reads: dict[str, asyncio.Future] = {}
+
+    async def _off_loop(self, timings: _ReadTimings, read, *args):
+        """Run one synchronous storage call on the storage executor, adding
+        how long it queued, ran and took to resume to ``timings``.
+        """
+        submitted = self._clock()
+        marks = {}
+
+        def timed():
+            marks["started"] = self._clock()
+            try:
+                return read(*args)
+            finally:
+                marks["finished"] = self._clock()
+
+        try:
+            return await asyncio.get_running_loop().run_in_executor(
+                self.storage_executor, timed
+            )
+        finally:
+            if "finished" in marks:
+                timings.queued += marks["started"] - submitted
+                timings.storage += marks["finished"] - marks["started"]
+                timings.resumed += self._clock() - marks["finished"]
+
+    async def _read_file(self, timings: _ReadTimings, object_key: str):
+        """A whole file, from memory if it was read before.
+
+        Requests for a file that is already being read wait for that read
+        rather than starting their own: the first moments of a cohort opening
+        a course are every learner asking for the same entry page.
+
+        Returns:
+            tuple[bytes, str] | None: Bytes and Content-Type, or None if there
+            is no such object.
+        """
+        found = self._files.get(object_key)
+        if found is not None:
+            self._files.move_to_end(object_key)
+            return found
+
+        pending = self._file_reads.get(object_key)
+        if pending is None:
+
+            async def fetch():
+                read = await self._off_loop(
+                    timings, self.training_storage.get, object_key
+                )
+                if read is not None:
+                    self._remember_file(object_key, read)
+                return read
+
+            def settled(task):
+                self._file_reads.pop(object_key, None)
+                # Retrieved here so a read whose every waiter has gone does
+                # not log "exception was never retrieved"; each waiter that is
+                # still there gets it raised from the await below.
+                if not task.cancelled():
+                    task.exception()
+
+            # A task of its own, so a learner who closes the tab mid-read
+            # does not cancel the read the others are waiting on.
+            pending = asyncio.ensure_future(fetch())
+            self._file_reads[object_key] = pending
+            pending.add_done_callback(settled)
+        return await asyncio.shield(pending)
+
+    def _remember_file(self, object_key: str, found: tuple[bytes, str]) -> None:
+        """Keep a file for the next request, dropping the least recently
+        served ones to stay under the bound.
+        """
+        size = len(found[0])
+        if size > _FILE_CACHE_LARGEST or object_key in self._files:
+            return
+        self._files[object_key] = found
+        self._files_size += size
+        while self._files_size > _FILE_CACHE_BYTES:
+            _, (dropped, _) = self._files.popitem(last=False)
+            self._files_size -= len(dropped)
+
+    def _remembered_prefix(self, package_id: int) -> str | None:
+        """The package's storage prefix if it was looked up recently."""
+        entry = self._prefixes.get(package_id)
+        if entry is None:
+            return None
+        prefix, forget_at = entry
+        if self._clock() >= forget_at:
+            del self._prefixes[package_id]
+            return None
+        return prefix
+
+    async def _look_up_prefix(self, session, claims) -> str:
+        """Read the token's package from the database and remember its prefix.
+
+        Raises:
+            FileNotFoundError: The package is gone.
+        """
+        package = await self.training_course_package_repository.get_by_id(
+            session, claims.package_id
+        )
+        if package is None:
+            # Info, not warning: every file an open tab still asks for after a
+            # replacement produces one of these, and the fix is a reload.
+            self.logger.info(
+                "[TrainingContentService] package %s behind training %s is "
+                "gone; the tab holding this token needs to reload",
+                claims.package_id,
+                claims.training_id,
+            )
+            raise FileNotFoundError("This package is no longer served.")
+        if len(self._prefixes) >= _PREFIX_CACHE_LIMIT:
+            self._prefixes.clear()
+        self._prefixes[claims.package_id] = (
+            package.storage_prefix,
+            self._clock() + _PREFIX_TTL_SECONDS,
+        )
+        return package.storage_prefix
 
     async def open_session(
         self, session, training_id: int, user_id: int
@@ -496,45 +676,68 @@ class TrainingContentService:
                 _PLAYER_ASSET_BYTES[normalised], content_type, byte_range
             )
 
-        package = await self.training_course_package_repository.get_by_id(
-            session, claims.package_id
-        )
-        if package is None:
-            # Info, not warning: every file an open tab still asks for after a
-            # replacement produces one of these, and the fix is a reload.
-            self.logger.info(
-                "[TrainingContentService] package %s behind training %s is "
-                "gone; the tab holding this token needs to reload",
-                claims.package_id,
-                claims.training_id,
-            )
-            raise FileNotFoundError("This package is no longer served.")
+        timings = _ReadTimings()
+        began = self._clock()
+        prefix = self._remembered_prefix(claims.package_id)
+        remembered = prefix is not None
+        if not remembered:
+            prefix = await self._look_up_prefix(session, claims)
+            timings.lookup = self._clock() - began
 
-        object_key = posixpath.join(package.storage_prefix, normalised)
-        if byte_range is not None:
-            return await self._read_range(
-                claims.training_id, claims.package_id, object_key, byte_range
-            )
-
-        found = await asyncio.to_thread(self.training_storage.get, object_key)
-        if found is None:
+        object_key = posixpath.join(prefix, normalised)
+        try:
+            if byte_range is not None:
+                asset = await self._read_range(
+                    timings, claims.training_id, object_key, byte_range
+                )
+            else:
+                found = await self._read_file(timings, object_key)
+                if found is None:
+                    raise _ObjectMissing()
+                data, content_type = found
+                # Debug: a single course load asks for hundreds of files.
+                self.logger.debug(
+                    "[TrainingContentService] training %s: served %r (%s bytes, %s)",
+                    claims.training_id,
+                    object_key,
+                    len(data),
+                    content_type,
+                )
+                asset = ContentAsset(data=data, content_type=content_type)
+        except _ObjectMissing:
+            if remembered:
+                # Publishing a replacement deletes the old package's row and
+                # then its files, so a remembered prefix outlives both. Ask
+                # the database before calling this a missing file: a package
+                # that is gone is the reload message, not a warning. pop: a
+                # read that missed alongside this one may have forgotten it.
+                self._prefixes.pop(claims.package_id, None)
+                await self._look_up_prefix(session, claims)
             self._no_object(claims.training_id, claims.package_id, object_key)
 
-        data, content_type = found
-        # Debug: a single course load asks for hundreds of files.
-        self.logger.debug(
-            "[TrainingContentService] training %s: served %r (%s bytes, %s)",
-            claims.training_id,
-            object_key,
-            len(data),
-            content_type,
-        )
-        return ContentAsset(data=data, content_type=content_type)
+        elapsed = self._clock() - began
+        if elapsed >= _SLOW_READ_SECONDS:
+            # Whatever is left of the total after the four stages is time this
+            # coroutine spent waiting to be scheduled between them.
+            self.logger.info(
+                "[TrainingContentService] slow course file: package %s %r "
+                "(%s bytes) took %dms -- lookup %dms, queued for a thread %dms, "
+                "storage %dms, resuming %dms",
+                claims.package_id,
+                normalised,
+                len(asset.data),
+                elapsed * 1000,
+                timings.lookup * 1000,
+                timings.queued * 1000,
+                timings.storage * 1000,
+                timings.resumed * 1000,
+            )
+        return asset
 
     async def _read_range(
         self,
+        timings: _ReadTimings,
         training_id: int | None,
-        package_id: int,
         object_key: str,
         byte_range: RangeSpec,
     ) -> ContentAsset:
@@ -546,34 +749,38 @@ class TrainingContentService:
         every seek a learner makes.
 
         Args:
+            timings (_ReadTimings): Where the storage calls add their time.
             training_id (int | None): The run this read is on behalf of, for
                 the log line only. None when the run is a preview.
-            package_id (int): The package this read is on behalf of, for the
-                log line only -- unlike training_id, never None, so it is
-                what still names a preview's run.
             object_key (str): The storage key to read from.
             byte_range (RangeSpec): The range asked for.
 
         Raises:
-            FileNotFoundError: No such object.
+            _ObjectMissing: No such object.
             UnsatisfiableRange: The range names no byte of it.
         """
-        described = await asyncio.to_thread(self.training_storage.stat, object_key)
+        described = await self._off_loop(
+            timings, self.training_storage.stat, object_key
+        )
         if described is None:
-            self._no_object(training_id, package_id, object_key)
+            raise _ObjectMissing()
         total_size, content_type = described
 
         resolved = resolve_range(byte_range, total_size)
         if resolved is None:
             raise UnsatisfiableRange(total_size)
 
-        data = await asyncio.to_thread(
-            self.training_storage.get_range, object_key, resolved.start, resolved.end
+        data = await self._off_loop(
+            timings,
+            self.training_storage.get_range,
+            object_key,
+            resolved.start,
+            resolved.end,
         )
         if data is None:
             # Gone between the two calls, which is what an upload replacing the
             # package underneath an open course looks like from here.
-            self._no_object(training_id, package_id, object_key)
+            raise _ObjectMissing()
 
         self.logger.debug(
             "[TrainingContentService] training %s: served %r bytes %s-%s of %s (%s)",

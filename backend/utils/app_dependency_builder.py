@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClient
@@ -149,7 +150,7 @@ from backend.training.training_content_service import TrainingContentService
 from backend.training.training_course_service import TrainingCourseService
 from backend.training.training_package_service import TrainingPackageService
 from backend.training.training_progress_service import TrainingProgressService
-from backend.training.training_storage import TrainingStorage
+from backend.training.training_storage import CONCURRENT_READS, TrainingStorage
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
 from backend.leave.leave_request_handler import LeaveRequestHandler
@@ -1428,6 +1429,9 @@ class AppDependencyBuilder:
             training_course_package_repository=self.training_course_package_repository,
             training_progress_repository=self.training_progress_repository,
             training_storage=self.training_storage,
+            storage_executor=ThreadPoolExecutor(
+                max_workers=CONCURRENT_READS, thread_name_prefix="training-content"
+            ),
         )
         self.training_progress_service = TrainingProgressService(
             logger=self.logger,

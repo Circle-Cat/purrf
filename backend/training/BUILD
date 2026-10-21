@@ -78,6 +78,7 @@ py_library(
     deps = [
         "@pypi//google_api_core",
         "@pypi//google_cloud_storage",
+        "@pypi//requests",
     ],
 )
 
