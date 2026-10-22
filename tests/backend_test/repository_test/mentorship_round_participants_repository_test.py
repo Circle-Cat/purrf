@@ -509,30 +509,23 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIn(self.user.user_id, user_ids)
         self.assertIn(user2.user_id, user_ids)
 
-    async def test_search_includes_onboarding_training_only_users(self):
-        """Ensure users with mentorship onboarding training are included,
-        while unrelated categories are excluded."""
+    async def test_search_excludes_onboarding_training_only_users(self):
+        """A registered user whose only link to mentorship is an onboarding
+        training row, with no activity application, is not listed."""
         trained_user = self._make_user(
             first_name="Tina", last_name="Trained", email="tina@example.com"
         )
-        unrelated_trained_user = self._make_user(
-            first_name="Rey", last_name="Resident", email="rey@example.com"
-        )
-        await self.insert_entities([trained_user, unrelated_trained_user])
+        await self.insert_entities([trained_user])
         await self._add_training(trained_user)
-        await self._add_training(
-            unrelated_trained_user,
-            category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
-        )
-        await self._register(trained_user, unrelated_trained_user)
+        await self._register(self.user, trained_user)
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=20, offset=0
         )
 
         user_ids = {r.user_id for r in rows}
-        self.assertIn(trained_user.user_id, user_ids)
-        self.assertNotIn(unrelated_trained_user.user_id, user_ids)
+        self.assertIn(self.user.user_id, user_ids)
+        self.assertNotIn(trained_user.user_id, user_ids)
 
     async def test_search_onboarding_status_completed_by_role(self):
         """MENTOR only checks mentor training; MENTEE only checks mentee
