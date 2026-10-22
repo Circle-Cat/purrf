@@ -342,19 +342,25 @@ class MentorshipRoundParticipantsRepository:
         Builds the base filter for the admin participant search.
 
         A user is considered a mentorship user if they meet at least one condition:
-        1. Has a hired application for a mentor/mentee activity in the recruiting system.
+        1. Has an application for a mentor/mentee activity in the recruiting
+           system, at any stage.
         2. Has a mentor/mentee onboarding training record, not other categories like
            residency onboarding or corporate culture course.
+
+        The application need not be hired. The search only covers people who
+        registered for a round, and registering takes a hired application, so
+        a non-hired one here belongs to someone who took part and whose
+        application moved on afterwards -- blocking rejects every application
+        a person holds, and the admin still has to find them.
 
         Returns:
             ColumnElement[bool]: A correlated EXISTS-OR-EXISTS expression.
         """
-        has_hired_activity_application = (
+        has_activity_application = (
             select(ApplicationEntity.application_id)
             .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
             .where(
                 ApplicationEntity.user_id == UsersEntity.user_id,
-                ApplicationEntity.stage == ApplicationStage.HIRED,
                 JobEntity.kind == JobKind.ACTIVITY,
                 JobEntity.mentorship_role.in_([
                     ParticipantRole.MENTOR,
@@ -371,7 +377,7 @@ class MentorshipRoundParticipantsRepository:
             )
             .exists()
         )
-        return or_(has_hired_activity_application, has_mentorship_onboarding_training)
+        return or_(has_activity_application, has_mentorship_onboarding_training)
 
     def _build_onboarding_completed_condition(self, is_completed: bool):
         """
