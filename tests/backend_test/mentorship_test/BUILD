@@ -394,6 +394,7 @@ py_test(
         "//backend/common:approval_enums",
         "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/mentorship",
         "//backend/repository:repositories",
