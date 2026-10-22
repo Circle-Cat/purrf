@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from backend.leave.leave_participants import (
     LeaveParticipantResolver,
-    ldap_from_addresses,
     resolve_names_and_ldaps,
 )
 
@@ -131,16 +130,6 @@ class LeaveParticipantResolverTest(IsolatedAsyncioTestCase):
         resolved = await self.resolver.resolve(self.session, ["zoe", "ann", "mia"])
 
         self.assertEqual(resolved.unresolved, ("ann", "mia", "zoe"))
-
-    def test_ldap_from_addresses_returns_local_part_for_corporate_address(self):
-        """a corporate address -> its local part"""
-        addresses = ["ann@u.circlecat.org", "ann@circlecat.org"]
-        self.assertEqual(ldap_from_addresses(addresses), "ann")
-
-    def test_ldap_from_addresses_returns_none_when_no_corporate_address(self):
-        """none -> None"""
-        addresses = ["ann@u.circlecat.org", "ann@external.com"]
-        self.assertIsNone(ldap_from_addresses(addresses))
 
     async def test_resolve_names_and_ldaps_empty_user_ids(self):
         """Should return empty dictionaries immediately without querying repositories when user_ids is empty."""

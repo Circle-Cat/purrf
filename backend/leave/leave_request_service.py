@@ -28,6 +28,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.constants import ldap_from_addresses
 from backend.common.exceptions import ConflictError
 from backend.common.leave_enums import (
     LEAVE_APPROVAL,
@@ -39,10 +40,7 @@ from backend.dto.leave_request_dto import LeaveRequestDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_clock import business_today
-from backend.leave.leave_participants import (
-    ldap_from_addresses,
-    resolve_names_and_ldaps,
-)
+from backend.leave.leave_participants import resolve_names_and_ldaps
 from backend.leave.leave_workdays import (
     request_hours,
     required_notice_workdays,
