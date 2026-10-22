@@ -66,6 +66,10 @@ module "purrf_instance" {
   gmail_watch_topic_owner = false
   gmail_inbox_enabled     = true
 
+  # The backend no longer pulls these subscriptions, so without push their
+  # events wait in Pub/Sub until the seven-day retention drops them.
+  pubsub_event_push_enabled = true
+
   # The same image test runs, in stub mode, so a staging run writes fake scores
   # and calls no LLM.
   enable_matcher    = true
