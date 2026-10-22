@@ -509,30 +509,23 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIn(self.user.user_id, user_ids)
         self.assertIn(user2.user_id, user_ids)
 
-    async def test_search_includes_onboarding_training_only_users(self):
-        """Ensure users with mentorship onboarding training are included,
-        while unrelated categories are excluded."""
+    async def test_search_excludes_onboarding_training_only_users(self):
+        """A registered user whose only link to mentorship is an onboarding
+        training row, with no activity application, is not listed."""
         trained_user = self._make_user(
             first_name="Tina", last_name="Trained", email="tina@example.com"
         )
-        unrelated_trained_user = self._make_user(
-            first_name="Rey", last_name="Resident", email="rey@example.com"
-        )
-        await self.insert_entities([trained_user, unrelated_trained_user])
+        await self.insert_entities([trained_user])
         await self._add_training(trained_user)
-        await self._add_training(
-            unrelated_trained_user,
-            category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
-        )
-        await self._register(trained_user, unrelated_trained_user)
+        await self._register(self.user, trained_user)
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=20, offset=0
         )
 
         user_ids = {r.user_id for r in rows}
-        self.assertIn(trained_user.user_id, user_ids)
-        self.assertNotIn(unrelated_trained_user.user_id, user_ids)
+        self.assertIn(self.user.user_id, user_ids)
+        self.assertNotIn(trained_user.user_id, user_ids)
 
     async def test_search_onboarding_status_completed_by_role(self):
         """MENTOR only checks mentor training; MENTEE only checks mentee
@@ -638,9 +631,9 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIn(mentor_wrong_training_user.user_id, incomplete_ids)
         self.assertIn(no_training_user.user_id, incomplete_ids)
 
-    async def test_search_excludes_unqualified_users(self):
-        """Verify the mentorship gate excludes users with non-hired applications,
-        non-activity jobs, or no application at all."""
+    async def test_search_gate_takes_activity_applications_at_any_stage(self):
+        """Verify the mentorship gate admits an activity application at any
+        stage, and excludes non-activity jobs or no application at all."""
         hired_user = self._make_user(
             first_name="Hana", last_name="Hired", email="hana@example.com"
         )
@@ -695,7 +688,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         user_ids = {r.user_id for r in rows}
         self.assertIn(hired_user.user_id, user_ids)
-        self.assertNotIn(applied_user.user_id, user_ids)
+        self.assertIn(applied_user.user_id, user_ids)
         self.assertNotIn(employment_hired_user.user_id, user_ids)
         self.assertNotIn(no_application_user.user_id, user_ids)
 
@@ -882,6 +875,43 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 deactivated.user_id: (False, True),
             },
         )
+
+    async def test_search_lists_blocked_participant_without_training(self):
+        """A participant whose block rejected their activity application, and
+        who has no onboarding training row, is still found -- by default and
+        under the Blocked account filter."""
+        blocked = self._make_user(
+            first_name="Bea",
+            last_name="Blocked",
+            email="bea@example.com",
+            is_blocked=True,
+        )
+        await self.insert_entities([blocked])
+        job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="mentor activity",
+        )
+        await self.insert_entities([job])
+        await self.insert_entities([
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=blocked.user_id,
+                stage=ApplicationStage.REJECTED,
+                tags={"blacklisted": True},
+            )
+        ])
+        await self._register(blocked)
+
+        for status in (None, "blocked"):
+            with self.subTest(account_status=status):
+                rows, _ = await self.repo.search_participants_for_admin(
+                    self.session,
+                    ParticipantSearchFilterDto(account_status=status),
+                    limit=50,
+                    offset=0,
+                )
+                self.assertIn(blocked.user_id, {r.user_id for r in rows})
 
     async def test_search_blocked_and_deactivated_user_is_in_both_not_active(self):
         both = self._make_user(
