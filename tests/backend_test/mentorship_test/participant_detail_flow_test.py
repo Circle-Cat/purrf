@@ -26,10 +26,13 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingStatus,
 )
+from backend.common.recruiting_enums import ApplicationStage, JobKind
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.mentorship_participant_note_entity import (
     MentorshipParticipantNoteEntity,
 )
+from backend.entity.job_entity import JobEntity
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -130,6 +133,15 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             self.approver,
             self.stranger,
         ])
+        self.activity_jobs = {
+            role: JobEntity(
+                kind=JobKind.ACTIVITY,
+                mentorship_role=role,
+                title=f"{role.value} activity",
+            )
+            for role in (ParticipantRole.MENTEE, ParticipantRole.MENTOR)
+        }
+        await self.insert_entities(list(self.activity_jobs.values()))
 
         # Inserted newest first, so ids run opposite to deadlines.
         self.round = MentorshipRoundEntity(
@@ -186,15 +198,16 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 approval_status=ApprovalStatus.UN_MATCHED,
             ),
         ])
-        # The participant search only lists people with a mentorship
-        # onboarding record.
+        # The participant search only lists people with an activity
+        # application; the training row is the onboarding matching reads.
         await self.insert_entities([
+            self._admission(self.mentee, ParticipantRole.MENTEE),
             TrainingEntity(
                 user_id=self.mentee.user_id,
                 category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
                 status=TrainingStatus.DONE,
                 deadline=now,
-            )
+            ),
         ])
         self.current_pair = _pair(
             self.round.round_id, self.mentor.user_id, self.mentee.user_id
@@ -311,6 +324,14 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             meeting_service=MagicMock(),
         )
 
+    def _admission(self, user, role):
+        """A hired application to the activity posting for ``role``."""
+        return ApplicationEntity(
+            job_id=self.activity_jobs[role].job_id,
+            user_id=user.user_id,
+            stage=ApplicationStage.HIRED,
+        )
+
     async def _detail(self, round_=None, user=None):
         return await self.service.get_participant_detail(
             self.session,
@@ -362,6 +383,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 participant_role=ParticipantRole.MENTEE,
                 approval_status=ApprovalStatus.SIGNED_UP,
             ),
+            self._admission(uma, ParticipantRole.MENTEE),
             TrainingEntity(
                 user_id=uma.user_id,
                 category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
@@ -583,6 +605,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 participant_role=ParticipantRole.MENTOR,
                 approval_status=ApprovalStatus.MATCHED,
             ),
+            self._admission(self.mentor, ParticipantRole.MENTOR),
             TrainingEntity(
                 user_id=self.mentor.user_id,
                 category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
