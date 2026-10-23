@@ -1895,6 +1895,10 @@ class BoardService:
         previous_assignment = await self.application_assignment_repository.get(
             session, application_id, application.stage, application.current_round
         )
+        # Read before upsert: it overwrites this same row in place.
+        previous_assignee_id = (
+            previous_assignment.assignee_id if previous_assignment is not None else None
+        )
         await self.application_assignment_repository.upsert(
             session,
             application_id,
@@ -1913,9 +1917,6 @@ class BoardService:
             elif application.sub_status == "evaluated":
                 application.sub_status = "scheduled"
         application = await self.application_repository.update(session, application)
-        previous_assignee_id = (
-            previous_assignment.assignee_id if previous_assignment is not None else None
-        )
         await record_event(
             session,
             subject_type="application",

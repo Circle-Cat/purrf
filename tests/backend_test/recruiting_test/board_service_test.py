@@ -3565,13 +3565,22 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
             return_value=[self._user(user_id=42)]
         )
-        self.assignment_repo.get.return_value = ApplicationAssignmentEntity(
+        existing = ApplicationAssignmentEntity(
             application_id=10,
             stage=ApplicationStage.TECH,
             round=1,
             assignee_id=7,
             assigned_by=2,
         )
+        self.assignment_repo.get.return_value = existing
+
+        # The real upsert overwrites the row get() returned, in place.
+        async def overwrite(session, application_id, stage, round, assignee_id, by):
+            existing.assignee_id = assignee_id
+            existing.assigned_by = by
+            return existing
+
+        self.assignment_repo.upsert.side_effect = overwrite
 
         dto = ReassignDto(assignee_id=42)
         await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
