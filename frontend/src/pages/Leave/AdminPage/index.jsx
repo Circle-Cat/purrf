@@ -5,7 +5,6 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import LeaveBalancesPanel from "@/pages/Leave/BalancesPage";
 import LeaveCalendarPanel from "@/pages/Leave/CalendarAdminPage";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
-import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
 import LedgerPage from "@/pages/Leave/LedgerPage";
 
 /**
@@ -23,7 +22,6 @@ import LedgerPage from "@/pages/Leave/LedgerPage";
  */
 const LeaveAdminPage = () => {
   const { isEnabled, isReady } = useLeaveEnabled();
-  const { people } = useLeaveBalances();
 
   const [tab, setTab] = useState("balances");
   const [ledgerUserId, setLedgerUserId] = useState(null);
@@ -71,7 +69,6 @@ const LeaveAdminPage = () => {
             page={ledgerPage}
             onUserChange={handleLedgerUserChange}
             onPageChange={setLedgerPage}
-            people={people}
           />
         </TabsContent>
       </Tabs>

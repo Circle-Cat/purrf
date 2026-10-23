@@ -135,6 +135,23 @@ describe("LeaveAdminPage", () => {
   });
 
   it("switches to Ledger tab and passes userId when 'View history' is clicked in Balances", async () => {
+    api.getLeaveLedger.mockResolvedValueOnce(
+      envelope({
+        entries: [
+          {
+            leaveLedgerId: 101,
+            userId: 42,
+            name: "Alice Smith",
+            ldap: "asmith",
+            hours: "40.00",
+            entryType: "weekly_accrual",
+            effectiveDate: "2026-01-01",
+          },
+        ],
+        totalEntries: 1,
+      }),
+    );
+
     renderPage();
 
     await waitFor(() => {
