@@ -23,10 +23,21 @@ const BalanceHistoryRow = ({ entry }) => {
         ? "text-rose-600"
         : "text-muted-foreground";
 
+  const userId = entry?.userId ?? entry?.user_id;
+  const personText = entry?.name
+    ? `${entry.name}${entry.ldap ? ` · ${entry.ldap}` : ""}`
+    : userId
+      ? `User ${userId} — unavailable`
+      : null;
+
   return (
     <li className="flex items-baseline justify-between gap-4 py-2.5 px-4 sm:px-6">
       <div>
         <span className="text-sm font-medium">{displayType}</span>
+        {personText && (
+          <div className="text-xs text-gray-500">{personText}</div>
+        )}
+
         {entry.note && (
           <p className="mt-0.5 text-xs text-muted-foreground">{entry.note}</p>
         )}

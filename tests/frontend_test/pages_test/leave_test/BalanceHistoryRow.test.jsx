@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import BalanceHistoryRow from "@/pages/Leave/BalanceHistoryPage/components/BalanceHistoryRow";
+import BalanceHistoryRow from "@/pages/Leave/components/BalanceHistoryRow";
 import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest";
 
 vi.mock("@/pages/Leave/utils/leaveDates", () => ({
@@ -15,7 +15,7 @@ vi.mock("@/pages/Leave/utils/leaveDates", () => ({
 }));
 
 const entry = (overrides = {}) => ({
-  entryId: 1,
+  leaveLedgerId: 1,
   entryType: "weekly_accrual",
   hours: "40.00",
   effectiveDate: "2026-01-01",
@@ -164,5 +164,41 @@ describe("BalanceHistoryRow", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/\+16\.00\s*h/)).toBeInTheDocument();
     expect(screen.getByText("Swapped National Day")).toBeInTheDocument();
+  });
+
+  it("renders no person info when entry has no name or userId", () => {
+    render(<BalanceHistoryRow entry={entry({ name: null, userId: null })} />);
+
+    expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+  });
+
+  it("renders person info directly from entry.name and entry.ldap", () => {
+    render(
+      <BalanceHistoryRow
+        entry={entry({
+          name: "Alice Smith",
+          ldap: "asmith",
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/Alice Smith/)).toBeInTheDocument();
+    expect(screen.getByText(/asmith/)).toBeInTheDocument();
+    expect(screen.getByText(/·/)).toBeInTheDocument();
+  });
+
+  it("falls back to User <id> — unavailable when entry.name is null/missing", () => {
+    render(
+      <BalanceHistoryRow
+        entry={entry({
+          userId: 42,
+          name: null,
+          ldap: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("User 42 — unavailable")).toBeInTheDocument();
   });
 });

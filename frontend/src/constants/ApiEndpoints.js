@@ -93,6 +93,7 @@ export const API_ENDPOINTS = {
   LEAVE_HOLIDAYS_YEAR: (year) => `/leave/holidays/${year}`,
   LEAVE_HOLIDAY_YEARS: "/leave/holiday-years",
   LEAVE_BALANCES: "/leave/balances",
+  LEAVE_LEDGER: "/leave/ledger",
   LEAVE_ME_LEDGER: "/leave/me/ledger",
   LEAVE_ADJUSTMENTS: "/leave/adjustments",
   LEAVE_REQUEST_DECISION: (requestId) =>
