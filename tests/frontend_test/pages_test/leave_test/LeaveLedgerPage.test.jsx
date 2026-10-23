@@ -108,8 +108,10 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: [
         {
-          entryId: 1,
+          leaveLedgerId: 1,
           userId: 42,
+          name: "Alice Smith",
+          ldap: "asmith",
           hours: "40.00",
           entryType: "weekly_accrual",
           effectiveDate: "2026-01-01",
@@ -128,9 +130,35 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(screen.getByText(/\+40\.00\s*h/)).toBeInTheDocument();
   });
 
+  it("renders ledger entries for former employees not in people list", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: [
+        {
+          leaveLedgerId: 2,
+          userId: 888,
+          name: "Charlie Former",
+          ldap: "cformer",
+          hours: "-8.00",
+          entryType: "leave_deduction",
+          effectiveDate: "2026-02-01",
+        },
+      ],
+      totalEntries: 1,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} />);
+
+    const list = screen.getByRole("list");
+
+    expect(within(list).getByText(/Charlie Former/i)).toBeInTheDocument();
+    expect(within(list).getByText(/cformer/i)).toBeInTheDocument();
+  });
+
   it("disables Previous button on the first page", () => {
     mockUseLeaveLedger.mockReturnValue({
-      entries: [{ entryId: 1 }],
+      entries: [{ leaveLedgerId: 1 }],
       totalEntries: 100,
       isLoading: false,
       loadError: false,
@@ -147,7 +175,40 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
 
   it("triggers onPageChange when page buttons are clicked", () => {
     mockUseLeaveLedger.mockReturnValue({
-      entries: [{ entryId: 1 }],
+      entries: [{ leaveLedgerId: 1 }],
+      totalEntries: 100,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={1} />);
+
+    const nextBtn = screen.getByRole("button", { name: /Next/i });
+    fireEvent.click(nextBtn);
+
+    expect(defaultProps.onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it("disables Previous button on the first page", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: [{ leaveLedgerId: 1 }],
+      totalEntries: 100,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={1} />);
+
+    const prevBtn = screen.getByRole("button", { name: /Previous/i });
+    const nextBtn = screen.getByRole("button", { name: /Next/i });
+
+    expect(prevBtn).toBeDisabled();
+    expect(nextBtn).not.toBeDisabled();
+  });
+
+  it("triggers onPageChange when page buttons are clicked", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: [{ leaveLedgerId: 1 }],
       totalEntries: 100,
       isLoading: false,
       loadError: false,

@@ -15,7 +15,7 @@ vi.mock("@/pages/Leave/utils/leaveDates", () => ({
 }));
 
 const entry = (overrides = {}) => ({
-  entryId: 1,
+  leaveLedgerId: 1,
   entryType: "weekly_accrual",
   hours: "40.00",
   effectiveDate: "2026-01-01",
@@ -166,33 +166,36 @@ describe("BalanceHistoryRow", () => {
     expect(screen.getByText("Swapped National Day")).toBeInTheDocument();
   });
 
-  it("without person nothing extra renders", () => {
-    render(<BalanceHistoryRow entry={entry()} />);
+  it("renders no person info when entry has no name or userId", () => {
+    render(<BalanceHistoryRow entry={entry({ name: null, userId: null })} />);
 
     expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/·/)).not.toBeInTheDocument();
   });
 
-  it("with person the name, a middle dot and the ldap show", () => {
-    const mockPerson = {
-      name: "Alice Smith",
-      ldap: "asmith",
-    };
-
-    render(<BalanceHistoryRow entry={entry()} person={mockPerson} />);
+  it("renders person info directly from entry.name and entry.ldap", () => {
+    render(
+      <BalanceHistoryRow
+        entry={entry({
+          name: "Alice Smith",
+          ldap: "asmith",
+        })}
+      />,
+    );
 
     expect(screen.getByText(/Alice Smith/)).toBeInTheDocument();
     expect(screen.getByText(/asmith/)).toBeInTheDocument();
     expect(screen.getByText(/·/)).toBeInTheDocument();
   });
 
-  it("with an unresolved name it reads User <id> — unavailable", () => {
-    const unresolvedPerson = {};
-
+  it("falls back to User <id> — unavailable when entry.name is null/missing", () => {
     render(
       <BalanceHistoryRow
-        entry={entry({ userId: 42 })}
-        person={unresolvedPerson}
+        entry={entry({
+          userId: 42,
+          name: null,
+          ldap: null,
+        })}
       />,
     );
 

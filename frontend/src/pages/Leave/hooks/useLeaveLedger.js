@@ -45,7 +45,13 @@ export const useLeaveLedger = ({
   }, [userId, page, pageSize]);
 
   useEffect(() => {
-    load();
+    let ignore = false;
+
+    load({ isCancelled: () => ignore });
+
+    return () => {
+      ignore = true;
+    };
   }, [load]);
 
   return {

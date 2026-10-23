@@ -1,6 +1,7 @@
 import React from "react";
 import BalanceHistoryRow from "@/pages/Leave/components/BalanceHistoryRow";
 import { useLeaveLedger } from "@/pages/Leave/hooks/useLeaveLedger";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 50;
 
@@ -25,18 +26,34 @@ export default function LedgerPage({
     pageSize: PAGE_SIZE,
   });
 
-  const personMap = React.useMemo(() => {
-    const map = new Map();
-    people.forEach((p) => {
-      if (p.id) map.set(p.id, p);
-      if (p.userId) map.set(p.userId, p);
-    });
-    return map;
-  }, [people]);
-
   const totalPages = Math.ceil(totalEntries / PAGE_SIZE) || 1;
   const hasPrev = page > 1;
   const hasNext = page < totalPages;
+
+  const allFilterOptions = React.useMemo(() => {
+    const map = new Map();
+
+    people.forEach((p) => {
+      const id = p.id || p.userId;
+      if (id) {
+        map.set(id, { id, name: p.name, ldap: p.ldap, isFormer: false });
+      }
+    });
+
+    entries.forEach((entry) => {
+      const uid = entry.userId ?? entry.user_id;
+      if (uid && !map.has(uid)) {
+        map.set(uid, {
+          id: uid,
+          name: entry.name || `User ${uid}`,
+          ldap: entry.ldap,
+          isFormer: true,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [people, entries]);
 
   return (
     <div className="space-y-4 py-4">
@@ -56,9 +73,10 @@ export default function LedgerPage({
             className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <option value="">All Employees</option>
-            {people.map((p) => (
-              <option key={p.id || p.userId} value={p.id || p.userId}>
-                {p.name} ({p.ldap})
+            {allFilterOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} {p.ldap ? `(${p.ldap})` : ""}{" "}
+                {p.isFormer ? " - (Inactive/Left)" : ""}
               </option>
             ))}
           </select>
@@ -85,17 +103,9 @@ export default function LedgerPage({
           </div>
         ) : (
           <ul className="divide-y">
-            {entries.map((entry) => {
-              const entryUserId = entry.userId ?? entry.user_id;
-              const person = entryUserId ? personMap.get(entryUserId) : null;
-              return (
-                <BalanceHistoryRow
-                  key={entry.entryId || entry.id}
-                  entry={entry}
-                  person={person}
-                />
-              );
-            })}
+            {entries.map((entry) => (
+              <BalanceHistoryRow key={entry.leaveLedgerId} entry={entry} />
+            ))}
           </ul>
         )}
       </div>
@@ -106,22 +116,24 @@ export default function LedgerPage({
           Page {page} of {totalPages}
         </span>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={!hasPrev || isLoading}
             onClick={() => onPageChange(page - 1)}
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-sm transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
           >
             Previous
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={!hasNext || isLoading}
             onClick={() => onPageChange(page + 1)}
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-sm transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
           >
             Next
-          </button>
+          </Button>
         </div>
       </div>
     </div>
