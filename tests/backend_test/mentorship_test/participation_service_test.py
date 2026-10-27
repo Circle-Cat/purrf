@@ -60,6 +60,8 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+        self.mock_round_repo.get_all_rounds = AsyncMock(return_value=[])
+
         self.mock_session = AsyncMock()
         self.mock_mapper = MagicMock()
         self.logger = MagicMock()
@@ -268,7 +270,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result[1].primary_email)
 
         self.mock_pairs_repo.get_all_partner_ids.assert_awaited_once_with(
-            session=self.mock_session, user_id=self.user_context.user_id
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            exclude_round_ids=[],
         )
         self.mock_pairs_repo.get_pairs_with_partner_info.assert_not_awaited()
 
@@ -1209,6 +1213,155 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, round_id=mock_round_id, value=3.5
         )
         self.mock_round_repo.update_mentee_average_score.assert_not_awaited()
+
+
+class TestPairingsHiddenUntilAnnounced(unittest.IsolatedAsyncioTestCase):
+    """Before a round's match notification, members see none of its pairings."""
+
+    ROUND_ID = 7
+
+    def setUp(self):
+        now = datetime.now(timezone.utc)
+        self.upcoming = MentorshipRoundEntity(
+            round_id=self.ROUND_ID,
+            name="upcoming",
+            onboarding_deadline_at=now - timedelta(days=3),
+            match_notification_at=now + timedelta(days=9),
+            meetings_completion_deadline_at=now + timedelta(days=90),
+        )
+        self.announced = MentorshipRoundEntity(
+            round_id=self.ROUND_ID,
+            name="announced",
+            onboarding_deadline_at=now - timedelta(days=40),
+            match_notification_at=now - timedelta(days=30),
+            meetings_completion_deadline_at=now + timedelta(days=60),
+        )
+
+        self.rounds = MagicMock()
+        self.rounds.get_by_round_id = AsyncMock(return_value=self.upcoming)
+        self.rounds.get_all_rounds = AsyncMock(return_value=[])
+        self.pairs = MagicMock()
+        self.partner = MagicMock(
+            spec=UsersEntity,
+            user_id=456,
+            first_name="Ann",
+            last_name="Lee",
+            preferred_name=None,
+        )
+        self.pair = MagicMock(
+            spec=MentorshipPairsEntity,
+            status=PairStatus.ACTIVE,
+            mentor_id=123,
+            mentee_id=456,
+            recommendation_reason="why",
+        )
+        self.pairs.get_pairs_with_partner_info = AsyncMock(
+            return_value=[(self.pair, self.partner)]
+        )
+        self.pairs.get_all_partner_ids = AsyncMock(return_value=[456])
+        self.participants = MagicMock()
+        self.participants.get_by_user_id_and_round_id = AsyncMock(
+            return_value=MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.MATCHED,
+            )
+        )
+        self.users = MagicMock()
+        self.users.get_all_by_ids = AsyncMock(return_value=[self.partner])
+        emails = MagicMock()
+        emails.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={456: "ann@example.com"}
+        )
+        self.service = ParticipationService(
+            logger=MagicMock(),
+            users_repository=self.users,
+            mentorship_pairs_repository=self.pairs,
+            mentorship_round_participants_repo=self.participants,
+            mentorship_round_repository=self.rounds,
+            mentorship_mapper=MagicMock(),
+            user_emails_repository=emails,
+        )
+        self.session = AsyncMock()
+        self.user = MagicMock(spec=UserContextDto, user_id=123)
+
+    def _status(self, approval_status):
+        self.participants.get_by_user_id_and_round_id.return_value = MagicMock(
+            spec=MentorshipRoundParticipantsEntity, approval_status=approval_status
+        )
+
+    async def _match_result(self):
+        return await self.service.get_my_match_result_by_round_id(
+            self.session, self.user, self.ROUND_ID
+        )
+
+    async def test_matched_reads_pending_with_no_partners_before_the_date(self):
+        result = await self._match_result()
+
+        self.assertEqual(result.current_status, MatchStatus.PENDING)
+        self.assertEqual(result.partners, [])
+        self.pairs.get_pairs_with_partner_info.assert_not_awaited()
+
+    async def test_unmatched_reads_pending_before_the_date(self):
+        self._status(ApprovalStatus.UN_MATCHED)
+
+        result = await self._match_result()
+
+        self.assertEqual(result.current_status, MatchStatus.PENDING)
+        self.assertEqual(result.partners, [])
+
+    async def test_withdrawn_keeps_its_status_but_no_partners_before_the_date(self):
+        self._status(ApprovalStatus.WITHDRAWN)
+
+        result = await self._match_result()
+
+        self.assertEqual(result.current_status, MatchStatus.WITHDRAWN)
+        self.assertEqual(result.partners, [])
+        self.pairs.get_pairs_with_partner_info.assert_not_awaited()
+
+    async def test_matched_with_partner_once_announced(self):
+        self.rounds.get_by_round_id.return_value = self.announced
+
+        result = await self._match_result()
+
+        self.assertEqual(result.current_status, MatchStatus.MATCHED)
+        self.assertEqual([p.id for p in result.partners], [456])
+        self.assertEqual(result.partners[0].primary_email, "ann@example.com")
+
+    async def test_round_partners_empty_before_the_date(self):
+        result = await self.service.get_partners_for_user(
+            session=self.session, user_context=self.user, round_id=self.ROUND_ID
+        )
+
+        self.assertEqual(result, [])
+        self.pairs.get_pairs_with_partner_info.assert_not_awaited()
+
+    async def test_round_partners_returned_once_announced(self):
+        self.rounds.get_by_round_id.return_value = self.announced
+
+        result = await self.service.get_partners_for_user(
+            session=self.session, user_context=self.user, round_id=self.ROUND_ID
+        )
+
+        self.assertEqual([p.id for p in result], [456])
+
+    async def test_past_partners_leave_out_only_upcoming_rounds(self):
+        now = datetime.now(timezone.utc)
+        older = MentorshipRoundEntity(
+            round_id=3,
+            name="older",
+            onboarding_deadline_at=now - timedelta(days=400),
+            match_notification_at=now - timedelta(days=380),
+            meetings_completion_deadline_at=now - timedelta(days=200),
+        )
+        self.rounds.get_all_rounds.return_value = [self.upcoming, older]
+
+        await self.service.get_partners_for_user(
+            session=self.session, user_context=self.user
+        )
+
+        self.pairs.get_all_partner_ids.assert_awaited_once_with(
+            session=self.session, user_id=123, exclude_round_ids=[self.ROUND_ID]
+        )
 
 
 if __name__ == "__main__":
