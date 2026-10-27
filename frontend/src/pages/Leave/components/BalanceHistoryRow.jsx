@@ -11,7 +11,7 @@ import { formatBusinessDate } from "@/pages/Leave/utils/leaveDates";
  * @param {{ entry: object, showPerson?: boolean }} props
  */
 
-const BalanceHistoryRow = ({ entry }) => {
+const BalanceHistoryRow = ({ entry, showPerson = false }) => {
   const displayType = ENTRY_TYPE_LABELS[entry.entryType] || entry.entryType;
   const formattedDate = formatBusinessDate(entry.effectiveDate);
 
