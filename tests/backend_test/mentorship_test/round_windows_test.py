@@ -377,6 +377,8 @@ class TestIsInProgress(unittest.TestCase):
         fields = dict(
             promotion_start_at=self.PROMOTION,
             feedback_deadline_at=self.FEEDBACK_DEADLINE,
+            meetings_completion_deadline_at=None,
+            meeting_log_reminder_at=None,
         )
         fields.update(overrides)
         return SimpleNamespace(**fields)
@@ -389,10 +391,30 @@ class TestIsInProgress(unittest.TestCase):
         self.assertTrue(is_in_progress(r, self.FEEDBACK_DEADLINE))
         self.assertFalse(is_in_progress(r, self.FEEDBACK_DEADLINE + MICRO))
 
-    def test_never_open_without_either_date(self):
+    def test_never_open_without_a_promotion_start(self):
         inside = self.PROMOTION + MICRO
         self.assertFalse(is_in_progress(self._round(promotion_start_at=None), inside))
-        self.assertFalse(is_in_progress(self._round(feedback_deadline_at=None), inside))
+
+    def test_without_a_feedback_deadline_it_closes_a_month_after_meetings(self):
+        """The same fallback the feedback window uses, so a round saved
+        without a feedback deadline does not lock the admin console."""
+        meetings = datetime(2026, 11, 30, tzinfo=timezone.utc)
+        r = self._round(
+            feedback_deadline_at=None, meetings_completion_deadline_at=meetings
+        )
+
+        self.assertTrue(is_in_progress(r, self.PROMOTION + MICRO))
+        self.assertTrue(is_in_progress(r, datetime(2026, 12, 30, tzinfo=timezone.utc)))
+        self.assertFalse(
+            is_in_progress(r, datetime(2026, 12, 30, tzinfo=timezone.utc) + MICRO)
+        )
+
+    def test_never_open_without_any_close(self):
+        self.assertFalse(
+            is_in_progress(
+                self._round(feedback_deadline_at=None), self.PROMOTION + MICRO
+            )
+        )
 
 
 if __name__ == "__main__":
