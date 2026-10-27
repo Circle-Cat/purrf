@@ -27,6 +27,7 @@ from backend.dto.google_meeting_delete_response_dto import (
 )
 from backend.common.exceptions import ConflictError, MeetingGoneError
 from backend.mentorship.round_windows import (
+    is_announced,
     is_meeting_log_open,
     meeting_log_closes_at,
 )
@@ -36,6 +37,8 @@ from backend.mentorship.round_windows import (
 _MEETING_GONE_MESSAGE = (
     "This meeting no longer exists on the calendar. Cancel it here and book a new one."
 )
+
+_NOT_ANNOUNCED_MESSAGE = "Match results for this round are not announced yet."
 
 
 class MeetingService:
@@ -95,6 +98,9 @@ class MeetingService:
         current_user = await self.users_repository.get_user_by_user_id(
             session=session, user_id=user_context.user_id
         )
+
+        if not await self._is_round_announced(session, round_id):
+            return MeetingDto(round_id=round_id, meeting_info=[])
 
         pair_entity = (
             await self.mentorship_pairs_repository.get_pairs_by_user_and_round(
@@ -205,9 +211,15 @@ class MeetingService:
         round_entity = await self.mentorship_round_repository.get_by_round_id(
             session, data.round_id
         )
-        if round_entity is not None and not is_meeting_log_open(
-            round_entity, datetime.now(dt_timezone.utc)
-        ):
+        now = datetime.now(dt_timezone.utc)
+        if round_entity is not None and not is_announced(round_entity, now):
+            self.logger.warning(
+                "[MeetingService] Upsert refused for mentee_id=%s: round_id=%s is not announced yet",
+                current_user.user_id,
+                data.round_id,
+            )
+            raise ValueError(_NOT_ANNOUNCED_MESSAGE)
+        if round_entity is not None and not is_meeting_log_open(round_entity, now):
             self.logger.warning(
                 "[MeetingService] Upsert refused for mentee_id=%s: logging for round_id=%s closed at %s",
                 current_user.user_id,
@@ -336,6 +348,7 @@ class MeetingService:
             session=session, user_id=user_context.user_id
         )
 
+        await self._require_announced(session, round_id)
         # Get pair and partner info
         pair_result = await self.mentorship_pairs_repository.get_pair_with_partner_by_round_and_users_and_status(
             session=session,
@@ -505,8 +518,11 @@ class MeetingService:
 
         Wall-clock inputs are expanded to DST-correct UTC pairs, then each
         occurrence is created via `create_google_meeting` in its own session
-        (best-effort: a single failure is captured, not raised).
+        (best-effort: a single failure is captured, not raised). A round not
+        yet announced refuses the whole batch.
         """
+        async with session_factory() as session:
+            await self._require_announced(session, round_id)
         occurrences = self._expand_occurrences(
             timezone=timezone,
             start_date=start_date,
@@ -606,6 +622,7 @@ class MeetingService:
             session=session, user_id=user_context.user_id
         )
 
+        await self._require_announced(session, round_id)
         # The same lookup creation uses, not deletion's: moving a meeting
         # puts it into a live pairing, and this call also yields the partner
         # whose user_id the attendee list needs.
@@ -750,6 +767,7 @@ class MeetingService:
         pair_id_by_meeting_id: dict[str, int] = {}
 
         for deletion in deletions:
+            await self._require_announced(session, deletion["round_id"])
             pairs = await self.mentorship_pairs_repository.get_pairs_by_user_and_round(
                 session=session,
                 user_id=user_context.user_id,
@@ -843,6 +861,23 @@ class MeetingService:
             succeeded_meeting_ids=succeeded_event_ids,
             failed_meeting_ids=failed_event_ids,
         )
+
+    async def _is_round_announced(self, session: AsyncSession, round_id: int) -> bool:
+        """Whether members may see and act on the round's pairings; see is_announced."""
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, round_id
+        )
+        if round_entity is None or is_announced(
+            round_entity, datetime.now(dt_timezone.utc)
+        ):
+            return True
+        self.logger.info("[MeetingService] round_id=%s is not announced yet", round_id)
+        return False
+
+    async def _require_announced(self, session: AsyncSession, round_id: int) -> None:
+        """Raise ValueError when the round's pairings are not announced yet."""
+        if not await self._is_round_announced(session, round_id):
+            raise ValueError(_NOT_ANNOUNCED_MESSAGE)
 
     async def _upcoming_google_meetings(
         self, session: AsyncSession, pair_ids: list[int]
@@ -1018,6 +1053,9 @@ class MeetingService:
 
         is_admin = user_context.has_permission(Permission.MENTORSHIP_ADMIN_READ)
         is_detail_allowed = include_details and is_admin
+
+        if not await self._is_round_announced(session, round_id):
+            return MeetingDto(round_id=round_id, meeting_info=[])
 
         pair_entity = (
             await self.mentorship_pairs_repository.get_pairs_by_user_and_round(

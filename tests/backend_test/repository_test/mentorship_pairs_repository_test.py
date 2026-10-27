@@ -158,6 +158,17 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertIn(self.users[1].user_id, result)
         self.assertIn(self.users[2].user_id, result)
 
+    async def test_get_all_partner_ids_leaves_out_excluded_rounds(self):
+        """A partner met only in excluded rounds drops out; one also met in a
+        kept round stays."""
+        result = await self.repo.get_all_partner_ids(
+            self.session,
+            self.users[0].user_id,
+            exclude_round_ids=[self.rounds[0].round_id, self.rounds[2].round_id],
+        )
+
+        self.assertEqual(result, [self.users[1].user_id])
+
     async def test_get_pairs_by_user_non_existent(self):
         """Test passing a non-existent user ID returns an empty collection."""
         result = await self.repo.get_all_partner_ids(self.session, 9999)

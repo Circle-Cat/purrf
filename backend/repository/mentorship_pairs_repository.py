@@ -65,7 +65,10 @@ class MentorshipPairsRepository:
         }
 
     async def get_all_partner_ids(
-        self, session: AsyncSession, user_id: int
+        self,
+        session: AsyncSession,
+        user_id: int,
+        exclude_round_ids: list[int] | None = None,
     ) -> list[int]:
         """
         Retrieve a list of unique partner IDs (mentors or mentees) for a given user ID.
@@ -77,6 +80,7 @@ class MentorshipPairsRepository:
         Args:
             session (AsyncSession): The active async database session.
             user_id (int): The ID of the user whose partners are being retrieved.
+            exclude_round_ids (list[int] | None): Rounds whose pairs are left out.
 
         Returns:
             list[int]: A list of unique partner IDs. Returns an empty list if
@@ -93,16 +97,15 @@ class MentorshipPairsRepository:
             else_=MentorshipPairsEntity.mentor_id,
         ).label("partner_id")
 
-        result = await session.execute(
-            select(partner_id_case)
-            .where(
-                or_(
-                    MentorshipPairsEntity.mentor_id == user_id,
-                    MentorshipPairsEntity.mentee_id == user_id,
-                )
+        stmt = select(partner_id_case).where(
+            or_(
+                MentorshipPairsEntity.mentor_id == user_id,
+                MentorshipPairsEntity.mentee_id == user_id,
             )
-            .distinct()
         )
+        if exclude_round_ids:
+            stmt = stmt.where(MentorshipPairsEntity.round_id.not_in(exclude_round_ids))
+        result = await session.execute(stmt.distinct())
 
         return result.scalars().all()
 

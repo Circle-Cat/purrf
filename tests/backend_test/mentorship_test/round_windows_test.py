@@ -8,6 +8,7 @@ from backend.mentorship.round_windows import (
     FeedbackWindow,
     feedback_window,
     is_feedback_editable,
+    is_announced,
     is_feedback_open,
     is_in_progress,
     is_meeting_log_open,
@@ -125,6 +126,29 @@ class TestRoundStatus(unittest.TestCase):
         for label, r in cases.items():
             with self.subTest(label):
                 self.assertIsNone(round_status(r, self.NOW))
+
+    def test_announced_from_the_match_notification_on(self):
+        r = self._round(
+            promotion_start_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            match_notification_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(is_announced(r, r.match_notification_at - MICRO))
+        self.assertTrue(is_announced(r, r.match_notification_at))
+        self.assertTrue(is_announced(r, datetime(2026, 10, 1, tzinfo=timezone.utc)))
+
+    def test_announced_falls_back_to_promotion_start(self):
+        r = self._round(
+            promotion_start_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(is_announced(r, self.NOW))
+        self.assertTrue(is_announced(r, r.promotion_start_at))
+
+    def test_announced_without_a_start(self):
+        self.assertTrue(is_announced(self._round(), self.NOW))
 
 
 class _WindowFixture(unittest.TestCase):

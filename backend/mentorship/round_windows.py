@@ -50,6 +50,24 @@ def round_status(r: MentorshipRoundEntity, now: datetime) -> RoundStatus | None:
     return None
 
 
+def is_announced(r: MentorshipRoundEntity, now: datetime) -> bool:
+    """Whether members may see and act on the round's pairings at ``now``.
+
+    Pairs are written when the publish request is approved, which can be
+    days before the match notification. Until the round's meeting window
+    opens (``round_status`` UPCOMING) its pairings stay with the admins.
+    A round with no start date is not held back.
+
+    Args:
+        r (MentorshipRoundEntity): The round.
+        now (datetime): The aware instant to evaluate at.
+
+    Returns:
+        bool: False only while the round is upcoming.
+    """
+    return round_status(r, now) != RoundStatus.UPCOMING
+
+
 def feedback_window(r: MentorshipRoundEntity) -> FeedbackWindow:
     """The span in which a round's program feedback can be written.
 
