@@ -5,6 +5,18 @@ import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 50;
 
+const formatOptionLabel = (p) => {
+  const rawName = p.name?.trim();
+  const displayName = rawName || `User ${p.userId}`;
+
+  const ldapClean = p.ldap && p.ldap !== "null" ? p.ldap.trim() : null;
+  const ldapStr = ldapClean ? `(${ldapClean})` : "";
+
+  const statusStr = p.isFormer === true ? "(Inactive/Left)" : "";
+
+  return [displayName, ldapStr, statusStr].filter(Boolean).join(" ");
+};
+
 /**
  * LedgerPage / LedgerTab
  *
@@ -34,20 +46,25 @@ export default function LedgerPage({
     const map = new Map();
 
     people.forEach((p) => {
-      const id = p.id || p.userId;
+      const id = p.userId;
       if (id) {
-        map.set(id, { id, name: p.name, ldap: p.ldap, isFormer: false });
+        map.set(id, {
+          userId: id,
+          name: p.name,
+          ldap: p.ldap,
+          isFormer: Boolean(p.isFormer || p.isInactive || p.status === "left"),
+        });
       }
     });
 
     entries.forEach((entry) => {
-      const uid = entry.userId ?? entry.user_id;
+      const uid = entry.userId;
       if (uid && !map.has(uid)) {
         map.set(uid, {
-          id: uid,
-          name: entry.name || `User ${uid}`,
+          userId: uid,
+          name: entry.name,
           ldap: entry.ldap,
-          isFormer: true,
+          isFormer: entry.isFormer === true || entry.isInactive === true,
         });
       }
     });
@@ -74,9 +91,8 @@ export default function LedgerPage({
           >
             <option value="">All Employees</option>
             {allFilterOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} {p.ldap ? `(${p.ldap})` : ""}{" "}
-                {p.isFormer ? " - (Inactive/Left)" : ""}
+              <option key={p.userId} value={p.userId}>
+                {formatOptionLabel(p)}
               </option>
             ))}
           </select>
@@ -104,7 +120,11 @@ export default function LedgerPage({
         ) : (
           <ul className="divide-y">
             {entries.map((entry) => (
-              <BalanceHistoryRow key={entry.leaveLedgerId} entry={entry} />
+              <BalanceHistoryRow
+                key={entry.leaveLedgerId}
+                entry={entry}
+                showPerson={true}
+              />
             ))}
           </ul>
         )}

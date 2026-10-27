@@ -12,37 +12,49 @@ import { getLeaveLedger } from "@/api/leaveApi";
  *   totalEntries: number,
  *   isLoading: boolean,
  *   loadError: boolean,
- *   load: () => Promise<void>
+ *   load: (opts?: { isCancelled?: () => boolean }) => Promise<void>
  * }}
  */
 export const useLeaveLedger = ({
   userId = null,
   page = 1,
   pageSize = 50,
+  enabled = true,
 } = {}) => {
   const [entries, setEntries] = useState([]);
   const [totalEntries, setTotalEntries] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  const load = useCallback(() => {
-    setIsLoading(true);
-    setLoadError(false);
+  const load = useCallback(
+    ({ isCancelled } = {}) => {
+      if (!enabled) return Promise.resolve();
 
-    return getLeaveLedger({ userId, page, pageSize })
-      .then(({ data }) => {
-        setEntries(data?.entries ?? []);
-        setTotalEntries(data?.totalEntries ?? data?.total ?? 0);
-      })
-      .catch(() => {
-        setLoadError(true);
-        setEntries([]);
-        setTotalEntries(0);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, [userId, page, pageSize]);
+      setIsLoading(true);
+      setLoadError(false);
+
+      return getLeaveLedger({ userId, page, pageSize })
+        .then(({ data }) => {
+          if (isCancelled?.()) return;
+
+          setEntries(data?.entries ?? []);
+          setTotalEntries(data?.totalEntries ?? 0);
+        })
+        .catch(() => {
+          if (isCancelled?.()) return;
+
+          setLoadError(true);
+          setEntries([]);
+          setTotalEntries(0);
+        })
+        .finally(() => {
+          if (isCancelled?.()) return;
+
+          setIsLoading(false);
+        });
+    },
+    [userId, page, pageSize, enabled],
+  );
 
   useEffect(() => {
     let ignore = false;

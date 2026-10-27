@@ -12,8 +12,8 @@ const mockUseLeaveLedger = vi.mocked(useLeaveLedger);
 
 describe("LeaveLedgerPage (LedgerTab)", () => {
   const mockPeople = [
-    { id: 42, name: "Alice Smith", ldap: "asmith" },
-    { id: 99, name: "Bob Jones", ldap: "bjones" },
+    { id: 42, userId: 42, name: "Alice Smith", ldap: "asmith" },
+    { id: 99, userId: 43, name: "Bob Jones", ldap: "bjones" },
   ];
 
   const defaultProps = {
