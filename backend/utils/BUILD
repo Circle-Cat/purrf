@@ -53,6 +53,7 @@ py_library(
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:identity_type",
         "//backend/common:permissions",
+        "//backend/training:content_host",
         "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],
