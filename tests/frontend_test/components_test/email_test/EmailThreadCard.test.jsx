@@ -104,6 +104,27 @@ describe("EmailThreadCard", () => {
     expect(attachmentUrl).toHaveBeenCalledWith(411, 0);
   });
 
+  it("shows a pasted image from the message's own attachment", () => {
+    const { container } = renderCard({
+      attachmentUrl: (messageId, index) => `/dl/${messageId}/${index}`,
+      thread: threadOf({
+        messages: [
+          replyOf({
+            bodyHtml: '<p>Look</p><img alt="shot" src="cid:ii_7">',
+            attachments: [
+              { name: "plan.pdf", size: 2048 },
+              { name: "image.png", size: 30, contentId: "ii_7" },
+            ],
+          }),
+        ],
+      }),
+    });
+    expect(container.querySelector('img[alt="shot"]')).toHaveAttribute(
+      "src",
+      "/dl/411/1",
+    );
+  });
+
   it("lists attachments by name without a download URL, and none when absent", () => {
     renderCard({
       thread: threadOf({

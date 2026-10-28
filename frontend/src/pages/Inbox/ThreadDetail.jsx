@@ -78,6 +78,10 @@ const Message = ({ threadId, message }) => {
         html={message.bodyHtml}
         text={message.bodyText}
         className="mt-2"
+        attachments={message.attachments}
+        attachmentUrl={(index) =>
+          inboxAttachmentUrl(threadId, message.messageId, index)
+        }
       />
       {message.attachments?.length > 0 && (
         <ul aria-label="Attachments" className="mt-2 flex flex-wrap gap-2">

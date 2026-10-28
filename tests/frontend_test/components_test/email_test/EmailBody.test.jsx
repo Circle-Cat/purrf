@@ -33,6 +33,20 @@ describe("EmailBody", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("shows an image pasted into the message from its own attachment", () => {
+    const { container } = render(
+      <EmailBody
+        html='<p>See</p><img alt="shot" src="cid:ii_2">'
+        attachments={[{ contentId: null }, { contentId: "ii_2" }]}
+        attachmentUrl={(index) => `https://api.test/attachments/${index}`}
+      />,
+    );
+    expect(container.querySelector("img").getAttribute("src")).toBe(
+      "https://api.test/attachments/1",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("says nothing when the message has no remote content", () => {
     render(<EmailBody html="<p>Hello</p>" />);
     expect(screen.getByText("Hello")).toBeInTheDocument();
