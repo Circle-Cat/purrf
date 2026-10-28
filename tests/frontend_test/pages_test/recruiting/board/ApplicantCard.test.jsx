@@ -105,6 +105,67 @@ describe("ApplicantCard reviewer", () => {
   });
 });
 
+describe("ApplicantCard interview booking badge", () => {
+  const interviewCard = {
+    ...baseCard,
+    stage: "behavioral",
+    reviewerName: "Ivan Interviewer",
+  };
+
+  it("says Booked when the round's interview is booked", () => {
+    render(
+      <ApplicantCard
+        card={{ ...interviewCard, interviewBooked: true }}
+        showStatus
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Booked")).toBeInTheDocument();
+    expect(screen.queryByText("Not booked")).not.toBeInTheDocument();
+  });
+
+  it("says Not booked when the round's interview is not booked yet", () => {
+    render(
+      <ApplicantCard
+        card={{ ...interviewCard, stage: "tech", interviewBooked: false }}
+        showStatus
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Not booked")).toBeInTheDocument();
+    expect(screen.queryByText("Booked")).not.toBeInTheDocument();
+  });
+
+  it.each([null, undefined])(
+    "shows no badge when interviewBooked is %s",
+    (interviewBooked) => {
+      render(
+        <ApplicantCard
+          card={{ ...interviewCard, interviewBooked }}
+          showStatus
+          onOpen={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByText("Reviewer: Ivan Interviewer"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Booked/i)).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows no badge when nobody is assigned", () => {
+    render(
+      <ApplicantCard
+        card={{ ...interviewCard, reviewerName: null, interviewBooked: false }}
+        showStatus
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Reviewer: N/A")).toBeInTheDocument();
+    expect(screen.queryByText(/Booked/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("ApplicantCard cold-freeze countdown", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
