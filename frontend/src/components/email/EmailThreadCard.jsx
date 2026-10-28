@@ -25,7 +25,8 @@ const ATTACHMENT_CLASS =
  * One stored message. Auto-replies and delivery-failure reports
  * (`inboundKind`) are tagged and dimmed so they read as noise next to human
  * replies. Attachments link to `attachmentUrl(messageId, index)` when it is
- * given and are listed by name otherwise.
+ * given and are listed by name otherwise; the same URL shows the images
+ * pasted into the body.
  *
  * @param {{message: object, formatTime: (iso: string) => string,
  *          attachmentUrl?: (messageId: number, index: number) => string}} props
@@ -65,6 +66,10 @@ export const EmailMessage = ({ message, formatTime, attachmentUrl }) => {
         html={message.bodyHtml}
         text={message.bodyText}
         className="text-slate-700"
+        attachments={attachments}
+        attachmentUrl={
+          attachmentUrl && ((index) => attachmentUrl(message.messageId, index))
+        }
       />
       {attachments.length > 0 && (
         <ul aria-label="Attachments" className="mt-2 flex flex-wrap gap-2">

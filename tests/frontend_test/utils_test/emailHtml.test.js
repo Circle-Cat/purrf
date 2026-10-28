@@ -100,6 +100,39 @@ describe("sanitizeEmailBody", () => {
     });
     expect(html).toContain("t.test");
   });
+
+  it("points a cid image at the part it names, without asking", () => {
+    const result = sanitizeEmailBody(
+      '<img src="cid:ii_1"><img src="CID:logo%40x"><img src="https://t.test/open.gif">',
+      {
+        inlineImageUrl: (id) =>
+          ({
+            ii_1: "https://api.test/a/0",
+            "logo@x": "https://api.test/a/1",
+          })[id],
+      },
+    );
+    expect(result.html).toContain('src="https://api.test/a/0"');
+    expect(result.html).toContain('src="https://api.test/a/1"');
+    expect(result.html).not.toContain("t.test");
+    expect(result.remoteContentBlocked).toBe(true);
+  });
+
+  it("leaves a cid image it cannot match as it was", () => {
+    const result = sanitizeEmailBody('<img src="cid:gone">', {
+      inlineImageUrl: () => null,
+    });
+    expect(result.html).toContain('src="cid:gone"');
+    expect(result.remoteContentBlocked).toBe(false);
+  });
+
+  it("resolves cid images after the reader loads remote content too", () => {
+    const { html } = sanitizeEmailBody('<img src="cid:ii_1">', {
+      loadRemoteContent: true,
+      inlineImageUrl: () => "/api/a/0",
+    });
+    expect(html).toContain('src="/api/a/0"');
+  });
 });
 
 describe("EMAIL_BODY_BOX_CLASS", () => {

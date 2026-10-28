@@ -15,19 +15,39 @@ const HTML_BODY_CLASS = `max-w-none ${EMAIL_BODY_BOX_CLASS} [&_a]:underline [&_o
  * Remote images and backgrounds stay unloaded until the reader asks for them,
  * as mail clients do, because loading them tells the sender the message was
  * opened, when, and from which address. The choice holds for this message
- * while it stays on screen.
+ * while it stays on screen. Images pasted into the message itself are shown
+ * from the message's own attachments (`attachments`, linked through
+ * `attachmentUrl(index)`), so they need no asking.
  *
- * @param {{html?: string | null, text?: string | null, className?: string}} props
+ * @param {{html?: string | null, text?: string | null, className?: string,
+ *          attachments?: {contentId?: string | null}[],
+ *          attachmentUrl?: (index: number) => string | null | undefined}} props
  *   `className` is added to the body whichever form it takes.
  */
-export default function EmailBody({ html, text, className = "" }) {
+export default function EmailBody({
+  html,
+  text,
+  className = "",
+  attachments,
+  attachmentUrl,
+}) {
   const [loadRemoteContent, setLoadRemoteContent] = useState(false);
 
   if (!html) {
     return <p className={`whitespace-pre-wrap ${className}`}>{text ?? ""}</p>;
   }
 
-  const sanitized = sanitizeEmailBody(html, { loadRemoteContent });
+  const sanitized = sanitizeEmailBody(html, {
+    loadRemoteContent,
+    inlineImageUrl: attachmentUrl
+      ? (contentId) => {
+          const index = (attachments ?? []).findIndex(
+            (a) => a.contentId === contentId,
+          );
+          return index === -1 ? null : attachmentUrl(index);
+        }
+      : undefined,
+  });
   return (
     <div className={className}>
       {sanitized.remoteContentBlocked && (

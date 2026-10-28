@@ -22,16 +22,46 @@ const LOADING_HREF_ELEMENTS = new Set(["image", "use", "feimage"]);
 const hasRemoteCandidate = (srcset) =>
   srcset.split(",").some((candidate) => REMOTE_URL.test(candidate));
 
+/** A `cid:` reference to a part of the same message (RFC 2392). */
+const CID_URL = /^\s*cid:/i;
+
 /**
- * Strips what one element would load from another host, and says whether it
- * found anything.
+ * Points an `<img src="cid:...">` at the stored part it names, and says
+ * whether it did.
  *
  * @param {Element} node
+ * @param {(contentId: string) => string | null | undefined} inlineImageUrl
  * @returns {boolean}
  */
-const stripRemoteContent = (node) => {
+const resolveInlineImage = (node, inlineImageUrl) => {
+  const src = node.getAttribute?.("src");
+  if (src == null || !CID_URL.test(src)) return false;
+  const raw = src.replace(CID_URL, "").trim();
+  let contentId = raw;
+  try {
+    contentId = decodeURIComponent(raw);
+  } catch {
+    // Not percent-encoded after all; match it as written.
+  }
+  const url = inlineImageUrl(contentId);
+  if (!url) return false;
+  node.setAttribute("src", url);
+  return true;
+};
+
+/**
+ * Strips what one element would load from another host, and says whether it
+ * found anything. `keepSrc` spares a `src` already pointed at our own copy of
+ * an inline part.
+ *
+ * @param {Element} node
+ * @param {{keepSrc?: boolean}} [options]
+ * @returns {boolean}
+ */
+const stripRemoteContent = (node, { keepSrc = false } = {}) => {
   let stripped = false;
   for (const name of LOADING_ATTRIBUTES) {
+    if (keepSrc && name === "src") continue;
     const value = node.getAttribute?.(name);
     if (value == null || !REMOTE_URL.test(value)) continue;
     const isLink =
@@ -64,22 +94,37 @@ const stripRemoteContent = (node) => {
  * them, as mail clients do: fetching them as soon as a message is shown tells
  * the sender it was opened, when, and from which address.
  *
+ * An image pasted into the message is a part of it, referenced as
+ * `cid:<Content-ID>`; `inlineImageUrl` maps that id to where the part is
+ * served. Those load without asking: they come from our own server, not the
+ * sender's, so loading them tells the sender nothing.
+ *
  * @param {string} html
- * @param {{loadRemoteContent?: boolean}} [options]
+ * @param {{loadRemoteContent?: boolean,
+ *          inlineImageUrl?: (contentId: string) => string | null | undefined}}
+ *   [options]
  * @returns {{html: string, remoteContentBlocked: boolean}}
  */
-export const sanitizeEmailBody = (html, { loadRemoteContent = false } = {}) => {
+export const sanitizeEmailBody = (
+  html,
+  { loadRemoteContent = false, inlineImageUrl } = {},
+) => {
   let remoteContentBlocked = false;
-  if (!loadRemoteContent) {
+  const hooked = !loadRemoteContent || inlineImageUrl != null;
+  if (hooked) {
     DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-      if (stripRemoteContent(node)) remoteContentBlocked = true;
+      const keepSrc =
+        inlineImageUrl != null && resolveInlineImage(node, inlineImageUrl);
+      if (!loadRemoteContent && stripRemoteContent(node, { keepSrc })) {
+        remoteContentBlocked = true;
+      }
     });
   }
   try {
     const clean = DOMPurify.sanitize(html, { FORBID_TAGS: ["style"] });
     return { html: clean, remoteContentBlocked };
   } finally {
-    if (!loadRemoteContent) DOMPurify.removeHook("afterSanitizeAttributes");
+    if (hooked) DOMPurify.removeHook("afterSanitizeAttributes");
   }
 };
 
