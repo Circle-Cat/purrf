@@ -18,18 +18,23 @@ class EmailAttachmentDto(BaseDto):
 
     name: str
     size: int = 0
+    # Set on an inline part: the body shows it where it says cid:<content_id>.
+    content_id: str | None = None
 
 
 def _attachment_entry(entry) -> dict:
-    """Name and size of one stored entry, whatever shape an older sync left."""
+    """Name, size and Content-ID of one stored entry, whatever shape an older
+    sync left."""
     if isinstance(entry, EmailAttachmentDto):
-        return {"name": entry.name, "size": entry.size}
+        return entry.model_dump()
     if not isinstance(entry, dict):
         return {"name": "attachment", "size": 0}
     size = entry.get("size")
+    content_id = entry.get("contentId")
     return {
         "name": entry.get("name") or entry.get("filename") or "attachment",
         "size": size if isinstance(size, int) else 0,
+        "content_id": content_id if isinstance(content_id, str) else None,
     }
 
 

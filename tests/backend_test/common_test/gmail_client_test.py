@@ -1025,6 +1025,51 @@ class TestGmailClient(TestCase):
             [{"name": "cv.pdf", "size": 2048, "gmailAttachmentId": "att-1"}],
         )
 
+    def test_parse_keeps_the_content_id_of_an_inline_image(self):
+        parsed = self.client._parse_message(
+            self._raw_message(
+                [],
+                parts=[
+                    {"mimeType": "text/html", "body": {"data": _b64("<p>x</p>")}},
+                    {
+                        "mimeType": "image/png",
+                        "filename": "image.png",
+                        "headers": [{"name": "Content-ID", "value": "<ii_mvk1>"}],
+                        "body": {"attachmentId": "att-1", "size": 40},
+                    },
+                    {
+                        "mimeType": "image/gif",
+                        "filename": "",
+                        "headers": [{"name": "content-id", "value": " <logo@x> "}],
+                        "body": {"attachmentId": "att-2", "size": 9},
+                    },
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "cv.pdf",
+                        "body": {"attachmentId": "att-3", "size": 2},
+                    },
+                ],
+            )
+        )
+        self.assertEqual(
+            parsed["attachments"],
+            [
+                {
+                    "name": "image.png",
+                    "size": 40,
+                    "gmailAttachmentId": "att-1",
+                    "contentId": "ii_mvk1",
+                },
+                {
+                    "name": "image",
+                    "size": 9,
+                    "gmailAttachmentId": "att-2",
+                    "contentId": "logo@x",
+                },
+                {"name": "cv.pdf", "size": 2, "gmailAttachmentId": "att-3"},
+            ],
+        )
+
     def test_get_attachment_decodes_base64url(self):
         users = self.mock_service.users.return_value
         users.messages.return_value.attachments.return_value.get.return_value.execute.return_value = {
