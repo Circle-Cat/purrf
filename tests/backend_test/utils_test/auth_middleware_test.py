@@ -744,8 +744,17 @@ class TestContentOriginExemption(unittest.TestCase):
         self.app = Starlette(
             routes=[
                 Route(TRAINING_CONTENT_ENDPOINT, course_file),
-                Route("/api/training/courses", api_endpoint),
+                Route(
+                    "/api/training/courses",
+                    api_endpoint,
+                    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                ),
                 Route("/api/p/thing", api_endpoint),
+                Route(
+                    f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
+                    api_endpoint,
+                    methods=["POST"],
+                ),
             ]
         )
 
@@ -888,6 +897,95 @@ class TestContentOriginExemption(unittest.TestCase):
         client = self._client(training_content_host=CONTENT_HOST)
 
         response = client.get("/api/p/thing", headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
+
+    def assert_refused_as_course_write(self, response):
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.assertEqual(
+            response.json()["message"], "Course content cannot change data."
+        )
+        self.mock_auth_service.authenticate_request.assert_not_called()
+
+    def test_a_write_sent_from_the_content_origin_is_refused(self):
+        """A course can make the browser send a POST that needs no preflight,
+        carrying the learner's Access cookie; it must not run as them."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            with self.subTest(method):
+                self.mock_auth_service.authenticate_request.reset_mock()
+                response = client.request(
+                    method,
+                    "/api/training/courses",
+                    headers={"host": API_HOST, "origin": f"https://{CONTENT_HOST}"},
+                )
+
+                self.assert_refused_as_course_write(response)
+
+    def test_the_content_origin_is_matched_by_hostname(self):
+        """A port or a different letter case on the same host is the same
+        course page."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        for origin in (
+            f"https://{CONTENT_HOST}:443",
+            f"https://{CONTENT_HOST.upper()}",
+            f"http://{CONTENT_HOST}",
+        ):
+            with self.subTest(origin):
+                response = client.post(
+                    "/api/training/courses",
+                    headers={"host": API_HOST, "origin": origin},
+                )
+
+                self.assert_refused_as_course_write(response)
+
+    def test_an_unauthenticated_path_is_refused_from_the_content_origin_too(self):
+        """The exempt push routes are reached without an Origin; one sent from
+        a course page is not that caller."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.post(
+            f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
+            headers={"host": API_HOST, "origin": f"https://{CONTENT_HOST}"},
+        )
+
+        self.assert_refused_as_course_write(response)
+
+    def test_a_read_from_the_content_origin_is_still_authenticated(self):
+        """Reads are left to CORS, which keeps the course from seeing the
+        response."""
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        response = client.get(
+            "/api/training/courses",
+            headers={"host": API_HOST, "origin": f"https://{CONTENT_HOST}"},
+        )
+
+        self.assert_authenticated(response)
+
+    def test_a_write_from_the_app_or_without_an_origin_is_authenticated(self):
+        client = self._client(training_content_host=CONTENT_HOST)
+
+        for headers in (
+            {"host": API_HOST, "origin": f"https://{API_HOST}"},
+            {"host": API_HOST},
+            {"host": API_HOST, "origin": f"https://{CONTENT_HOST}.evil.test"},
+        ):
+            with self.subTest(headers):
+                self.mock_auth_service.authenticate_request.reset_mock()
+                response = client.post("/api/training/courses", headers=headers)
+
+                self.assert_authenticated(response)
+
+    def test_writes_are_not_refused_without_a_content_host(self):
+        client = self._client()
+
+        response = client.post(
+            "/api/training/courses",
+            headers={"host": API_HOST, "origin": f"https://{CONTENT_HOST}"},
+        )
 
         self.assert_authenticated(response)
 
