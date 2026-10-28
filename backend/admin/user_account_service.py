@@ -34,6 +34,10 @@ _STATUS_FILTERS: dict[str, tuple[bool | None, bool | None]] = {
     _STATUS_BLOCKED: (None, True),
 }
 
+# The columns an operator can sort the list by. Newest accounts first is the
+# common question, and user_id is assigned in sign-up order.
+_SORTABLE = frozenset({"user_id"})
+
 
 class UserAccountService:
     def __init__(
@@ -76,6 +80,8 @@ class UserAccountService:
         status: str | None = None,
         user_type: str | None = None,
         search_blocked_reason: bool = False,
+        sort_by: str | None = None,
+        order: str = "asc",
         limit: int,
         offset: int,
     ) -> tuple[list[UserAccountRowDto], int]:
@@ -95,6 +101,9 @@ class UserAccountService:
             user_type (str | None): ``"internal"`` / ``"external"`` / None.
             search_blocked_reason (bool): Also match ``search`` against the
                 block reason. Off by default.
+            sort_by (str | None): ``"user_id"``, the one column this list
+                sorts by; anything else keeps the default order.
+            order (str): ``"asc"`` or ``"desc"``, applied with ``sort_by``.
             limit (int): Max rows per page.
             offset (int): Rows to skip.
 
@@ -114,9 +123,11 @@ class UserAccountService:
 
         # Filtering to blocked accounts is the question "who did we block, and
         # when" -- the job the retired blacklist page did, and it ordered by
-        # the block date. Every other view has no such natural order, so it
-        # keeps the default.
-        sort_by = "blocked_at" if status == "blocked" else None
+        # the block date. Every other view defaults to ascending user_id.
+        if sort_by not in _SORTABLE:
+            sort_by, order = (
+                ("blocked_at", "desc") if status == "blocked" else (None, "asc")
+            )
 
         rows, total = await self._users.list_users(
             session,
@@ -129,7 +140,7 @@ class UserAccountService:
             is_blocked=is_blocked,
             search_blocked_reason=search_blocked_reason,
             sort_by=sort_by,
-            order="desc",
+            order=order,
         )
 
         contact_by_user_id = await self._user_emails.get_contact_emails_by_user_ids(
