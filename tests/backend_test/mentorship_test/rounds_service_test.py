@@ -396,6 +396,42 @@ class TestGetRoundSlots(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(slots.can_view_match, expected)
 
+    async def test_can_view_match_without_a_feedback_deadline_uses_the_fallback(self):
+        """A round saved without a feedback deadline closes a month after its
+        meetings deadline, as the feedback window does."""
+        match_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        meetings_at = datetime(2026, 11, 30, tzinfo=timezone.utc)
+        fallback_close = datetime(2026, 12, 30, tzinfo=timezone.utc)
+        cases = (
+            ("inside", meetings_at, self.NOW, True),
+            ("on the fallback close", meetings_at, fallback_close, True),
+            (
+                "after the fallback close",
+                meetings_at,
+                fallback_close + self.MICRO,
+                False,
+            ),
+            ("no meetings deadline either", None, self.NOW, False),
+        )
+
+        for label, meetings, now, expected in cases:
+            with self.subTest(label):
+                with patch("backend.mentorship.rounds_service.datetime") as mock_dt:
+                    mock_dt.now.return_value = now
+                    self.mock_repo.get_latest_promoted_round.return_value = self._round(
+                        12,
+                        promotion_start_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                        onboarding_deadline_at=datetime(
+                            2026, 6, 1, tzinfo=timezone.utc
+                        ),
+                        match_notification_at=match_at,
+                        meetings_completion_deadline_at=meetings,
+                    )
+
+                    slots = await self._slots()
+
+                self.assertEqual(slots.can_view_match, expected)
+
     async def test_can_view_match_ignores_another_rounds_window(self):
         """Registration is on a round not announced yet while an older round
         is inside its own announcement window: the match result speaks about
