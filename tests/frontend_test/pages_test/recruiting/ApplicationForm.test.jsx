@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  onTestFinished,
+} from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
@@ -525,6 +533,17 @@ describe("ApplicationForm", () => {
     // but the fields it would have filled are required of everyone, so what
     // the candidate gets is a form that tells them what is missing rather
     // than one that submits an empty personal block.
+    // A zone no listed entry shares an offset with, so the browser default
+    // leaves the timezone empty whatever zone and date the runner is on.
+    const real = Intl.DateTimeFormat;
+    const zoneSpy = vi
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation((...args) =>
+        args.length
+          ? new real(...args)
+          : { resolvedOptions: () => ({ timeZone: "Pacific/Chatham" }) },
+      );
+    onTestFinished(() => zoneSpy.mockRestore());
     const user = userEvent.setup();
     profileApi.getMyProfile.mockRejectedValue(new Error("boom"));
     api.submitApplication.mockResolvedValue({ data: { id: 100 } });
