@@ -26,6 +26,8 @@ const AccountsListView = () => {
     setUserType,
     status,
     setStatus,
+    userIdSort,
+    toggleUserIdSort,
     offset,
     limit,
     nextPage,
@@ -78,6 +80,8 @@ const AccountsListView = () => {
         onUserTypeChange={setUserType}
         status={status}
         onStatusChange={setStatus}
+        userIdSort={userIdSort}
+        onToggleUserIdSort={toggleUserIdSort}
         offset={offset}
         limit={limit}
         onPrev={prevPage}

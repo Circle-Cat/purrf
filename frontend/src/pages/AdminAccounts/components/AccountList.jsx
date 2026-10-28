@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -34,6 +35,10 @@ const SELECT_CLASS =
  * @param {(value: string) => void} props.onUserTypeChange
  * @param {string} props.status - "active"|"deactivated"|"blocked"|"" (all).
  * @param {(value: string) => void} props.onStatusChange
+ * @param {"asc"|"desc"|null} props.userIdSort - The direction the list is in
+ *   by User ID, or null when it is in another order (the blocked view's
+ *   default, newest block first).
+ * @param {() => void} props.onToggleUserIdSort - Flip the User ID direction.
  * @param {number} props.offset
  * @param {number} props.limit
  * @param {() => void} props.onPrev
@@ -60,6 +65,8 @@ const AccountList = ({
   onUserTypeChange,
   status,
   onStatusChange,
+  userIdSort = null,
+  onToggleUserIdSort,
   offset,
   limit,
   onPrev,
@@ -147,8 +154,33 @@ const AccountList = ({
         <table className="w-full min-w-fit border-collapse text-sm leading-normal">
           <thead>
             <tr className="bg-muted">
-              <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
-                User ID
+              <th
+                className="border-b border-slate-200 px-4 py-3 text-left font-bold"
+                aria-sort={
+                  userIdSort === "asc"
+                    ? "ascending"
+                    : userIdSort === "desc"
+                      ? "descending"
+                      : "none"
+                }
+              >
+                {/* The pending-only view is a fixed set of ids, not a query,
+                    so sorting it is off like the filters. */}
+                <button
+                  type="button"
+                  className="inline-flex items-center font-bold disabled:cursor-default"
+                  disabled={filtersDisabled}
+                  onClick={() => onToggleUserIdSort?.()}
+                >
+                  User ID
+                  {userIdSort === "asc" ? (
+                    <ChevronUp className="ml-1 size-3.5 text-foreground" />
+                  ) : userIdSort === "desc" ? (
+                    <ChevronDown className="ml-1 size-3.5 text-foreground" />
+                  ) : (
+                    <ChevronsUpDown className="ml-1 size-3.5 text-gray-400" />
+                  )}
+                </button>
               </th>
               <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
                 First Name

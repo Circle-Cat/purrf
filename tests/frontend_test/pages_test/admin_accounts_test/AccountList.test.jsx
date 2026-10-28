@@ -213,6 +213,37 @@ describe("AccountList controls", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
+  it("shows which way the list runs by User ID", () => {
+    const header = () => screen.getByRole("columnheader", { name: /User ID/ });
+    const { rerender } = renderList({ userIdSort: "asc" });
+    expect(header()).toHaveAttribute("aria-sort", "ascending");
+
+    rerender(
+      <AccountList
+        accounts={[]}
+        total={0}
+        loading={false}
+        search=""
+        userId=""
+        userType=""
+        status="blocked"
+        userIdSort={null}
+        offset={0}
+        limit={20}
+      />,
+    );
+    expect(header()).toHaveAttribute("aria-sort", "none");
+  });
+
+  it("turns the User ID sort off with the filters in the pending-only view", () => {
+    const onToggleUserIdSort = vi.fn();
+    renderList({ filtersDisabled: true, onToggleUserIdSort });
+    const button = screen.getByRole("button", { name: "User ID" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onToggleUserIdSort).not.toHaveBeenCalled();
+  });
+
   it("marks the row the viewer came back from", () => {
     renderList({ focusedUserId: 1203 });
     expect(screen.getByTestId("account-row-1203")).toHaveAttribute(
@@ -284,6 +315,60 @@ describe("AdminAccounts list page", () => {
     await waitFor(() =>
       expect(api.getAccounts).toHaveBeenLastCalledWith(
         expect.objectContaining({ userId: "1203" }),
+      ),
+    );
+  });
+
+  it("flips User ID to newest first and back, keeping it in the query string", async () => {
+    const { router } = renderPage("?offset=40");
+    await screen.findByText("sam@example.com");
+    expect(api.getAccounts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: undefined, order: undefined }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "User ID" }));
+
+    await waitFor(() =>
+      expect(router.state.location.search).toContain("sort=user_id&order=desc"),
+    );
+    expect(router.state.location.search).not.toContain("offset");
+    await waitFor(() =>
+      expect(api.getAccounts).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          sortBy: "user_id",
+          order: "desc",
+          offset: 0,
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "User ID" }));
+    await waitFor(() =>
+      expect(api.getAccounts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sortBy: "user_id", order: "asc" }),
+      ),
+    );
+  });
+
+  it("sorts the blocked view by User ID ascending on the first click", async () => {
+    const { router } = renderPage("?status=blocked");
+    await screen.findByText("sam@example.com");
+    expect(
+      screen.getByRole("columnheader", { name: /User ID/ }),
+    ).toHaveAttribute("aria-sort", "none");
+
+    fireEvent.click(screen.getByRole("button", { name: "User ID" }));
+
+    await waitFor(() =>
+      expect(router.state.location.search).toContain("order=asc"),
+    );
+    await waitFor(() =>
+      expect(api.getAccounts).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: "blocked",
+          sortBy: "user_id",
+          order: "asc",
+        }),
       ),
     );
   });

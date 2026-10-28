@@ -11,6 +11,8 @@ export const getAccounts = ({
   userId,
   status,
   userType,
+  sortBy,
+  order,
   limit,
   offset,
 } = {}) =>
@@ -20,6 +22,8 @@ export const getAccounts = ({
       user_id: userId,
       status,
       user_type: userType,
+      sort_by: sortBy,
+      order,
       limit,
       offset,
     },
