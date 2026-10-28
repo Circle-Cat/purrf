@@ -35,6 +35,8 @@ export const PARAM = Object.freeze({
   PENDING: "pending",
   FOCUS: "focus",
   USER_ID: "user_id",
+  SORT: "sort",
+  ORDER: "order",
 });
 
 /** Read an integer query parameter, falling back when it is absent or junk. */
@@ -60,6 +62,12 @@ export const useAccountAdmin = () => {
   const status = searchParams.get(PARAM.STATUS) ?? "";
   const offset = Math.max(0, readInt(searchParams, PARAM.OFFSET, 0));
   const pendingOnly = searchParams.get(PARAM.PENDING) === "1";
+  // User ID is the one sortable column. With no sort chosen the list is in
+  // ascending user_id, except the blocked view, which shows the newest block
+  // first.
+  const sortBy = searchParams.get(PARAM.SORT) === "user_id" ? "user_id" : null;
+  const order = searchParams.get(PARAM.ORDER) === "desc" ? "desc" : "asc";
+  const userIdSort = sortBy ? order : status === "blocked" ? null : "asc";
   const focusedUserId = searchParams.has(PARAM.FOCUS)
     ? readInt(searchParams, PARAM.FOCUS, null)
     : null;
@@ -136,6 +144,8 @@ export const useAccountAdmin = () => {
         userId: userId || undefined,
         status: status || undefined,
         userType: userType || undefined,
+        sortBy: sortBy ?? undefined,
+        order: sortBy ? order : undefined,
         limit: LIMIT,
         offset,
       });
@@ -155,6 +165,8 @@ export const useAccountAdmin = () => {
     userId,
     status,
     userType,
+    sortBy,
+    order,
     offset,
     pendingOnly,
     pendingKey,
@@ -201,6 +213,12 @@ export const useAccountAdmin = () => {
   // while it is on (the list is a fixed set of ids, not a query), and keeping
   // them is what lets "Show all accounts" put the reviewer back where they
   // were. AccountList disables the controls so the pause is visible.
+  /** Flip User ID between ascending and descending, from page one. */
+  const toggleUserIdSort = () =>
+    updateParams({
+      [PARAM.SORT]: "user_id",
+      [PARAM.ORDER]: userIdSort === "asc" ? "desc" : "asc",
+    });
   const showPendingOnly = () => updateParams({ [PARAM.PENDING]: "1" });
   const clearPendingOnly = () => updateParams({ [PARAM.PENDING]: "" });
 
@@ -234,6 +252,8 @@ export const useAccountAdmin = () => {
     setUserType,
     status,
     setStatus,
+    userIdSort,
+    toggleUserIdSort,
     offset,
     limit: LIMIT,
     nextPage,

@@ -29,6 +29,8 @@ describe("adminAccountsApi", () => {
     await getAccounts({
       search: "min",
       status: "blocked",
+      sortBy: "user_id",
+      order: "desc",
       limit: 20,
       offset: 0,
     });
@@ -39,6 +41,8 @@ describe("adminAccountsApi", () => {
         user_id: undefined,
         status: "blocked",
         user_type: undefined,
+        sort_by: "user_id",
+        order: "desc",
         limit: 20,
         offset: 0,
       },
