@@ -19,6 +19,8 @@
 
 ## Getting Started
 
+To change the code, read [CONTRIBUTING.md](CONTRIBUTING.md) as well: how a change gets from a ticket to a merged PR, the checks to run before pushing, and the database migration workflow.
+
 This project uses Bazel for build and dependency management.
 
 ### Prerequisites
@@ -96,7 +98,7 @@ echo '{"type":"authorized_user","client_id":"placeholder","client_secret":"place
 
 ### Init PostgreSQL Database
 
-> **Warning**: `init_db` will **drop all existing data** and recreate an empty database. Only use this for first-time setup or to reset a development environment. For schema changes on an existing database, use [migrations](#database-migrations) instead.
+> **Warning**: `init_db` will **drop all existing data** and recreate an empty database. Only use this for first-time setup or to reset a development environment. For schema changes on an existing database, use [migrations](CONTRIBUTING.md#database-migrations) instead.
 
 Create and initialize the database:
 ```bash
@@ -109,47 +111,6 @@ bazel run //tools:init_db
 * Both development and test code use the same database.
 * `init_db` should be run before starting the backend or running unit tests to ensure a clean environment.
 * Any existing data will be deleted when running `init_db`.
-
-### Database Migrations
-
-Use Alembic migrations to apply schema changes to an existing database **without dropping data**. Migration scripts live in `alembic_setup/versions/` and must be committed alongside the model changes that require them.
-
-#### Workflow
-
-**1. Modify your SQLAlchemy model**, then generate a migration:
-```bash
-bazel run //tools/migrate_db:make_migration -- "describe your change"
-```
-This connects to the database, compares the current schema against your models, and writes a new migration script to `alembic_setup/versions/`.
-
-**2. Review the generated file** in `alembic_setup/versions/`. Pay attention to:
-- `NOT NULL` columns added to tables with existing data — add `server_default` manually if needed.
-- `DROP COLUMN` / `DROP TABLE` statements — confirm they are intentional.
-
-**3. Apply the migration:**
-
-For a local database:
-```bash
-bazel run //tools/migrate_db:migrate_db
-```
-
-Deployed environments (test, staging, prod) do not run this by hand: an ArgoCD
-PreSync hook Job runs `alembic upgrade head` from the `purrf-migrate` image
-before each Deployment rolls out, so a merged migration lands automatically on
-the next sync.
-
-#### Enum value changes (PostgreSQL)
-
-`alembic-postgresql-enum` is configured to auto-detect enum changes. Adding a value is detected automatically. Removing a value generates a multi-step migration (rename → recreate → update columns → drop old type) — always test on a non-production database first.
-
-#### Summary
-
-| Scenario | Command |
-|---|---|
-| First-time setup / reset dev database | `bazel run //tools:init_db` |
-| Schema changed, generate migration | `bazel run //tools/migrate_db:make_migration -- "description"` |
-| Apply migrations to a local database | `bazel run //tools/migrate_db:migrate_db` |
-| Deploy schema changes (test/staging/prod) | Automatic: ArgoCD PreSync hook Job, on sync |
 
 ####  Running the backend project for development
 
@@ -203,45 +164,6 @@ bazel run //frontend:vite_preview \
   --action_env=VITE_AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN \
   --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN \
   --action_env=VITE_DEPLOY_ENV=$VITE_DEPLOY_ENV
-```
-
-### Before pushing code
-
-Before pushing any frontend changes, you **must run both commands below** to build the frontend and preview it in an environment **that is consistent with production**.
-
-This step is required to verify that the built artifacts behave **exactly as expected in production**, not just in the development server.
-
-```bash
-bazel build //frontend:dist
-bazel run //frontend:vite_preview
-```
-
-Before running the repository unit tests under `tests/backend_test/repository_test`,
-export the test database URL (replace the placeholders as needed):
-
-```bash
-export DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>
-```
-
-Run all test methods:
-```bash
-bazel test ...
-```
-
-Remember to check if code format is up to standard.
-
-To check code format, run:
-
-```bash
-bazel clean
-bash lint.sh --fix all_files
-```
-**Note:** If `lint.sh` fails with checksum verification errors (e.g., "sha256sum: command not found"), ensure you have the necessary **jq** installed.
-
-To format the code, run:
-
-```bash
-bazel run //:format
 ```
 
 ### Build and Push OCI Image
