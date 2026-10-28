@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
+
+// The fallback for a missing zone reads the runner's zone, which a UTC runner
+// maps onto Europe/London only while London is off summer time.
+vi.mock("@/components/common/timezoneDefault", () => ({
+  browserTimezone: () => "",
+}));
 
 describe("profileToApplicationForm", () => {
   it("maps user fields to the personal shape (linkedinLink renamed)", () => {
