@@ -37,7 +37,28 @@ class EmailMessageDtoTest(unittest.TestCase):
         )
         self.assertEqual(
             dto.model_dump(by_alias=True)["attachments"][0],
-            {"name": "cv.pdf", "size": 3},
+            {"name": "cv.pdf", "size": 3, "contentId": None},
+        )
+
+    def test_an_inline_attachment_carries_its_content_id(self):
+        dto = EmailMessageDto.model_validate(
+            _message(
+                attachments=[
+                    {"name": "cv.pdf", "size": 3, "gmailAttachmentId": "a"},
+                    {
+                        "name": "image.png",
+                        "size": 4,
+                        "gmailAttachmentId": "b",
+                        "contentId": "ii_1",
+                    },
+                    {"name": "odd.png", "contentId": 7},
+                ]
+            )
+        )
+
+        self.assertEqual([a.content_id for a in dto.attachments], [None, "ii_1", None])
+        self.assertEqual(
+            dto.model_dump(by_alias=True)["attachments"][1]["contentId"], "ii_1"
         )
 
     def test_malformed_entries_keep_their_place(self):

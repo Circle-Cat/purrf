@@ -70,6 +70,8 @@ class InboxAttachmentDto(BaseDto):
     name: str | None = None
     size: int | None = None
     attachment_id: int
+    # Set on an inline part: the body shows it where it says cid:<content_id>.
+    content_id: str | None = None
 
 
 class InboxMessageDto(BaseDto):

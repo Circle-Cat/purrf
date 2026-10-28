@@ -295,7 +295,8 @@ class GmailClient:
             ``gmail_internal_date``, ``failed_recipients``, ``recipients``
             (To, Cc and every Delivered-To, lower-cased, de-duplicated),
             ``auto_submitted``, ``precedence`` and ``attachments`` (a list of
-            ``{"name", "size", "gmailAttachmentId"}``).
+            ``{"name", "size", "gmailAttachmentId"}``, plus ``contentId``
+            on an inline part).
 
         Raises:
             RateLimitedError: If Gmail throttles the request (HTTP 429).
@@ -728,18 +729,36 @@ class GmailClient:
 
     @staticmethod
     def _extract_attachments(payload):
-        """List the named attachment parts of a payload, without their bytes."""
+        """List the attachment parts of a payload, without their bytes.
+
+        A part counts when it is named or carries a ``Content-ID``: an image
+        pasted into the body is such a part, referenced from the HTML as
+        ``cid:<id>``, and its ``contentId`` (angle brackets dropped) is what
+        lets the body show it.
+        """
         attachments = []
         stack = [payload]
         while stack:
             part = stack.pop()
             body = part.get("body", {})
-            if part.get("filename") and body.get("attachmentId"):
-                attachments.append({
-                    "name": part["filename"],
+            content_id = next(
+                (
+                    h["value"].strip().strip("<>").strip()
+                    for h in part.get("headers", []) or []
+                    if h["name"].lower() == "content-id"
+                ),
+                None,
+            )
+            name = part.get("filename") or (content_id and "image")
+            if name and body.get("attachmentId"):
+                entry = {
+                    "name": name,
                     "size": body.get("size", 0),
                     "gmailAttachmentId": body["attachmentId"],
-                })
+                }
+                if content_id:
+                    entry["contentId"] = content_id
+                attachments.append(entry)
             stack.extend(reversed(part.get("parts", []) or []))
         return attachments
 

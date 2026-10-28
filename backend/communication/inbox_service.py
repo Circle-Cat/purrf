@@ -344,7 +344,10 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             inbound_kind=inbound_kind_of(m),
             attachments=[
                 InboxAttachmentDto(
-                    name=entry.get("name"), size=entry.get("size"), attachment_id=index
+                    name=entry.get("name"),
+                    size=entry.get("size"),
+                    attachment_id=index,
+                    content_id=entry.get("contentId"),
                 )
                 for index, entry in enumerate(m.attachments or [])
             ],
