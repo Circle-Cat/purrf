@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
-import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
+import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { formatInTz } from "@/utils/dateTime";
 import {
   DEFAULT_DURATION_MINUTES,
@@ -32,19 +32,18 @@ import {
  * InterviewScheduleRequestDto), so nothing here converts to UTC before
  * calling `onSubmit`.
  *
- * In "schedule" mode the interviewer field starts from `defaultAssigneeId`
- * (the caller already resolved this to the round's current assignee, or the
- * stage's configured default when the round is unassigned -- this component
- * doesn't distinguish the two, it just prefills from whichever one value it
- * gets). In "edit" mode every field prefills from the existing `interview`
- * instead, and a notice warns that attendees will be notified, listing every
- * invitee: the candidate (`candidateName`, passed in separately -- the
+ * The interviewer is not picked here: a meeting is always booked with the
+ * round's assignee (`assigneeId`), and the backend refuses anyone else. To
+ * change who interviews, the recruiter cancels the meeting, reassigns and
+ * books again. In "edit" mode the time fields prefill from the existing
+ * `interview`, and a notice warns that attendees will be notified, listing
+ * every invitee: the candidate (`candidateName`, passed in separately -- the
  * candidate isn't part of `InterviewDto`), the interviewer, and the
  * organizer.
  *
  * @param {{open: boolean, onOpenChange: (open: boolean) => void,
  *          mode: "schedule"|"edit", interview: object|null,
- *          defaultAssigneeId: number|null,
+ *          assigneeId: number|null,
  *          interviewPool: {userId: number, name: string, email: string}[],
  *          candidateName?: string|null, viewerTimezone: string,
  *          onSubmit: (body: {assigneeId: number, date: string,
@@ -57,14 +56,13 @@ const InterviewMeetingDialog = ({
   onOpenChange,
   mode,
   interview,
-  defaultAssigneeId,
+  assigneeId,
   interviewPool,
   candidateName,
   viewerTimezone,
   onSubmit,
   submitting = false,
 }) => {
-  const [assigneeId, setAssigneeId] = useState(undefined);
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(
@@ -78,7 +76,6 @@ const InterviewMeetingDialog = ({
   useEffect(() => {
     if (!open) return;
     if (mode === "edit" && interview) {
-      setAssigneeId(interview.assigneeId ?? undefined);
       // Converted into the VIEWER's zone, not the booker's: nothing stores
       // the zone it was booked in, and an editor should see the slot in the
       // same terms the card just showed them.
@@ -91,13 +88,12 @@ const InterviewMeetingDialog = ({
       setDurationMinutes(durationFromRange(interview.startAt, interview.endAt));
       setTimezone(viewerTimezone);
     } else {
-      setAssigneeId(defaultAssigneeId ?? undefined);
       setDate("");
       setStartTime("");
       setDurationMinutes(DEFAULT_DURATION_MINUTES);
       setTimezone(viewerTimezone);
     }
-  }, [open, mode, interview, defaultAssigneeId, viewerTimezone]);
+  }, [open, mode, interview, viewerTimezone]);
 
   const handleTimezoneChange = (option) => {
     setTimezone(
@@ -106,6 +102,11 @@ const InterviewMeetingDialog = ({
   };
 
   const canSubmit = assigneeId != null && date !== "" && startTime !== "";
+  const interviewerName =
+    assigneeId == null
+      ? "Nobody assigned"
+      : (interviewPool.find((u) => u.userId === assigneeId)?.name ??
+        unresolvedPersonLabel(assigneeId));
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -130,17 +131,12 @@ const InterviewMeetingDialog = ({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* PeoplePicker's default "select" variant always renders its
-              "— none —" placeholder regardless of `allowNone` (that prop
-              only takes effect on the "list"/radio variant) -- omitted here
-              rather than passed misleadingly. Submission is still hard-
-              gated on a real pick via `canSubmit` below. */}
-          <PeoplePicker
-            label="Interviewer"
-            pool={interviewPool}
-            value={assigneeId}
-            onChange={(v) => setAssigneeId(v)}
-          />
+          {/* Edit mode names the interviewer in its attendee notice below. */}
+          {!isEdit && (
+            <p className="text-sm text-slate-700">
+              Interviewer: {interviewerName}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="interview-date">Date</Label>

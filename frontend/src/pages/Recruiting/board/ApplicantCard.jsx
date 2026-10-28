@@ -25,6 +25,11 @@ import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
  * "Blacklisted", so the board doesn't look like it's flagging someone who
  * is no longer blocked.
  *
+ * Behavioral and tech cards with an interviewer also say whether that
+ * round's interview is booked (`interviewBooked`). The backend leaves it
+ * unset on every other stage. With nobody assigned there is nothing to book
+ * yet, so only "Reviewer: N/A" shows.
+ *
  * `highlighted` rings the card in blue; the board sets it on the applicant
  * an owner has just come back from, so it can be spotted without reading
  * every name in the lane.
@@ -32,7 +37,8 @@ import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
  * @param {{
  *   card: {id: number, applicantName: string, applicantEmail: string,
  *     stage: string, subStatus: string|null, tags: object|null,
- *     appliedAt: string|null, isBlocked: boolean, reviewerName: string|null},
+ *     appliedAt: string|null, isBlocked: boolean, reviewerName: string|null,
+ *     interviewBooked?: boolean|null},
  *   showStatus: boolean,
  *   highlighted?: boolean,
  *   onOpen: (id: number) => void,
@@ -77,15 +83,22 @@ const ApplicantCard = ({ card, showStatus, highlighted = false, onOpen }) => {
         )}
       </div>
       {INTERVIEW_STAGES.has(card.stage) && (
-        <p
-          className={
-            card.reviewerName
-              ? "text-sm font-medium text-blue-600"
-              : "text-sm text-slate-400"
-          }
-        >
-          Reviewer: {card.reviewerName ?? "N/A"}
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p
+            className={
+              card.reviewerName
+                ? "text-sm font-medium text-blue-600"
+                : "text-sm text-slate-400"
+            }
+          >
+            Reviewer: {card.reviewerName ?? "N/A"}
+          </p>
+          {card.reviewerName && typeof card.interviewBooked === "boolean" && (
+            <Badge variant={card.interviewBooked ? "default" : "secondary"}>
+              {card.interviewBooked ? "Booked" : "Not booked"}
+            </Badge>
+          )}
+        </div>
       )}
       {showColdFreeze || card.tags?.blacklisted ? (
         <div className="flex flex-wrap gap-1">

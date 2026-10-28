@@ -27,22 +27,42 @@ describe("InterviewMeetingCard", () => {
     expect(
       screen.getByRole("button", { name: "Schedule meeting" }),
     ).toBeEnabled();
+    expect(screen.queryByText(/Assign an interviewer/)).toBeNull();
   });
 
-  it("keeps the schedule button enabled with no interviewer assigned", () => {
-    // The interviewer is picked inside the dialog, so an unassigned round
-    // must not block the entry point.
+  it("blocks scheduling and says why while nobody is assigned", () => {
+    // A meeting is booked with the round's assignee, so there is no one to
+    // book it with yet.
     render(
       <InterviewMeetingCard
         interview={null}
         round={1}
         timezone={VIEWER_TZ}
-        assigneeId={null}
+        needsAssignee
       />,
     );
     expect(
       screen.getByRole("button", { name: "Schedule meeting" }),
-    ).toBeEnabled();
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Assign an interviewer before booking the interview."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a non-owner no assign hint", () => {
+    render(
+      <InterviewMeetingCard
+        interview={null}
+        round={1}
+        timezone={VIEWER_TZ}
+        isOwner={false}
+        needsAssignee
+      />,
+    );
+    expect(screen.getByText("Not scheduled")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Assign an interviewer before booking the interview."),
+    ).toBeNull();
   });
 
   it("renders the booked time in the viewer's zone, naming the zone in IANA form", () => {
