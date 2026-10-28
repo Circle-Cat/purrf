@@ -231,6 +231,33 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(by_name[0][0].first_name, f"Name{token}")
 
+    async def test_list_users_search_ignores_surrounding_whitespace(self):
+        """Text pasted with a leading space or newline still matches."""
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name=f"Name{token}", email=f"{uuid.uuid4()}@example.com"
+        )
+        target.is_blocked = True
+        target.blocked_reason = f"sa {token}"
+        await self.insert_entities([target])
+
+        rows, total = await self.repo.list_users(self.session, search=f" \n{token}\t ")
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
+
+        rows, _ = await self.repo.list_users(
+            self.session,
+            search=f" \nsa {token}",
+            search_blocked_reason=True,
+            limit=50,
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {target.user_id})
+
+    async def test_list_users_blank_search_lists_everyone(self):
+        _, everyone = await self.repo.list_users(self.session, limit=1)
+        _, blank = await self.repo.list_users(self.session, search=" \n ", limit=1)
+        self.assertEqual(blank, everyone)
+
     async def test_list_users_user_id_filters_to_exact_match(self):
         token = uuid.uuid4().hex[:10]
         target = self._make_user(
