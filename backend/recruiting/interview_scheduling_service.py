@@ -144,8 +144,9 @@ class InterviewSchedulingService:
                 acting recruiter, invited to the meeting and recorded as
                 ``scheduled_by``).
             application_id (int): The application to book a meeting for.
-            dto (InterviewScheduleRequestDto): The requested slot and
-                interviewer, in the recruiter's own wall-clock terms.
+            dto (InterviewScheduleRequestDto): The requested slot, in the
+                recruiter's own wall-clock terms, and the interviewer, who
+                must be the one already assigned to this stage+round.
 
         Returns:
             InterviewDto: The newly booked meeting.
@@ -153,7 +154,8 @@ class InterviewSchedulingService:
         Raises:
             ValueError: If the application is missing/not owned, its current
                 stage isn't schedulable, its current round already has a
-                meeting booked, the proposed assignee doesn't hold
+                meeting booked, nobody is assigned to it or ``dto`` names
+                someone else, the assignee no longer holds
                 ``RECRUITING_INTERVIEW_EVALUATE``, or the candidate has no
                 contact email on file.
         """
@@ -169,6 +171,17 @@ class InterviewSchedulingService:
         )
         if existing is not None:
             raise ValueError("This session already has an interview meeting scheduled.")
+        # The interviewer is chosen by assigning, not by booking: the
+        # assignee is who has been reading and discussing the application.
+        assignment = await self.application_assignment_repository.get(
+            session, application_id, application.stage, application.current_round
+        )
+        if assignment is None:
+            raise ValueError("Assign an interviewer before booking the interview.")
+        if assignment.assignee_id != dto.assignee_id:
+            raise ValueError(
+                "The interview must be booked with the assigned interviewer."
+            )
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
@@ -186,15 +199,6 @@ class InterviewSchedulingService:
         )
         if not contact_by_user_id.get(application.user_id):
             raise ValueError("This candidate has no email address on file.")
-
-        await self.application_assignment_repository.upsert(
-            session,
-            application_id,
-            application.stage,
-            application.current_round,
-            dto.assignee_id,
-            current_user.user_id,
-        )
 
         candidate = await self.users_repository.get_user_by_user_id(
             session, application.user_id
@@ -284,7 +288,10 @@ class InterviewSchedulingService:
         application_id: int,
         dto: InterviewScheduleRequestDto,
     ) -> InterviewDto:
-        """Move an already-booked meeting's time and/or swap its interviewer.
+        """Move an already-booked meeting's time.
+
+        The interviewer stays the assignee. To change who interviews, cancel
+        the meeting, reassign, and book again.
 
         No past/future branch: the invariant "the assignment and the
         calendar never diverge" is worth more than avoiding an odd
@@ -299,17 +306,19 @@ class InterviewSchedulingService:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application whose meeting to move.
-            dto (InterviewScheduleRequestDto): The new slot and interviewer.
+            dto (InterviewScheduleRequestDto): The new slot, and the
+                interviewer, who must be the current assignee.
 
         Returns:
             InterviewDto: The updated meeting.
 
         Raises:
             ValueError: If the application is missing/not owned, no meeting
-                is currently booked for its current stage+round, the
-                proposed assignee doesn't hold
-                ``RECRUITING_INTERVIEW_EVALUATE``, or the Calendar event no
-                longer exists (recoverable: cancel here, then re-schedule).
+                is currently booked for its current stage+round, ``dto``
+                names someone other than the assignee, the assignee no
+                longer holds ``RECRUITING_INTERVIEW_EVALUATE``, or the
+                Calendar event no longer exists (recoverable: cancel here,
+                then re-schedule).
         """
         application, _job = await self.application_access.load_owned_application(
             session, current_user, application_id, for_update=True
@@ -319,23 +328,25 @@ class InterviewSchedulingService:
         )
         if interview is None:
             raise ValueError("No interview meeting is scheduled for this session.")
-        await self.application_access.validate_interview_assignee(
-            session, dto.assignee_id
-        )
-        # Snapshot the pre-edit slot/interviewer before anything below
-        # overwrites them, so the activity entry can say what actually
-        # changed (see the "from*" fields on the interview_updated details
-        # below). The interview entity stores no attendee snapshot itself
-        # (see its docstring), so the "from" assignee comes from the
-        # assignment row instead, read before `upsert` below overwrites it.
-        from_start_at = interview.start_at
-        from_end_at = interview.end_at
         existing_assignment = await self.application_assignment_repository.get(
             session, application_id, application.stage, application.current_round
         )
-        from_assignee_id = (
-            existing_assignment.assignee_id if existing_assignment else None
+        if existing_assignment is None or existing_assignment.assignee_id != (
+            dto.assignee_id
+        ):
+            raise ValueError(
+                "To change the interviewer, cancel the interview, reassign, "
+                "and book again."
+            )
+        await self.application_access.validate_interview_assignee(
+            session, dto.assignee_id
         )
+        # Snapshot the pre-edit slot before anything below overwrites it, so
+        # the activity entry can say what actually changed (see the "from*"
+        # fields on the interview_updated details below).
+        from_start_at = interview.start_at
+        from_end_at = interview.end_at
+        from_assignee_id = existing_assignment.assignee_id
         start_utc, end_utc = wall_clock_to_utc(
             dto.date, dto.start_time, dto.duration_minutes, dto.timezone
         )
@@ -365,14 +376,6 @@ class InterviewSchedulingService:
             start_at=start_utc,
             end_at=end_utc,
             meet_link=meeting.get("meet_link") or None,
-        )
-        await self.application_assignment_repository.upsert(
-            session,
-            application_id,
-            application.stage,
-            application.current_round,
-            dto.assignee_id,
-            current_user.user_id,
         )
         await record_event(
             session,

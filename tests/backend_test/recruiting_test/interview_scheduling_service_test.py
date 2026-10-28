@@ -381,18 +381,13 @@ class ScheduleTest(_BaseTest):
             },
         )
 
-    async def test_overwrites_the_rounds_assignment(self):
+    async def test_leaves_the_rounds_assignment_alone(self):
+        # The interviewer was chosen when they were assigned; booking must not
+        # rewrite the row (it would also replace who assigned them).
         await self.service.schedule(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
         )
-        self.assignment_repo.upsert.assert_awaited_once_with(
-            self.session,
-            APPLICATION_ID,
-            ApplicationStage.BEHAVIORAL,
-            1,
-            ASSIGNEE_ID,
-            OWNER_ID,
-        )
+        self.assignment_repo.upsert.assert_not_awaited()
 
     async def test_requests_owner_only_access_not_assignee_or_read_all(self):
         # Booking a meeting is a job-ownership decision, not something a
@@ -447,6 +442,30 @@ class ScheduleRejectionTest(_BaseTest):
             )
         self.meeting_svc.schedule.assert_not_awaited()
         self.assignment_repo.upsert.assert_not_awaited()
+
+    async def test_a_round_with_nobody_assigned_is_rejected(self):
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.schedule(
+                self.session, self._ctx(), APPLICATION_ID, self._dto()
+            )
+        self.assertEqual(
+            str(ctx.exception), "Assign an interviewer before booking the interview."
+        )
+        self.meeting_svc.schedule.assert_not_awaited()
+        self.interview_repo.create.assert_not_awaited()
+
+    async def test_booking_with_someone_other_than_the_assignee_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.schedule(
+                self.session, self._ctx(), APPLICATION_ID, self._dto(assignee_id=55)
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "The interview must be booked with the assigned interviewer.",
+        )
+        self.meeting_svc.schedule.assert_not_awaited()
+        self.interview_repo.create.assert_not_awaited()
 
     async def test_an_assignee_without_the_evaluate_permission_is_rejected(self):
         self.application_access.validate_interview_assignee = AsyncMock(
@@ -525,36 +544,34 @@ class UpdateTest(_BaseTest):
         call_kwargs = self.meeting_svc.update.call_args.kwargs
         self.assertEqual(call_kwargs["calendar_id"], "cal-interview")
 
-    async def test_swaps_the_interviewer_and_overwrites_the_assignment(self):
-        new_assignee = 55
-        self._users_by_id({
-            CANDIDATE_ID: SimpleNamespace(
-                first_name="Ana", last_name="Lopez", preferred_name=None
-            ),
-            ASSIGNEE_ID: SimpleNamespace(
-                first_name="Ivy", last_name="Interviewer", preferred_name=None
-            ),
-            OWNER_ID: SimpleNamespace(
-                first_name="Rae", last_name="Recruiter", preferred_name=None
-            ),
-            new_assignee: SimpleNamespace(
-                first_name="Sam", last_name="Sub", preferred_name=None
-            ),
-        })
-        dto = self._dto(assignee_id=new_assignee)
-        result = await self.service.update(
-            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, dto
+    async def test_a_different_interviewer_is_rejected(self):
+        # Changing who interviews goes through cancel, reassign, book again,
+        # so the calendar invite and the assignment cannot drift apart.
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.update(
+                self.session,
+                self._ctx(user_id=OWNER_ID),
+                APPLICATION_ID,
+                self._dto(assignee_id=55),
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "To change the interviewer, cancel the interview, reassign, "
+            "and book again.",
         )
-        self.assignment_repo.upsert.assert_awaited_once_with(
+        self.meeting_svc.update.assert_not_awaited()
+        self.interview_repo.update_schedule.assert_not_awaited()
+        self.assignment_repo.upsert.assert_not_awaited()
+
+    async def test_leaves_the_rounds_assignment_alone(self):
+        await self.service.update(
             self.session,
+            self._ctx(user_id=OWNER_ID),
             APPLICATION_ID,
-            ApplicationStage.BEHAVIORAL,
-            1,
-            new_assignee,
-            OWNER_ID,
+            self._dto(day=date(2026, 8, 6)),
         )
-        self.assertEqual(result.assignee_id, new_assignee)
-        self.assertEqual(result.assignee_name, "Sam Sub")
+        self.meeting_svc.update.assert_awaited_once()
+        self.assignment_repo.upsert.assert_not_awaited()
 
     async def test_patches_a_past_meeting_too(self):
         # No past/future branch: the invariant "assignment and calendar never
@@ -599,28 +616,12 @@ class UpdateTest(_BaseTest):
     async def test_interview_updated_activity_carries_the_full_detail_set_incl_from_fields(
         self,
     ):
-        # The "from*" trio lets the timeline say what actually changed (time
-        # moved, interviewer swapped, or both) -- see the `fromAssigneeId` ->
-        # `fromAssigneeName` entry in get_application_activity's
-        # _ASSIGNEE_NAME_FIELDS, which resolves it from this same dict.
-        new_assignee = 55
-        self._users_by_id({
-            CANDIDATE_ID: SimpleNamespace(
-                first_name="Ana", last_name="Lopez", preferred_name=None
-            ),
-            ASSIGNEE_ID: SimpleNamespace(
-                first_name="Ivy", last_name="Interviewer", preferred_name=None
-            ),
-            OWNER_ID: SimpleNamespace(
-                first_name="Rae", last_name="Recruiter", preferred_name=None
-            ),
-            new_assignee: SimpleNamespace(
-                first_name="Sam", last_name="Sub", preferred_name=None
-            ),
-        })
-        dto = self._dto(
-            assignee_id=new_assignee, day=date(2026, 8, 6), start_time="15:00"
-        )
+        # The "from*" fields let the timeline say what actually changed --
+        # see the `fromAssigneeId` -> `fromAssigneeName` entry in
+        # get_application_activity's _ASSIGNEE_NAME_FIELDS, which resolves it
+        # from this same dict. The interviewer cannot change here, so
+        # fromAssigneeId always equals assigneeId.
+        dto = self._dto(day=date(2026, 8, 6), start_time="15:00")
         await self.service.update(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, dto
         )
@@ -630,7 +631,7 @@ class UpdateTest(_BaseTest):
             {
                 "stage": "behavioral",
                 "round": 1,
-                "assigneeId": new_assignee,
+                "assigneeId": ASSIGNEE_ID,
                 "startAt": "2026-08-06T22:00:00+00:00",
                 "endAt": "2026-08-06T22:45:00+00:00",
                 "timezone": "America/Los_Angeles",
@@ -641,15 +642,13 @@ class UpdateTest(_BaseTest):
             },
         )
 
-    async def test_interview_updated_from_assignee_is_none_when_no_assignment_row_exists(
-        self,
-    ):
+    async def test_a_round_with_no_assignment_row_is_rejected(self):
         self.assignment_repo.get = AsyncMock(return_value=None)
-        await self.service.update(
-            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
-        )
-        _args, kwargs = self.record_event.call_args
-        self.assertIsNone(kwargs["details"]["fromAssigneeId"])
+        with self.assertRaises(ValueError):
+            await self.service.update(
+                self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
+            )
+        self.meeting_svc.update.assert_not_awaited()
 
     async def test_no_booking_yet_is_rejected(self):
         self.interview_repo.get = AsyncMock(return_value=None)

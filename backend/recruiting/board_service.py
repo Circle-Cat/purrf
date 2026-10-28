@@ -43,6 +43,7 @@ from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.application_email_policy import RecruitingApplicationEmailPolicy
 from backend.recruiting.candidate_names import candidate_name_of, candidate_names
+from backend.recruiting.interview_scheduling_service import SCHEDULABLE_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 _MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
@@ -814,37 +815,22 @@ class BoardService:
 
     async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
         """Build BoardCardDto list for (application, user) rows, resolving
-        reviewer names + contact emails in batch (same logic get_board used).
+        reviewer names, booked interviews and contact emails in batch.
 
         Args:
             session (AsyncSession): Active database async session.
-            job (JobEntity): The rows' job (for default-assignee resolution).
+            job (JobEntity): The rows' job.
             rows (list[tuple[ApplicationEntity, UsersEntity]]): The
                 (application, user) pairs to build cards for.
 
         Returns:
-            list[BoardCardDto]: One card per row, in the same order, with
-                each interview-stage card's ``reviewer_name`` resolved to:
-                the explicit assignment for that card's
-                ``(stage, current_round)`` if one exists; otherwise, only at
-                round 1, the job's configured ``default_assignee_id`` for
-                that stage, if that person is still an active interview
-                evaluator; otherwise None. Non-interview stages always get
-                ``reviewer_name=None``.
+            list[BoardCardDto]: One card per row, in the same order. An
+                interview-stage card's ``reviewer_name`` is the assignee for
+                its ``(stage, current_round)``, or None when nobody is
+                assigned; a stage's configured default interviewer is not
+                shown until they are assigned. ``interview_booked`` is set
+                on behavioral and tech cards only. Other stages get neither.
         """
-        default_by_stage: dict[ApplicationStage, int] = {}
-        for entry in (job.pipeline_config or {}).get("stages") or []:
-            if not isinstance(entry, dict):
-                continue
-            default_id = entry.get("defaultAssigneeId")
-            if default_id is None:
-                continue
-            try:
-                stage = ApplicationStage(entry.get("stage"))
-            except ValueError:
-                continue
-            default_by_stage[stage] = default_id
-
         application_ids = [application.application_id for application, _ in rows]
         assignments = (
             await self.application_assignment_repository.list_by_application_ids(
@@ -854,29 +840,15 @@ class BoardService:
         assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
             (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
         }
-        needs_default = any(
-            application.stage in INTERVIEW_STAGES
-            and application.stage in default_by_stage
-            and application.current_round == 1
-            and (application.application_id, application.stage, 1)
-            not in assignment_by_key
-            for application, _ in rows
-        )
-        if needs_default:
-            # Read once for the page: a default who can no longer evaluate
-            # will never get the row, so the card must not name them.
-            evaluator_ids = await self.application_access.interview_evaluator_ids(
-                session
+        booked_keys = {
+            (i.application_id, i.stage, i.round)
+            for i in await self.application_interview_repository.list_by_application_ids(
+                session, application_ids
             )
-            default_by_stage = {
-                stage: default_id
-                for stage, default_id in default_by_stage.items()
-                if default_id in evaluator_ids
-            }
-        else:
-            default_by_stage = {}
-        name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
-        reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
+        }
+        reviewers = await self.users_repository.get_all_by_ids(
+            session, list({a.assignee_id for a in assignments})
+        )
         names_by_id = {u.user_id: display_name_or_id(u) for u in reviewers}
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
@@ -890,22 +862,25 @@ class BoardService:
 
         cards = []
         for application, user in rows:
+            key = (
+                application.application_id,
+                application.stage,
+                application.current_round,
+            )
             reviewer_name = None
             if application.stage in INTERVIEW_STAGES:
-                assignee_id = assignment_by_key.get((
-                    application.application_id,
-                    application.stage,
-                    application.current_round,
-                ))
-                if assignee_id is None and application.current_round == 1:
-                    assignee_id = default_by_stage.get(application.stage)
+                assignee_id = assignment_by_key.get(key)
                 if assignee_id is not None:
                     reviewer_name = names_by_id.get(assignee_id)
+            interview_booked = (
+                key in booked_keys if application.stage in SCHEDULABLE_STAGES else None
+            )
             cards.append(
                 self.recruiting_mapper.to_board_card_dto(
                     application,
                     user,
                     reviewer_name=reviewer_name,
+                    interview_booked=interview_booked,
                     applicant_email=contact_by_user_id.get(user.user_id, ""),
                     applicant_name=applicant_names[user.user_id],
                 )
@@ -922,13 +897,10 @@ class BoardService:
         job's lifetime, so each gets only its first ``TERMINAL_PAGE_SIZE``
         page here; the frontend pages further via ``get_board_stage_page``.
 
-        Each interview-stage card's ``reviewer_name`` resolves to: the
-        explicit assignment for that card's ``(stage, current_round)`` if
-        one exists; otherwise, only at round 1 and only for
-        recruiter_screening/behavioral, the job's configured
-        ``default_assignee_id`` for that stage if that person is still an
-        active interview evaluator; otherwise None. Non-interview
-        stages always get ``reviewer_name=None``.
+        Each interview-stage card's ``reviewer_name`` is the assignee for
+        that card's ``(stage, current_round)``, or None when nobody is
+        assigned. Behavioral and tech cards also say whether that round's
+        interview is booked. See ``_cards_for_rows``.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -1847,8 +1819,13 @@ class BoardService:
 
         Independent of Advance: usable any time the application sits in an
         interview stage, whether or not the outgoing assignee has submitted
-        anything. Targets the application's current round (``current_round``)
-        within its current stage — other rounds' assignments are untouched.
+        anything -- except on behavioral and tech while that round has an
+        interview booked that has not ended yet. The calendar invite names the
+        interviewer, so changing it means cancelling the interview first and
+        booking again. Once the interview is over the invite no longer
+        matters, and a new assignee can redo the evaluation. Targets the
+        application's current round (``current_round``) within its current
+        stage — other rounds' assignments are untouched.
 
         Does NOT reset sub_status to "pending" (a reassignment always means
         someone now owns it, so it should never read as untouched). Instead
@@ -1881,8 +1858,10 @@ class BoardService:
         Raises:
             ValueError: If the application is missing, the caller is not an
                 owner (collapsed "not found" message), the application's
-                current stage is not an interview stage, or the assignee
-                does not hold RECRUITING_INTERVIEW_EVALUATE.
+                current stage is not an interview stage, its current round
+                has an interview booked that has not ended, or the assignee
+                does not hold
+                RECRUITING_INTERVIEW_EVALUATE.
         """
         application, _job = await self._load_owned_application(
             session, current_user, application_id, for_update=True
@@ -1891,6 +1870,14 @@ class BoardService:
             raise ValueError(
                 f"application {application_id} is not in an interview stage"
             )
+        if application.stage in SCHEDULABLE_STAGES:
+            interview = await self.application_interview_repository.get(
+                session, application_id, application.stage, application.current_round
+            )
+            if interview is not None and interview.end_at > datetime.now(timezone.utc):
+                raise ValueError(
+                    "Cancel the booked interview before changing the interviewer."
+                )
         await self._validate_interview_assignee(session, dto.assignee_id)
         previous_assignment = await self.application_assignment_repository.get(
             session, application_id, application.stage, application.current_round

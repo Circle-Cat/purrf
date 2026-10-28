@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
@@ -1081,19 +1081,20 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             "Explicit Assignee",
         )
 
-    async def test_get_board_reviewer_falls_back_to_default_when_no_assignment(self):
+    async def test_get_board_does_not_name_an_unassigned_default(self):
+        """A configured default is only a suggestion: until someone is
+        assigned, naming them would read as already assigned."""
         job = self._job(
             job_id=1,
             owner_ids=(2,),
-            stages=("recruiter_screening",),
-            default_assignees={"recruiter_screening": 99},
+            stages=("behavioral",),
+            default_assignees={"behavioral": 99},
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = self._application(
-            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        app = self._application(application_id=10, stage=ApplicationStage.BEHAVIORAL)
+        self.app_repo.list_by_job = AsyncMock(
+            return_value=[(app, self._user(user_id=3))]
         )
-        user = self._user(user_id=3)
-        self.app_repo.list_by_job = AsyncMock(return_value=[(app, user)])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=99, first="Default", last="Person")]
         )
@@ -1103,47 +1104,68 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
-        self.assertEqual(
-            result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
-            "Default Person",
-        )
+        self.assertIsNone(result["stages"]["behavioral"]["items"][0].reviewer_name)
 
-    async def test_get_board_hides_a_default_who_can_no_longer_evaluate(self):
-        """A default outside the evaluator pool would never get the row, so
-        naming them on the card would promise an evaluation nobody owes."""
+    async def test_get_board_says_whether_each_round_interview_is_booked(self):
         job = self._job(
             job_id=1,
             owner_ids=(2,),
-            stages=("recruiter_screening",),
-            default_assignees={"recruiter_screening": 99},
+            stages=("behavioral",),
+            rounds={"behavioral": 2},
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        first = self._application(
-            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        booked = self._application(application_id=10, stage=ApplicationStage.BEHAVIORAL)
+        unbooked = self._application(
+            application_id=11, stage=ApplicationStage.BEHAVIORAL
         )
-        second = self._application(
-            application_id=11, stage=ApplicationStage.RECRUITER_SCREENING
+        # Its booked interview is for round 1; the card is on round 2.
+        next_round = self._application(
+            application_id=12, stage=ApplicationStage.BEHAVIORAL
         )
+        next_round.current_round = 2
         self.app_repo.list_by_job = AsyncMock(
             return_value=[
-                (first, self._user(user_id=3)),
-                (second, self._user(user_id=4)),
+                (booked, self._user(user_id=3)),
+                (unbooked, self._user(user_id=4)),
+                (next_round, self._user(user_id=5)),
             ]
         )
-        self.users_repo.get_all_by_ids = AsyncMock(
-            return_value=[self._user(user_id=99, first="Default", last="Person")]
-        )
-        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
-            return_value=[self._user(user_id=42)]
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    application_id=10, stage=ApplicationStage.BEHAVIORAL, round=1
+                ),
+                SimpleNamespace(
+                    application_id=12, stage=ApplicationStage.BEHAVIORAL, round=1
+                ),
+            ]
         )
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
-        items = result["stages"]["recruiter_screening"]["items"]
-        self.assertEqual([card.reviewer_name for card in items], [None, None])
-        # One pool read for the page, not one per card.
-        self.user_permissions_repo.get_active_users_with_permission.assert_awaited_once_with(
-            self.session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        cards = {c.id: c for c in result["stages"]["behavioral"]["items"]}
+        self.assertTrue(cards[10].interview_booked)
+        self.assertFalse(cards[11].interview_booked)
+        self.assertFalse(cards[12].interview_booked)
+        # One read for the active lanes' cards, not one per card.
+        self.interview_repo.list_by_application_ids.assert_any_await(
+            self.session, [10, 11, 12]
+        )
+
+    async def test_get_board_leaves_booked_unset_where_no_interview_is_booked(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.app_repo.list_by_job = AsyncMock(
+            return_value=[(app, self._user(user_id=3))]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertIsNone(
+            result["stages"]["recruiter_screening"]["items"][0].interview_booked
         )
 
     async def test_get_board_reviewer_none_when_no_assignment_and_no_default(self):
@@ -2609,6 +2631,49 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, 10, ApplicationStage.TECH, 1, 42, 2
         )
         self.app_repo.update.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def _reassign_tech_with_interview_ending(self, end_at):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.sub_status = "scheduled"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+        self.interview_repo.get.return_value = SimpleNamespace(end_at=end_at)
+        return await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, ReassignDto(assignee_id=42)
+        )
+
+    async def test_reassign_refuses_while_a_booked_interview_is_still_ahead(self):
+        """The invite names the interviewer, so swapping the assignee under
+        it would leave the calendar inviting the wrong person."""
+        with self.assertRaises(ValueError) as ctx:
+            await self._reassign_tech_with_interview_ending(
+                datetime.now(timezone.utc) + timedelta(days=1)
+            )
+        self.assertEqual(
+            str(ctx.exception),
+            "Cancel the booked interview before changing the interviewer.",
+        )
+        self.interview_repo.get.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 1
+        )
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_reassign_allows_a_new_assignee_once_the_interview_is_over(self):
+        await self._reassign_tech_with_interview_ending(
+            datetime.now(timezone.utc) - timedelta(hours=1)
+        )
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 1, 42, 2
+        )
         self.session.commit.assert_awaited_once()
 
     async def test_reassign_promotes_pending_to_scheduling_on_scheduling_stage(self):
