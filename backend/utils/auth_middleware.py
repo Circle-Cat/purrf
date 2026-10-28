@@ -21,6 +21,7 @@ from backend.common.permissions import (
     SERVICE_ACCOUNT_PERMISSIONS,
     SUPER_ADMIN_PERMISSIONS,
 )
+from backend.training.content_host import hostname_of
 
 # Maps stored permission_name strings back to Permission members; unknown
 # (stale) names are skipped during resolution.
@@ -76,6 +77,25 @@ def _is_content_origin_request(request: Request, content_host: str | None) -> bo
     # route answers, or a mixed-case Host turns a 404 into a 401.
     host = request.headers.get("host", "").split(":")[0].lower()
     return host == content_host and request.url.path.startswith(_CONTENT_PATH_PREFIX)
+
+
+# The content host shares a site with the API host, so the browser attaches the
+# learner's Access cookie to anything a course sends to the API. CORS keeps the
+# course from reading a response, but a request that needs no preflight -- a
+# POST with no body, a text/plain or untyped-Blob body, or a form -- still runs
+# with the learner's permissions. Course pages only ever read, so any other
+# method arriving from the content origin is refused before it is
+# authenticated. Requests without an Origin (Pub/Sub, the Worker, cron) and the
+# app's own origins are untouched.
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _is_write_from_content_origin(request: Request, content_host: str | None) -> bool:
+    """Whether this is a state-changing request sent by a course page."""
+    if not content_host or request.method in _READ_METHODS:
+        return False
+    origin = request.headers.get("origin")
+    return bool(origin) and hostname_of(origin) == content_host
 
 
 class AccountDeactivatedError(PermissionError):
@@ -178,6 +198,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             Response: The response returned by the next handler, or an error response
                     if authentication fails.
         """
+        if _is_write_from_content_origin(request, self.training_content_host):
+            self.logger.warning(
+                "[AuthMiddleware] %s %s refused: sent from the training content origin",
+                request.method,
+                request.url.path,
+            )
+            return api_response(
+                message="Course content cannot change data.",
+                status_code=HTTPStatus.FORBIDDEN,
+                data=None,
+            )
+
         if request.url.path in _UNAUTHENTICATED_PATHS:
             return await call_next(request)
 
