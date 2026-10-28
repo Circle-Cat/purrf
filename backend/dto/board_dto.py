@@ -66,6 +66,10 @@ class BoardCardDto(BaseDto):
     # — the board never renders a reviewer line for those). None also means
     # "nobody assigned yet" for an interview-stage card.
     reviewer_name: str | None = None
+    # Whether this card's current stage+round has an interview booked. Set on
+    # behavioral and tech cards only, the stages an interview is booked for;
+    # None on every other card.
+    interview_booked: bool | None = None
 
 
 class BoardApplicantHitDto(BaseDto):
