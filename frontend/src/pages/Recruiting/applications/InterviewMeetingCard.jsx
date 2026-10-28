@@ -29,9 +29,13 @@ import { formatDateTimeRangeWithZone } from "@/utils/dateTime";
  * An owner who cannot act (`disabledHint` set) keeps the buttons, disabled and
  * titled with the hint, so the missing grant is visible before a click.
  *
+ * A meeting is booked with the round's assignee, so with nobody assigned
+ * (`needsAssignee`) "Schedule meeting" is disabled and the card says why.
+ *
  * @param {{interview: object|null, round: number, timezone: string,
  *          isTerminal?: boolean, isOwner?: boolean, busy?: boolean,
- *          disabledHint?: string, onSchedule?: function, onEdit?: function,
+ *          disabledHint?: string, needsAssignee?: boolean,
+ *          onSchedule?: function, onEdit?: function,
  *          onCancel?: function}} props
  */
 const InterviewMeetingCard = ({
@@ -42,6 +46,7 @@ const InterviewMeetingCard = ({
   isOwner = true,
   busy = false,
   disabledHint,
+  needsAssignee = false,
   onSchedule,
   onEdit,
   onCancel,
@@ -55,11 +60,16 @@ const InterviewMeetingCard = ({
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-slate-500">Not scheduled</p>
+          {isOwner && needsAssignee && (
+            <p className="text-xs text-slate-500">
+              Assign an interviewer before booking the interview.
+            </p>
+          )}
           {isOwner && (
             <Button
               type="button"
               size="sm"
-              disabled={disabled}
+              disabled={disabled || needsAssignee}
               title={disabledHint}
               onClick={() => onSchedule?.()}
             >

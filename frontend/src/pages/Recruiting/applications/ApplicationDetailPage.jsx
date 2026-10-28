@@ -118,17 +118,18 @@ import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
 const PREFILL_TARGET_STAGES = new Set(["recruiter_screening", "behavioral"]);
 
 /**
- * Stages whose interviewer is decided exclusively through the interview
- * meeting card's own dialog (booking a meeting upserts the assignment --
- * see InterviewSchedulingService.schedule/update on the backend), mirroring
- * the backend's own `SCHEDULABLE_STAGES`
- * (backend/recruiting/interview_scheduling_service.py). Recruiter
- * screening and board review are interview stages too (INTERVIEW_STAGES)
- * but evaluate on materials alone -- no meeting is ever booked for them --
- * so their assignee is still picked via Advance/Round-advance/Reassign as
- * before.
+ * Stages an interview meeting is booked for, mirroring the backend's own
+ * `SCHEDULABLE_STAGES` (backend/recruiting/interview_scheduling_service.py).
+ * Their interviewer is assigned like any interview stage's (Advance,
+ * Round-advance, Reassign), and the meeting is then booked with that
+ * assignee. Recruiter screening and board review are interview stages too
+ * but evaluate on materials alone, so no meeting is ever booked for them.
  */
-const ASSIGNEE_VIA_CARD_STAGES = new Set(["behavioral", "tech"]);
+const MEETING_STAGES = new Set(["behavioral", "tech"]);
+
+/** Why Reassign is off while the round's booked meeting is still ahead. */
+const REASSIGN_BLOCKED_BY_MEETING_HINT =
+  "Cancel the booked interview before changing the interviewer.";
 
 /** Stages an application never advances out of once reached. */
 const TERMINAL_STAGES = new Set(["rejected", "hired"]);
@@ -1228,35 +1229,21 @@ const ApplicationDetailPage = () => {
       ? advanceTarget(jobStages, detail.application.stage, job?.kind)
       : null;
   const isPipelineStage = next !== null;
-  // Behavioral/tech are excluded here even though they're INTERVIEW_STAGES:
-  // their interviewer is now picked exclusively via the interview meeting
-  // card's own dialog when booking a meeting, not at advance time -- see
-  // ASSIGNEE_VIA_CARD_STAGES. Advancing into one of them with no dialog at
-  // all mirrors how advancing into a non-interview stage already worked.
-  const needsAssignee =
-    isPipelineStage &&
-    INTERVIEW_STAGES.has(next) &&
-    !ASSIGNEE_VIA_CARD_STAGES.has(next);
+  const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
   // Reassignment applies only to interview stages, which carry an assignee.
   // The Offer stage has no rubric and is not assignable (the backend rejects
   // a reassign there), so the control must not appear even though Offer has a
-  // next stage to advance to (e.g. "hired" for employment jobs). Behavioral/
-  // tech are additionally excluded: their interviewer is now set exclusively
-  // via the interview meeting card's own dialog (see
-  // ASSIGNEE_VIA_CARD_STAGES), so a generic Reassign control would let
-  // someone silently diverge the assignment from the calendar meeting.
+  // next stage to advance to (e.g. "hired" for employment jobs).
   const canReassign =
+    loaded && detail?.isOwner && INTERVIEW_STAGES.has(detail.application.stage);
+  // The calendar invite names the interviewer, so while a booked meeting is
+  // still ahead the backend refuses a reassign: cancel it first. Once it has
+  // ended, a new assignee may redo the evaluation.
+  const reassignBlockedByMeeting =
     loaded &&
-    detail?.isOwner &&
-    INTERVIEW_STAGES.has(detail.application.stage) &&
-    !ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage);
-  // Mirrors canReassign's exclusion, but for the CURRENT stage rather than
-  // the advance target -- the round-advance dialog stays on the same stage,
-  // so a behavioral/tech round-advance must hide its own PeoplePicker too.
-  const roundAdvanceNeedsAssignee =
-    loaded &&
-    detail != null &&
-    !ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage);
+    detail?.interview != null &&
+    MEETING_STAGES.has(detail.application.stage) &&
+    new Date(detail.interview.endAt) > new Date();
 
   // Rounds configured for the application's *current* stage (a sibling
   // field to `defaultAssigneeId` on the same per-stage job config entries
@@ -1301,8 +1288,7 @@ const ApplicationDetailPage = () => {
   const showInterviewCard =
     loaded &&
     detail != null &&
-    (ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage) ||
-      detail.interview != null);
+    (MEETING_STAGES.has(detail.application.stage) || detail.interview != null);
   const isTerminalStage =
     loaded && detail != null && TERMINAL_STAGES.has(detail.application.stage);
   // Every interview time on this page is rendered in the reader's own zone --
@@ -1331,19 +1317,6 @@ const ApplicationDetailPage = () => {
   const cancelUpcomingMeetingBody = upcomingInterview
     ? { cancelInterview: cancelUpcomingMeeting }
     : {};
-  // The interview dialog's starting interviewer pick in "schedule" mode: the
-  // round's current assignee if one is already set (e.g. carried over from a
-  // previous round in the same stage), else the stage's configured default
-  // (the same per-stage `defaultAssigneeId` the advance-time prefill above
-  // reads, just for the CURRENT stage instead of the advance target).
-  const interviewDefaultAssigneeId =
-    loaded && detail != null
-      ? (detail.assigneeId ??
-        (job?.pipelineConfig?.stages ?? []).find(
-          (s) => s.stage === detail.application.stage,
-        )?.defaultAssigneeId ??
-        null)
-      : null;
 
   // Pre-fill the advance-time assignee picker with the target stage's
   // configured default for screening/behavioral targets (tech/board_review
@@ -1863,8 +1836,13 @@ const ApplicationDetailPage = () => {
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={!canOperate}
-                      title={operateHint}
+                      disabled={!canOperate || reassignBlockedByMeeting}
+                      title={
+                        operateHint ??
+                        (reassignBlockedByMeeting
+                          ? REASSIGN_BLOCKED_BY_MEETING_HINT
+                          : undefined)
+                      }
                       onClick={() => setReassignOpen(true)}
                     >
                       Reassign
@@ -1889,6 +1867,7 @@ const ApplicationDetailPage = () => {
                   isOwner={detail.isOwner}
                   busy={interviewBusy}
                   disabledHint={operateHint}
+                  needsAssignee={detail.assigneeId == null}
                   onSchedule={openScheduleInterview}
                   onEdit={openEditInterview}
                   onCancel={() => setCancelInterviewConfirmOpen(true)}
@@ -2315,16 +2294,14 @@ const ApplicationDetailPage = () => {
               Advance to Session {(detail.application.currentRound ?? 1) + 1}
             </DialogTitle>
           </DialogHeader>
-          {roundAdvanceNeedsAssignee && (
-            <PeoplePicker
-              label="Assignee"
-              variant="list"
-              noneLabel="Decide later"
-              pool={interviewPool}
-              value={roundAdvanceAssigneeId || undefined}
-              onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
-            />
-          )}
+          <PeoplePicker
+            label="Assignee"
+            variant="list"
+            noneLabel="Decide later"
+            pool={interviewPool}
+            value={roundAdvanceAssigneeId || undefined}
+            onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
+          />
           {upcomingInterview && (
             <CancelUpcomingMeetingField
               interview={upcomingInterview}
@@ -2365,9 +2342,8 @@ const ApplicationDetailPage = () => {
                 : "Advance"}
             </DialogTitle>
           </DialogHeader>
-          {/* Behavioral/tech targets pick their interviewer on the meeting
-              card instead, so this dialog can open for the meeting question
-              alone -- with no picker at all. */}
+          {/* A non-interview target opens this dialog only for the meeting
+              question, with no picker. */}
           {needsAssignee && (
             <PeoplePicker
               label="Assignee"
@@ -2445,7 +2421,7 @@ const ApplicationDetailPage = () => {
         onOpenChange={setInterviewDialogOpen}
         mode={interviewDialogMode}
         interview={detail.interview}
-        defaultAssigneeId={interviewDefaultAssigneeId}
+        assigneeId={detail.assigneeId}
         interviewPool={interviewPool}
         candidateName={detail.applicantName}
         viewerTimezone={viewerTimezone}
