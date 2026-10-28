@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from backend.common.mentorship_enums import RoundStatus
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.round_windows import (
+    feedback_window,
     is_feedback_editable,
     is_feedback_open,
     round_status,
@@ -103,13 +104,18 @@ class RoundsService:
         registration_round = open_round or await repo.get_latest_promoted_round(
             session, now
         )
+        # Closes with the feedback window, which falls back to a month past
+        # the meetings deadline when a round has no feedback deadline.
+        match_view_closes_at = (
+            feedback_window(registration_round).closes_at
+            if registration_round
+            else None
+        )
         can_view_match = bool(
             registration_round
             and registration_round.match_notification_at
-            and registration_round.feedback_deadline_at
-            and registration_round.match_notification_at
-            <= now
-            <= registration_round.feedback_deadline_at
+            and match_view_closes_at
+            and registration_round.match_notification_at <= now <= match_view_closes_at
         )
 
         rounds = await repo.get_all_rounds(session)
