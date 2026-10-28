@@ -52,7 +52,47 @@ gcloud config set project {google_project_id}
 ```
 ####  Export Environment Variables
 
-See: backend/common/environment_constants.py
+[`.env.example`](.env.example) holds everything the backend needs to boot
+locally. Apart from the Redis connection, each value there is local or a
+placeholder:
+
+```bash
+cp .env.example .env
+set -a; source .env; set +a
+```
+
+Fill in `REDIS_HOST`, `REDIS_PORT` and `REDIS_PASSWORD` with the Upstash
+Redis the team gives you; the backend connects to it over TLS at startup.
+
+The full list of variables, including the optional ones, is in
+`backend/common/environment_constants.py`.
+
+##### Google credentials
+
+Startup builds Google API clients, which need Application Default Credentials
+to exist. Log in with `gcloud auth application-default login` (above). If it
+says it saved the credentials under `~/.config/gcloud`, leave
+`GOOGLE_APPLICATION_CREDENTIALS` unset. If it saved them anywhere else, set
+`GOOGLE_APPLICATION_CREDENTIALS` in `.env` to the absolute path it printed:
+
+```bash
+# Credentials saved to file: [/tmp/tmp.ZBALaLhSHa/application_default_credentials.json]
+GOOGLE_APPLICATION_CREDENTIALS=/tmp/tmp.ZBALaLhSHa/application_default_credentials.json
+```
+
+When the variable is set, only the file it names is read, and a missing file
+stops startup. A path under `/tmp` can be cleared on restart; log in again and
+update it.
+
+Without a Google login, a placeholder file is enough to boot; Google features
+then fail when used. Uncomment `GOOGLE_APPLICATION_CREDENTIALS` in `.env` and
+create the file:
+
+```bash
+mkdir -p ~/.purrf-dev
+echo '{"type":"authorized_user","client_id":"placeholder","client_secret":"placeholder","refresh_token":"placeholder"}' \
+  > ~/.purrf-dev/adc.json
+```
 
 ### Init PostgreSQL Database
 
