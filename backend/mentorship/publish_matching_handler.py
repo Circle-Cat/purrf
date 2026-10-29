@@ -1,12 +1,14 @@
 """Publishing a matching result, as an approval.
 
-A request names the round's current run. Raising it needs a finished,
-successful run that nobody is editing and whose result has no problems.
-Approving re-checks that, checks every person being paired against the
+A request names the round's current run. Raising it needs a round in
+progress and a finished, successful run that nobody is editing and whose
+result has no problems. Approving re-checks that, checks every person being paired against the
 database as it stands now, eligibility included, then writes the pairs and the new statuses in the
 approval's transaction. Once that is committed, the round's pointer to the run
 is cleared, so the results page goes back to "no run".
 """
+
+from datetime import datetime, timezone
 
 from backend.approval.approval_handler import ApprovalHandler
 from backend.common.exceptions import ConflictError
@@ -23,6 +25,7 @@ from backend.common.permissions import Permission
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.mentorship.matching_draft import apply_draft, problems
 from backend.mentorship.matching_eligibility import IneligibleReason
+from backend.mentorship.round_windows import is_in_progress
 
 PUBLISH_MATCHING = "publish_matching"
 MENTORSHIP_ROUND_SUBJECT = "mentorship_round"
@@ -101,8 +104,9 @@ class PublishMatchingHandler(ApprovalHandler):
     async def check_raise(
         self, session, *, raised_by: int, target_id: str, payload: dict
     ) -> None:
-        """Refuse publishing anything but the round's current, finished,
-        successful run while nobody edits it and its result has no problems.
+        """Refuse publishing anything but the current, finished, successful
+        run of a round in progress while nobody edits it and its result has
+        no problems.
 
         Raises:
             ValueError: The payload names no round.
@@ -111,7 +115,9 @@ class PublishMatchingHandler(ApprovalHandler):
         round_id = payload.get("round_id")
         if not isinstance(round_id, int):
             raise ValueError("A publish request names its round.")
-        refusal = self._run_refusal(round_id, target_id)
+        refusal = await self._round_refusal(session, round_id) or self._run_refusal(
+            round_id, target_id
+        )
         if refusal:
             raise ConflictError(refusal)
         if self.matching_storage.edit_lock(target_id) is not None:
@@ -130,7 +136,9 @@ class PublishMatchingHandler(ApprovalHandler):
         """
         round_id = self.subject_id(request)
         run_id = request.target_id
-        refusal = self._run_refusal(round_id, run_id)
+        refusal = await self._round_refusal(session, round_id) or self._run_refusal(
+            round_id, run_id
+        )
         if refusal:
             return [refusal]
 
@@ -316,6 +324,20 @@ class PublishMatchingHandler(ApprovalHandler):
         self.matching_storage.clear_round_pointer(
             self.subject_id(request), request.target_id
         )
+
+    async def _round_refusal(self, session, round_id: int) -> str | None:
+        """Why the round cannot take a result, or None while it is in progress.
+
+        Pairs written into a round that has ended could not be ended by any
+        approval afterwards, since every other mentorship request needs the
+        round in progress too.
+        """
+        round_ = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_ is None:
+            return f"Mentorship round {round_id} does not exist."
+        if not is_in_progress(round_, datetime.now(timezone.utc)):
+            return "The round is not in progress."
+        return None
 
     def _run_refusal(self, round_id: int, run_id: str) -> str | None:
         """Why this run cannot be published, or None if it is the round's

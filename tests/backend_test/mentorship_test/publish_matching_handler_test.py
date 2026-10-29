@@ -2,6 +2,7 @@
 for, what has to still hold when it is approved, and what approving writes."""
 
 import unittest
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -161,9 +162,14 @@ class PublishMatchingHandlerTestBase(unittest.IsolatedAsyncioTestCase):
                 if uid in ids
             ]
         )
+        now = datetime.now(timezone.utc)
         self.rounds = MagicMock()
         self.rounds.get_by_round_id = AsyncMock(
-            return_value=SimpleNamespace(name="Spring 2026")
+            return_value=SimpleNamespace(
+                name="Spring 2026",
+                promotion_start_at=now - timedelta(days=30),
+                feedback_deadline_at=now + timedelta(days=30),
+            )
         )
         self.rounds.get_all_rounds = AsyncMock(
             return_value=[
@@ -206,6 +212,24 @@ class TestRaise(PublishMatchingHandlerTestBase):
     async def test_the_round_must_be_named(self):
         with self.assertRaises(ValueError):
             await self._check(payload={})
+
+    async def test_a_round_that_has_ended_is_refused(self):
+        self.rounds.get_by_round_id.return_value.feedback_deadline_at = datetime.now(
+            timezone.utc
+        ) - timedelta(days=1)
+
+        with self.assertRaises(ConflictError) as caught:
+            await self._check()
+        self.assertEqual(str(caught.exception), "The round is not in progress.")
+
+    async def test_a_round_that_does_not_exist_is_refused(self):
+        self.rounds.get_by_round_id.return_value = None
+
+        with self.assertRaises(ConflictError) as caught:
+            await self._check()
+        self.assertEqual(
+            str(caught.exception), f"Mentorship round {ROUND} does not exist."
+        )
 
     async def test_a_run_the_round_has_moved_past_is_refused(self):
         self.storage.current_run_id.return_value = "r7-newer"
@@ -345,6 +369,17 @@ class TestProblemsAtApproval(PublishMatchingHandlerTestBase):
         }
 
         self.assertEqual(await self._problems(), ["Ann Lee is blocked."])
+
+    async def test_a_round_that_has_ended_is_the_only_problem_reported(self):
+        """Pairs written into a finished round could not be ended by any
+        approval afterwards, so nothing else is worth checking."""
+        self.rounds.get_by_round_id.return_value.feedback_deadline_at = datetime.now(
+            timezone.utc
+        ) - timedelta(days=1)
+        self.people[21][0].is_blocked = True
+
+        self.assertEqual(await self._problems(), ["The round is not in progress."])
+        self.eligibility.assess.assert_not_awaited()
 
     async def test_eligibility_is_not_read_once_the_run_is_refused(self):
         self.storage.current_run_id.return_value = "r7-newer"

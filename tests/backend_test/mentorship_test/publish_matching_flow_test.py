@@ -4,7 +4,7 @@ this one checks the steps commit and the rows are really there."""
 
 import unittest
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -92,10 +92,15 @@ class PublishMatchingFlowTest(BaseRepositoryTestLib):
             self.mentee,
             self.unplaced,
         ])
+        # Under way now: a result can only be published into a round in
+        # progress. Relative to today so the test does not expire.
+        now = datetime.now(timezone.utc)
         self.round = MentorshipRoundEntity(
             name="Spring 2026",
             required_meetings=5,
             onboarding_deadline_at=datetime(2026, 2, 15, tzinfo=timezone.utc),
+            promotion_start_at=now - timedelta(days=30),
+            feedback_deadline_at=now + timedelta(days=30),
         )
         await self.insert_entities([self.round])
         roles = {
