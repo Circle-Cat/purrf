@@ -20,6 +20,10 @@ import EmailThreadCard from "@/components/email/EmailThreadCard";
 import { threadActivityAt } from "@/components/email/emailThreads";
 import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
 import MarkNotifiedDialog from "@/pages/MentorshipManagement/components/email/MarkNotifiedDialog";
+import {
+  approvalActionLabel,
+  approvalPersonLabel,
+} from "@/pages/MentorshipManagement/utils/approvalLabels";
 
 // The backend refuses anything longer.
 const MAX_NOTE_LENGTH = 5000;
@@ -125,6 +129,31 @@ const NoteEntry = ({ note, partner }) => (
   </li>
 );
 
+// A rejected request changes nothing about the person, so it is marked apart
+// from the notes an approval writes: an outline badge, the reviewer's reason,
+// and who asked.
+const RejectedEntry = ({ request, partner }) => (
+  <li className="text-sm">
+    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+      <Badge variant="outline">
+        Rejected: {approvalActionLabel(request.action)}
+      </Badge>
+      {partner && <span>with {partner}</span>}
+      <span>
+        {approvalPersonLabel(request.reviewer)} · {at(request.decidedAt)}
+      </span>
+      <span>(via approval)</span>
+    </div>
+    <p className="mt-1 whitespace-pre-wrap break-words">
+      Reason: {request.decisionComment}
+    </p>
+    <p className="text-xs text-slate-500">
+      Asked by {approvalPersonLabel(request.raisedBy)}
+      {request.reason ? ` — "${request.reason}"` : ""}
+    </p>
+  </li>
+);
+
 const SendEntry = ({ send }) => (
   <li className="text-sm">
     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -168,11 +197,13 @@ const refreshedText = (count) =>
 
 /**
  * Everything about a person in one round, newest first: the notes written
- * about them, whatever kind, the Kit notifications that went out to them or
- * failed to, and the email threads with them, each placed by its newest
- * message. A note an approval wrote says so.
+ * about them, whatever kind, the requests about them that were rejected, the
+ * Kit notifications that went out to them or failed to, and the email
+ * threads with them, each placed by its newest message. A note an approval
+ * wrote says so.
  *
- * @param {{notes: Object[], sends?: Object[], roundId: number|string,
+ * @param {{notes: Object[], rejectedRequests?: Object[], sends?: Object[],
+ *          roundId: number|string,
  *          userId: number|string, canAdd: boolean, onAdded: () => void,
  *          pairs?: Object[], canMarkNotified?: boolean, personName?: string,
  *          markStageOptions?: Object[], notifiedStages?: string[],
@@ -190,6 +221,7 @@ const refreshedText = (count) =>
  */
 const NoteTimeline = ({
   notes,
+  rejectedRequests = [],
   sends = [],
   roundId,
   userId,
@@ -219,6 +251,11 @@ const NoteTimeline = ({
       key: `note-${note.noteId}`,
       time: note.createdAt,
       note,
+    })),
+    ...rejectedRequests.map((request) => ({
+      key: `rejected-${request.requestId}`,
+      time: request.decidedAt,
+      request,
     })),
     ...sends.map((send) => ({
       key: `send-${send.sendId}`,
@@ -290,7 +327,7 @@ const NoteTimeline = ({
         <p className="text-sm text-muted-foreground">Nothing here yet.</p>
       ) : (
         <ul className="space-y-3">
-          {entries.map(({ key, note, send, thread }) => {
+          {entries.map(({ key, note, request, send, thread }) => {
             if (note) {
               return (
                 <NoteEntry
@@ -298,6 +335,19 @@ const NoteTimeline = ({
                   note={note}
                   partner={
                     note.pairId != null ? partnerOf.get(note.pairId) : undefined
+                  }
+                />
+              );
+            }
+            if (request) {
+              return (
+                <RejectedEntry
+                  key={key}
+                  request={request}
+                  partner={
+                    request.pairId != null
+                      ? partnerOf.get(request.pairId)
+                      : undefined
                   }
                 />
               );
