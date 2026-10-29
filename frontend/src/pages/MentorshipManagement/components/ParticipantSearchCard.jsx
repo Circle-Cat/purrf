@@ -515,7 +515,6 @@ const ParticipantSearchCard = () => {
 
   const {
     meetings: activeMeetings,
-    roundVersion: activeRoundVersion,
     roundInProgress: activeRoundInProgress,
     loading: meetingLoading,
     error: meetingError,
@@ -1033,7 +1032,6 @@ const ParticipantSearchCard = () => {
           meetings={activeMeetings}
           loading={meetingLoading}
           error={meetingError}
-          roundVersion={activeRoundVersion}
           roundInProgress={activeRoundInProgress}
           onSave={handleMeetingSave}
         />

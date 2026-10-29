@@ -10,7 +10,6 @@ const baseProps = {
   open: true,
   onOpenChange: vi.fn(),
   roundName: "Fall 2024",
-  roundVersion: "v2",
   roundInProgress: true,
   subjectName: "Henry Zhang",
   subjectRole: "mentee",
@@ -262,43 +261,20 @@ describe("MeetingLogDialog", () => {
     expect(screen.queryByText(/Meeting Log —/)).not.toBeInTheDocument();
   });
 
-  it("shows the Edit button only for a non-empty v2 round", () => {
+  it("shows the Edit button for a round in progress with meetings", () => {
     const { rerender } = render(
-      <MeetingLogDialog
-        {...baseProps}
-        roundVersion="v1"
-        meetings={[makeMeeting()]}
-      />,
+      <MeetingLogDialog {...baseProps} meetings={[]} />,
     );
     expect(
       screen.queryByRole("button", { name: "Edit" }),
     ).not.toBeInTheDocument();
 
-    rerender(
-      <MeetingLogDialog {...baseProps} roundVersion="v2" meetings={[]} />,
-    );
-    expect(
-      screen.queryByRole("button", { name: "Edit" }),
-    ).not.toBeInTheDocument();
-
-    rerender(
-      <MeetingLogDialog
-        {...baseProps}
-        roundVersion="v2"
-        meetings={[makeMeeting()]}
-      />,
-    );
+    rerender(<MeetingLogDialog {...baseProps} meetings={[makeMeeting()]} />);
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 
   it("clicking Edit replaces the Edit button with Cancel/Delete/Update; clicking Cancel restores it", async () => {
-    render(
-      <MeetingLogDialog
-        {...baseProps}
-        roundVersion="v2"
-        meetings={[makeMeeting()]}
-      />,
-    );
+    render(<MeetingLogDialog {...baseProps} meetings={[makeMeeting()]} />);
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled();
@@ -321,7 +297,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[
           makeMeeting({
             meetingId: "gm-1",
@@ -350,7 +325,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
       />,
     );
@@ -379,7 +353,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
       />,
     );
@@ -402,7 +375,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
       />,
     );
@@ -427,7 +399,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
       />,
     );
@@ -456,7 +427,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[
           makeMeeting({
             meetingId: "gm-1",
@@ -481,7 +451,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[
           makeMeeting({ meetingId: "gm-1" }),
           makeMeeting({ meetingId: "gm-2" }),
@@ -522,7 +491,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: true })]}
       />,
     );
@@ -551,7 +519,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[
           makeMeeting({ meetingId: "gm-1" }),
           makeMeeting({ meetingId: "gm-2" }),
@@ -590,7 +557,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1" })]}
       />,
     );
@@ -611,7 +577,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         onSave={onSave}
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
       />,
@@ -649,7 +614,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         onSave={onSave}
         meetings={[makeMeeting({ meetingId: "gm-1" })]}
       />,
@@ -684,7 +648,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[
           makeMeeting({ meetingId: "gm-1" }),
           makeMeeting({ meetingId: "gm-2" }),
@@ -713,7 +676,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1" })]}
       />,
     );
@@ -733,7 +695,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[
           makeMeeting({ meetingId: "gm-1" }),
           makeMeeting({ meetingId: "gm-2" }),
@@ -759,7 +720,6 @@ describe("MeetingLogDialog", () => {
     render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         onSave={onSave}
         meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
       />,
@@ -787,7 +747,6 @@ describe("MeetingLogDialog", () => {
     const { rerender } = render(
       <MeetingLogDialog
         {...baseProps}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1" })]}
       />,
     );
@@ -802,7 +761,6 @@ describe("MeetingLogDialog", () => {
       <MeetingLogDialog
         {...baseProps}
         open={false}
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1" })]}
       />,
     );
@@ -810,7 +768,6 @@ describe("MeetingLogDialog", () => {
       <MeetingLogDialog
         {...baseProps}
         open
-        roundVersion="v2"
         meetings={[makeMeeting({ meetingId: "gm-1" })]}
       />,
     );
