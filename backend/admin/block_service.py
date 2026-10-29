@@ -14,6 +14,7 @@ back.
 
 from datetime import datetime, timezone
 
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.name_utils import display_name_of, display_name_or_id
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
@@ -29,6 +30,8 @@ from backend.notification_management.event_recorder import record_event
 
 # The approval action a block request is, and the kind of target it names.
 BLOCK_USER = "block_user"
+# Every way a request can be closed: what is left once it is no longer waiting.
+_CLOSED = [s for s in ApprovalRequestStatus if s is not ApprovalRequestStatus.PENDING]
 BLOCK_TARGET = "user"
 
 # Where a block request can be raised from, and what the raiser must hold
@@ -643,6 +646,53 @@ class BlockService:
             session, actor_id, [BLOCK_USER]
         )
         return await self._to_dtos(session, rows)
+
+    async def list_decided_for_target(
+        self, session, user_id: int
+    ) -> list[BlockRequestDto]:
+        """Every block request about this person that was closed, however it
+        was closed, for their account page.
+
+        The ``users`` row keeps only the block in force, so this is the only
+        record of a request that was rejected, withdrawn or overtaken by a
+        direct block.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The person the requests are about.
+
+        Returns:
+            list[BlockRequestDto]: Newest decision first.
+        """
+        rows = await self._approvals.list_by_status_for_targets(
+            session, BLOCK_USER, [str(user_id)], _CLOSED
+        )
+        return await self._to_dtos(session, rows)
+
+    async def latest_decided_raised_by_actor(
+        self, session, actor_id: int, user_id: int
+    ) -> BlockRequestDto | None:
+        """The caller's own most recent closed block request about this
+        person, so the page they raised it from can say how it ended.
+
+        Scoped like ``list_pending_raised_by_actor``: the caller's id is the
+        only identity input, so it never answers for somebody else's request.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            actor_id (int): The person who raised it.
+            user_id (int): The person it was about.
+
+        Returns:
+            BlockRequestDto | None: The newest one, or None if they have none.
+        """
+        rows = await self._approvals.list_by_status_for_targets(
+            session, BLOCK_USER, [str(user_id)], _CLOSED
+        )
+        mine = next((row for row in rows if row.raised_by == actor_id), None)
+        if mine is None:
+            return None
+        return await self._to_dto(session, mine)
 
     async def list_user_admins(self, session) -> list[ReviewerOptionDto]:
         """The people who can be named as reviewer on a block request.

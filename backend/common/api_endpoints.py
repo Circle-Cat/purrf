@@ -146,6 +146,7 @@ ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/deactivate"
 ADMIN_ACCOUNT_REACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/reactivate"
 ADMIN_ACCOUNT_UNBLOCK_ENDPOINT = "/admin/accounts/{user_id}/unblock"
 ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"
+ADMIN_ACCOUNT_BLOCK_REQUESTS_ENDPOINT = "/admin/accounts/{user_id}/block-requests"
 
 # Blocking as a request someone else decides. Not under /admin: the raiser is
 # standing on a domain page and holds no console permission at all.
@@ -155,6 +156,7 @@ BLOCK_REQUESTS_ENDPOINT = "/block-requests"
 # filter on the line above: that one is the reviewer's queue and its gate says
 # so, and the two are read by people holding different permissions.
 BLOCK_REQUESTS_RAISED_ENDPOINT = "/block-requests/raised"
+BLOCK_REQUESTS_RAISED_DECIDED_ENDPOINT = "/block-requests/raised/{user_id}/decided"
 BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
 BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
 BLOCK_REQUEST_WITHDRAW_ENDPOINT = "/block-requests/{request_id}/withdraw"
