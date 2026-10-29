@@ -378,17 +378,24 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
             "job",
             job.job_id,
             actor,
-            details={"kind": "initial", "decision": "rejected", "comment": "no"},
+            details={
+                "kind": "initial",
+                "decision": "rejected",
+                "comment": "Add a salary range",
+            },
         )
 
         approved_subject, approved_body = await render_registry.render(
             self.session, approved_event
         )
-        rejected_subject, _ = await render_registry.render(self.session, rejected_event)
+        rejected_subject, rejected_body = await render_registry.render(
+            self.session, rejected_event
+        )
 
         self.assertEqual(approved_subject, "Posting approved: Backend Engineer")
         self.assertIn("Grace Hopper approved your submission", approved_body)
         self.assertEqual(rejected_subject, "Posting rejected: Backend Engineer")
+        self.assertIn("Their reason: Add a salary range", rejected_body)
 
     async def test_review_decided_by_withdrawal_tells_the_reviewer_it_is_off(self):
         """A withdrawal is no verdict: it must not read as a rejection, which

@@ -312,6 +312,7 @@ async def _render_review_reassigned(session, event):
 @register_render("recruiting.review_decided")
 async def _render_review_decided(session, event):
     dto = await _base_dto(session, event)
+    dto.review_comment = event.details.get("comment")
     template = {
         "approved": copy._job_review_approved,
         "withdrawn": copy._job_review_withdrawn,

@@ -312,12 +312,22 @@ def _job_review_approved(dto, stage):
 
 @_html_body
 def _job_review_rejected(dto, stage):
-    return (
-        f"Posting rejected: {dto.plain.job_title}",
+    # A rejection needs a reason, so it is quoted here. Events from before the
+    # reason was carried have none; their copy still points at the posting.
+    rejected = (
         f"<p>{dto.actor} rejected your submission for the posting "
         f'"{dto.job_title}".</p>'
-        "<p>Open Job Postings in Purrf to see the outcome and any comment "
-        "the reviewer left.</p>",
+    )
+    if dto.review_comment:
+        return (
+            f"Posting rejected: {dto.plain.job_title}",
+            rejected + f"<p>Their reason: {dto.review_comment}</p>"
+            "<p>Open Job Postings in Purrf to see the outcome.</p>",
+        )
+    return (
+        f"Posting rejected: {dto.plain.job_title}",
+        rejected + "<p>Open Job Postings in Purrf to see the outcome and any "
+        "comment the reviewer left.</p>",
     )
 
 
