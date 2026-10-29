@@ -50,6 +50,20 @@ export const noteOf = (overrides = {}) => ({
   ...overrides,
 });
 
+// Raised by Dana Wu, rejected by Rae Kim: who asked and who said no differ.
+export const rejectedOf = (overrides = {}) => ({
+  requestId: 41,
+  action: "withdraw_participant",
+  raisedBy: { userId: 9, name: "Dana Wu" },
+  reviewer: { userId: 8, name: "Rae Kim" },
+  pairId: null,
+  pair: null,
+  reason: "Stopped replying",
+  decisionComment: "Still replying on Teams",
+  decidedAt: "2026-09-20T17:00:00Z",
+  ...overrides,
+});
+
 export const detailOf = (overrides = {}) => ({
   person: {
     userId: 3104,

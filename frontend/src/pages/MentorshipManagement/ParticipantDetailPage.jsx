@@ -484,6 +484,7 @@ const ParticipantDetailPage = () => {
 
         <NoteTimeline
           notes={detail.notes}
+          rejectedRequests={detail.rejectedRequests ?? []}
           sends={sends}
           roundId={round.roundId}
           userId={person.userId}
