@@ -10,7 +10,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { useAuth } from "@/context/auth/AuthContext";
@@ -31,6 +30,8 @@ import {
   decideReview,
 } from "@/api/recruitingApi";
 import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
+import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
+import AwaitingDecisionCard from "@/components/approval/AwaitingDecisionCard";
 import EmptyState from "@/pages/Recruiting/components/EmptyState";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
@@ -90,6 +91,28 @@ const REVIEW_ACTION = {
 /** An approver as the reviewer pickers show them: name and email. */
 const approverLabel = (a) => `${a.name} (${a.email})`;
 
+// What waits on the reviewer, by review kind, and what approving it does.
+const REVIEW_KIND = {
+  initial: {
+    label: "Posting review",
+    approves:
+      "The posting is published and starts taking applications at once.",
+  },
+  revision: {
+    label: "Revision",
+    approves: "The staged changes go live to applicants at once.",
+  },
+  close: {
+    label: "Close request",
+    approves: "The posting closes and takes no more applications.",
+  },
+  reopen: {
+    label: "Reopen request",
+    approves:
+      "The posting opens again and takes applications, with any staged changes live.",
+  },
+};
+
 const PostingDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -117,7 +140,8 @@ const PostingDetailPage = () => {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
-  const [rejectComment, setRejectComment] = useState("");
+  // "approve" | "reject" while the reviewer confirms, else null.
+  const [decision, setDecision] = useState(null);
   const [deciding, setDeciding] = useState(false);
 
   const load = useCallback(() => {
@@ -374,12 +398,21 @@ const PostingDetailPage = () => {
     }
   };
 
-  const handleApprove = async () => {
+  /** Send the confirmed decision; the dialog stays open if it fails. */
+  const handleDecide = async (comment) => {
     if (deciding || !myOpenReview) return;
     setDeciding(true);
     try {
-      await decideReview(myOpenReview.reviewId, { decision: "approve" });
-      toast.success("Review approved.");
+      await decideReview(
+        myOpenReview.reviewId,
+        decision === "reject"
+          ? { decision: "reject", comment }
+          : { decision: "approve" },
+      );
+      toast.success(
+        decision === "reject" ? "Review rejected." : "Review approved.",
+      );
+      setDecision(null);
       load();
     } catch (e) {
       toast.error(e.message);
@@ -387,27 +420,53 @@ const PostingDetailPage = () => {
       setDeciding(false);
     }
   };
-
-  const handleReject = async () => {
-    if (deciding || !rejectComment.trim() || !myOpenReview) return;
-    setDeciding(true);
-    try {
-      await decideReview(myOpenReview.reviewId, {
-        decision: "reject",
-        comment: rejectComment.trim(),
-      });
-      toast.success("Review rejected.");
-      setRejectComment("");
-      load();
-    } catch (e) {
-      toast.error(e.message);
-    } finally {
-      setDeciding(false);
-    }
-  };
+  const reviewKind = REVIEW_KIND[myOpenReview?.kind] ?? REVIEW_KIND.initial;
 
   return (
     <div className="space-y-6 p-6">
+      {isAssignedReviewer && (
+        <AwaitingDecisionCard
+          title={`${reviewKind.label} awaiting your decision`}
+          meta={[
+            `Submitted by ${job.submittedByName ?? `User ${job.submittedBy}`}${
+              myOpenReview.createdAt
+                ? ` on ${formatDateTimeWithZone(
+                    myOpenReview.createdAt,
+                    resolveViewerTimezone(),
+                  )}`
+                : ""
+            }`,
+          ]}
+          reason={job.submitMessage}
+          emptyReason="No note given."
+        >
+          <Button disabled={deciding} onClick={() => setDecision("approve")}>
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            disabled={deciding}
+            onClick={() => setDecision("reject")}
+          >
+            Reject
+          </Button>
+          <ApprovalDecisionDialog
+            open={decision !== null}
+            onOpenChange={(open) => !open && !deciding && setDecision(null)}
+            decision={decision ?? "approve"}
+            title={`${decision === "reject" ? "Reject" : "Approve"}: ${
+              reviewKind.label
+            } — ${job.title}`}
+            description={
+              decision === "reject"
+                ? "Your reason is shown to the person who submitted it."
+                : reviewKind.approves
+            }
+            onConfirm={handleDecide}
+            submitting={deciding}
+          />
+        </AwaitingDecisionCard>
+      )}
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
@@ -475,8 +534,9 @@ const PostingDetailPage = () => {
       )}
 
       {/* Only ever set while a review cycle is open, so this disappears on its
-          own once the reviewer decides -- no status check needed here. */}
-      {job.submitMessage && (
+          own once the reviewer decides -- no status check needed here. The
+          reviewer reads it on their card instead. */}
+      {job.submitMessage && !isAssignedReviewer && (
         <div className="space-y-1 rounded border border-slate-200 bg-slate-50 p-3">
           <p className="text-sm font-medium text-slate-700">
             Note to the reviewer
@@ -608,32 +668,6 @@ const PostingDetailPage = () => {
           waitingOn={reviewerName}
           detail="Editing is locked until they approve or reject."
         />
-      )}
-
-      {isAssignedReviewer && (
-        <div className="space-y-2 rounded border p-3">
-          <span className="text-sm font-medium text-slate-700">
-            Review decision:
-          </span>
-          <div className="flex gap-2">
-            <Button size="sm" disabled={deciding} onClick={handleApprove}>
-              Approve
-            </Button>
-          </div>
-          <Textarea
-            placeholder="Rejection comment (required to reject)"
-            value={rejectComment}
-            onChange={(e) => setRejectComment(e.target.value)}
-          />
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={!rejectComment.trim() || deciding}
-            onClick={handleReject}
-          >
-            Reject
-          </Button>
-        </div>
       )}
 
       <Tabs defaultValue="overview">
