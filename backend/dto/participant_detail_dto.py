@@ -51,6 +51,22 @@ class PendingRequestDto(BaseDto):
     created_at: datetime | None = None
 
 
+class RejectedRequestDto(BaseDto):
+    """A request about this person in this round that was rejected, for their
+    timeline. Only the named reviewer may decide, so ``reviewer`` is who
+    rejected it and ``decision_comment`` is their reason."""
+
+    request_id: int
+    action: str
+    raised_by: ApprovalPersonDto
+    reviewer: ApprovalPersonDto
+    pair_id: int | None = None
+    pair: ApprovalPairDto | None = None
+    reason: str | None = None
+    decision_comment: str | None = None
+    decided_at: datetime | None = None
+
+
 class ParticipationHistoryRowDto(ParticipantRowDto):
     exempted: bool
 
@@ -66,6 +82,8 @@ class ParticipantDetailDto(BaseDto):
     notes: list[ParticipantNoteDto]
     pending_block_request: PendingBlockRequestDto | None = None
     pending_requests: list[PendingRequestDto]
+    # Rejected ones leave no note, so the timeline reads them from here.
+    rejected_requests: list[RejectedRequestDto] = []
     # Rounds they registered for that ended before this one, newest first.
     history: list[ParticipationHistoryRowDto]
 
