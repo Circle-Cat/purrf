@@ -84,11 +84,13 @@ import {
 import {
   createBlockRequest,
   getBlockPreflight,
+  getLatestClosedBlockRequest,
   getUserAdmins,
   getRaisedBlockRequests,
   reassignBlockRequest,
   withdrawBlockRequest,
 } from "@/api/adminAccountsApi";
+import RejectedBlockRequest from "@/pages/AdminAccounts/components/RejectedBlockRequest";
 import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
 import { termHint } from "@/pages/Recruiting/components/glossary";
@@ -1081,6 +1083,9 @@ const ApplicationDetailPage = () => {
   const [raisedBlockRequestSettled, setRaisedBlockRequestSettled] =
     useState(false);
   const [withdrawnBlockRequestId, setWithdrawnBlockRequestId] = useState(null);
+  // The caller's own latest closed request about the applicant, so the page
+  // can say it was rejected instead of silently offering the button again.
+  const [closedBlockRequest, setClosedBlockRequest] = useState(null);
   const [blockReassignOpen, setBlockReassignOpen] = useState(false);
   const [blockReassigning, setBlockReassigning] = useState(false);
   const [blockWithdrawing, setBlockWithdrawing] = useState(false);
@@ -1213,6 +1218,15 @@ const ApplicationDetailPage = () => {
       // duplicate refusal that was the whole behaviour before it existed.
       .catch(() => {
         if (current) setRaisedBlockRequestSettled(true);
+      });
+    // Swallowed the same way: without it the page only says less.
+    Promise.resolve()
+      .then(() => getLatestClosedBlockRequest(applicantId))
+      .then((res) => {
+        if (current) setClosedBlockRequest(res?.data ?? null);
+      })
+      .catch(() => {
+        if (current) setClosedBlockRequest(null);
       });
     return () => {
       current = false;
@@ -1620,6 +1634,9 @@ const ApplicationDetailPage = () => {
       .then(() => {
         setWithdrawnBlockRequestId(raisedBlockRequest.id);
         setRaisedBlockRequest(null);
+        // The one just withdrawn is now the latest closed; an older rejection
+        // is no longer the news.
+        setClosedBlockRequest(null);
         toast.success("Block request withdrawn.");
       })
       .catch((e) => toast.error(e.message))
@@ -1749,6 +1766,9 @@ const ApplicationDetailPage = () => {
     detail.pendingBlockRequest.requestId !== withdrawnBlockRequestId
       ? detail.pendingBlockRequest
       : null;
+  // How the caller's last request ended, while nothing newer is open.
+  const showClosedBlockRequest =
+    !raisedBlockRequest && !othersBlockRequest && !detail.applicantIsBlocked;
   // Why the block button is closed, in the order the backend refuses: no
   // standing to ask, then nothing left to ask for, then a question already
   // asked. Undefined when it is live, which is what leaves the title off.
@@ -1901,6 +1921,12 @@ const ApplicationDetailPage = () => {
                         `ID ${othersBlockRequest.reviewer?.userId}`
                       }`}
                     </span>
+                  )}
+                  {showClosedBlockRequest && (
+                    <RejectedBlockRequest
+                      request={closedBlockRequest}
+                      tz={resolveViewerTimezone(detail.viewerTimezone)}
+                    />
                   )}
                   {raisedBlockRequest && (
                     <span className="text-sm text-slate-600">

@@ -14,6 +14,8 @@ import {
   decideBlockRequest,
   withdrawBlockRequest,
   getUserAdmins,
+  getAccountBlockRequests,
+  getLatestClosedBlockRequest,
 } from "@/api/adminAccountsApi";
 
 vi.mock("@/utils/request", () => ({
@@ -63,6 +65,26 @@ describe("adminAccountsApi", () => {
 
     expect(request.get).toHaveBeenCalledWith(
       "/admin/accounts/7/sign-in-methods",
+    );
+  });
+
+  it("reads every closed block request about one account", async () => {
+    request.get.mockResolvedValue({ data: [] });
+
+    await getAccountBlockRequests(7);
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/admin/accounts/7/block-requests",
+    );
+  });
+
+  it("reads the caller's own latest closed block request about a person", async () => {
+    request.get.mockResolvedValue({ data: null });
+
+    await getLatestClosedBlockRequest(7);
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/block-requests/raised/7/decided",
     );
   });
 
