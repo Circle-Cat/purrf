@@ -72,7 +72,7 @@ describe("useComposeEmail", () => {
     const { hook, submit, reload, onConversation } = setup();
     const newer = replyOf({ messageId: 412, bodyText: "One more thing" });
     const fresh = conversationOf({
-      threads: [threadOf({ messages: [messageOf(), replyOf(), newer] })],
+      threads: [threadOf({ messages: [newer, replyOf(), messageOf()] })],
     });
     submit.mockRejectedValueOnce(threadChangedError());
     reload.mockResolvedValue(fresh);
@@ -104,6 +104,23 @@ describe("useComposeEmail", () => {
       ...REPLY,
       lastSeenMessageId: 412,
     });
+    expect(hook.result.current.dialogProps.staleMessages).toEqual([]);
+  });
+
+  it("says so when THREAD_CHANGED comes back with nothing new to list", async () => {
+    const { hook, submit, reload } = setup();
+    submit.mockRejectedValueOnce(threadChangedError());
+    reload.mockResolvedValue(conversationOf());
+    act(() => hook.result.current.openReply(threadOf()));
+
+    await act(async () => {
+      await hook.result.current.dialogProps.onSend(REPLY).catch(() => {});
+    });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "This thread changed while you were writing. Send again to reply to the latest message.",
+    );
+    expect(hook.result.current.dialogProps.open).toBe(true);
     expect(hook.result.current.dialogProps.staleMessages).toEqual([]);
   });
 
@@ -155,7 +172,7 @@ describe("useComposeEmail", () => {
       conversationOf({
         threads: [
           threadOf({
-            messages: [messageOf(), replyOf(), replyOf({ messageId: 412 })],
+            messages: [replyOf({ messageId: 412 }), replyOf(), messageOf()],
           }),
         ],
       }),
@@ -177,7 +194,7 @@ describe("useComposeEmail", () => {
       conversationOf({
         threads: [
           threadOf({
-            messages: [messageOf(), replyOf(), replyOf({ messageId: 412 })],
+            messages: [replyOf({ messageId: 412 }), replyOf(), messageOf()],
           }),
         ],
       }),
