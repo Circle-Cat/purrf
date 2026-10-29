@@ -205,6 +205,43 @@ class ApprovalRequestRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_status_for_targets(
+        self,
+        session: AsyncSession,
+        action: str,
+        target_type: str,
+        target_ids: Collection[str],
+        statuses: Collection[ApprovalRequestStatus],
+    ) -> list[ApprovalRequestEntity]:
+        """Every request on these targets that ended in one of these statuses.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            action (str): The action.
+            target_type (str): The kind of target.
+            target_ids (Collection[str]): The targets.
+            statuses (Collection[ApprovalRequestStatus]): The statuses to list.
+
+        Returns:
+            list[ApprovalRequestEntity]: Newest decision first.
+        """
+        if not target_ids or not statuses:
+            return []
+        result = await session.execute(
+            select(ApprovalRequestEntity)
+            .where(
+                ApprovalRequestEntity.action == action,
+                ApprovalRequestEntity.target_type == target_type,
+                ApprovalRequestEntity.target_id.in_(list(target_ids)),
+                ApprovalRequestEntity.status.in_(list(statuses)),
+            )
+            .order_by(
+                ApprovalRequestEntity.decided_at.desc().nulls_last(),
+                ApprovalRequestEntity.request_id.desc(),
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_latest_closed_for_target(
         self, session: AsyncSession, action: str, target_type: str, target_id: str
     ) -> ApprovalRequestEntity | None:

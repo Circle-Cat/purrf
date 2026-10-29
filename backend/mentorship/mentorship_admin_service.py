@@ -13,6 +13,7 @@ from backend.dto.participant_detail_dto import (
     ParticipantNoteDto,
     ParticipationHistoryRowDto,
     PendingRequestDto,
+    RejectedRequestDto,
 )
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
@@ -682,6 +683,9 @@ class MentorshipAdminService:
         primary_email, alternative_emails = self._extract_emails(
             emails_map.get(user_id, [])
         )
+        pair_ids = (
+            [p.pair_id for p in registration.pairs] if registration is not None else []
+        )
         return ParticipantDetailDto(
             person=PersonRowDto(
                 user_id=user_id,
@@ -713,12 +717,13 @@ class MentorshipAdminService:
             pending_requests=[
                 PendingRequestDto.model_validate(r)
                 for r in await self.mentorship_approval_service.pending_for_participant(
-                    session,
-                    round_id,
-                    user_id,
-                    pair_ids=[p.pair_id for p in registration.pairs]
-                    if registration is not None
-                    else [],
+                    session, round_id, user_id, pair_ids=pair_ids
+                )
+            ],
+            rejected_requests=[
+                RejectedRequestDto.model_validate(r)
+                for r in await self.mentorship_approval_service.rejected_for_participant(
+                    session, round_id, user_id, pair_ids=pair_ids
                 )
             ],
             history=await self._history(session, round_entity, rows, exempted_rounds),

@@ -638,6 +638,75 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 self.assertEqual(only.pair.mentor.user_id, self.mentor.user_id)
                 self.assertEqual(only.pair.mentee.user_id, self.mentee.user_id)
 
+    async def test_rejected_requests_show_with_the_reason_newest_first(self):
+        """A rejection writes no note, so the page reads it from the request:
+        the person's own and the end-pair one on their pair, never a withdrawn
+        or still pending one."""
+        target = exemption_target(self.round.round_id, self.mentee.user_id)
+        about_them = {"round_id": self.round.round_id, "user_id": self.mentee.user_id}
+
+        def request(action, status, **kw):
+            return ApprovalRequestEntity(
+                action=action,
+                target_type="round_participant",
+                target_id=target,
+                payload=about_them,
+                reason=None,
+                raised_by=self.writer.user_id,
+                reviewer_id=self.approver.user_id,
+                status=status,
+                **kw,
+            )
+
+        withdrawal = request(
+            "withdraw_participant",
+            ApprovalRequestStatus.REJECTED,
+            decided_by=self.approver.user_id,
+            decided_at=self.now - timedelta(days=2),
+            decision_comment="Still replying",
+        )
+        ending = ApprovalRequestEntity(
+            action="end_pair",
+            target_type="mentorship_pair",
+            target_id=str(self.current_pair.pair_id),
+            payload={
+                "round_id": self.round.round_id,
+                "pair_id": self.current_pair.pair_id,
+                "mentor_id": self.mentor.user_id,
+                "mentee_id": self.mentee.user_id,
+            },
+            reason="They stopped meeting",
+            raised_by=self.writer.user_id,
+            reviewer_id=self.approver.user_id,
+            status=ApprovalRequestStatus.REJECTED,
+            decided_by=self.approver.user_id,
+            decided_at=self.now - timedelta(days=1),
+            decision_comment="They made up",
+        )
+        withdrawn = request(
+            "withdraw_participant",
+            ApprovalRequestStatus.WITHDRAWN,
+            decided_by=self.writer.user_id,
+            decided_at=self.now,
+        )
+        pending = request("mark_red_flag", ApprovalRequestStatus.PENDING)
+        await self.insert_entities([withdrawal, ending, withdrawn, pending])
+
+        detail = await self._detail()
+
+        self.assertEqual(
+            [r.request_id for r in detail.rejected_requests],
+            [ending.request_id, withdrawal.request_id],
+        )
+        latest, earlier = detail.rejected_requests
+        self.assertEqual(latest.action, "end_pair")
+        self.assertEqual(latest.decision_comment, "They made up")
+        self.assertEqual(latest.reason, "They stopped meeting")
+        self.assertEqual(latest.pair.mentor.user_id, self.mentor.user_id)
+        self.assertEqual(latest.reviewer.user_id, self.approver.user_id)
+        self.assertEqual(earlier.decision_comment, "Still replying")
+        self.assertIsNotNone(earlier.decided_at)
+
     async def test_unknown_round_or_user_is_not_found(self):
         with self.assertRaises(NotFoundError):
             await self.service.get_participant_detail(

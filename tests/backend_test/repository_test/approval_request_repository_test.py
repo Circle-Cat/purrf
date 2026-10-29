@@ -210,6 +210,65 @@ class TestApprovalRequestRepository(BaseRepositoryTestLib):
             [],
         )
 
+    async def test_by_status_for_targets_lists_every_match_newest_decision_first(
+        self,
+    ):
+        async def closed(target_id, status):
+            row = await self._create(target_id=target_id)
+            await self.repo.close(
+                self.session,
+                row.request_id,
+                status=status,
+                decided_by=self.reviewer.user_id,
+                decision_comment="no"
+                if status == ApprovalRequestStatus.REJECTED
+                else None,
+            )
+            return row
+
+        first = await closed("run-a", ApprovalRequestStatus.REJECTED)
+        await closed("run-a", ApprovalRequestStatus.WITHDRAWN)
+        second = await closed("run-a", ApprovalRequestStatus.REJECTED)
+        other = await closed("run-b", ApprovalRequestStatus.REJECTED)
+        await closed("run-x", ApprovalRequestStatus.REJECTED)
+        await self._create(target_id="run-c")
+
+        rows = await self.repo.list_by_status_for_targets(
+            self.session,
+            PUBLISH,
+            "matching_run",
+            ["run-a", "run-b", "run-c"],
+            [ApprovalRequestStatus.REJECTED],
+        )
+
+        self.assertEqual(
+            [r.request_id for r in rows],
+            [other.request_id, second.request_id, first.request_id],
+        )
+        self.assertEqual(
+            await self.repo.list_by_status_for_targets(
+                self.session,
+                PUBLISH,
+                "matching_run",
+                [],
+                [ApprovalRequestStatus.REJECTED],
+            ),
+            [],
+        )
+        self.assertEqual(
+            {
+                r.status
+                for r in await self.repo.list_by_status_for_targets(
+                    self.session,
+                    PUBLISH,
+                    "matching_run",
+                    ["run-a"],
+                    [ApprovalRequestStatus.REJECTED, ApprovalRequestStatus.WITHDRAWN],
+                )
+            },
+            {ApprovalRequestStatus.REJECTED, ApprovalRequestStatus.WITHDRAWN},
+        )
+
     async def test_latest_closed_for_target_is_the_newest_decision(self):
         older = await self._create()
         await self.repo.close(
