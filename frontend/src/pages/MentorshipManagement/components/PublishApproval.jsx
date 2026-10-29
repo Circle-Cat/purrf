@@ -8,8 +8,14 @@ import {
 } from "@/api/mentorshipApi";
 import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
+import AwaitingDecisionCard from "@/components/approval/AwaitingDecisionCard";
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
-import { approvalPersonLabel } from "@/pages/MentorshipManagement/utils/approvalLabels";
+import {
+  APPROVAL_ACTION,
+  approvalActionLabel,
+  approvalPersonLabel,
+} from "@/pages/MentorshipManagement/utils/approvalLabels";
+import { formatPacific } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
 
 const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
@@ -20,9 +26,10 @@ const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
  * With nothing waiting, an admin with write access asks a named reviewer to
  * publish; the button is off while anyone is editing or the saved result has
  * problems, and the last rejection's reason is shown under it. While a request
- * waits, everyone sees who it was sent to and by whom; its raiser can hand it
+ * waits, everyone else sees who it was sent to and by whom; its raiser can hand it
  * to another reviewer or withdraw it, and the reviewer it names approves or
- * rejects it here. Approving publishes at once, so it is confirmed first.
+ * rejects it here, on the card every approval waiting on its viewer uses.
+ * Approving publishes at once, so it is confirmed first.
  *
  * Every action reloads the run afterwards: an approval clears the round's
  * run, and the page then says there is none.
@@ -63,6 +70,69 @@ const PublishApproval = ({
   if (pending) {
     const isRaiser = sameUser(pending.raisedBy?.userId, userId);
     const isReviewer = canApprove && sameUser(pending.reviewer?.userId, userId);
+    const decisionDialog = (
+      <ApprovalDecisionDialog
+        open={dialog === "approve" || dialog === "reject"}
+        onOpenChange={(open) => {
+          if (!open) setDialog(null);
+        }}
+        decision={dialog === "reject" ? "reject" : "approve"}
+        title={
+          dialog === "reject" ? "Reject publishing" : "Approve and publish"
+        }
+        description={
+          dialog === "reject"
+            ? "The result is unlocked so it can be changed and sent again. Your reason is shown to the person who asked."
+            : `This creates ${overview.matchedCount ?? 0} pairs and sets everyone's status in this round. It cannot be undone.`
+        }
+        submitting={busy}
+        onConfirm={(comment) =>
+          act(
+            () =>
+              decideMentorshipApproval(pending.requestId, {
+                decision: dialog === "reject" ? "reject" : "approve",
+                comment: dialog === "reject" ? comment : undefined,
+              }),
+            dialog === "reject"
+              ? "Publishing rejected."
+              : "Published. The pairs are in place.",
+            dialog === "reject"
+              ? "Could not reject the request."
+              : "Could not publish.",
+          )
+        }
+      />
+    );
+
+    // The reviewer it names gets the card every approval waiting on its
+    // viewer uses; everyone else, the raiser included, is told who it waits on.
+    if (isReviewer) {
+      return (
+        <AwaitingDecisionCard
+          title={`${approvalActionLabel(
+            APPROVAL_ACTION.PUBLISH_MATCHING,
+          )} awaiting your decision`}
+          meta={[
+            `Raised by ${approvalPersonLabel(pending.raisedBy)}${
+              pending.createdAt ? ` on ${formatPacific(pending.createdAt)}` : ""
+            }`,
+          ]}
+          reason={pending.reason}
+        >
+          <Button onClick={() => setDialog("approve")} disabled={busy}>
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDialog("reject")}
+            disabled={busy}
+          >
+            Reject
+          </Button>
+          {decisionDialog}
+        </AwaitingDecisionCard>
+      );
+    }
     return (
       <section
         aria-label="Publish approval"
@@ -76,25 +146,6 @@ const PublishApproval = ({
           <p className="text-muted-foreground">Reason: {pending.reason}</p>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          {isReviewer ? (
-            <>
-              <Button
-                size="sm"
-                onClick={() => setDialog("approve")}
-                disabled={busy}
-              >
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setDialog("reject")}
-                disabled={busy}
-              >
-                Reject
-              </Button>
-            </>
-          ) : null}
           {isRaiser ? (
             <>
               <Button
@@ -138,37 +189,6 @@ const PublishApproval = ({
               () => reassignMentorshipApproval(pending.requestId, reviewerId),
               "Request reassigned.",
               "Could not reassign the request.",
-            )
-          }
-        />
-        <ApprovalDecisionDialog
-          open={dialog === "approve" || dialog === "reject"}
-          onOpenChange={(open) => {
-            if (!open) setDialog(null);
-          }}
-          decision={dialog === "reject" ? "reject" : "approve"}
-          title={
-            dialog === "reject" ? "Reject publishing" : "Approve and publish"
-          }
-          description={
-            dialog === "reject"
-              ? "The result is unlocked so it can be changed and sent again. Your reason is shown to the person who asked."
-              : `This creates ${overview.matchedCount ?? 0} pairs and sets everyone's status in this round. It cannot be undone.`
-          }
-          submitting={busy}
-          onConfirm={(comment) =>
-            act(
-              () =>
-                decideMentorshipApproval(pending.requestId, {
-                  decision: dialog === "reject" ? "reject" : "approve",
-                  comment: dialog === "reject" ? comment : undefined,
-                }),
-              dialog === "reject"
-                ? "Publishing rejected."
-                : "Published. The pairs are in place.",
-              dialog === "reject"
-                ? "Could not reject the request."
-                : "Could not publish.",
             )
           }
         />
