@@ -17,6 +17,10 @@ import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import BlockRequestCard from "@/pages/AdminAccounts/components/BlockRequestCard";
 import DeactivateDialog from "@/pages/AdminAccounts/components/DeactivateDialog";
 import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
+import {
+  blockRequestOutcome,
+  humanizeSource,
+} from "@/pages/AdminAccounts/utils/blockRequests";
 import { useAuth } from "@/context/auth/AuthContext";
 
 const SECTION_TITLE =
@@ -63,6 +67,8 @@ const AccountDetailPage = ({ userId }) => {
     signInMethodsFailed,
     pendingRequest,
     pendingRequestFailed,
+    closedRequests,
+    closedRequestsFailed,
     preflight,
     preflightError,
     loadPreflight,
@@ -210,6 +216,47 @@ const AccountDetailPage = ({ userId }) => {
             <Field label="Blocked by" value={account.blockedByName ?? "—"} />
             <Field label="Reason" value={account.blockedReason ?? "—"} />
           </>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className={SECTION_TITLE}>Block requests</h2>
+        {closedRequestsFailed ? (
+          <p className="text-sm text-slate-500">
+            Couldn&apos;t read this account&apos;s block requests.
+          </p>
+        ) : closedRequests.length === 0 ? (
+          <p className="text-sm text-slate-500">None closed yet.</p>
+        ) : (
+          // The users row keeps only the block in force, so a request that was
+          // rejected, withdrawn or overtaken has no other record.
+          <ul className="flex flex-col gap-3">
+            {closedRequests.map((r) => {
+              const source = humanizeSource(r.raisedFrom);
+              return (
+                <li key={r.id} className="text-sm text-slate-900">
+                  <p>
+                    <span className="font-medium">
+                      {blockRequestOutcome(r.status)}
+                    </span>
+                    {r.decidedByName ? ` · ${r.decidedByName}` : ""}
+                    {r.decidedAt
+                      ? ` · ${formatDateTimeWithZone(r.decidedAt, tz)}`
+                      : ""}
+                  </p>
+                  {r.decisionNote && (
+                    <p className="text-slate-700">Note: {r.decisionNote}</p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Raised by {r.raisedByName}
+                    {source ? ` from ${source}` : ""} on{" "}
+                    {formatDateTimeWithZone(r.raisedAt, tz)}
+                    {r.reason ? ` — "${r.reason}"` : ""}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 

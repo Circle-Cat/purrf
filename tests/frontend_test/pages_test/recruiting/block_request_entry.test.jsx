@@ -132,6 +132,7 @@ beforeEach(() => {
     data: requestDto(88, "Sam Steward"),
   });
   adminApi.getRaisedBlockRequests.mockResolvedValue({ data: [] });
+  adminApi.getLatestClosedBlockRequest.mockResolvedValue({ data: null });
   adminApi.withdrawBlockRequest.mockResolvedValue({ data: null });
 });
 
@@ -168,6 +169,62 @@ const raiseRequest = async (user, reviewerValue = "77") => {
   await user.type(screen.getByLabelText(/^Reason/), "repeated no-shows");
   await user.click(screen.getByRole("button", { name: "Send request" }));
 };
+
+describe("Request block — how the caller's last request ended", () => {
+  const closedDto = (status) => ({
+    id: 40,
+    targetUserId: APPLICANT_ID,
+    reviewerId: 77,
+    reviewerName: "Rita Reviewer",
+    status,
+    decidedByName: "Rita Reviewer",
+    decidedAt: "2026-10-20T17:00:00Z",
+    decisionNote: "Not enough evidence",
+  });
+
+  it("says the caller's last request was rejected, by whom and why", async () => {
+    adminApi.getLatestClosedBlockRequest.mockResolvedValue({
+      data: closedDto("rejected"),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Rita Reviewer: Not enough evidence"),
+    ).toBeInTheDocument();
+    expect(adminApi.getLatestClosedBlockRequest).toHaveBeenCalledWith(
+      APPLICANT_ID,
+    );
+  });
+
+  it("drops it while a newer request of theirs waits", async () => {
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    adminApi.getLatestClosedBlockRequest.mockResolvedValue({
+      data: closedDto("rejected"),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await requestRow();
+    expect(screen.queryByText("Request rejected")).toBeNull();
+  });
+
+  it("says nothing of a request the caller withdrew", async () => {
+    adminApi.getLatestClosedBlockRequest.mockResolvedValue({
+      data: closedDto("withdrawn"),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await waitFor(() =>
+      expect(adminApi.getLatestClosedBlockRequest).toHaveBeenCalled(),
+    );
+    expect(screen.queryByText("Request rejected")).toBeNull();
+  });
+});
 
 describe("Request block — permission gate", () => {
   it("disables the button, rather than hiding it, without the advance grant", async () => {

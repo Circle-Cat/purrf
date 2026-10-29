@@ -6,6 +6,7 @@ import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPur
 import {
   createBlockRequest,
   getBlockPreflight,
+  getLatestClosedBlockRequest,
   getRaisedBlockRequests,
   getUserAdmins,
   reassignBlockRequest,
@@ -17,6 +18,7 @@ import { detailOf } from "../participantDetail.helper";
 vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
   getBlockPreflight: vi.fn(),
+  getLatestClosedBlockRequest: vi.fn(),
   getUserAdmins: vi.fn(),
   getRaisedBlockRequests: vi.fn(),
   reassignBlockRequest: vi.fn(),
@@ -39,6 +41,7 @@ describe("BlockFromPurrf", () => {
       data: [{ userId: 77, name: "Uma Admin" }],
     });
     getRaisedBlockRequests.mockResolvedValue({ data: [] });
+    getLatestClosedBlockRequest.mockResolvedValue({ data: null });
   });
 
   const PENDING = {
@@ -248,6 +251,36 @@ describe("BlockFromPurrf", () => {
     expect(
       screen.queryByRole("button", { name: "Block from Purrf" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("says the caller's last request was rejected, beside the button", async () => {
+    getLatestClosedBlockRequest.mockResolvedValue({
+      data: {
+        id: 4,
+        targetUserId: 3104,
+        status: "rejected",
+        decidedByName: "Uma Admin",
+        decidedAt: "2026-10-20T17:00:00Z",
+        decisionNote: "Talk to her first",
+      },
+    });
+    render(
+      <BlockFromPurrf
+        person={PERSON}
+        canWrite
+        pendingBlockRequest={null}
+        onRequested={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Uma Admin: Talk to her first"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Block from Purrf" }),
+    ).toBeInTheDocument();
+    expect(getLatestClosedBlockRequest).toHaveBeenCalledWith(3104);
   });
 
   it("offers nothing to someone already blocked", () => {

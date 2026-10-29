@@ -59,6 +59,7 @@ vi.mock("@/api/mentorshipApi", () => ({
 vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
   getBlockPreflight: vi.fn(),
+  getLatestClosedBlockRequest: vi.fn(),
   getUserAdmins: vi.fn(),
   getRaisedBlockRequests: vi.fn(),
   reassignBlockRequest: vi.fn(),
