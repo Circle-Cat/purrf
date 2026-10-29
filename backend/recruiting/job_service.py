@@ -530,6 +530,7 @@ class JobService:
             job,
             reviewer_id=reviewer_id,
             submitted_by=submitted_by,
+            submitted_by_name=await self._name_of(session, submitted_by),
             submit_message=(message or "").strip() or None,
             submit_blockers=submit_blockers(job),
         )
@@ -801,6 +802,7 @@ class JobService:
             job,
             reviewer_id=moved.reviewer_id,
             submitted_by=moved.raised_by,
+            submitted_by_name=await self._name_of(session, moved.raised_by),
             submit_message=moved.reason,
             submit_blockers=submit_blockers(job),
         )
@@ -1018,9 +1020,27 @@ class JobService:
             last_reject_kind=kind,
             reviewer_id=open_review.reviewer_id if open_review else None,
             submitted_by=open_review.raised_by if open_review else None,
+            submitted_by_name=(
+                await self._name_of(session, open_review.raised_by)
+                if open_review
+                else None
+            ),
             submit_message=open_review.reason if open_review else None,
             submit_blockers=submit_blockers(job),
         )
+
+    async def _name_of(self, session: AsyncSession, user_id: int) -> str:
+        """A person's display name, or ``User <id>`` when their row is gone.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The person.
+
+        Returns:
+            str: The name to show.
+        """
+        users = await self.users_repository.get_all_by_ids(session, [user_id])
+        return display_name_or_id(users[0]) if users else f"User {user_id}"
 
     async def get_job_activity(
         self, session: AsyncSession, job_id: int
