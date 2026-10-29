@@ -126,6 +126,8 @@ class JobDto(BaseDto):
     # the viewer may reassign it; the review's own id stays scoped to
     # the assigned reviewer, who is who reassignment routes around.
     submitted_by: int | None = None
+    # Their display name, for the reviewer's card.
+    submitted_by_name: str | None = None
     submit_message: str | None = None
     submit_blockers: list[str] = []
 

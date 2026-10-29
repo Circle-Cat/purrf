@@ -541,6 +541,130 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  describe("the reviewer's card", () => {
+    // Submitted by Dana Wu (5), waiting on the viewer (9).
+    const pendingRevision = (overrides = {}) => ({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submittedBy: 5,
+        submittedByName: "Dana Wu",
+        submitMessage: "Updated the salary range",
+        ...overrides,
+      },
+    });
+    const CARD = "Revision awaiting your decision";
+
+    beforeEach(() => {
+      api.getJob.mockResolvedValue(pendingRevision());
+      api.listMyReviews.mockResolvedValue({
+        data: [
+          {
+            reviewId: 3,
+            jobId: 1,
+            kind: "revision",
+            createdAt: "2026-10-29T07:20:00Z",
+          },
+        ],
+      });
+      api.decideReview.mockResolvedValue({ data: {} });
+      authState.userId = 9;
+      authState.permissions = ["recruiting.job.approve"];
+    });
+
+    it("shows who submitted it, when and their note, with nothing else to fill in", async () => {
+      renderAt(1);
+
+      const card = await screen.findByRole("region", { name: CARD });
+      expect(
+        within(card).getByText(
+          "Submitted by Dana Wu on 2026-10-29 15:20 Asia/Shanghai",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(card).getByText("Updated the salary range"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Note to the reviewer"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText("Rejection comment (required to reject)"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says when the submitter left no note", async () => {
+      api.getJob.mockResolvedValue(pendingRevision({ submitMessage: null }));
+      renderAt(1);
+
+      const card = await screen.findByRole("region", { name: CARD });
+      expect(within(card).getByText("No note given.")).toBeInTheDocument();
+    });
+
+    it("approves after a confirmation that says what approving does", async () => {
+      const user = userEvent.setup();
+      renderAt(1);
+      const card = await screen.findByRole("region", { name: CARD });
+
+      await user.click(within(card).getByRole("button", { name: "Approve" }));
+      const dialog = screen.getByRole("dialog");
+      expect(
+        within(dialog).getByText(/The staged changes go live to applicants/),
+      ).toBeInTheDocument();
+      expect(api.decideReview).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+      await waitFor(() =>
+        expect(api.decideReview).toHaveBeenCalledWith(3, {
+          decision: "approve",
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith("Review approved.");
+    });
+
+    it("rejects with the reason given in the confirmation", async () => {
+      const user = userEvent.setup();
+      renderAt(1);
+      const card = await screen.findByRole("region", { name: CARD });
+
+      await user.click(within(card).getByRole("button", { name: "Reject" }));
+      const dialog = screen.getByRole("dialog");
+      await user.type(
+        within(dialog).getByRole("textbox"),
+        "  Keep the old range  ",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Reject" }));
+
+      await waitFor(() =>
+        expect(api.decideReview).toHaveBeenCalledWith(3, {
+          decision: "reject",
+          comment: "Keep the old range",
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith("Review rejected.");
+    });
+
+    it("leaves the note box for everyone else", async () => {
+      authState.userId = 5;
+      authState.permissions = ["recruiting.job.write"];
+      api.listMyReviews.mockResolvedValue({ data: [] });
+      renderAt(1);
+
+      expect(
+        await screen.findByText("Note to the reviewer"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: CARD }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("shows Approve/Reject only for the assigned reviewer", async () => {
     api.getJob.mockResolvedValue({
       data: {

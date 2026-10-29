@@ -273,6 +273,12 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         u.user_id = uid
         return u
 
+    def _submitter(self):
+        """User 1, who submits the reviews these tests open."""
+        u = UsersEntity(first_name="Dana", last_name="Wu")
+        u.user_id = 1
+        return u
+
     def _two_approvers(self):
         """Make reviewer id 2 a valid approver alongside id 3."""
         self.perms.get_active_users_with_permission.return_value = [
@@ -357,6 +363,37 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_job(self.session, job.job_id)
 
         self.assertEqual(result.submitted_by, 1)
+
+    async def test_get_job_names_the_submitter_of_the_open_review(self):
+        """The reviewer's card says who is asking, so the name comes with
+        the id rather than being looked up on the page."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(raised_by=1, reviewer_id=4)
+        self.users_repo.get_all_by_ids.return_value = [self._submitter()]
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submitted_by_name, "Dana Wu")
+        self.users_repo.get_all_by_ids.assert_awaited_once_with(self.session, [1])
+
+    async def test_get_job_names_a_submitter_whose_row_is_gone_by_id(self):
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(raised_by=1, reviewer_id=4)
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submitted_by_name, "User 1")
+
+    async def test_get_job_names_no_submitter_without_open_review(self):
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertIsNone(result.submitted_by_name)
+        self.users_repo.get_all_by_ids.assert_not_awaited()
 
     async def test_get_job_submitted_by_none_without_open_review(self):
         """Nothing is waiting, so there is nobody whose request it is."""
@@ -868,6 +905,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         job.pipeline_config = self._valid_pipeline()
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
+        self.users_repo.get_all_by_ids.return_value = [self._submitter()]
 
         result = await self.service.submit_for_review(
             self.session,
@@ -878,6 +916,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.submitted_by, 1)
+        self.assertEqual(result.submitted_by_name, "Dana Wu")
         self.assertEqual(result.submit_message, "Ready for you")
 
     async def test_submit_revision_validates_staged_pipeline_not_live(self):

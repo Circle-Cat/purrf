@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
@@ -206,6 +206,26 @@ describe("PublishApproval", () => {
       expect(withdrawMentorshipApproval).toHaveBeenCalledWith(31),
     );
     expect(onChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the named reviewer the same card every approval waiting on them uses", () => {
+    renderPanel({
+      overview: overviewOf({ publishRequest: pending }),
+      canApprove: true,
+      userId: 8,
+    });
+
+    const card = screen.getByRole("region", {
+      name: "Publish matching result awaiting your decision",
+    });
+    expect(
+      within(card).getByText("Raised by Ada Ng on 2026-10-07 02:30"),
+    ).toBeInTheDocument();
+    expect(within(card).getByText("Reviewed every pair")).toBeInTheDocument();
+    expect(screen.queryByText(/^Waiting for approval/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Withdraw" }),
+    ).not.toBeInTheDocument();
   });
 
   it("lets the named reviewer approve after confirming", async () => {
