@@ -29,9 +29,16 @@ MENTORSHIP_ACTIONS = (
     END_PAIR,
 )
 
-# The actions raised about one person in one round from their detail page,
-# listed there while they wait.
-PARTICIPANT_ACTIONS = (WITHDRAW_PARTICIPANT, MARK_NO_SHOW, MARK_RED_FLAG)
+# The actions about one person in one round, listed on their detail page while
+# they wait. An exemption is raised from Needs exemption but listed here too:
+# once the person drops out of that list, this is where it can still be
+# withdrawn or rejected.
+PARTICIPANT_ACTIONS = (
+    WITHDRAW_PARTICIPANT,
+    MARK_NO_SHOW,
+    MARK_RED_FLAG,
+    EXEMPT_MATCHING,
+)
 
 _MARK_ACTIONS = {
     ParticipantNoteTag.NO_SHOW: MARK_NO_SHOW,
