@@ -111,6 +111,7 @@ beforeEach(() => {
   });
   api.getSignInMethods.mockResolvedValue({ data: signInMethods() });
   api.getPendingBlockRequests.mockResolvedValue({ data: [] });
+  api.getAccountBlockRequests.mockResolvedValue({ data: [] });
   api.getBlockPreflight.mockResolvedValue({
     data: { applicationCount: 0, interviewTimes: [] },
   });
@@ -119,6 +120,85 @@ beforeEach(() => {
   api.unblockAccount.mockResolvedValue({ data: null });
   api.blockAccount.mockResolvedValue({ data: null });
   api.decideBlockRequest.mockResolvedValue({ data: null });
+});
+
+describe("AccountDetailPage — closed block requests", () => {
+  const closed = (overrides) => ({
+    id: 2,
+    targetUserId: 1203,
+    raisedBy: 31,
+    raisedByName: "Dana Wu",
+    raisedFrom: "recruiting_application",
+    raisedAt: "2026-10-18T17:00:00Z",
+    reason: "Missed three interviews",
+    reviewerId: 32,
+    reviewerName: "Rita Reviewer",
+    status: "rejected",
+    decidedBy: 32,
+    decidedByName: "Rita Reviewer",
+    decidedAt: "2026-10-20T17:00:00Z",
+    decisionNote: "Not enough evidence",
+    ...overrides,
+  });
+
+  const section = () =>
+    screen.getByRole("heading", { name: "Block requests" }).closest("section");
+
+  it("lists every closed request in the order sent, with who asked and who decided", async () => {
+    api.getAccountBlockRequests.mockResolvedValue({
+      data: [
+        closed(),
+        closed({
+          id: 1,
+          raisedByName: "Sam Steward",
+          raisedFrom: "mentorship_participant",
+          reason: null,
+          status: "withdrawn",
+          decidedByName: "Sam Steward",
+          decisionNote: null,
+        }),
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(api.getAccountBlockRequests).toHaveBeenCalledWith(1203);
+    const items = within(section()).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("Rejected");
+    expect(items[0]).toHaveTextContent(
+      "Raised by Dana Wu from recruiting application",
+    );
+    expect(items[0]).toHaveTextContent("Missed three interviews");
+    expect(items[0]).toHaveTextContent("Rita Reviewer");
+    expect(items[0]).toHaveTextContent("Not enough evidence");
+    expect(items[1]).toHaveTextContent("Withdrawn");
+    expect(items[1]).toHaveTextContent(
+      "Raised by Sam Steward from mentorship participant",
+    );
+  });
+
+  it("says when no request about the account has been closed", async () => {
+    renderPage();
+    await waitLoaded();
+
+    expect(within(section()).getByText("None closed yet.")).toBeInTheDocument();
+  });
+
+  it("says so when they could not be read, rather than that there are none", async () => {
+    api.getAccountBlockRequests.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      within(section()).getByText(
+        "Couldn't read this account's block requests.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(section()).queryByText("None closed yet."),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("AccountDetailPage — getting back out", () => {

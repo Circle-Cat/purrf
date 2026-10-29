@@ -1,14 +1,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
+import { humanizeSource } from "@/pages/AdminAccounts/utils/blockRequests";
 import {
   formatDateTimeWithZone,
   resolveViewerTimezone,
 } from "@/utils/dateTime";
-
-/** "recruiting_application" reads as "recruiting application" outside that domain. */
-const humanizeSource = (raisedFrom) =>
-  (raisedFrom ?? "").replace(/_/g, " ").trim();
 
 /**
  * The block request waiting on this viewer's decision, shown on the account it
