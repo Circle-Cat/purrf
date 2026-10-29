@@ -4746,21 +4746,14 @@ describe("ApplicationDetailPage — Emails tab", () => {
       },
     });
 
+  // Newest first, the order the backend sends a thread's messages in.
   const replyableThread = (extraMessages = []) => ({
     threadId: 1,
     subject: "Interview Availability",
     needsReply: true,
     replyTo: "cand.reply@x.com",
     messages: [
-      {
-        messageId: 11,
-        direction: "outbound",
-        fromAddress: "recruiting@circlecat.org",
-        toAddresses: "cand@x.com",
-        bodyHtml: "<p>Hello there</p>",
-        bodyText: "Hello there",
-        createdAt: "2026-07-23T00:00:00Z",
-      },
+      ...extraMessages,
       {
         messageId: 12,
         direction: "inbound",
@@ -4771,7 +4764,15 @@ describe("ApplicationDetailPage — Emails tab", () => {
         createdAt: "2026-07-23T01:00:00Z",
         attachments: [{ name: "resume.pdf", size: 2048 }],
       },
-      ...extraMessages,
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        toAddresses: "cand@x.com",
+        bodyHtml: "<p>Hello there</p>",
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
     ],
   });
 

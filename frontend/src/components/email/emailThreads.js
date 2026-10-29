@@ -40,17 +40,18 @@ export const sortThreadsByActivity = (threads) =>
   );
 
 /**
- * The newest message of a thread as loaded: messages arrive oldest first, the
- * order the backend compares `lastSeenMessageId` against.
+ * The newest message of a thread as loaded, which the backend compares
+ * `lastSeenMessageId` against. Messages arrive newest first.
  *
  * @param {{messages?: object[]}|null} thread
  * @returns {number|null}
  */
 export const lastMessageId = (thread) =>
-  thread?.messages?.at(-1)?.messageId ?? null;
+  thread?.messages?.[0]?.messageId ?? null;
 
 /**
- * The messages after `messageId`, or all of them when it is not in the thread.
+ * The messages newer than `messageId`, newest first as they arrive, or all of
+ * them when it is not in the thread.
  *
  * @param {{messages?: object[]}} thread
  * @param {number|null} messageId
@@ -58,9 +59,8 @@ export const lastMessageId = (thread) =>
  */
 export const messagesAfter = (thread, messageId) => {
   const messages = thread.messages ?? [];
-  return messages.slice(
-    messages.findIndex((m) => m.messageId === messageId) + 1,
-  );
+  const seen = messages.findIndex((m) => m.messageId === messageId);
+  return seen === -1 ? messages : messages.slice(0, seen);
 };
 
 /**

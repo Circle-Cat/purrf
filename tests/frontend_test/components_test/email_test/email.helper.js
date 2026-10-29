@@ -1,6 +1,8 @@
 // Values a swapped read would expose are kept distinct: thread 41 vs message
 // ids 410/411, the person's primary vs alternative address, and the alias
 // that sends vs the person who receives.
+//
+// A thread's messages are newest first, the order the backend sends them in.
 
 export const messageOf = (overrides = {}) => ({
   messageId: 410,
@@ -43,7 +45,7 @@ export const threadOf = (overrides = {}) => ({
   subject: "Checking in",
   syncedAt: "2026-10-02T17:31:00Z",
   createdAt: "2026-10-01T16:00:05Z",
-  messages: [messageOf(), replyOf()],
+  messages: [replyOf(), messageOf()],
   needsReply: true,
   openBounce: null,
   replyAlias: "mentorship@circlecat.org",
