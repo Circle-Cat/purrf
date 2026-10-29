@@ -11,6 +11,7 @@ from backend.recruiting.job_review_handler import JOB_REVIEW, JobReviewHandler
 from backend.recruiting.job_service import JobService
 import backend.recruiting.recipient_resolvers  # noqa: F401 -- registers resolvers
 from backend.repository.notification_repository import NotificationRepository
+from backend.recruiting.job_blockers import NO_RECRUITER, NO_STAGE
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto
 from backend.entity.approval_request_entity import ApprovalRequestEntity
@@ -420,6 +421,50 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.last_reject_comment)
         self.assertIsNone(result.last_reject_kind)
+
+    async def test_get_job_lists_every_submit_blocker_of_a_draft(self):
+        """The detail page disables Submit for review from this list, so a
+        draft missing both a stage and a recruiter has to arrive with both."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_blockers, [NO_STAGE, NO_RECRUITER])
+
+    async def test_get_job_has_no_submit_blockers_once_submittable(self):
+        """A draft with a stage and a recruiter may be submitted."""
+        job = self._job(
+            status=JobStatus.DRAFT,
+            pipeline_config={
+                "stages": [{"stage": "tech", "rounds": 1}],
+                "ownerIds": [5],
+            },
+        )
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_blockers, [])
+
+    async def test_get_job_judges_submit_blockers_on_the_staged_edit(self):
+        """A published posting is submitted with its staged edit, so a live
+        config that is complete does not hide a staged one that is not."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            pipeline_config={
+                "stages": [{"stage": "tech", "rounds": 1}],
+                "ownerIds": [5],
+            },
+        )
+        job.pending_payload = {
+            "pipelineConfig": {"stages": [{"stage": "tech", "rounds": 1}]}
+        }
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_blockers, [NO_RECRUITER])
 
     async def test_update_published_any_field_parks_pending_payload(self):
         """Editing a PUBLISHED posting — any field — parks a full draft, live

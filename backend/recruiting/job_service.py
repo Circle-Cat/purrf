@@ -1019,6 +1019,7 @@ class JobService:
             reviewer_id=open_review.reviewer_id if open_review else None,
             submitted_by=open_review.raised_by if open_review else None,
             submit_message=open_review.reason if open_review else None,
+            submit_blockers=submit_blockers(job),
         )
 
     async def get_job_activity(
