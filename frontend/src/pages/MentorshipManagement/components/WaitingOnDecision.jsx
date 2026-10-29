@@ -10,8 +10,10 @@ import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
 import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
 import {
+  APPROVAL_ACTION,
   approvalActionLabel,
   approvalPersonLabel,
+  exemptionApprovalConsequence,
 } from "@/pages/MentorshipManagement/utils/approvalLabels";
 import { userDisplayName } from "@/utils/userName";
 import { statusRequestType } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
@@ -194,6 +196,8 @@ const WaitingOnDecision = ({
                   typeOf(open)?.consequences(personName, {
                     partnerName: pairPartner(open)?.name,
                   })) ||
+                (open?.action === APPROVAL_ACTION.EXEMPT_MATCHING &&
+                  exemptionApprovalConsequence(personName)) ||
                 "It takes effect at once and cannot be undone."
               }${open && !typeOf(open)?.partnerMayNotReview ? aboutPair(open) : ""}`
         }

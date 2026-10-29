@@ -249,6 +249,32 @@ describe("WaitingOnDecision", () => {
     expect(screen.queryByText(/about the pair/)).not.toBeInTheDocument();
   });
 
+  it("lists an exemption and says what approving it does", async () => {
+    const user = userEvent.setup();
+    renderBlock({
+      requests: [{ ...waiting, requestId: 71, action: "exempt_matching" }],
+      viewerId: 8,
+      canApprove: true,
+    });
+
+    expect(
+      screen.getByText(
+        "Matching exemption \u2014 raised by Dana Wu \u00b7 sent to Rae Kim",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(
+      await screen.findByText(/^Mia Ko goes into this round's matching pool/),
+    ).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Approve" }).at(-1));
+    await waitFor(() =>
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(71, {
+        decision: "approve",
+        comment: undefined,
+      }),
+    );
+  });
+
   it("lets the raiser withdraw the request or hand it to another reviewer", async () => {
     const user = userEvent.setup();
     const { onChanged } = renderBlock();
