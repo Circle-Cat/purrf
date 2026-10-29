@@ -74,14 +74,14 @@ describe("PendingApprovalsCard", () => {
     );
   });
 
-  it("opens the Needs exemption list at the person to review an exemption", async () => {
+  it("reviews an exemption on the person's page for the round", async () => {
     const user = userEvent.setup();
     renderCard(REQUESTS);
 
     await user.click(screen.getAllByRole("button", { name: "Review" })[1]);
 
     expect(screen.getByTestId("where")).toHaveTextContent(
-      "/mentorship-management?round=7&needsExemption=1&id=21",
+      "/mentorship-management/participants/21?round=7",
     );
   });
 

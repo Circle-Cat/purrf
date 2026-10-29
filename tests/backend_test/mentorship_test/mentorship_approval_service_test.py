@@ -374,10 +374,17 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_pending_requests_on_a_participant_are_described(self):
+        """An exemption is listed with the rest, so it can still be withdrawn
+        or rejected here once the person drops out of Needs exemption."""
+        exemption = _request(action="exempt_matching", request_id=71)
+        exemption.target_type = "round_participant"
+        exemption.target_id = "7:21"
+        exemption.payload = {"round_id": 7, "user_id": PERSON}
         waiting = {
             "withdraw_participant": _withdrawal(),
             "mark_no_show": _mark("mark_no_show", request_id=51, pair_id=501),
             "mark_red_flag": _mark("mark_red_flag", request_id=52, pair_id=None),
+            "exempt_matching": exemption,
         }
         self.approvals.get_pending_for_target.side_effect = (
             lambda session, action, target: waiting.get(action)
@@ -391,10 +398,11 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                 ("withdraw_participant", "7:21"),
                 ("mark_no_show", "7:21"),
                 ("mark_red_flag", "7:21"),
+                ("exempt_matching", "7:21"),
             ],
         )
-        self.assertEqual([r["request_id"] for r in result], [41, 51, 52])
-        self.assertEqual([r["pair_id"] for r in result], [None, 501, None])
+        self.assertEqual([r["request_id"] for r in result], [41, 51, 52, 71])
+        self.assertEqual([r["pair_id"] for r in result], [None, 501, None, None])
         self.assertEqual(result[0]["raised_by"]["user_id"], RAISER)
         self.assertEqual(result[0]["reviewer"]["user_id"], REVIEWER)
 

@@ -4,6 +4,7 @@ import {
   approvalPairLabel,
   approvalPersonLabel,
   approvalReviewLink,
+  exemptionApprovalConsequence,
   exemptionWhyLines,
 } from "@/pages/MentorshipManagement/utils/approvalLabels";
 
@@ -76,19 +77,23 @@ describe("approvalLabels", () => {
     });
   });
 
-  it("reviews an exemption on the Needs exemption list, narrowed to the person", () => {
-    const link = approvalReviewLink({
-      action: "exempt_matching",
-      round: { roundId: 7 },
-      person: { userId: 21 },
+  it("reviews an exemption on the person's page for the round", () => {
+    expect(
+      approvalReviewLink({
+        action: "exempt_matching",
+        round: { roundId: 7 },
+        person: { userId: 21 },
+      }),
+    ).toEqual({
+      pathname: "/mentorship-management/participants/21",
+      search: "?round=7",
     });
+  });
 
-    expect(link.pathname).toBe("/mentorship-management");
-    expect(Object.fromEntries(new URLSearchParams(link.search))).toEqual({
-      round: "7",
-      needsExemption: "1",
-      id: "21",
-    });
+  it("says what approving an exemption does to the person", () => {
+    expect(exemptionApprovalConsequence("Mia Ko")).toBe(
+      "Mia Ko goes into this round's matching pool, and nothing before this round counts against them again. It cannot be undone.",
+    );
   });
 
   it("reviews a mark on the person's page for the round", () => {
