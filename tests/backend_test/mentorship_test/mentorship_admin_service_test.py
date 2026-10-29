@@ -1475,21 +1475,41 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_pair_by_id.assert_not_awaited()
         self.mock_meeting_repo.get_meetings_by_pair.assert_not_awaited()
 
-    async def test_apply_batch_rejects_manual_only_row(self):
-        """A pair with only a manual row still rejects editing it (baseline
-        per-row rejection, not just the mixed-pair case below)."""
-        pair = _make_pair()
-        self.mock_pairs_repo.get_pair_by_id.return_value = pair
-        self.mock_meeting_repo.get_meetings_by_pair.return_value = [
-            _make_meeting(meeting_id="manual-1", source=MeetingSource.MANUAL)
-        ]
+    async def test_apply_batch_deletes_a_manual_row(self):
+        """A meeting the mentee logged by hand can be removed by an admin, for
+        example when it double counts a Google meeting. It has no calendar
+        event, and the completed count is recalculated."""
+        manual = _make_meeting(meeting_id="manual-1", source=MeetingSource.MANUAL)
+        self.mock_pairs_repo.get_pair_by_id.return_value = _make_pair()
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[manual], []]
 
-        with self.assertRaises(ConflictError):
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["manual-1"])
+        )
+
+        self.mock_meeting_service.cancel_calendar_events.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_awaited_once_with(
+            self.mock_session, 1, ["manual-1"]
+        )
+        self.mock_meeting_repo.recalculate_completed_count.assert_awaited_once()
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_apply_batch_refuses_a_manual_row_of_a_round_that_has_ended(self):
+        """Rows logged before Google meetings are protected by the round being
+        over, not by their source: a past round's manual row stays as it is."""
+        manual = _make_meeting(meeting_id="manual-1", source=MeetingSource.MANUAL)
+        self.mock_pairs_repo.get_pair_by_id.return_value = _make_pair()
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [manual]
+        self.mock_rounds_repo.get_by_round_id.return_value = _round_ended()
+
+        with self.assertRaises(ConflictError) as caught:
             await self.service.apply_v2_meeting_batch(
                 self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["manual-1"])
             )
+
+        self.assertEqual(caught.exception.code, "round_not_in_progress")
         self.mock_meeting_repo.delete_meetings.assert_not_awaited()
-        self.mock_meeting_service.cancel_calendar_events.assert_not_awaited()
+        self.mock_session.commit.assert_not_awaited()
 
     async def test_apply_batch_cancels_upcoming_google_event_before_deleting_row(
         self,
@@ -1562,26 +1582,31 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.delete_meetings.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
-    async def test_apply_batch_manual_row_conflicts_even_when_pair_also_has_google_rows(
-        self,
-    ):
-        """Per-row check, the headline fix: a manual row is rejected even
-        though the same pair also holds an editable google row -- the exact
-        case that made a mixed pair permanently uneditable under the old
-        per-pair check."""
+    async def test_apply_batch_updates_a_manual_row_on_a_mixed_pair(self):
+        """A pair holding both kinds of row: the manual one is edited like the
+        Google one, so saving a batch that ticks it no longer fails."""
         pair = _make_pair()
-        manual = _make_meeting(meeting_id="manual-1", source=MeetingSource.MANUAL)
+        manual = _make_meeting(
+            meeting_id="manual-1", source=MeetingSource.MANUAL, is_completed=False
+        )
         google = _make_meeting(meeting_id="google-1", source=MeetingSource.GOOGLE)
         self.mock_pairs_repo.get_pair_by_id.return_value = pair
         self.mock_meeting_repo.get_meetings_by_pair.return_value = [manual, google]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 2
 
-        with self.assertRaises(ConflictError):
-            await self.service.apply_v2_meeting_batch(
-                self.mock_session,
-                1,
-                V2MeetingBatchUpdateDto(deletes=["manual-1"]),
-            )
-        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session,
+            1,
+            V2MeetingBatchUpdateDto(
+                updates=[
+                    V2MeetingUpdateItemDto(meeting_id="manual-1", is_completed=True)
+                ]
+            ),
+        )
+
+        self.assertTrue(manual.is_completed)
+        self.assertEqual(pair.completed_count, 2)
+        self.mock_session.commit.assert_awaited_once()
 
     async def test_apply_batch_google_row_succeeds_on_same_mixed_pair(self):
         """The same mixed pair's google row can still be edited -- the other
