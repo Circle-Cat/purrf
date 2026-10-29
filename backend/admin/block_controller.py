@@ -17,12 +17,14 @@ from fastapi import APIRouter
 
 from backend.admin.block_service import RAISE_PERMISSION_BY_SOURCE
 from backend.common.api_endpoints import (
+    ADMIN_ACCOUNT_BLOCK_REQUESTS_ENDPOINT,
     BLOCK_REQUEST_REVIEWERS_ENDPOINT,
     BLOCK_PREFLIGHT_ENDPOINT,
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
     BLOCK_REQUEST_WITHDRAW_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
+    BLOCK_REQUESTS_RAISED_DECIDED_ENDPOINT,
     BLOCK_REQUESTS_RAISED_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
@@ -87,6 +89,18 @@ class BlockController:
         self.router.add_api_route(
             BLOCK_REQUESTS_RAISED_ENDPOINT,
             endpoint=authenticate(permissions=_RAISE_GATE)(self.list_raised),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            BLOCK_REQUESTS_RAISED_DECIDED_ENDPOINT,
+            endpoint=authenticate(permissions=_RAISE_GATE)(self.latest_decided_raised),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            ADMIN_ACCOUNT_BLOCK_REQUESTS_ENDPOINT,
+            endpoint=authenticate(permissions=_DECIDE_GATE)(self.list_decided),
             methods=["GET"],
             response_model=None,
         )
@@ -209,6 +223,39 @@ class BlockController:
                 session, current_user.user_id
             )
         return api_response(message="Block requests you raised", data=view)
+
+    async def latest_decided_raised(self, current_user: UserContextDto, user_id: int):
+        """How the caller's own latest closed request about this person ended.
+
+        Behind the raise gate and scoped to the caller like ``list_raised``:
+        it is what lets the page they raised it from say it was rejected.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int): The person the request was about, from the path.
+
+        Returns:
+            A standardized API response wrapping a ``BlockRequestDto`` or null.
+        """
+        async with self._database.session() as session:
+            view = await self._service.latest_decided_raised_by_actor(
+                session, current_user.user_id, user_id
+            )
+        return api_response(message="Your latest closed block request", data=view)
+
+    async def list_decided(self, current_user: UserContextDto, user_id: int):
+        """Every closed block request about this person, for their account page.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int): The person, from the path.
+
+        Returns:
+            A standardized API response wrapping a list of ``BlockRequestDto``.
+        """
+        async with self._database.session() as session:
+            view = await self._service.list_decided_for_target(session, user_id)
+        return api_response(message="Closed block requests", data=view)
 
     async def reassign(
         self,
