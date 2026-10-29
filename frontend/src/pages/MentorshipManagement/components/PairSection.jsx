@@ -63,14 +63,8 @@ const PairSection = ({
         menteeName,
       });
 
-  const {
-    meetings,
-    roundVersion,
-    roundInProgress,
-    loading,
-    error,
-    saveMeetingBatch,
-  } = useMeetingLog(pair.pairId, open);
+  const { meetings, roundInProgress, loading, error, saveMeetingBatch } =
+    useMeetingLog(pair.pairId, open);
   const editor = useMeetingLogEditor({
     meetings,
     onSave: async (batch) => {
@@ -78,8 +72,7 @@ const PairSection = ({
       onMeetingsSaved();
     },
   });
-  const canEdit =
-    canWrite && roundInProgress && roundVersion === "v2" && meetings.length > 0;
+  const canEdit = canWrite && roundInProgress && meetings.length > 0;
 
   return (
     <section

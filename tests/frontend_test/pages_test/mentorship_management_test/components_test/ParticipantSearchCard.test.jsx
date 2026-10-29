@@ -1646,7 +1646,7 @@ describe("ParticipantSearchCard", () => {
       ).toBeInTheDocument();
     });
 
-    it("does not show the Edit button for a v1 pair", async () => {
+    it("shows the Edit button for a pair with only hand-logged meetings in a round in progress", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       getMeetingLog.mockResolvedValue(meetingLogResponse("v1", "m-1"));
       await renderCard({ url: SEARCHED_PARTICIPANTS });
@@ -1655,9 +1655,7 @@ describe("ParticipantSearchCard", () => {
       );
 
       await screen.findByText(/Meeting Log —/);
-      expect(
-        screen.queryByRole("button", { name: "Edit" }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     });
 
     it("does not fetch the meeting log for every row just from rendering the table", async () => {

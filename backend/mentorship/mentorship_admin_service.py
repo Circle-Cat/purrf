@@ -1274,14 +1274,12 @@ class MentorshipAdminService:
             ValueError: updates and deletes are both empty; the same
                 meeting_id appears in both; a meeting_id doesn't exist among
                 this pair's rows; or the pair itself doesn't exist.
-            ConflictError: Any targeted meeting_id (update or delete) belongs
-                to a MANUAL row (v1, read-only history). The check is
-                per-row, not per-pair -- a pair holding both MANUAL and
-                GOOGLE rows may still have its GOOGLE rows edited freely;
-                only a targeted row that is itself MANUAL is rejected. Also
-                raised, with code ``round_not_in_progress``, when the pair's
-                round is not in progress: a past round's log is read-only.
-                Also raised, with code ``calendar_cancel_failed``, when
+            ConflictError: With code ``round_not_in_progress`` when the
+                pair's round is not in progress: a past round's log is
+                read-only, whatever its rows' source. MANUAL rows of a round
+                in progress (what a mentee logs by hand) are edited and
+                deleted like GOOGLE ones. Also raised, with code
+                ``calendar_cancel_failed``, when
                 Calendar refuses to cancel a deleted upcoming GOOGLE
                 meeting's event; nothing is written then.
         """
@@ -1319,12 +1317,6 @@ class MentorshipAdminService:
             raise ValueError(
                 f"meeting_id(s) not found for this pair: {sorted(missing)}"
             )
-
-        manual_targets = {
-            mid for mid in target_ids if by_id[mid].source == MeetingSource.MANUAL
-        }
-        if manual_targets:
-            raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
 
         if delete_ids:
             # An upcoming meeting still has a live invite; a started one is

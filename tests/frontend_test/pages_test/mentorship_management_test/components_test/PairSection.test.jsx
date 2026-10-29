@@ -134,6 +134,13 @@ describe("PairSection", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lets a writer edit a log of only hand-logged meetings in a round in progress", async () => {
+    getMeetingLog.mockResolvedValue(log({ roundVersion: "v1" }));
+    renderSection({ open: true });
+    await screen.findByText("2026-09-02 · 10:00 - 11:00");
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
   it("offers no Edit when the meeting log says the round has ended", async () => {
     getMeetingLog.mockResolvedValue(log({ roundInProgress: false }));
     renderSection({ open: true });
