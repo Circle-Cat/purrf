@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
+import AwaitingDecisionCard from "@/components/approval/AwaitingDecisionCard";
 import { humanizeSource } from "@/pages/AdminAccounts/utils/blockRequests";
 import {
   formatDateTimeWithZone,
@@ -32,40 +33,31 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
   const target = request.targetName || "this person";
 
   return (
-    <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-      <h2 className="text-sm font-bold uppercase tracking-wide text-amber-900">
-        Block request awaiting your decision
-      </h2>
-      <p className="mt-1 text-sm text-amber-900">
-        Raised by {request.raisedByName}
-        {source ? ` from ${source}` : ""} on{" "}
-        {formatDateTimeWithZone(request.raisedAt, tz)}
-      </p>
-      {request.reason ? (
-        <p className="mt-3 whitespace-pre-wrap text-sm text-slate-900">
-          {request.reason}
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-slate-500">No reason given.</p>
-      )}
-      <div className="mt-4 flex gap-2">
-        <Button
-          type="button"
-          variant="destructive"
-          onClick={() => setDecision("approve")}
-          disabled={submitting}
-        >
-          Approve and block
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setDecision("reject")}
-          disabled={submitting}
-        >
-          Reject
-        </Button>
-      </div>
+    <AwaitingDecisionCard
+      title="Block request awaiting your decision"
+      meta={[
+        `Raised by ${request.raisedByName}${
+          source ? ` from ${source}` : ""
+        } on ${formatDateTimeWithZone(request.raisedAt, tz)}`,
+      ]}
+      reason={request.reason}
+    >
+      <Button
+        type="button"
+        variant="destructive"
+        onClick={() => setDecision("approve")}
+        disabled={submitting}
+      >
+        Approve and block
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setDecision("reject")}
+        disabled={submitting}
+      >
+        Reject
+      </Button>
       <ApprovalDecisionDialog
         open={decision !== null}
         onOpenChange={(open) => !open && !submitting && setDecision(null)}
@@ -89,7 +81,7 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
         }}
         submitting={submitting}
       />
-    </section>
+    </AwaitingDecisionCard>
   );
 };
 
