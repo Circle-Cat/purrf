@@ -50,7 +50,8 @@ export const exemptionApprovalConsequence = (name) =>
  * results; an exemption, a withdrawal or a mark opens the person's page for
  * the round; ending a pair opens the mentee's page. An exemption goes to the
  * person's page rather than Needs exemption because it is listed there even
- * after the person drops out of that list.
+ * after the person drops out of that list. The person's page opens in review
+ * mode on the request.
  *
  * @param {{action: string, round: {roundId: number},
  *          person?: {userId: number}|null,
@@ -60,10 +61,20 @@ export const exemptionApprovalConsequence = (name) =>
 export const approvalReviewLink = (request) => {
   const roundId = request.round?.roundId;
   if (request.action === APPROVAL_ACTION.END_PAIR) {
-    return participantLink(request.pair?.mentee?.userId, roundId);
+    return participantLink(
+      request.pair?.mentee?.userId,
+      roundId,
+      null,
+      request.requestId,
+    );
   }
   if (DECIDED_ON_PERSON_PAGE.has(request.action)) {
-    return participantLink(request.person?.userId, roundId);
+    return participantLink(
+      request.person?.userId,
+      roundId,
+      null,
+      request.requestId,
+    );
   }
   return { pathname: ROUTE_PATHS.MENTORSHIP_MATCHING(roundId), search: "" };
 };

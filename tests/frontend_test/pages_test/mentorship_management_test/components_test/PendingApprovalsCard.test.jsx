@@ -81,7 +81,7 @@ describe("PendingApprovalsCard", () => {
     await user.click(screen.getAllByRole("button", { name: "Review" })[1]);
 
     expect(screen.getByTestId("where")).toHaveTextContent(
-      "/mentorship-management/participants/21?round=7",
+      "/mentorship-management/participants/21?round=7&review=32",
     );
   });
 
@@ -111,7 +111,7 @@ describe("PendingApprovalsCard", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Review" }));
     expect(screen.getByTestId("where")).toHaveTextContent(
-      "/mentorship-management/participants/21?round=7",
+      "/mentorship-management/participants/21?round=7&review=61",
     );
   });
 
