@@ -16,8 +16,9 @@ const NO_MESSAGES = [];
  * (the newest message of the thread as the sender opened it), and resolves to
  * the updated conversation, which goes to `onConversation`. A reply refused
  * because the thread changed reloads the conversation, moves the reply onto
- * the reloaded thread and lists the messages the sender has not seen; sending
- * again then goes out as is. Any other failure toasts. Every failure rejects,
+ * the reloaded thread and lists the messages the sender has not seen, or
+ * toasts when there are none to list; sending again then goes out as is. Any
+ * other failure toasts. Every failure rejects,
  * which keeps the dialog open with its draft. A reloaded conversation that no
  * longer holds the thread closes the dialog with a toast.
  *
@@ -85,7 +86,15 @@ export const useComposeEmail = ({
       return;
     }
     setReplyThread(thread);
-    setStaleMessages(messagesAfter(thread, lastSeen));
+    const unseen = messagesAfter(thread, lastSeen);
+    setStaleMessages(unseen);
+    // The send was refused, so the dialog must say why even when the reload
+    // has nothing new to list yet.
+    if (unseen.length === 0) {
+      toast.error(
+        "This thread changed while you were writing. Send again to reply to the latest message.",
+      );
+    }
   };
 
   const onSend = async (payload) => {

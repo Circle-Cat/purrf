@@ -51,7 +51,7 @@ describe("emailThreads", () => {
     expect(input.map((t) => t.threadId)).toEqual([40, 41]);
   });
 
-  it("takes the last message as the newest one seen", () => {
+  it("takes the first message as the newest one seen", () => {
     expect(lastMessageId(threadOf())).toBe(411);
     expect(lastMessageId(threadOf({ messages: [] }))).toBeNull();
     expect(lastMessageId(null)).toBeNull();
@@ -59,11 +59,15 @@ describe("emailThreads", () => {
 
   it("lists the messages after the one seen", () => {
     const thread = threadOf({
-      messages: [messageOf(), replyOf(), replyOf({ messageId: 412 })],
+      messages: [replyOf({ messageId: 412 }), replyOf(), messageOf()],
     });
     expect(messagesAfter(thread, 411).map((m) => m.messageId)).toEqual([412]);
+    expect(messagesAfter(thread, 410).map((m) => m.messageId)).toEqual([
+      412, 411,
+    ]);
+    expect(messagesAfter(thread, 412)).toEqual([]);
     expect(messagesAfter(thread, null).map((m) => m.messageId)).toEqual([
-      410, 411, 412,
+      412, 411, 410,
     ]);
   });
 
