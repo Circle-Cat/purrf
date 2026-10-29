@@ -37,6 +37,7 @@ describe("approvalLabels", () => {
 
   it("reviews a withdrawal on the person's page for the round", () => {
     const link = approvalReviewLink({
+      requestId: 41,
       action: "withdraw_participant",
       round: { roundId: 7 },
       person: { userId: 3104 },
@@ -44,7 +45,7 @@ describe("approvalLabels", () => {
 
     expect(link).toEqual({
       pathname: "/mentorship-management/participants/3104",
-      search: "?round=7",
+      search: "?round=7&review=41",
     });
   });
 
@@ -62,6 +63,7 @@ describe("approvalLabels", () => {
   it("reviews ending a pair on the mentee's page for the round", () => {
     expect(
       approvalReviewLink({
+        requestId: 61,
         action: "end_pair",
         round: { roundId: 7 },
         person: null,
@@ -73,20 +75,21 @@ describe("approvalLabels", () => {
       }),
     ).toEqual({
       pathname: "/mentorship-management/participants/21",
-      search: "?round=7",
+      search: "?round=7&review=61",
     });
   });
 
   it("reviews an exemption on the person's page for the round", () => {
     expect(
       approvalReviewLink({
+        requestId: 71,
         action: "exempt_matching",
         round: { roundId: 7 },
         person: { userId: 21 },
       }),
     ).toEqual({
       pathname: "/mentorship-management/participants/21",
-      search: "?round=7",
+      search: "?round=7&review=71",
     });
   });
 
@@ -100,13 +103,14 @@ describe("approvalLabels", () => {
     for (const action of ["mark_no_show", "mark_red_flag"]) {
       expect(
         approvalReviewLink({
+          requestId: 51,
           action,
           round: { roundId: 7 },
           person: { userId: 3104 },
         }),
       ).toEqual({
         pathname: "/mentorship-management/participants/3104",
-        search: "?round=7",
+        search: "?round=7&review=51",
       });
     }
   });
