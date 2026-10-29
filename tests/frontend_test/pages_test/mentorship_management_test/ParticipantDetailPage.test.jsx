@@ -33,6 +33,7 @@ import {
   noteOf,
   pairOf,
   registrationOf,
+  rejectedOf,
 } from "./participantDetail.helper";
 
 vi.mock("@/api/mentorshipApi", () => ({
@@ -455,6 +456,16 @@ describe("ParticipantDetailPage", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Spring 2026/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a rejected request on the timeline", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({ rejectedRequests: [rejectedOf()] }),
+    });
+    renderPage();
+    expect(
+      await screen.findByText("Reason: Still replying on Teams"),
     ).toBeInTheDocument();
   });
 
