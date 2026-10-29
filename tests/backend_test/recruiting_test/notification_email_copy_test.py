@@ -28,6 +28,7 @@ def _dto(**overrides):
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
         # Read only by the templates that mention them; harmless elsewhere.
         reason="Not a fit",
+        review_comment=None,
         to_sub_status="scheduled",
         start_at=datetime(2026, 8, 5, 21, tzinfo=timezone.utc),
         auto_assignee_name=None,
@@ -173,6 +174,17 @@ class TestRender(unittest.TestCase):
         self.assertIn("Open Job Postings in Purrf", rejected)
         # reject_comment is nullable, so the copy must hedge.
         self.assertIn("any comment", rejected)
+
+    def test_job_review_rejected_quotes_the_reviewer_s_reason(self):
+        """The reason is required to reject, so the email carries it rather
+        than sending the submitter off to look for it."""
+        _, body = notification_email_copy._job_review_rejected(
+            _dto(review_comment="Add a salary range <today>"), None
+        )
+
+        self.assertIn("<p>Their reason: Add a salary range &lt;today&gt;</p>", body)
+        self.assertIn("Open Job Postings in Purrf to see the outcome.", body)
+        self.assertNotIn("any comment", body)
 
     def test_application_submitted_explains_why_the_owner_got_it(self):
         subject, body = notification_email_copy._application_submitted(
