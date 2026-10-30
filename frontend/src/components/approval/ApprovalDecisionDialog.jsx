@@ -26,6 +26,9 @@ import { Textarea } from "@/components/ui/textarea";
  * @param {(comment: string) => void} props.onConfirm Called with the trimmed
  *   reason, "" for an approval.
  * @param {boolean} [props.submitting] Disables the controls while in flight.
+ * @param {import("react").ReactNode} [props.children] What the decision
+ *   reaches, shown under the description, for a kind of approval that can
+ *   count it.
  * @returns {JSX.Element}
  */
 const ApprovalDecisionDialog = ({
@@ -36,6 +39,7 @@ const ApprovalDecisionDialog = ({
   description,
   onConfirm,
   submitting = false,
+  children,
 }) => {
   const [comment, setComment] = useState("");
   const rejecting = decision === "reject";
@@ -57,6 +61,7 @@ const ApprovalDecisionDialog = ({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {children}
         {rejecting ? (
           <div className="space-y-1">
             <Label htmlFor="approval-decision-reason">Reason</Label>
