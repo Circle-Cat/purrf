@@ -96,7 +96,12 @@ class JobReviewHandlerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             details,
-            {"kind": "close", "reviewId": REQUEST_ID, "message": "Ready to go live"},
+            {
+                "kind": "close",
+                "reviewId": REQUEST_ID,
+                "message": "Ready to go live",
+                "reviewerId": REVIEWER,
+            },
         )
 
     async def test_each_kind_opens_only_from_its_status(self):

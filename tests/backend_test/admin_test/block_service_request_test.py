@@ -647,6 +647,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                 "requestId": request.id,
                 "action": BLOCK_USER,
                 "previousReviewerId": REVIEWER,
+                "reviewerId": OTHER_ADMIN,
             },
         )
 
