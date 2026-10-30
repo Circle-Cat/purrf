@@ -106,14 +106,19 @@ const roundsLoaded = () =>
 /**
  * Renders the card at `url` with the API listing `rounds`, and waits for them
  * to load. `rounds: null` leaves the rounds request pending.
+ * `onApprovalsChanged` is passed through to the card when given.
  */
-const renderCard = async ({ url = "/", rounds = TEST_ROUNDS } = {}) => {
+const renderCard = async ({
+  url = "/",
+  rounds = TEST_ROUNDS,
+  onApprovalsChanged,
+} = {}) => {
   getAllMentorshipRounds.mockReturnValue(
     rounds === null ? new Promise(() => {}) : Promise.resolve({ data: rounds }),
   );
   const view = render(
     <MemoryRouter initialEntries={[url]}>
-      <ParticipantSearchCard />
+      <ParticipantSearchCard onApprovalsChanged={onApprovalsChanged} />
       <LocationProbe />
     </MemoryRouter>,
   );
@@ -2674,6 +2679,136 @@ describe("ParticipantSearchCard", () => {
           decision: "approve",
           comment: undefined,
         }),
+      );
+    });
+  });
+
+  describe("pending approvals card", () => {
+    const NEEDS_URL = "/?round=7&needsExemption=1";
+
+    const waitingOnViewer = (requestId) =>
+      participantRow({
+        userId: 21,
+        firstName: "Ann",
+        lastName: "Lee",
+        preferredName: "Ann Lee",
+        participantRole: "mentee",
+        approvalStatus: "signed_up",
+        pairs: [],
+        exemptionFindings: [],
+        exemptionRequest: {
+          requestId,
+          action: "exempt_matching",
+          status: "pending",
+          round: { roundId: 7, name: "Fall 2026" },
+          targetId: "7:21",
+          person: { userId: 21, name: "Ann Lee" },
+          raisedBy: { userId: 9, name: "Ada Ng" },
+          reviewer: { userId: 8, name: "Rae Kim" },
+          reason: "Her mentor left midway",
+        },
+      });
+
+    const approveOnRow = async () => {
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Approve" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Approve" }),
+      );
+    };
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      useAuth.mockReturnValue({
+        permissions: ["mentorship.admin.read", "mentorship.approve"],
+        user: { userId: 8 },
+      });
+      decideMentorshipApproval.mockResolvedValue({ data: {} });
+      vi.spyOn(toast, "success").mockImplementation(() => {});
+      vi.spyOn(toast, "error").mockImplementation(() => {});
+    });
+
+    it("refreshes the pending approvals after an approval on the row", async () => {
+      const onApprovalsChanged = vi.fn();
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(61)]));
+      await renderCard({ url: NEEDS_URL, onApprovalsChanged });
+
+      await approveOnRow();
+
+      await waitFor(() => expect(onApprovalsChanged).toHaveBeenCalledTimes(1));
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(61, {
+        decision: "approve",
+        comment: undefined,
+      });
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+    });
+
+    it("refreshes the pending approvals after a rejection on the row", async () => {
+      const onApprovalsChanged = vi.fn();
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(62)]));
+      await renderCard({ url: NEEDS_URL, onApprovalsChanged });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Reject" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.type(
+        within(dialog).getByLabelText("Reason"),
+        "Short by one meeting only",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Reject" }),
+      );
+
+      await waitFor(() => expect(onApprovalsChanged).toHaveBeenCalledTimes(1));
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(62, {
+        decision: "reject",
+        comment: "Short by one meeting only",
+      });
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+    });
+
+    it("leaves the pending approvals alone when the decision is refused", async () => {
+      const onApprovalsChanged = vi.fn();
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(63)]));
+      decideMentorshipApproval.mockRejectedValue({
+        response: { data: { message: "This request is no longer pending." } },
+      });
+      await renderCard({ url: NEEDS_URL, onApprovalsChanged });
+
+      await approveOnRow();
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "This request is no longer pending.",
+        ),
+      );
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(
+        63,
+        expect.anything(),
+      );
+      expect(onApprovalsChanged).not.toHaveBeenCalled();
+    });
+
+    it("still reads the list again and closes the dialog without the prop", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(64)]));
+      await renderCard({ url: NEEDS_URL });
+
+      await approveOnRow();
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith("Exemption granted."),
+      );
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(
+        64,
+        expect.anything(),
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
     });
   });

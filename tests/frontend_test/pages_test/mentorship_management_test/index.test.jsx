@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import MentorshipManagement from "@/pages/MentorshipManagement";
 import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useMentorshipManagement";
@@ -58,7 +59,11 @@ vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
 vi.mock(
   "@/pages/MentorshipManagement/components/ParticipantSearchCard",
   () => ({
-    default: vi.fn(() => <div data-testid="mock-participant-search-card" />),
+    default: vi.fn(({ onApprovalsChanged }) => (
+      <div data-testid="mock-participant-search-card">
+        <button onClick={onApprovalsChanged}>Exemption decided</button>
+      </div>
+    )),
   }),
 );
 
@@ -111,6 +116,29 @@ describe("MentorshipManagement", () => {
 
     expect(useMyMentorshipApprovals).toHaveBeenCalledWith(true);
     expect(screen.getByTestId("mock-pending-approvals").textContent).toBe("2");
+  });
+
+  it("refreshes the pending approvals when an exemption is decided below", async () => {
+    useAuth.mockReturnValue({
+      permissions: [
+        PERMISSIONS.MENTORSHIP_ADMIN_READ,
+        PERMISSIONS.MENTORSHIP_APPROVE,
+      ],
+    });
+    const reload = vi.fn();
+    useMyMentorshipApprovals.mockReturnValue({
+      requests: [{ requestId: 33 }],
+      reload,
+    });
+
+    render(<MentorshipManagement />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Exemption decided" }),
+    );
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(defaultHookData.openCreate).not.toHaveBeenCalled();
+    expect(defaultHookData.saveRound).not.toHaveBeenCalled();
   });
 
   it("asks for no approvals without mentorship.approve or the flag", () => {
