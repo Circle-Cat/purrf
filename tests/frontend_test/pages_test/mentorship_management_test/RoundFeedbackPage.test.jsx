@@ -278,6 +278,48 @@ describe("RoundFeedbackPage", () => {
     });
   });
 
+  describe("who is listed", () => {
+    const WHO =
+      "Feedback is asked of everyone paired in this round, including pairs " +
+      "that ended. People who registered but were never paired are not listed.";
+
+    it("says who is listed once the feedback has loaded", async () => {
+      renderPage();
+      await screen.findByText("Cara Wang");
+
+      expect(screen.getByText(WHO)).toBeInTheDocument();
+    });
+
+    it("says who is listed when nobody is", async () => {
+      getRoundFeedback.mockResolvedValue({
+        data: { ...FEEDBACK, owed: 0, sent: 0, participants: [] },
+      });
+      renderPage();
+      await screen.findByText("Nobody here.");
+
+      expect(screen.getByText(WHO)).toBeInTheDocument();
+    });
+
+    it("does not say it while loading", async () => {
+      getRoundFeedback.mockReturnValue(new Promise(() => {}));
+      renderPage();
+
+      expect(
+        await screen.findByText("Loading feedback..."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(WHO)).not.toBeInTheDocument();
+    });
+
+    it("does not say it when the feedback cannot be loaded", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      getRoundFeedback.mockRejectedValue(new Error("boom"));
+      renderPage();
+
+      await screen.findByText("Could not load this round's feedback.");
+      expect(screen.queryByText(WHO)).not.toBeInTheDocument();
+    });
+  });
+
   it("says so when the feedback cannot be loaded", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     getRoundFeedback.mockRejectedValue(new Error("boom"));
