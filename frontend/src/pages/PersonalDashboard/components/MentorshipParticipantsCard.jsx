@@ -112,10 +112,20 @@ export default function MentorshipParticipantsCard({
   const selectedRound = roundSelectionData?.sortedRounds?.find(
     (round) => Number(round.id) === Number(selectedRoundId),
   );
+  // Booking needs a live partner as well as a running round; the dialog's
+  // partner list already leaves ended pairings out, so with none left the
+  // entry point says why instead of opening onto an empty list.
   const scheduleUnavailableReason =
-    selectedRound?.status === MentorshipRoundStatus.ACTIVE
-      ? null
-      : "No active mentorship round";
+    selectedRound?.status !== MentorshipRoundStatus.ACTIVE
+      ? "No active mentorship round"
+      : livePairings.length === 0
+        ? "No active pairing this round."
+        : null;
+
+  // Covers both an admin ending the pair and the member leaving the round:
+  // the card cannot tell them apart, and the sentence is true of either.
+  const allPairingsEnded =
+    partnerMeetingOverview?.length > 0 && livePairings.length === 0;
 
   // Past the closing date the dialog stays reachable but read-only, so people
   // can still look back at what they submitted. As with logging, a missing
@@ -292,15 +302,12 @@ export default function MentorshipParticipantsCard({
                     )}{" "}
                     {userTimezone}
                   </p>
+                  {allPairingsEnded && (
+                    <p className="font-medium text-amber-600">
+                      Your pairing for this round has ended.
+                    </p>
+                  )}
                 </div>
-              </div>
-              <div>
-                {roundInfo?.status === MentorshipRoundStatus.ACTIVE && (
-                  <Badge variant="default">Active</Badge>
-                )}
-                {roundInfo?.status === MentorshipRoundStatus.COMPLETED && (
-                  <Badge variant="secondary">Completed</Badge>
-                )}
               </div>
             </div>
 
@@ -327,8 +334,8 @@ export default function MentorshipParticipantsCard({
                     )}
                     {overview.isActive === false && (
                       <Badge
-                        variant="secondary"
-                        className="ml-2 font-normal align-middle"
+                        variant="outline"
+                        className="ml-2 font-normal align-middle border-amber-200 bg-amber-50 text-amber-600"
                       >
                         Ended
                       </Badge>
