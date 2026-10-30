@@ -10,9 +10,6 @@ from backend.dto.leave_balance_dto import (
 from backend.leave.leave_participants import (
     resolve_names_and_ldaps,
 )
-from backend.leave.leave_participants import (
-    resolve_names_and_ldaps,
-)
 
 
 class LeaveBalanceService:
