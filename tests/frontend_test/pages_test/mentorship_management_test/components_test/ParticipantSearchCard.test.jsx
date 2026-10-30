@@ -1172,7 +1172,7 @@ describe("ParticipantSearchCard", () => {
       expect(screen.getByLabelText("List")).toHaveTextContent("Registered");
     });
 
-    it("greys out Not registered, with no hint, for a round not in progress", async () => {
+    it("greys out Not registered for a round not in progress, keeping its label", async () => {
       await renderCard({ url: "/?round=3" });
       await mounted();
 
@@ -1181,6 +1181,105 @@ describe("ParticipantSearchCard", () => {
 
       expect(option).toHaveAttribute("aria-disabled", "true");
       expect(option).toHaveTextContent(/^Not registered$/);
+    });
+
+    describe("hint for a round not in progress", () => {
+      const HINT_ROUNDS = [
+        {
+          id: 7,
+          name: "Fall 2026",
+          isInProgress: true,
+          timeline: { promotionStartAt: "2026-08-18T07:00:00Z" },
+          feedbackClosesAt: "2027-02-01T07:59:59Z",
+        },
+        {
+          id: 3,
+          name: "Spring 2026",
+          isInProgress: false,
+          timeline: {
+            promotionStartAt: "2025-12-18T08:00:00Z",
+            onboardingDeadlineAt: "2026-02-10T07:59:59Z",
+            feedbackDeadlineAt: null,
+          },
+          feedbackClosesAt: "2026-07-01T06:59:59Z",
+        },
+        {
+          id: 5,
+          name: "Summer 2025",
+          isInProgress: false,
+          timeline: { promotionStartAt: "2025-04-18T07:00:00Z" },
+          feedbackClosesAt: "2025-10-01T06:59:59Z",
+        },
+        {
+          id: 9,
+          name: "Pilot 2024",
+          isInProgress: false,
+          timeline: { promotionStartAt: null },
+          feedbackClosesAt: "2024-12-01T07:59:59Z",
+        },
+        {
+          id: 4,
+          name: "Winter 2024",
+          isInProgress: false,
+          timeline: { promotionStartAt: "2024-01-10T08:00:00Z" },
+          feedbackClosesAt: null,
+        },
+      ];
+      const TEXT_A =
+        "Only while the round is in progress: 2025-12-18 to 2026-06-30";
+      const TEXT_B =
+        "Only while the round is in progress: 2025-04-18 to 2025-09-30";
+      const TEXT_C =
+        "Only while the round is in progress. This round has no in-progress dates set.";
+
+      const openList = async (url) => {
+        await renderCard({ url, rounds: HINT_ROUNDS });
+        await mounted();
+        await userEvent.click(screen.getByLabelText("List"));
+      };
+
+      it("gives the in-progress dates in Pacific", async () => {
+        await openList("/?round=3");
+
+        expect(screen.getByText(TEXT_A)).toBeInTheDocument();
+      });
+
+      it("shows no hint for a round in progress", async () => {
+        await openList("/?round=7");
+
+        expect(
+          screen.getByRole("option", { name: "Not registered" }),
+        ).not.toHaveAttribute("aria-disabled");
+        expect(
+          screen.queryByText(/Only while the round is in progress/),
+        ).not.toBeInTheDocument();
+      });
+
+      it("follows the round picked before Search", async () => {
+        await renderCard({ url: "/?round=3", rounds: HINT_ROUNDS });
+        await mounted();
+
+        await userEvent.click(screen.getByLabelText("Round"));
+        await userEvent.click(
+          screen.getByRole("option", { name: "Summer 2025" }),
+        );
+        await userEvent.click(screen.getByLabelText("List"));
+
+        expect(screen.getByText(TEXT_B)).toBeInTheDocument();
+        expect(screen.queryByText(TEXT_A)).not.toBeInTheDocument();
+      });
+
+      it("says no dates are set for a round with no start", async () => {
+        await openList("/?round=9");
+
+        expect(screen.getByText(TEXT_C)).toBeInTheDocument();
+      });
+
+      it("says no dates are set for a round with no close", async () => {
+        await openList("/?round=4");
+
+        expect(screen.getByText(TEXT_C)).toBeInTheDocument();
+      });
     });
 
     it("does not switch lists until Search, and greys out training and approval as soon as it is picked", async () => {
@@ -1379,7 +1478,7 @@ describe("ParticipantSearchCard", () => {
       );
     });
 
-    it("greys out Eligible, with no hint, for a round not in progress", async () => {
+    it("greys out Eligible for a round not in progress, keeping its label", async () => {
       await renderCard({ url: "/?round=3", rounds: ROUNDS });
       await mounted();
 
