@@ -83,6 +83,9 @@ const NEEDS_EXEMPTION = "needs_exemption";
 
 const NO_SELECTION = new Map();
 
+// Why the bulk actions wait while the filters differ from the list shown.
+const SEARCH_AGAIN = "Search again to act on these filters.";
+
 /**
  * What the Run confirm dialog says a new run throws away: the round's
  * unpublished result, and the draft edits saved on it.
@@ -371,6 +374,7 @@ const ParticipantSearchCard = () => {
     submitSearch,
     committedRoundId,
     listKey,
+    filtersEdited,
     eligible,
     notRegistered,
     listNotRegistered,
@@ -447,9 +451,12 @@ const ParticipantSearchCard = () => {
   // A new run takes the round's pointer from the result being edited, and
   // with it the edit and the draft it would save.
   const editLock = committedRun?.editLock;
+  // An edit in progress is named first: searching again would not lift it.
   const runBlockedReason = editLock
     ? `Being edited by ${editLock.name || `ID ${editLock.userId}`} — finish or discard the edit first.`
-    : null;
+    : filtersEdited
+      ? SEARCH_AGAIN
+      : null;
   // A result waiting for approval to publish would be pushed aside by a new
   // run, so none starts until it is decided.
   const canRun =
@@ -931,6 +938,11 @@ const ParticipantSearchCard = () => {
           </p>
         ) : (
           <>
+            {filtersEdited && (
+              <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Filters changed. Click Search to update the list.
+              </p>
+            )}
             {showRunUi && (
               <div className="mb-3 flex justify-end">
                 <DisabledReason reason={runBlockedReason}>
@@ -979,22 +991,28 @@ const ParticipantSearchCard = () => {
                 <span className="text-sm">
                   <strong>{picked.size} people</strong> selected
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setNotifyOpen(true)}
-                >
-                  Send notification · {picked.size}
-                </Button>
-                {canMarkNotified && (
+                <DisabledReason reason={filtersEdited ? SEARCH_AGAIN : null}>
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    onClick={() => setMarkOpen(true)}
+                    disabled={filtersEdited}
+                    onClick={() => setNotifyOpen(true)}
                   >
-                    Mark as notified · {picked.size}
+                    Send notification · {picked.size}
                   </Button>
+                </DisabledReason>
+                {canMarkNotified && (
+                  <DisabledReason reason={filtersEdited ? SEARCH_AGAIN : null}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={filtersEdited}
+                      onClick={() => setMarkOpen(true)}
+                    >
+                      Mark as notified · {picked.size}
+                    </Button>
+                  </DisabledReason>
                 )}
               </div>
             )}
