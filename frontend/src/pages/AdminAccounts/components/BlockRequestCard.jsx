@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
 import AwaitingDecisionCard from "@/components/approval/AwaitingDecisionCard";
+import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
 import { humanizeSource } from "@/pages/AdminAccounts/utils/blockRequests";
 import {
   formatDateTimeWithZone,
@@ -18,6 +19,10 @@ import {
  * stays open until the decision is recorded, so nothing reads the account
  * while the block is still being applied.
  *
+ * Approving shows the same pre-flight the raiser read before sending the
+ * request, read again when the confirm opens so it counts what the block
+ * reaches now rather than when it was asked for.
+ *
  * @param {Object} props
  * @param {Object} props.request - BlockRequestDto for this account.
  * @param {(note: string|null) => Promise<boolean>} props.onApprove - Approve
@@ -25,8 +30,21 @@ import {
  * @param {(note: string) => Promise<boolean>} props.onReject - Turn the
  *   request down, with the reason; resolves true once recorded.
  * @param {boolean} props.submitting - A decision is in flight.
+ * @param {Object|null} [props.preflight] - BlockPreflightDto for this
+ *   account, or null while it is loading or could not be read.
+ * @param {boolean} [props.preflightError] - The pre-flight could not be read.
+ * @param {() => void} [props.onLoadPreflight] - Read the pre-flight; called
+ *   when the approve confirm opens.
  */
-const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
+const BlockRequestCard = ({
+  request,
+  onApprove,
+  onReject,
+  submitting,
+  preflight = null,
+  preflightError = false,
+  onLoadPreflight,
+}) => {
   const tz = resolveViewerTimezone();
   const [decision, setDecision] = useState(null);
   const source = humanizeSource(request.raisedFrom);
@@ -45,7 +63,10 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
       <Button
         type="button"
         variant="destructive"
-        onClick={() => setDecision("approve")}
+        onClick={() => {
+          setDecision("approve");
+          onLoadPreflight?.();
+        }}
         disabled={submitting}
       >
         Approve and block
@@ -70,7 +91,7 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
         description={
           decision === "reject"
             ? `${target} is not blocked. ${request.raisedByName || "The raiser"} is told your reason.`
-            : `${target} is blocked from Purrf at once: their open applications close and their upcoming interviews are cancelled.`
+            : `${target} is blocked from Purrf as soon as you approve.`
         }
         onConfirm={async (comment) => {
           const recorded =
@@ -80,7 +101,11 @@ const BlockRequestCard = ({ request, onApprove, onReject, submitting }) => {
           if (recorded) setDecision(null);
         }}
         submitting={submitting}
-      />
+      >
+        {decision === "approve" && (
+          <BlockPreflight preflight={preflight} error={preflightError} />
+        )}
+      </ApprovalDecisionDialog>
     </AwaitingDecisionCard>
   );
 };

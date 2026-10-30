@@ -184,6 +184,9 @@ const AccountDetailPage = ({ userId }) => {
           submitting={submitting}
           onApprove={(note) => decideRequest(true, note)}
           onReject={(note) => decideRequest(false, note)}
+          preflight={preflight}
+          preflightError={Boolean(preflightError)}
+          onLoadPreflight={loadPreflight}
         />
       )}
 
