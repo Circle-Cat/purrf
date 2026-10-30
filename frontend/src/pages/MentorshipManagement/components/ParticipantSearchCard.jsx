@@ -34,6 +34,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Table from "@/components/common/Table";
+import DisabledReason from "@/components/common/DisabledReason";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
@@ -81,6 +82,25 @@ const ELIGIBLE = "eligible";
 const NEEDS_EXEMPTION = "needs_exemption";
 
 const NO_SELECTION = new Map();
+
+/**
+ * What the Run confirm dialog says a new run throws away: the round's
+ * unpublished result, and the draft edits saved on it.
+ *
+ * @param {{triggeredByName?: string, triggeredByUserId?: string,
+ *   startedAt: string, draftCount?: number}} run The succeeded run's overview.
+ * @returns {string}
+ */
+const replaceWarning = (run) => {
+  const by =
+    run.triggeredByName ||
+    (run.triggeredByUserId != null ? `ID ${run.triggeredByUserId}` : "unknown");
+  const at = formatInTz(run.startedAt, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
+  const drafts = run.draftCount
+    ? `, including ${run.draftCount} draft ${run.draftCount === 1 ? "edit" : "edits"}`
+    : "";
+  return `This replaces the current result (run started by ${by} at ${at})${drafts}. The current result can't be recovered.`;
+};
 
 /**
  * Maps table column accessors to backend sort_by field names. Only columns
@@ -424,13 +444,22 @@ const ParticipantSearchCard = () => {
   const menteeCount = pickedRoles.filter(
     (r) => r === MentorshipParticipantRoles.MENTEE,
   ).length;
+  // A new run takes the round's pointer from the result being edited, and
+  // with it the edit and the draft it would save.
+  const editLock = committedRun?.editLock;
+  const runBlockedReason = editLock
+    ? `Being edited by ${editLock.name || `ID ${editLock.userId}`} — finish or discard the edit first.`
+    : null;
   // A result waiting for approval to publish would be pushed aside by a new
   // run, so none starts until it is decided.
   const canRun =
     mentorCount > 0 &&
     menteeCount > 0 &&
     committedRun?.status !== RUN_STATUS.RUNNING &&
-    committedRun?.publishRequest == null;
+    committedRun?.publishRequest == null &&
+    runBlockedReason == null;
+  const replacing =
+    committedRun?.status === RUN_STATUS.SUCCEEDED ? committedRun : null;
   const committedRoundName =
     (rounds ?? []).find((r) => String(r.id) === committedRoundId)?.name ?? "";
 
@@ -904,14 +933,16 @@ const ParticipantSearchCard = () => {
           <>
             {showRunUi && (
               <div className="mb-3 flex justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!canRun}
-                  onClick={() => setConfirmOpen(true)}
-                >
-                  Run matching · {picked.size}
-                </Button>
+                <DisabledReason reason={runBlockedReason}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canRun}
+                    onClick={() => setConfirmOpen(true)}
+                  >
+                    Run matching · {picked.size}
+                  </Button>
+                </DisabledReason>
               </div>
             )}
             <Table
@@ -1001,6 +1032,11 @@ const ParticipantSearchCard = () => {
                 {mentorCount} mentors and {menteeCount} mentees.
               </DialogDescription>
             </DialogHeader>
+            {replacing && (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {replaceWarning(replacing)}
+              </p>
+            )}
             <DialogFooter>
               <Button
                 type="button"
@@ -1010,8 +1046,13 @@ const ParticipantSearchCard = () => {
               >
                 Cancel
               </Button>
-              <Button type="button" disabled={starting} onClick={runMatching}>
-                Run
+              <Button
+                type="button"
+                variant={replacing ? "destructive" : "default"}
+                disabled={starting}
+                onClick={runMatching}
+              >
+                {replacing ? "Replace and run" : "Run"}
               </Button>
             </DialogFooter>
           </DialogContent>
