@@ -177,6 +177,21 @@ const trainingLabel = (status) => {
 };
 
 /**
+ * @param {Object} round - A round from the rounds list.
+ * @returns {string} Why the lists that need a round in progress are greyed
+ *   out: the round's in-progress span in Pacific, or that it has none.
+ */
+const inProgressHint = (round) => {
+  const start = round.timeline?.promotionStartAt;
+  const end = round.feedbackClosesAt;
+  if (!start || !end) {
+    return "Only while the round is in progress. This round has no in-progress dates set.";
+  }
+  const day = (iso) => formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd");
+  return `Only while the round is in progress: ${day(start)} to ${day(end)}`;
+};
+
+/**
  * The person's display name, linked to their detail page in the round, over
  * their user ID and primary email.
  *
@@ -529,6 +544,7 @@ const ParticipantSearchCard = () => {
     if (notificationFiltered) refetch();
   };
 
+  const draftRound = (rounds ?? []).find((r) => String(r.id) === roundId);
   const hasPrev = offset > 0;
   const hasNext = offset + limit < total;
 
@@ -912,6 +928,11 @@ const ParticipantSearchCard = () => {
               <SelectItem value={ELIGIBLE} disabled={!canListEligible}>
                 Eligible for matching
               </SelectItem>
+              {draftRound && !canListNotRegistered && (
+                <p className="max-w-56 px-2 py-1.5 text-xs text-muted-foreground">
+                  {inProgressHint(draftRound)}
+                </p>
+              )}
             </SelectContent>
           </Select>
           {kitEmailOn && !listEligible && !listNeedsExemption && (
