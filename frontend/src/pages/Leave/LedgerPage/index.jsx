@@ -9,12 +9,10 @@ const formatOptionLabel = (p) => {
   const rawName = p.name?.trim();
   const displayName = rawName || `User ${p.userId}`;
 
-  const ldapClean = p.ldap && p.ldap !== "null" ? p.ldap.trim() : null;
+  const ldapClean = p.ldap?.trim();
   const ldapStr = ldapClean ? `(${ldapClean})` : "";
 
-  const statusStr = p.isFormer === true ? "(Inactive/Left)" : "";
-
-  return [displayName, ldapStr, statusStr].filter(Boolean).join(" ");
+  return [displayName, ldapStr].filter(Boolean).join(" ");
 };
 
 /**
@@ -52,7 +50,6 @@ export default function LedgerPage({
           userId: id,
           name: p.name,
           ldap: p.ldap,
-          isFormer: Boolean(p.isFormer || p.isInactive || p.status === "left"),
         });
       }
     });
@@ -64,7 +61,6 @@ export default function LedgerPage({
           userId: uid,
           name: entry.name,
           ldap: entry.ldap,
-          isFormer: entry.isFormer === true || entry.isInactive === true,
         });
       }
     });

@@ -25,16 +25,19 @@ const BalanceHistoryRow = ({ entry, showPerson = false }) => {
         ? "text-rose-600"
         : "text-muted-foreground";
 
-  const userId = entry?.userId;
-
-  const displayName = entry?.name?.trim();
-  const displayLdap = entry?.ldap?.trim();
-
   let personText = null;
-  if (displayName) {
-    personText = displayLdap ? `${displayName} · ${displayLdap}` : displayName;
-  } else if (userId) {
-    personText = `User ${userId} — unavailable`;
+  if (showPerson) {
+    const userId = entry?.userId;
+    const displayName = entry?.name?.trim();
+    const displayLdap = entry?.ldap?.trim();
+
+    if (displayName) {
+      personText = displayLdap
+        ? `${displayName} · ${displayLdap}`
+        : displayName;
+    } else if (userId) {
+      personText = `User ${userId} — unavailable`;
+    }
   }
 
   return (

@@ -55,22 +55,6 @@ const EXCLUSION_GROUPS = [
  * @returns {JSX.Element}
  */
 
-const getPersonDisplayName = (person, fallbackUserId) => {
-  if (typeof person === "string") return person.trim();
-  const userId =
-    (typeof person === "object" && person?.userId) || fallbackUserId;
-  if (!person) return `User ${userId || "unknown"}`;
-
-  const name = person.name?.trim();
-  const ldap = person.ldap?.trim();
-
-  if (name) return ldap ? `${name} (${ldap})` : name;
-  if (userId) return `User ${userId}`;
-  if (ldap) return ldap;
-
-  return "Unknown User";
-};
-
 const LeaveBalancesPage = ({ onViewHistory }) => {
   const {
     people,
@@ -260,34 +244,9 @@ const LeaveBalancesPage = ({ onViewHistory }) => {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <p className="m-0 text-sm text-muted-foreground">{fix}</p>
-                  <ul className="divide-y divide-gray-100 mt-2">
-                    {excluded[key].map((person, index) => {
-                      const userId =
-                        typeof person === "object" ? person?.userId : person;
-                      const displayName = getPersonDisplayName(person, userId);
-
-                      return (
-                        <li
-                          key={userId || index}
-                          className="flex items-center justify-between py-1.5"
-                        >
-                          <span className="text-sm font-medium">
-                            {displayName}
-                          </span>
-                          {onViewHistory && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              aria-label={`View history for ${displayName}`}
-                              onClick={() => onViewHistory(userId)}
-                            >
-                              View history
-                            </Button>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <p className="m-0 text-sm">
+                    {(excluded[key] ?? []).join(", ")}
+                  </p>
                 </CardContent>
               </Card>
             ),

@@ -1,5 +1,5 @@
 import { Navigate } from "react-router-dom";
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import LeaveBalancesPanel from "@/pages/Leave/BalancesPage";
@@ -24,28 +24,11 @@ import LedgerPage from "@/pages/Leave/LedgerPage";
 const LeaveAdminPage = () => {
   const { isEnabled, isReady } = useLeaveEnabled();
 
-  const { people: paidPeople, excluded } = useLeaveBalances();
+  const { people: paidPeople } = useLeaveBalances();
 
   const [tab, setTab] = useState("balances");
   const [ledgerUserId, setLedgerUserId] = useState(null);
   const [ledgerPage, setLedgerPage] = useState(1);
-
-  const allPeople = useMemo(() => {
-    const rawExcludedList = Object.values(excluded || {}).flat();
-
-    const formattedExcludedList = rawExcludedList.map((person) => {
-      if (typeof person === "object" && person !== null) {
-        return person;
-      }
-      return {
-        userId: person,
-        name: null,
-        ldap: typeof person === "string" ? person : null,
-      };
-    });
-
-    return [...(paidPeople || []), ...formattedExcludedList];
-  }, [paidPeople, excluded]);
 
   if (!isReady) {
     return null;
@@ -87,7 +70,7 @@ const LeaveAdminPage = () => {
           <LedgerPage
             userId={ledgerUserId}
             page={ledgerPage}
-            people={allPeople}
+            people={paidPeople || []}
             onUserChange={handleLedgerUserChange}
             onPageChange={setLedgerPage}
           />

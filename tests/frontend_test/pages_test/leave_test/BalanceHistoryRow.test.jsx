@@ -176,6 +176,7 @@ describe("BalanceHistoryRow", () => {
   it("renders person info directly from entry.name and entry.ldap", () => {
     render(
       <BalanceHistoryRow
+        showPerson={true}
         entry={entry({
           name: "Alice Smith",
           ldap: "asmith",
@@ -191,6 +192,7 @@ describe("BalanceHistoryRow", () => {
   it("falls back to User <id> — unavailable when entry.name is null/missing", () => {
     render(
       <BalanceHistoryRow
+        showPerson={true}
         entry={entry({
           userId: 42,
           name: null,
