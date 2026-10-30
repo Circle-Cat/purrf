@@ -159,6 +159,7 @@ const RoundFeedbackPage = () => {
             />
             Not sent only
           </label>
+          <span className="text-gray-500">{rows.length} shown</span>
         </div>
         {rows.length > 0 ? (
           <div className="rounded-lg border">
