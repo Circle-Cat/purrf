@@ -90,15 +90,11 @@ const BlockDialog = ({
 
   const name = accountLabel(account);
   const preflightBlock = (
-    <>
-      <BlockPreflight preflight={preflight} timezone={timezone} />
-      {preflightError && (
-        <p className="text-sm text-slate-500">
-          Couldn&apos;t read what this will affect. The block still does all of
-          the above.
-        </p>
-      )}
-    </>
+    <BlockPreflight
+      preflight={preflight}
+      timezone={timezone}
+      error={preflightError}
+    />
   );
 
   if (isRequest) {
