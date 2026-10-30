@@ -11,6 +11,7 @@ from datetime import date
 
 from backend.common.exceptions import ConflictError
 from backend.common.matching_job_client import MatcherJobNotStarted
+from backend.common.name_utils import user_display_name
 from backend.mentorship.matching_payload_service import new_run_id
 from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
 
@@ -25,6 +26,7 @@ class MatchingRunService:
         matching_job_client,
         matching_eligibility_service,
         approval_service,
+        users_repository,
         logger,
     ):
         """
@@ -35,6 +37,8 @@ class MatchingRunService:
             matching_job_client: Starts the job that reads it.
             approval_service (ApprovalService): Says whether the round's
                 result is waiting for approval to publish.
+            users_repository (UsersRepository): Names whoever is editing the
+                round's result.
             logger: Injected logger.
         """
         self.matching_payload_service = matching_payload_service
@@ -42,7 +46,20 @@ class MatchingRunService:
         self.matching_job_client = matching_job_client
         self.matching_eligibility_service = matching_eligibility_service
         self.approval_service = approval_service
+        self.users_repository = users_repository
         self.logger = logger
+
+    async def _holder_name(self, session, user_id: str) -> str:
+        """Name the admin holding an edit lock, or say which user id it is."""
+        people = await self.users_repository.get_all_by_ids(session, [int(user_id)])
+        if not people:
+            return f"user {user_id}"
+        person = people[0]
+        return user_display_name(
+            first_name=person.first_name,
+            last_name=person.last_name,
+            preferred_name=person.preferred_name,
+        )
 
     async def start_run(
         self,
@@ -80,7 +97,7 @@ class MatchingRunService:
 
         Raises:
             ConflictError: This round already has a run going, or its result
-                is waiting for approval to publish.
+                is waiting for approval to publish or being edited.
             ValueError: A requested user is not eligible for matching in the
                 round, is not registered for it, the
                 selection has no mentor or no mentee, or the job is not
@@ -96,6 +113,16 @@ class MatchingRunService:
         ):
             raise ConflictError(
                 f"Round {round_id}'s result is waiting for approval to publish."
+            )
+
+        # The new run would also take the pointer away from an editing session
+        # and the draft it is about to save.
+        held = self.matching_storage.edit_lock(current) if current is not None else None
+        if held is not None:
+            name = await self._holder_name(session, held[0])
+            raise ConflictError(
+                f"Round {round_id}'s result is being edited by {name}. "
+                "Finish or discard the edit before running again."
             )
 
         # Checked before the round is claimed, so a refused selection never
