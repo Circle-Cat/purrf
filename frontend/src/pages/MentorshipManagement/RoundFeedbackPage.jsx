@@ -222,6 +222,13 @@ const RoundFeedbackPage = () => {
             </span>
           ) : null}
         </div>
+        {feedback && !isLoading && !error ? (
+          <p className="text-sm text-gray-500">
+            Feedback is asked of everyone paired in this round, including pairs
+            that ended. People who registered but were never paired are not
+            listed.
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent>{body}</CardContent>
     </Card>
