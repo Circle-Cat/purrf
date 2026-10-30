@@ -904,20 +904,27 @@ class JobService:
         return [self.recruiting_mapper.to_public_job_summary_dto(j) for j in jobs]
 
     @staticmethod
-    def _reject_info(latest) -> tuple[str | None, str | None]:
+    def _reject_info(latest, job: JobEntity) -> tuple[str | None, str | None]:
         """Return (reject_comment, kind) if latest is a rejected review.
+
+        A rejected revision only stands while its staged edit does: once the
+        author discards the edit there is nothing left to resubmit or fix.
 
         Args:
             latest (ApprovalRequestEntity | None): The job's most-recent
                 review, or None if it has never had one.
+            job (JobEntity): The posting the review is about.
 
         Returns:
             tuple[str | None, str | None]: (comment, kind) when latest is a
-            rejected review, otherwise (None, None).
+            rejected review that still stands, otherwise (None, None).
         """
         if latest is None or latest.status != ApprovalRequestStatus.REJECTED:
             return None, None
-        return latest.decision_comment, latest.payload["kind"]
+        kind = latest.payload["kind"]
+        if kind == JobReviewKind.REVISION and job.pending_payload is None:
+            return None, None
+        return latest.decision_comment, kind
 
     async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
         """List postings of every status (internal/admin view).
@@ -945,7 +952,7 @@ class JobService:
         dtos = []
         for j in jobs:
             latest = latest_reviews.get(str(j.job_id))
-            comment, kind = self._reject_info(latest)
+            comment, kind = self._reject_info(latest, j)
             reviewer_id = (
                 latest.reviewer_id
                 if latest is not None and latest.status == ApprovalRequestStatus.PENDING
@@ -1013,7 +1020,7 @@ class JobService:
         latest_reviews = await self.approval_service.latest_for_targets(
             session, JOB_REVIEW, [str(job_id)]
         )
-        comment, kind = self._reject_info(latest_reviews.get(str(job_id)))
+        comment, kind = self._reject_info(latest_reviews.get(str(job_id)), job)
         return self.recruiting_mapper.to_job_dto(
             job,
             last_reject_comment=comment,

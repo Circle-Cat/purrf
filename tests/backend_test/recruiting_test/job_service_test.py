@@ -436,7 +436,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_job_surfaces_last_reject_kind(self):
         """get_job populates last_reject_comment/last_reject_kind from the job's most-recent rejected review, mirroring list_all_jobs."""
-        job = self._job(status=JobStatus.DRAFT)
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload={"title": "T2"})
         self.repo.get_by_job_id.return_value = job
         self._seed_review(
             JobReviewKind.REVISION,
@@ -458,6 +458,105 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.last_reject_comment)
         self.assertIsNone(result.last_reject_kind)
+
+    async def test_get_job_shows_a_rejected_revision_while_its_edit_is_staged(self):
+        """The author can still fix and resubmit the staged edit, so the rejection stands."""
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload={"title": "T2"})
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Add the salary band",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind),
+            ("Add the salary band", "revision"),
+        )
+
+    async def test_get_job_hides_a_rejected_revision_once_its_edit_is_gone(self):
+        """A discarded edit leaves nothing to resubmit, so the rejection no longer shows."""
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload=None)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Drop the second stage",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind), (None, None)
+        )
+
+    async def test_list_all_jobs_hides_a_rejected_revision_once_its_edit_is_gone(self):
+        """Each posting is judged by its own staged edit, as get_job does."""
+        staged = self._job(status=JobStatus.PUBLISHED, pending_payload={"title": "T2"})
+        staged.job_id = 41
+        discarded = self._job(status=JobStatus.PUBLISHED, pending_payload=None)
+        discarded.job_id = 42
+        self.repo.list_all.return_value = [staged, discarded]
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Keep the old title",
+            job_id=41,
+        )
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Shorten the form",
+            job_id=42,
+        )
+
+        result = await self.service.list_all_jobs(self.session)
+
+        dto_41 = next(r for r in result if r.id == 41)
+        dto_42 = next(r for r in result if r.id == 42)
+        self.assertEqual(
+            (dto_41.last_reject_comment, dto_41.last_reject_kind),
+            ("Keep the old title", "revision"),
+        )
+        self.assertEqual(
+            (dto_42.last_reject_comment, dto_42.last_reject_kind), (None, None)
+        )
+
+    async def test_get_job_keeps_a_rejected_close_with_nothing_staged(self):
+        """A close rejection is about the status change, not an edit."""
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload=None)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.CLOSE,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Still hiring for this",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind),
+            ("Still hiring for this", "close"),
+        )
+
+    async def test_get_job_keeps_a_rejected_reopen_with_nothing_staged(self):
+        """A reopen rejection is about the status change, not an edit."""
+        job = self._job(status=JobStatus.CLOSED, pending_payload=None)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.REOPEN,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Budget is frozen",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind),
+            ("Budget is frozen", "reopen"),
+        )
 
     async def test_get_job_lists_every_submit_blocker_of_a_draft(self):
         """The detail page disables Submit for review from this list, so a
@@ -1754,7 +1853,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_all_jobs_surfaces_latest_rejection_comment(self):
         """list_all_jobs populates last_reject_comment for jobs whose latest review is REJECTED."""
-        job_with_reject = self._job(status=JobStatus.DRAFT)
+        job_with_reject = self._job(
+            status=JobStatus.PUBLISHED, pending_payload={"title": "T2"}
+        )
         job_with_reject.job_id = 41
         job_no_reject = self._job(status=JobStatus.PUBLISHED)
         job_no_reject.job_id = 42
