@@ -140,6 +140,30 @@ async def load_calendar(
     return frozenset(holidays), frozenset(exchangeable)
 
 
+def unexchangeable_days(
+    start_date: datetime.date,
+    end_date: datetime.date,
+    exchangeable: frozenset[datetime.date],
+) -> list[datetime.date]:
+    """The days of an exchange's range that cannot be exchanged.
+
+    Args:
+        start_date: First day of the exchange.
+        end_date: Last day of the exchange.
+        exchangeable: The holidays that may be exchanged, from load_calendar.
+
+    Returns:
+        Those days in order; empty when every day qualifies.
+    """
+    days = []
+    day = start_date
+    while day <= end_date:
+        if day not in exchangeable:
+            days.append(day)
+        day += datetime.timedelta(days=1)
+    return days
+
+
 def ledger_entry_for(
     request: LeaveRequestEntity, *, created_by: int | None
 ) -> LeaveLedgerEntity | None:
@@ -408,8 +432,9 @@ class LeaveRequestService:
                 approver was snapshotted at submission, so anybody else
                 deciding would attribute the approval to the wrong person.
             ConflictError: It has already been decided, or approving it no
-                longer holds (it has started, its hours have changed, or its
-                owner is no longer active); it stays pending.
+                longer holds (it has started, its hours have changed, an
+                exchange's days are no longer exchangeable, or its owner is no
+                longer active); it stays pending.
         """
         pending = await self._pending_approval(
             session,
@@ -801,16 +826,11 @@ class LeaveRequestService:
         Raises:
             ValueError: Naming the days, so the person can fix the range.
         """
-        day = start_date
-        ineligible = []
-        while day <= end_date:
-            if day not in exchangeable:
-                ineligible.append(str(day))
-            day += datetime.timedelta(days=1)
+        ineligible = unexchangeable_days(start_date, end_date, exchangeable)
         if ineligible:
             raise ValueError(
                 "These days are not exchangeable company holidays: "
-                f"{', '.join(ineligible)}."
+                f"{', '.join(map(str, ineligible))}."
             )
 
     async def _is_overdraft(
