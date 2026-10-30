@@ -67,6 +67,48 @@ const leaveAsk = (details) => {
 };
 
 /**
+ * What happened in a posting review, per review kind, after the actor's name.
+ * Keyed by `details.kind`, then by "opened" or the decision.
+ */
+const REVIEW_LINES = {
+  initial: {
+    opened: (title) => `submitted "${title}" for your review`,
+    approved: (title) => `approved "${title}"`,
+    rejected: (title) => `rejected "${title}"`,
+    withdrawn: (title) => `withdrew the review of "${title}"`,
+  },
+  revision: {
+    opened: (title) => `submitted changes to "${title}" for your review`,
+    approved: (title) => `approved your changes to "${title}"`,
+    rejected: (title) => `rejected your changes to "${title}"`,
+    withdrawn: (title) => `withdrew the changes to "${title}"`,
+  },
+  close: {
+    opened: (title) => `asked to close "${title}"`,
+    approved: (title) => `approved closing "${title}"`,
+    rejected: (title) => `rejected closing "${title}"`,
+    withdrawn: (title) => `withdrew the request to close "${title}"`,
+  },
+  reopen: {
+    opened: (title) => `asked to reopen "${title}"`,
+    approved: (title) => `approved reopening "${title}"`,
+    rejected: (title) => `rejected reopening "${title}"`,
+    withdrawn: (title) => `withdrew the request to reopen "${title}"`,
+  },
+};
+
+/**
+ * The phrases for a posting review's kind. A missing or unknown kind (events
+ * from before the kind was carried) reads as a first publication.
+ * @param {{kind?: string}} details
+ * @returns {Record<string, (title: string) => string>}
+ */
+const reviewLines = (details) =>
+  Object.hasOwn(REVIEW_LINES, details?.kind ?? "")
+    ? REVIEW_LINES[details.kind]
+    : REVIEW_LINES.initial;
+
+/**
  * Compose a notification's display text from its event type and details.
  *
  * Two audiences share this switch. Every recruiting line is written from
@@ -193,16 +235,18 @@ const describe = (n) => {
     case "recruiting.email_bounced":
       return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
     case "recruiting.review_opened":
-      return `${actor} submitted "${n.jobTitle}" for your review`;
-    case "recruiting.review_decided":
+      return `${actor} ${reviewLines(n.details).opened(n.jobTitle)}`;
+    case "recruiting.review_decided": {
       // Withdrawn is told to the reviewer it was waiting on; the other two
       // to the submitter.
+      const lines = reviewLines(n.details);
       if (n.details?.decision === "withdrawn") {
-        return `${actor} withdrew the review of "${n.jobTitle}"`;
+        return `${actor} ${lines.withdrawn(n.jobTitle)}`;
       }
       return n.details?.decision === "approved"
-        ? `${actor} approved "${n.jobTitle}"`
-        : `${actor} rejected "${n.jobTitle}"`;
+        ? `${actor} ${lines.approved(n.jobTitle)}`
+        : `${actor} ${lines.rejected(n.jobTitle)}`;
+    }
     case "recruiting.application_submitted":
       return n.details?.screenAutoHireRuleId
         ? `${n.applicantName} applied to ${n.jobTitle} and was ${
