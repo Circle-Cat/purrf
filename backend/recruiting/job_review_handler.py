@@ -140,6 +140,7 @@ class JobReviewHandler(ApprovalHandler):
             "kind": request.payload["kind"],
             "reviewId": request.request_id,
             "message": request.reason,
+            "reviewerId": request.reviewer_id,
         }
 
     async def check_raise(

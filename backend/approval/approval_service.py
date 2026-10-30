@@ -250,6 +250,7 @@ class ApprovalService:
                 "requestId": request_id,
                 "action": action,
                 "previousReviewerId": previous_reviewer_id,
+                "reviewerId": reviewer_id,
             },
         )
         await session.commit()
