@@ -56,6 +56,28 @@ const readOneOf = (params, key, allowed) => {
 };
 
 /**
+ * The parts of a search that pick who is listed, in one comparable string.
+ * Training and approval do not apply to Not registered, so they are left out
+ * of it there.
+ */
+const filtersKey = (s) =>
+  JSON.stringify([
+    s.userId,
+    s.q.trim(),
+    s.account,
+    s.internal,
+    s.notRegistered ? "" : s.training,
+    s.round,
+    s.role,
+    s.notRegistered ? "" : s.approval,
+    s.notifyStage,
+    s.notifyStage ? s.notifyState : "",
+    s.notRegistered,
+    s.eligible,
+    s.needsExemption,
+  ]);
+
+/**
  * Owns the participant search.
  *
  * The inputs are drafts: nothing is fetched when they change, only when
@@ -84,6 +106,9 @@ const readOneOf = (params, key, allowed) => {
  * The notification filter (a stage and its state) is a draft like the rest; a
  * stage the picked list does not offer is dropped, and Eligible and Needs
  * exemption drop it whole.
+ *
+ * `filtersEdited` says a search has run and the drafts would now pick a
+ * different list from the one shown. Paging and sorting do not count.
  *
  * @param {Array<{id: number, isInProgress?: boolean}>|null} rounds - Rounds,
  *   latest first; null while loading.
@@ -508,9 +533,8 @@ export const useParticipantSearch = (
     }
   };
 
-  /** Commit the drafts as the search and load its first page. */
-  const submitSearch = () => {
-    if (!canSearch) return;
+  /** The search the drafts would commit, resolved as Search resolves it. */
+  const draftSearch = () => {
     const inNotRegistered = listNotRegistered && canListNotRegistered;
     const inEligible = listEligible && canListEligible && !inNotRegistered;
     const inNeedsExemption =
@@ -526,22 +550,64 @@ export const useParticipantSearch = (
       offersStage(inNotRegistered, notification.stage)
         ? notification.stage
         : "";
+    return {
+      userId,
+      q: q.trim(),
+      account: accountStatus,
+      internal,
+      training: inNotRegistered ? "" : onboardingStatus,
+      round: draftRoundId,
+      role: participantRole,
+      approval: inNotRegistered ? "" : approvalStatus,
+      notifyStage,
+      notifyState: notifyStage ? notification.state : "",
+      notRegistered: inNotRegistered,
+      eligible: inEligible,
+      needsExemption: inNeedsExemption,
+    };
+  };
+
+  // The list on screen is the committed search's; once a draft differs from
+  // it, acting on the list would act on people the filters no longer pick.
+  const filtersEdited =
+    hasSearched &&
+    filtersKey(draftSearch()) !==
+      filtersKey({
+        userId: committedUserId,
+        q: committedQ,
+        account: committedAccount,
+        internal: committedInternal,
+        training: committedOnboarding,
+        round: committedRoundId,
+        role: committedRole,
+        approval: committedApproval,
+        notifyStage: notificationFiltered ? committedNotifyStage : "",
+        notifyState: notificationFiltered ? committedNotifyState : "",
+        notRegistered,
+        eligible,
+        needsExemption,
+      });
+
+  /** Commit the drafts as the search and load its first page. */
+  const submitSearch = () => {
+    if (!canSearch) return;
+    const draft = draftSearch();
     const before = searchParams.toString();
     const after = writeUrl({
-      [PARAM.ID]: userId,
-      [PARAM.Q]: q.trim(),
-      [PARAM.ACCOUNT]: accountStatus,
-      [PARAM.INTERNAL]: internal,
-      [PARAM.TRAINING]: inNotRegistered ? "" : onboardingStatus,
-      [PARAM.ROUND]: draftRoundId,
-      [PARAM.ROLE]: participantRole,
-      [PARAM.APPROVAL]: inNotRegistered ? "" : approvalStatus,
-      [PARAM.NOTIFY_STAGE]: notifyStage,
-      [PARAM.NOTIFY_STATE]: notifyStage ? notification.state : "",
+      [PARAM.ID]: draft.userId,
+      [PARAM.Q]: draft.q,
+      [PARAM.ACCOUNT]: draft.account,
+      [PARAM.INTERNAL]: draft.internal,
+      [PARAM.TRAINING]: draft.training,
+      [PARAM.ROUND]: draft.round,
+      [PARAM.ROLE]: draft.role,
+      [PARAM.APPROVAL]: draft.approval,
+      [PARAM.NOTIFY_STAGE]: draft.notifyStage,
+      [PARAM.NOTIFY_STATE]: draft.notifyState,
       ...withSort(sortBy, order),
-      [PARAM.NOT_REGISTERED]: inNotRegistered ? "1" : "",
-      [PARAM.ELIGIBLE]: inEligible ? "1" : "",
-      [PARAM.NEEDS_EXEMPTION]: inNeedsExemption ? "1" : "",
+      [PARAM.NOT_REGISTERED]: draft.notRegistered ? "1" : "",
+      [PARAM.ELIGIBLE]: draft.eligible ? "1" : "",
+      [PARAM.NEEDS_EXEMPTION]: draft.needsExemption ? "1" : "",
     }).toString();
     // Searching again for what is already committed still re-reads the list.
     if (before === after) fetchRows();
@@ -597,6 +663,7 @@ export const useParticipantSearch = (
     submitSearch,
     committedRoundId,
     listKey,
+    filtersEdited,
     notRegistered,
     listNotRegistered,
     setListNotRegistered: pickNotRegistered,
