@@ -1102,6 +1102,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": created.request_id,
                 "message": "please",
+                "reviewerId": 2,
                 "requestId": created.request_id,
                 "action": JOB_REVIEW,
             },
@@ -1268,6 +1269,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": review.request_id,
                 "message": None,
+                "reviewerId": 9,
                 "requestId": review.request_id,
                 "action": JOB_REVIEW,
                 "decision": "approved",
@@ -1409,7 +1411,8 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.submit_message, "Please take a look")
 
     async def test_reassign_review_records_who_it_came_from(self):
-        """The event carries the previous reviewer, which the row no longer does.
+        """The event carries the previous reviewer, which the row no longer
+        does, and the new one, which the timeline names.
 
         Without it the timeline can say a reassignment happened but not what
         it undid, and the row has already been overwritten by then.
@@ -1432,6 +1435,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["event_type"], RecruitingEvent.REVIEW_REASSIGNED)
         self.assertEqual(kwargs["details"]["reviewId"], review.request_id)
         self.assertEqual(kwargs["details"]["previousReviewerId"], 2)
+        # The handler's snapshot is taken before the move, so the service's
+        # own reviewerId has to be the one that lands.
+        self.assertEqual(kwargs["details"]["reviewerId"], 3)
         # The event must be written before the commit, or a rollback would
         # drop the notification while the reassignment survived.
         self.assertEqual(self.call_order, ["record", "commit"])
@@ -1596,6 +1602,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": review.request_id,
                 "message": "please",
+                "reviewerId": 9,
                 "requestId": review.request_id,
                 "action": JOB_REVIEW,
                 "decision": "rejected",
@@ -1695,6 +1702,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": review.request_id,
                 "message": "please",
+                "reviewerId": 2,
                 "requestId": review.request_id,
                 "action": JOB_REVIEW,
                 "decision": "withdrawn",

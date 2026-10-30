@@ -245,10 +245,11 @@ const PostingDetailPage = () => {
     const { eventType, actorName, details = {} } = entry;
     // Null actorName means the rules did it, not a person.
     const who = actorName ?? "Automatically";
-    const reviewerId = details.reviewerIds?.[0];
-    const reviewerName = reviewerId
-      ? (approversById[reviewerId] ?? `Reviewer #${reviewerId}`)
-      : null;
+    const nameOfReviewer = (reviewerId) =>
+      reviewerId != null
+        ? (approversById[reviewerId] ?? `Reviewer #${reviewerId}`)
+        : null;
+    const reviewerName = nameOfReviewer(details.reviewerId);
     if (eventType === "recruiting.job_created") {
       return `${who} created this posting as a draft`;
     }
@@ -263,6 +264,12 @@ const PostingDetailPage = () => {
       return reviewerName
         ? `${who} ${verb}, assigned to ${reviewerName}`
         : `${who} ${verb}`;
+    }
+    if (eventType === "recruiting.review_reassigned") {
+      const previousName = nameOfReviewer(details.previousReviewerId);
+      return `${who} reassigned the review${
+        previousName ? ` from ${previousName}` : ""
+      }${reviewerName ? ` to ${reviewerName}` : ""}`;
     }
     if (eventType === "recruiting.review_decided") {
       const templates = {

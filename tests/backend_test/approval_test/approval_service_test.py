@@ -392,6 +392,7 @@ class TestReassign(ApprovalServiceTestBase):
                 "requestId": REQUEST_ID,
                 "action": "publish_matching",
                 "previousReviewerId": REVIEWER,
+                "reviewerId": OTHER_REVIEWER,
             },
         )
         self.assertEqual(self.order, ["event", "commit"])

@@ -775,8 +775,13 @@ describe("PostingDetailPage", () => {
       },
     });
     api.listApprovers.mockResolvedValue({
-      data: [{ userId: 9, name: "Yanpei Wang" }],
+      data: [
+        { userId: 9, name: "Yanpei Wang" },
+        { userId: 12, name: "Mei Lin" },
+      ],
     });
+    // The details mirror what JobReviewHandler.event_details and the
+    // approval service write for each event.
     api.listJobActivity.mockResolvedValue({
       data: [
         {
@@ -790,21 +795,49 @@ describe("PostingDetailPage", () => {
         {
           id: 2,
           eventType: "recruiting.review_opened",
-          details: { kind: "initial", reviewerIds: [9], message: null },
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 9,
+            requestId: 40,
+            action: "job_review",
+          },
           actorId: 3,
           actorName: "Yuanyuan Huang",
           createdAt: "2026-07-11T09:20:00Z",
         },
         {
           id: 3,
+          eventType: "recruiting.review_reassigned",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            previousReviewerId: 9,
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T10:00:00Z",
+        },
+        {
+          id: 4,
           eventType: "recruiting.review_decided",
           details: {
             kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
             decision: "rejected",
             comment: "Fix the title",
           },
-          actorId: 9,
-          actorName: "Yanpei Wang",
+          actorId: 12,
+          actorName: "Mei Lin",
           createdAt: "2026-07-11T15:21:39Z",
         },
       ],
@@ -829,7 +862,64 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Yanpei Wang rejected the review.*Fix the title.*sent back to draft/,
+        /Yuanyuan Huang reassigned the review from Yanpei Wang to Mei Lin/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Mei Lin rejected the review.*Fix the title.*sent back to draft/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names a reviewer who is no longer an approver by id in the review history", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 12,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 12, name: "Mei Lin" }],
+    });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.review_reassigned",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            previousReviewerId: 9,
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T10:00:00Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Yuanyuan Huang reassigned the review from Reviewer #9 to Mei Lin/,
       ),
     ).toBeInTheDocument();
   });

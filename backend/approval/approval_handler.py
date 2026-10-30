@@ -66,8 +66,8 @@ class ApprovalHandler(ABC):
 
         Returns:
             dict: Fields merged into the event's details. The service's own
-                fields (requestId, action, decision, previousReviewerId) win
-                over any of the same name.
+                fields (requestId, action, decision, previousReviewerId, and
+                reviewerId on a reassignment) win over any of the same name.
         """
         return {}
 
