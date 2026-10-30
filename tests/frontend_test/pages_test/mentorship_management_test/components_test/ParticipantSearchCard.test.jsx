@@ -1845,6 +1845,157 @@ describe("ParticipantSearchCard", () => {
       expect(runButton()).toBeDisabled();
     });
 
+    // Started 14:30 Pacific by someone other than the viewer (9) or the editor.
+    const succeededOverview = (overrides = {}) => ({
+      data: {
+        status: "succeeded",
+        runId: "r7-a",
+        startedAt: "2026-10-05T21:30:00Z",
+        triggeredByUserId: "5845",
+        triggeredByName: "Ada Ng",
+        mentorCount: 4,
+        menteeCount: 6,
+        draftCount: 0,
+        editLock: null,
+        publishRequest: null,
+        ...overrides,
+      },
+    });
+
+    const openConfirm = async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalled());
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      await userEvent.click(runButton());
+      return screen.findByRole("dialog");
+    };
+
+    it("cannot run while the round's result is being edited, and says by whom", async () => {
+      const user = userEvent.setup();
+      getMatchingRun.mockResolvedValue(
+        succeededOverview({
+          editLock: {
+            userId: "58",
+            name: "Mei Tanaka",
+            expiresAt: "2026-10-05T22:00:00Z",
+          },
+        }),
+      );
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalled());
+
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      await waitFor(() => expect(runButton()).toBeDisabled());
+      await user.hover(runButton().parentElement);
+      expect(
+        await screen.findByRole("tooltip", {
+          name: "Being edited by Mei Tanaka — finish or discard the edit first.",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("warns that Run replaces the unpublished result, and replaces it as before", async () => {
+      getMatchingRun.mockResolvedValue(succeededOverview());
+
+      const dialog = await openConfirm();
+
+      expect(
+        within(dialog).getByText(
+          "This replaces the current result (run started by Ada Ng at 2026-10-05 14:30). The current result can't be recovered.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: "Run" }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Replace and run" }),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("location-path")).toHaveTextContent(
+          "/mentorship-management/matching/7",
+        ),
+      );
+      expect(startMatchingRun).toHaveBeenCalledWith({
+        roundId: 7,
+        participantIds: [11, 12],
+      });
+    });
+
+    it("counts the draft edits the replaced result carries", async () => {
+      getMatchingRun.mockResolvedValue(succeededOverview({ draftCount: 3 }));
+
+      const dialog = await openConfirm();
+
+      expect(
+        within(dialog).getByText(
+          "This replaces the current result (run started by Ada Ng at 2026-10-05 14:30), including 3 draft edits. The current result can't be recovered.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the refusal when the result is taken for editing after the page loaded, and stays", async () => {
+      getMatchingRun.mockResolvedValue(succeededOverview());
+      startMatchingRun.mockRejectedValue({
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            message:
+              "Round 7's result is being edited by Mei Tanaka. Finish or discard the edit before running again.",
+          },
+        },
+      });
+
+      const dialog = await openConfirm();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Replace and run" }),
+      );
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "Round 7's result is being edited by Mei Tanaka. Finish or discard the edit before running again.",
+        ),
+      );
+      expect(screen.getByTestId("location-path")).toHaveTextContent(/^\/$/);
+    });
+
+    it.each([
+      ["no run, or a published one", { data: { status: "never_run" } }],
+      [
+        "a failed run",
+        {
+          data: {
+            status: "failed",
+            runId: "r7-b",
+            startedAt: "2026-10-05T21:30:00Z",
+            triggeredByName: "Ada Ng",
+            error: "matcher crashed",
+          },
+        },
+      ],
+    ])("asks plainly with %s", async (_label, overview) => {
+      getMatchingRun.mockResolvedValue(overview);
+
+      const dialog = await openConfirm();
+
+      expect(
+        within(dialog).queryByText(/This replaces/),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: "Run" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: "Replace and run" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("asks before running, and Cancel starts nothing", async () => {
       await renderCard({ url: ELIGIBLE_URL });
       await screen.findByText("Cara Wang");
