@@ -38,10 +38,12 @@ mail. See ``_Escaped``.
 
 import functools
 import html
+from typing import NamedTuple
 
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
+    JobReviewKind,
 )
 
 _FOOTER = (
@@ -274,12 +276,97 @@ def _email_bounced(dto, stage):
     )
 
 
+class _ReviewWording(NamedTuple):
+    """How the posting review templates name one kind of review.
+
+    Each body phrase is the sentence after the actor, with ``{title}`` where
+    the quoted posting title goes; a subject is what precedes ": <title>".
+    """
+
+    requested_subject: str
+    requested: str
+    reassigned: str
+    approved_subject: str
+    approved: str
+    rejected_subject: str
+    rejected: str
+    withdrawn_subject: str
+    withdrawn: str
+
+
+_REVIEW_WORDING = {
+    JobReviewKind.INITIAL: _ReviewWording(
+        requested_subject="Posting review requested",
+        requested='submitted the posting "{title}" for your review',
+        reassigned='moved the review of the posting "{title}" to you',
+        approved_subject="Posting approved",
+        approved='approved your submission for the posting "{title}"',
+        rejected_subject="Posting rejected",
+        rejected='rejected your submission for the posting "{title}"',
+        withdrawn_subject="Posting review withdrawn",
+        withdrawn='withdrew their request to review the posting "{title}"',
+    ),
+    JobReviewKind.REVISION: _ReviewWording(
+        requested_subject="Posting changes to review",
+        requested='submitted changes to "{title}" for your review',
+        reassigned='moved the review of the changes to "{title}" to you',
+        approved_subject="Posting changes approved",
+        approved='approved your changes to "{title}"',
+        rejected_subject="Posting changes rejected",
+        rejected='rejected your changes to "{title}"',
+        withdrawn_subject="Posting changes withdrawn",
+        withdrawn='withdrew the changes to "{title}"',
+    ),
+    JobReviewKind.CLOSE: _ReviewWording(
+        requested_subject="Posting close requested",
+        requested='asked to close "{title}"',
+        reassigned='moved the request to close "{title}" to you',
+        approved_subject="Posting close approved",
+        approved='approved closing "{title}"',
+        rejected_subject="Posting close rejected",
+        rejected='rejected closing "{title}"',
+        withdrawn_subject="Posting close request withdrawn",
+        withdrawn='withdrew the request to close "{title}"',
+    ),
+    JobReviewKind.REOPEN: _ReviewWording(
+        requested_subject="Posting reopen requested",
+        requested='asked to reopen "{title}"',
+        reassigned='moved the request to reopen "{title}" to you',
+        approved_subject="Posting reopen approved",
+        approved='approved reopening "{title}"',
+        rejected_subject="Posting reopen rejected",
+        rejected='rejected reopening "{title}"',
+        withdrawn_subject="Posting reopen request withdrawn",
+        withdrawn='withdrew the request to reopen "{title}"',
+    ),
+}
+
+
+def _review_wording(dto) -> _ReviewWording:
+    """The wording for the dto's review kind.
+
+    Events recorded before the kind was carried, or with a kind this module
+    does not know, read as a first publication.
+
+    Args:
+        dto (_Escaped): The escaped view a template holds, carrying
+            review_kind from the event's details.
+
+    Returns:
+        _ReviewWording: The phrases for that kind.
+    """
+    return _REVIEW_WORDING.get(
+        dto.plain.review_kind, _REVIEW_WORDING[JobReviewKind.INITIAL]
+    )
+
+
 @_html_body
 def _job_review_requested(dto, stage):
+    wording = _review_wording(dto)
     return (
-        f"Posting review requested: {dto.plain.job_title}",
-        f'<p>{dto.actor} submitted the posting "{dto.job_title}" for your '
-        "review. It is waiting on your decision.</p>"
+        f"{wording.requested_subject}: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.requested.format(title=dto.job_title)}. "
+        "It is waiting on your decision.</p>"
         "<p>Open Job Postings in Purrf to approve or reject it.</p>",
     )
 
@@ -292,20 +379,21 @@ def _job_review_reassigned(dto, stage):
     # to say a handover happened. It does not say why -- the usual reason is
     # that the previous reviewer's account was turned off, which is not this
     # recipient's to know.
+    wording = _review_wording(dto)
     return (
         f"Posting review reassigned: {dto.plain.job_title}",
-        f'<p>{dto.actor} moved the review of the posting "{dto.job_title}" '
-        "to you. It is waiting on your decision.</p>"
+        f"<p>{dto.actor} {wording.reassigned.format(title=dto.job_title)}. "
+        "It is waiting on your decision.</p>"
         "<p>Open Job Postings in Purrf to approve or reject it.</p>",
     )
 
 
 @_html_body
 def _job_review_approved(dto, stage):
+    wording = _review_wording(dto)
     return (
-        f"Posting approved: {dto.plain.job_title}",
-        f"<p>{dto.actor} approved your submission for the posting "
-        f'"{dto.job_title}".</p>'
+        f"{wording.approved_subject}: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.approved.format(title=dto.job_title)}.</p>"
         "<p>Open Job Postings in Purrf to see its current state.</p>",
     )
 
@@ -314,18 +402,17 @@ def _job_review_approved(dto, stage):
 def _job_review_rejected(dto, stage):
     # A rejection needs a reason, so it is quoted here. Events from before the
     # reason was carried have none; their copy still points at the posting.
-    rejected = (
-        f"<p>{dto.actor} rejected your submission for the posting "
-        f'"{dto.job_title}".</p>'
-    )
+    wording = _review_wording(dto)
+    subject = f"{wording.rejected_subject}: {dto.plain.job_title}"
+    rejected = f"<p>{dto.actor} {wording.rejected.format(title=dto.job_title)}.</p>"
     if dto.review_comment:
         return (
-            f"Posting rejected: {dto.plain.job_title}",
+            subject,
             rejected + f"<p>Their reason: {dto.review_comment}</p>"
             "<p>Open Job Postings in Purrf to see the outcome.</p>",
         )
     return (
-        f"Posting rejected: {dto.plain.job_title}",
+        subject,
         rejected + "<p>Open Job Postings in Purrf to see the outcome and any "
         "comment the reviewer left.</p>",
     )
@@ -335,10 +422,11 @@ def _job_review_rejected(dto, stage):
 def _job_review_withdrawn(dto, stage):
     # Told to the reviewer the review was waiting on: nothing is left for
     # them to do.
+    wording = _review_wording(dto)
     return (
-        f"Posting review withdrawn: {dto.plain.job_title}",
-        f"<p>{dto.actor} withdrew their request to review the posting "
-        f'"{dto.job_title}". Nothing is waiting on you any more.</p>',
+        f"{wording.withdrawn_subject}: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.withdrawn.format(title=dto.job_title)}. "
+        "Nothing is waiting on you any more.</p>",
     )
 
 

@@ -440,6 +440,111 @@ describe("NotificationBell", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
+  // Each kind has its own actor and title, so a line that read another kind's
+  // phrase or the wrong field would not match.
+  const reviewRow = (eventType, details, actorName, jobTitle) => ({
+    id: 12,
+    eventType,
+    jobTitle,
+    applicantName: "",
+    subjectName: "",
+    actorName,
+    createdAt: "2026-10-07T00:00:00Z",
+    details: { reviewId: 31, ...details },
+  });
+
+  it.each([
+    [
+      "initial",
+      "Rae Kim",
+      "Backend Engineer",
+      'Rae Kim submitted "Backend Engineer" for your review',
+    ],
+    [
+      "revision",
+      "Tom Lee",
+      "Data Analyst",
+      'Tom Lee submitted changes to "Data Analyst" for your review',
+    ],
+    [
+      "close",
+      "Mia Chen",
+      "Product Designer",
+      'Mia Chen asked to close "Product Designer"',
+    ],
+    ["reopen", "Ann Wu", "QA Lead", 'Ann Wu asked to reopen "QA Lead"'],
+  ])(
+    "tells the reviewer a %s review was opened",
+    async (kind, actor, title, text) => {
+      await openWith(
+        reviewRow("recruiting.review_opened", { kind }, actor, title),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ["revision", "approved", 'Tom Lee approved your changes to "Data Analyst"'],
+    ["revision", "rejected", 'Tom Lee rejected your changes to "Data Analyst"'],
+    ["revision", "withdrawn", 'Tom Lee withdrew the changes to "Data Analyst"'],
+    ["close", "approved", 'Mia Chen approved closing "Product Designer"'],
+    ["close", "rejected", 'Mia Chen rejected closing "Product Designer"'],
+    [
+      "close",
+      "withdrawn",
+      'Mia Chen withdrew the request to close "Product Designer"',
+    ],
+    ["reopen", "approved", 'Ann Wu approved reopening "QA Lead"'],
+    ["reopen", "rejected", 'Ann Wu rejected reopening "QA Lead"'],
+    ["reopen", "withdrawn", 'Ann Wu withdrew the request to reopen "QA Lead"'],
+  ])("says a %s review was %s", async (kind, decision, text) => {
+    const [actor, title] = {
+      revision: ["Tom Lee", "Data Analyst"],
+      close: ["Mia Chen", "Product Designer"],
+      reopen: ["Ann Wu", "QA Lead"],
+    }[kind];
+    await openWith(
+      reviewRow("recruiting.review_decided", { kind, decision }, actor, title),
+    );
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a missing", {}],
+    ["an unknown", { kind: "archive" }],
+    ["a prototype-named", { kind: "toString" }],
+  ])("reads %s review kind as a first publication", async (_, details) => {
+    await openWith(
+      reviewRow(
+        "recruiting.review_opened",
+        details,
+        "Rae Kim",
+        "Backend Engineer",
+      ),
+    );
+
+    expect(
+      screen.getByText('Rae Kim submitted "Backend Engineer" for your review'),
+    ).toBeInTheDocument();
+  });
+
+  it("reads a decision without a kind as a first publication", async () => {
+    await openWith(
+      reviewRow(
+        "recruiting.review_decided",
+        { decision: "approved" },
+        "Rae Kim",
+        "Backend Engineer",
+      ),
+    );
+
+    expect(
+      screen.getByText('Rae Kim approved "Backend Engineer"'),
+    ).toBeInTheDocument();
+  });
+
   // -- mentorship approvals ----------------------------------------------
   //
   // Written under subject_type "mentorship_round": what is asked for, the
