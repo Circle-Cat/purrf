@@ -45,7 +45,7 @@ const BalanceHistoryRow = ({ entry, showPerson = false }) => {
       <div>
         <span className="text-sm font-medium">{displayType}</span>
         {personText && (
-          <div className="text-xs text-gray-500">{personText}</div>
+          <div className="text-xs text-muted-foreground">{personText}</div>
         )}
 
         {entry.note && (

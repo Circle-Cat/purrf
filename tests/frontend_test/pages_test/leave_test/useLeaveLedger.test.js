@@ -85,26 +85,30 @@ describe("useLeaveLedger", () => {
     });
   });
 
-  it("allows manual reloads via the returned load function", async () => {
-    getLeaveLedger.mockResolvedValue({
-      data: {
-        entries: [{ entryId: 10, hours: "8.00" }],
-        totalEntries: 1,
-      },
+  it("discards out-of-order responses (prevents race conditions via isCancelled)", async () => {
+    let resolveReq1, resolveReq2;
+    const req1Promise = new Promise((res) => {
+      resolveReq1 = res;
+    });
+    const req2Promise = new Promise((res) => {
+      resolveReq2 = res;
     });
 
-    const { result } = renderHook(() => useLeaveLedger({ userId: 101 }));
+    getLeaveLedger
+      .mockImplementationOnce(() => req1Promise)
+      .mockImplementationOnce(() => req2Promise);
 
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(getLeaveLedger).toHaveBeenCalledTimes(1);
+    const { result, rerender } = renderHook(
+      (userId) => useLeaveLedger({ userId }),
+      { initialProps: 1 },
+    );
+    rerender(2);
 
     await act(async () => {
-      await result.current.load();
+      resolveReq2({ data: { entries: [{ entryId: 2 }], totalEntries: 1 } });
+      resolveReq1({ data: { entries: [{ entryId: 1 }], totalEntries: 1 } });
     });
 
-    expect(getLeaveLedger).toHaveBeenCalledTimes(2);
+    expect(result.current.entries).toEqual([{ entryId: 2 }]);
   });
 });

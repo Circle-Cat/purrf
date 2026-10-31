@@ -54,17 +54,6 @@ export default function LedgerPage({
       }
     });
 
-    entries.forEach((entry) => {
-      const uid = entry.userId;
-      if (uid && !map.has(uid)) {
-        map.set(uid, {
-          userId: uid,
-          name: entry.name,
-          ldap: entry.ldap,
-        });
-      }
-    });
-
     return Array.from(map.values());
   }, [people, entries]);
 
@@ -74,7 +63,7 @@ export default function LedgerPage({
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <label htmlFor="ledger-person-select" className="text-sm font-medium">
-            Filter by Person:
+            Filter by person:
           </label>
           <select
             id="ledger-person-select"
@@ -85,7 +74,7 @@ export default function LedgerPage({
             }}
             className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <option value="">All Employees</option>
+            <option value="">All employees</option>
             {allFilterOptions.map((p) => (
               <option key={p.userId} value={p.userId}>
                 {formatOptionLabel(p)}

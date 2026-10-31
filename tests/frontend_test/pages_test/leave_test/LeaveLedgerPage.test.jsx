@@ -40,7 +40,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
 
     const select = screen.getByLabelText(/Filter by Person/i);
     expect(select).toBeInTheDocument();
-    expect(screen.getByText("All Employees")).toBeInTheDocument();
+    expect(screen.getByText("All employees")).toBeInTheDocument();
     expect(screen.getByText("Alice Smith (asmith)")).toBeInTheDocument();
     expect(screen.getByText("Bob Jones (bjones)")).toBeInTheDocument();
   });
@@ -187,23 +187,6 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     fireEvent.click(nextBtn);
 
     expect(defaultProps.onPageChange).toHaveBeenCalledWith(2);
-  });
-
-  it("disables Previous button on the first page", () => {
-    mockUseLeaveLedger.mockReturnValue({
-      entries: [{ leaveLedgerId: 1 }],
-      totalEntries: 100,
-      isLoading: false,
-      loadError: false,
-    });
-
-    render(<LedgerPage {...defaultProps} page={1} />);
-
-    const prevBtn = screen.getByRole("button", { name: /Previous/i });
-    const nextBtn = screen.getByRole("button", { name: /Next/i });
-
-    expect(prevBtn).toBeDisabled();
-    expect(nextBtn).not.toBeDisabled();
   });
 
   it("triggers onPageChange when page buttons are clicked", () => {

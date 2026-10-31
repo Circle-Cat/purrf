@@ -24,7 +24,9 @@ import LedgerPage from "@/pages/Leave/LedgerPage";
 const LeaveAdminPage = () => {
   const { isEnabled, isReady } = useLeaveEnabled();
 
-  const { people: paidPeople } = useLeaveBalances();
+  const { people: paidPeople } = useLeaveBalances({
+    enabled: isReady && isEnabled,
+  });
 
   const [tab, setTab] = useState("balances");
   const [ledgerUserId, setLedgerUserId] = useState(null);

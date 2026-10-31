@@ -19,7 +19,6 @@ export const useLeaveLedger = ({
   userId = null,
   page = 1,
   pageSize = 50,
-  enabled = true,
 } = {}) => {
   const [entries, setEntries] = useState([]);
   const [totalEntries, setTotalEntries] = useState(0);
@@ -28,8 +27,6 @@ export const useLeaveLedger = ({
 
   const load = useCallback(
     ({ isCancelled } = {}) => {
-      if (!enabled) return Promise.resolve();
-
       setIsLoading(true);
       setLoadError(false);
 
@@ -53,7 +50,7 @@ export const useLeaveLedger = ({
           setIsLoading(false);
         });
     },
-    [userId, page, pageSize, enabled],
+    [userId, page, pageSize],
   );
 
   useEffect(() => {
@@ -71,6 +68,5 @@ export const useLeaveLedger = ({
     totalEntries,
     isLoading,
     loadError,
-    load,
   };
 };

@@ -54,7 +54,6 @@ const EXCLUSION_GROUPS = [
  *
  * @returns {JSX.Element}
  */
-
 const LeaveBalancesPage = ({ onViewHistory }) => {
   const {
     people,
