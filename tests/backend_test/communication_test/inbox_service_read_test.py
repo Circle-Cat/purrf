@@ -565,7 +565,12 @@ class DetailTest(_Fixture):
                     sender="Asker <asker@ext.com>",
                     attachments=[
                         {"name": "cv.pdf", "size": 1200, "gmailAttachmentId": "g-1"},
-                        {"name": "a.png", "size": 30, "gmailAttachmentId": "g-2"},
+                        {
+                            "name": "a.png",
+                            "size": 30,
+                            "gmailAttachmentId": "g-2",
+                            "contentId": "ii_9",
+                        },
                     ],
                 ),
                 _out(11, 5, sent_by=70),
@@ -583,8 +588,11 @@ class DetailTest(_Fixture):
         self.assertEqual(detail.machine_tag, "bounce")
         first, sent, _ = detail.messages
         self.assertEqual(
-            [(a.name, a.size, a.attachment_id) for a in first.attachments],
-            [("cv.pdf", 1200, 0), ("a.png", 30, 1)],
+            [
+                (a.name, a.size, a.attachment_id, a.content_id)
+                for a in first.attachments
+            ],
+            [("cv.pdf", 1200, 0, None), ("a.png", 30, 1, "ii_9")],
         )
         self.assertEqual(first.from_, "Asker <asker@ext.com>")
         self.assertEqual(first.inbound_kind, "human")

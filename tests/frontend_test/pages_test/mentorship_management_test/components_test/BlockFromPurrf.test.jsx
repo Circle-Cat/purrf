@@ -6,6 +6,7 @@ import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPur
 import {
   createBlockRequest,
   getBlockPreflight,
+  getLatestClosedBlockRequest,
   getRaisedBlockRequests,
   getUserAdmins,
   reassignBlockRequest,
@@ -17,6 +18,7 @@ import { detailOf } from "../participantDetail.helper";
 vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
   getBlockPreflight: vi.fn(),
+  getLatestClosedBlockRequest: vi.fn(),
   getUserAdmins: vi.fn(),
   getRaisedBlockRequests: vi.fn(),
   reassignBlockRequest: vi.fn(),
@@ -39,6 +41,7 @@ describe("BlockFromPurrf", () => {
       data: [{ userId: 77, name: "Uma Admin" }],
     });
     getRaisedBlockRequests.mockResolvedValue({ data: [] });
+    getLatestClosedBlockRequest.mockResolvedValue({ data: null });
   });
 
   const PENDING = {
@@ -250,6 +253,36 @@ describe("BlockFromPurrf", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("says the caller's last request was rejected, beside the button", async () => {
+    getLatestClosedBlockRequest.mockResolvedValue({
+      data: {
+        id: 4,
+        targetUserId: 3104,
+        status: "rejected",
+        decidedByName: "Uma Admin",
+        decidedAt: "2026-10-20T17:00:00Z",
+        decisionNote: "Talk to her first",
+      },
+    });
+    render(
+      <BlockFromPurrf
+        person={PERSON}
+        canWrite
+        pendingBlockRequest={null}
+        onRequested={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Uma Admin: Talk to her first"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Block from Purrf" }),
+    ).toBeInTheDocument();
+    expect(getLatestClosedBlockRequest).toHaveBeenCalledWith(3104);
+  });
+
   it("offers nothing to someone already blocked", () => {
     const { container } = render(
       <BlockFromPurrf
@@ -316,5 +349,119 @@ describe("BlockFromPurrf", () => {
     expect(toast.success).toHaveBeenCalledWith(
       "Block requested — sent to Uma Admin.",
     );
+  });
+
+  const refused = (message, status = 409) =>
+    Object.assign(new Error(message), { response: { status } });
+
+  it("re-reads and tells the page when a withdraw finds the request already closed", async () => {
+    getRaisedBlockRequests
+      .mockResolvedValueOnce({ data: [OWN] })
+      .mockResolvedValue({ data: [] });
+    getLatestClosedBlockRequest
+      .mockResolvedValueOnce({ data: null })
+      .mockResolvedValue({
+        data: {
+          id: 5,
+          targetUserId: 3104,
+          status: "rejected",
+          decidedByName: "Uma Admin",
+          decidedAt: "2026-10-29T17:00:00Z",
+          decisionNote: "Too soon to tell",
+        },
+      });
+    withdrawBlockRequest.mockRejectedValue(
+      refused("This request has already been closed."),
+    );
+    const onRequested = vi.fn();
+    const { rerender } = renderPending({ onRequested });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Withdraw" }),
+    );
+
+    await waitFor(() => expect(onRequested).toHaveBeenCalledTimes(1));
+    expect(toast.error).toHaveBeenCalledWith(
+      "This request has already been closed.",
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Withdraw" }),
+      ).not.toBeInTheDocument(),
+    );
+
+    rerender(
+      <BlockFromPurrf
+        person={PERSON}
+        canWrite
+        pendingBlockRequest={null}
+        onRequested={onRequested}
+      />,
+    );
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(screen.getByText("Uma Admin: Too soon to tell")).toBeInTheDocument();
+  });
+
+  it("re-reads, closes the dialog and tells the page when a reassign finds the request already closed", async () => {
+    getRaisedBlockRequests
+      .mockResolvedValueOnce({ data: [OWN] })
+      .mockResolvedValue({ data: [] });
+    getUserAdmins.mockResolvedValue({
+      data: [
+        { userId: 77, name: "Uma Admin" },
+        { userId: 88, name: "Omar Admin" },
+      ],
+    });
+    reassignBlockRequest.mockRejectedValue(
+      refused(
+        "This request was closed because what it asked for was done directly.",
+      ),
+    );
+    const onRequested = vi.fn();
+    renderPending({ onRequested });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Reassign" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const select = within(dialog).getByLabelText("Reviewer");
+    await within(select).findByRole("option", { name: "Omar Admin" });
+    await userEvent.selectOptions(select, "88");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Reassign" }),
+    );
+
+    await waitFor(() => expect(onRequested).toHaveBeenCalledTimes(1));
+    expect(toast.error).toHaveBeenCalledWith(
+      "This request was closed because what it asked for was done directly.",
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(getRaisedBlockRequests).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the request and re-reads nothing when a withdraw is refused for another reason", async () => {
+    getRaisedBlockRequests.mockResolvedValue({ data: [OWN] });
+    withdrawBlockRequest.mockRejectedValue(
+      refused("Only the person who raised this can withdraw it.", 403),
+    );
+    const onRequested = vi.fn();
+    renderPending({ onRequested });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Withdraw" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Only the person who raised this can withdraw it.",
+      ),
+    );
+    expect(onRequested).not.toHaveBeenCalled();
+    expect(getRaisedBlockRequests).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Withdraw" }),
+    ).toBeInTheDocument();
   });
 });

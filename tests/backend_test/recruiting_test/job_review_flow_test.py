@@ -176,6 +176,48 @@ class JobReviewFlowTest(BaseRepositoryTestLib):
         events = await self._events()
         self.assertEqual(events[-1][1]["comment"], "Add a salary range")
 
+    async def test_discarding_a_rejected_revision_clears_the_rejection(self):
+        self.job.status = JobStatus.PUBLISHED
+        self.job.was_published = True
+        # The pipeline travels with the edit: submit re-checks the pipeline
+        # the edit would publish.
+        self.job.pending_payload = {
+            "title": "Senior Backend Engineer",
+            "pipelineConfig": self.job.pipeline_config,
+        }
+        await self.session.flush()
+        await self._submit()
+        request = await self._request()
+        await self.service.reject(
+            self.session,
+            request.request_id,
+            "Keep the salary range",
+            self.reviewer.user_id,
+        )
+        before = await self.service.get_job(self.session, self.job.job_id)
+        self.assertEqual(
+            (before.last_reject_comment, before.last_reject_kind),
+            ("Keep the salary range", "revision"),
+        )
+
+        await self.service.discard_pending_edit(
+            self.session, self.job.job_id, acting_user_id=self.submitter.user_id
+        )
+
+        after = await self.service.get_job(self.session, self.job.job_id)
+        self.assertEqual(after.status, JobStatus.PUBLISHED)
+        self.assertEqual(
+            (after.last_reject_comment, after.last_reject_kind), (None, None)
+        )
+        listed = next(
+            j
+            for j in await self.service.list_all_jobs(self.session)
+            if j.id == self.job.job_id
+        )
+        self.assertEqual(
+            (listed.last_reject_comment, listed.last_reject_kind), (None, None)
+        )
+
     async def test_the_submitter_can_withdraw_and_the_posting_goes_back(self):
         await self._submit(message=None)
 

@@ -28,6 +28,8 @@ def _dto(**overrides):
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
         # Read only by the templates that mention them; harmless elsewhere.
         reason="Not a fit",
+        review_comment=None,
+        review_kind=None,
         to_sub_status="scheduled",
         start_at=datetime(2026, 8, 5, 21, tzinfo=timezone.utc),
         auto_assignee_name=None,
@@ -174,6 +176,17 @@ class TestRender(unittest.TestCase):
         # reject_comment is nullable, so the copy must hedge.
         self.assertIn("any comment", rejected)
 
+    def test_job_review_rejected_quotes_the_reviewer_s_reason(self):
+        """The reason is required to reject, so the email carries it rather
+        than sending the submitter off to look for it."""
+        _, body = notification_email_copy._job_review_rejected(
+            _dto(review_comment="Add a salary range <today>"), None
+        )
+
+        self.assertIn("<p>Their reason: Add a salary range &lt;today&gt;</p>", body)
+        self.assertIn("Open Job Postings in Purrf to see the outcome.", body)
+        self.assertNotIn("any comment", body)
+
     def test_application_submitted_explains_why_the_owner_got_it(self):
         subject, body = notification_email_copy._application_submitted(
             _dto(),
@@ -275,6 +288,209 @@ class TestRender(unittest.TestCase):
             with self.subTest(template=name):
                 _, body = template(_dto(), ApplicationStage.TECH)
                 self.assertNotIn("&rarr;", body)
+
+
+class TestReviewKindWording(unittest.TestCase):
+    """Each kind of posting review is named in the subject and first sentence.
+
+    Every kind gets its own title and actor, so a template that read another
+    kind's phrase, or the wrong field, would not match.
+    """
+
+    _CASES = {
+        "initial": ("Backend Engineer", "Grace Hopper"),
+        "revision": ("Data Analyst", "Rae Kim"),
+        "close": ("Product Designer", "Tom Lee"),
+        "reopen": ("QA Lead", "Mia Chen"),
+    }
+
+    def _render(self, template, kind, **overrides):
+        title, actor = self._CASES[kind]
+        return template(
+            _dto(review_kind=kind, job_title=title, actor_name=actor, **overrides),
+            None,
+        )
+
+    def test_requested_names_the_kind(self):
+        expected = {
+            "initial": (
+                "Posting review requested: Backend Engineer",
+                'Grace Hopper submitted the posting "Backend Engineer" for your review.',
+            ),
+            "revision": (
+                "Posting changes to review: Data Analyst",
+                'Rae Kim submitted changes to "Data Analyst" for your review.',
+            ),
+            "close": (
+                "Posting close requested: Product Designer",
+                'Tom Lee asked to close "Product Designer".',
+            ),
+            "reopen": (
+                "Posting reopen requested: QA Lead",
+                'Mia Chen asked to reopen "QA Lead".',
+            ),
+        }
+        for kind, (subject, sentence) in expected.items():
+            with self.subTest(kind=kind):
+                got_subject, body = self._render(
+                    notification_email_copy._job_review_requested, kind
+                )
+                self.assertEqual(got_subject, subject)
+                self.assertTrue(
+                    body.startswith(
+                        f"<p>{sentence} It is waiting on your decision.</p>"
+                        "<p>Open Job Postings in Purrf to approve or reject it.</p>"
+                    ),
+                    body,
+                )
+
+    def test_reassigned_names_the_kind(self):
+        expected = {
+            "initial": 'Grace Hopper moved the review of the posting "Backend Engineer" to you.',
+            "revision": 'Rae Kim moved the review of the changes to "Data Analyst" to you.',
+            "close": 'Tom Lee moved the request to close "Product Designer" to you.',
+            "reopen": 'Mia Chen moved the request to reopen "QA Lead" to you.',
+        }
+        for kind, sentence in expected.items():
+            with self.subTest(kind=kind):
+                subject, body = self._render(
+                    notification_email_copy._job_review_reassigned, kind
+                )
+                title, _ = self._CASES[kind]
+                self.assertEqual(subject, f"Posting review reassigned: {title}")
+                self.assertTrue(
+                    body.startswith(
+                        f"<p>{sentence} It is waiting on your decision.</p>"
+                    ),
+                    body,
+                )
+
+    def test_approved_names_the_kind(self):
+        expected = {
+            "initial": (
+                "Posting approved: Backend Engineer",
+                'Grace Hopper approved your submission for the posting "Backend Engineer".',
+            ),
+            "revision": (
+                "Posting changes approved: Data Analyst",
+                'Rae Kim approved your changes to "Data Analyst".',
+            ),
+            "close": (
+                "Posting close approved: Product Designer",
+                'Tom Lee approved closing "Product Designer".',
+            ),
+            "reopen": (
+                "Posting reopen approved: QA Lead",
+                'Mia Chen approved reopening "QA Lead".',
+            ),
+        }
+        for kind, (subject, sentence) in expected.items():
+            with self.subTest(kind=kind):
+                got_subject, body = self._render(
+                    notification_email_copy._job_review_approved, kind
+                )
+                self.assertEqual(got_subject, subject)
+                self.assertTrue(
+                    body.startswith(
+                        f"<p>{sentence}</p>"
+                        "<p>Open Job Postings in Purrf to see its current state.</p>"
+                    ),
+                    body,
+                )
+
+    def test_rejected_names_the_kind_and_keeps_the_reason(self):
+        expected = {
+            "initial": (
+                "Posting rejected: Backend Engineer",
+                'Grace Hopper rejected your submission for the posting "Backend Engineer".',
+            ),
+            "revision": (
+                "Posting changes rejected: Data Analyst",
+                'Rae Kim rejected your changes to "Data Analyst".',
+            ),
+            "close": (
+                "Posting close rejected: Product Designer",
+                'Tom Lee rejected closing "Product Designer".',
+            ),
+            "reopen": (
+                "Posting reopen rejected: QA Lead",
+                'Mia Chen rejected reopening "QA Lead".',
+            ),
+        }
+        for kind, (subject, sentence) in expected.items():
+            with self.subTest(kind=kind):
+                got_subject, body = self._render(
+                    notification_email_copy._job_review_rejected,
+                    kind,
+                    review_comment=f"Reason for {kind}",
+                )
+                self.assertEqual(got_subject, subject)
+                self.assertTrue(
+                    body.startswith(
+                        f"<p>{sentence}</p><p>Their reason: Reason for {kind}</p>"
+                        "<p>Open Job Postings in Purrf to see the outcome.</p>"
+                    ),
+                    body,
+                )
+
+    def test_withdrawn_names_the_kind(self):
+        expected = {
+            "initial": (
+                "Posting review withdrawn: Backend Engineer",
+                "Grace Hopper withdrew their request to review the posting "
+                '"Backend Engineer".',
+            ),
+            "revision": (
+                "Posting changes withdrawn: Data Analyst",
+                'Rae Kim withdrew the changes to "Data Analyst".',
+            ),
+            "close": (
+                "Posting close request withdrawn: Product Designer",
+                'Tom Lee withdrew the request to close "Product Designer".',
+            ),
+            "reopen": (
+                "Posting reopen request withdrawn: QA Lead",
+                'Mia Chen withdrew the request to reopen "QA Lead".',
+            ),
+        }
+        for kind, (subject, sentence) in expected.items():
+            with self.subTest(kind=kind):
+                got_subject, body = self._render(
+                    notification_email_copy._job_review_withdrawn, kind
+                )
+                self.assertEqual(got_subject, subject)
+                self.assertTrue(
+                    body.startswith(
+                        f"<p>{sentence} Nothing is waiting on you any more.</p>"
+                    ),
+                    body,
+                )
+
+    def test_a_missing_or_unknown_kind_reads_as_a_first_publication(self):
+        templates = (
+            notification_email_copy._job_review_requested,
+            notification_email_copy._job_review_reassigned,
+            notification_email_copy._job_review_approved,
+            notification_email_copy._job_review_rejected,
+            notification_email_copy._job_review_withdrawn,
+        )
+        for kind in (None, "archive"):
+            for template in templates:
+                with self.subTest(kind=kind, template=template.__name__):
+                    self.assertEqual(
+                        template(_dto(review_kind=kind), None),
+                        template(_dto(review_kind="initial"), None),
+                    )
+
+    def test_a_title_with_markup_is_escaped_in_every_kind(self):
+        for kind in self._CASES:
+            with self.subTest(kind=kind):
+                subject, body = notification_email_copy._job_review_requested(
+                    _dto(review_kind=kind, job_title="<b>R&D</b>"), None
+                )
+                self.assertIn("&lt;b&gt;R&amp;D&lt;/b&gt;", body)
+                self.assertNotIn("<b>", body)
+                self.assertTrue(subject.endswith(": <b>R&D</b>"))
 
 
 class TestCandidateLine(unittest.TestCase):

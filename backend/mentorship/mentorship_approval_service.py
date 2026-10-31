@@ -6,6 +6,7 @@ decided through a mentorship endpoint, and turns requests into what the
 console shows: who raised it, who reviews it, which round it is about.
 """
 
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.common.name_utils import user_display_name
@@ -29,9 +30,16 @@ MENTORSHIP_ACTIONS = (
     END_PAIR,
 )
 
-# The actions raised about one person in one round from their detail page,
-# listed there while they wait.
-PARTICIPANT_ACTIONS = (WITHDRAW_PARTICIPANT, MARK_NO_SHOW, MARK_RED_FLAG)
+# The actions about one person in one round, listed on their detail page while
+# they wait. An exemption is raised from Needs exemption but listed here too:
+# once the person drops out of that list, this is where it can still be
+# withdrawn or rejected.
+PARTICIPANT_ACTIONS = (
+    WITHDRAW_PARTICIPANT,
+    MARK_NO_SHOW,
+    MARK_RED_FLAG,
+    EXEMPT_MATCHING,
+)
 
 _MARK_ACTIONS = {
     ParticipantNoteTag.NO_SHOW: MARK_NO_SHOW,
@@ -346,6 +354,46 @@ class MentorshipApprovalService:
             reviewer_id=reviewer_id,
         )
         return (await self._describe(session, [row]))[0]
+
+    async def rejected_for_participant(
+        self, session, round_id: int, user_id: int, pair_ids=()
+    ) -> list[dict]:
+        """The requests about this person in this round that were rejected,
+        for their timeline: those about them, and those to end one of their
+        pairs.
+
+        A rejected request changes nothing, so unlike an approved one it
+        leaves no note behind; this is where it is read from instead. Only
+        the named reviewer may decide, so ``reviewer`` is who rejected it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_id (int): The person.
+            pair_ids (Iterable[int]): Their pairs in the round, ended or not.
+
+        Returns:
+            list[dict]: Described like list_mine, newest decision first.
+        """
+        rows = []
+        for action in PARTICIPANT_ACTIONS:
+            rows.extend(
+                await self.approval_service.list_by_status_for_targets(
+                    session,
+                    action,
+                    [exemption_target(round_id, user_id)],
+                    [ApprovalRequestStatus.REJECTED],
+                )
+            )
+        targets = [pair_target(pair_id) for pair_id in pair_ids]
+        if targets:
+            rows.extend(
+                await self.approval_service.list_by_status_for_targets(
+                    session, END_PAIR, targets, [ApprovalRequestStatus.REJECTED]
+                )
+            )
+        rows.sort(key=lambda r: (r.decided_at, r.request_id), reverse=True)
+        return await self._describe(session, rows)
 
     async def pending_for_participant(
         self, session, round_id: int, user_id: int, pair_ids=()

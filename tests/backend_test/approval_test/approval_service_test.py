@@ -392,6 +392,7 @@ class TestReassign(ApprovalServiceTestBase):
                 "requestId": REQUEST_ID,
                 "action": "publish_matching",
                 "previousReviewerId": REVIEWER,
+                "reviewerId": OTHER_REVIEWER,
             },
         )
         self.assertEqual(self.order, ["event", "commit"])
@@ -736,6 +737,26 @@ class TestReads(ApprovalServiceTestBase):
         self.assertEqual(result, {"run-1": newest})
         self.requests.list_latest_for_targets.assert_awaited_once_with(
             self.session, "publish_matching", "matching_run", ["run-1", "run-2"]
+        )
+
+    async def test_rejected_for_targets_passes_the_handler_target_type(self):
+        rejected = _request(target_id="run-1")
+        self.requests.list_by_status_for_targets = AsyncMock(return_value=[rejected])
+
+        result = await self.service.list_by_status_for_targets(
+            self.session,
+            "publish_matching",
+            ["run-1", "run-2"],
+            [ApprovalRequestStatus.REJECTED],
+        )
+
+        self.assertEqual(result, [rejected])
+        self.requests.list_by_status_for_targets.assert_awaited_once_with(
+            self.session,
+            "publish_matching",
+            "matching_run",
+            ["run-1", "run-2"],
+            [ApprovalRequestStatus.REJECTED],
         )
 
     async def test_latest_closed_for_target_uses_the_handler_target_type(self):

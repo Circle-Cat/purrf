@@ -297,21 +297,33 @@ async def _render_email_bounced(session, event):
 # --- review_opened / review_reassigned / review_decided (subject is the job) --
 
 
+async def _review_dto(session, event):
+    """The base dto plus the review's kind, which picks the copy's wording.
+
+    Read with ``get``: events recorded before the kind was carried have none,
+    and the copy reads that as a first publication.
+    """
+    dto = await _base_dto(session, event)
+    dto.review_kind = event.details.get("kind")
+    return dto
+
+
 @register_render("recruiting.review_opened")
 async def _render_review_opened(session, event):
-    dto = await _base_dto(session, event)
+    dto = await _review_dto(session, event)
     return _with_footer(copy._job_review_requested(dto, None))
 
 
 @register_render("recruiting.review_reassigned")
 async def _render_review_reassigned(session, event):
-    dto = await _base_dto(session, event)
+    dto = await _review_dto(session, event)
     return _with_footer(copy._job_review_reassigned(dto, None))
 
 
 @register_render("recruiting.review_decided")
 async def _render_review_decided(session, event):
-    dto = await _base_dto(session, event)
+    dto = await _review_dto(session, event)
+    dto.review_comment = event.details.get("comment")
     template = {
         "approved": copy._job_review_approved,
         "withdrawn": copy._job_review_withdrawn,

@@ -100,7 +100,7 @@ export const TIMELINE_PHASES = [
       {
         key: "feedbackDeadlineAt",
         label: "Feedback submission deadline",
-        required: false,
+        required: true,
       },
     ],
   },

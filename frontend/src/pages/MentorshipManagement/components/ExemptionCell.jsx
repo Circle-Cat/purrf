@@ -10,7 +10,10 @@ import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
 import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
-import { approvalPersonLabel } from "@/pages/MentorshipManagement/utils/approvalLabels";
+import {
+  approvalPersonLabel,
+  exemptionApprovalConsequence,
+} from "@/pages/MentorshipManagement/utils/approvalLabels";
 import { userDisplayName } from "@/utils/userName";
 
 const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
@@ -184,7 +187,7 @@ const ExemptionCell = ({
         description={
           rejecting
             ? "Your reason is shown to the person who asked."
-            : `${name} goes into this round's matching pool, and nothing before this round counts against them again. It cannot be undone.`
+            : exemptionApprovalConsequence(name)
         }
         submitting={busy}
         onConfirm={(comment) =>

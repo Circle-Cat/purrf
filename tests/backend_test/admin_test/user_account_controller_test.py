@@ -149,6 +149,12 @@ class TestUserAccountController(unittest.TestCase):
         self.assertEqual(kwargs["status"], "blocked")
         self.assertEqual(kwargs["limit"], 5)
 
+    def test_list_passes_the_sort_through(self):
+        self._admin().get(f"{ADMIN_ACCOUNTS_ENDPOINT}?sort_by=user_id&order=desc")
+
+        kwargs = self.service.list_accounts.await_args.kwargs
+        self.assertEqual((kwargs["sort_by"], kwargs["order"]), ("user_id", "desc"))
+
     def test_list_searches_block_reasons(self):
         """The deleted blacklist page could search by reason; the console that
         replaces it must not lose that."""

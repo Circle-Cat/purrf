@@ -50,6 +50,24 @@ def round_status(r: MentorshipRoundEntity, now: datetime) -> RoundStatus | None:
     return None
 
 
+def is_announced(r: MentorshipRoundEntity, now: datetime) -> bool:
+    """Whether members may see and act on the round's pairings at ``now``.
+
+    Pairs are written when the publish request is approved, which can be
+    days before the match notification. Until the round's meeting window
+    opens (``round_status`` UPCOMING) its pairings stay with the admins.
+    A round with no start date is not held back.
+
+    Args:
+        r (MentorshipRoundEntity): The round.
+        now (datetime): The aware instant to evaluate at.
+
+    Returns:
+        bool: False only while the round is upcoming.
+    """
+    return round_status(r, now) != RoundStatus.UPCOMING
+
+
 def feedback_window(r: MentorshipRoundEntity) -> FeedbackWindow:
     """The span in which a round's program feedback can be written.
 
@@ -143,11 +161,14 @@ def is_meeting_log_open(r: MentorshipRoundEntity, now: datetime) -> bool:
 def is_in_progress(r: MentorshipRoundEntity, now: datetime) -> bool:
     """Whether the round is under way at ``now``.
 
-    From ``promotion_start_at`` to ``feedback_deadline_at``, both inclusive.
-    The admin console's lists that act on a round -- who is eligible for
-    matching, who has not registered -- are offered for this whole span, so a
-    mentee who comes late can still be matched. A round missing either date
-    is never in progress.
+    From ``promotion_start_at`` to the close of the feedback window, both
+    inclusive. The admin console's lists that act on a round -- who is
+    eligible for matching, who has not registered -- are offered for this
+    whole span, so a mentee who comes late can still be matched. The close
+    is ``feedback_deadline_at``, or the same fallback ``feedback_window``
+    uses when the round has none, so a round saved without it does not lock
+    the console. A round with no promotion start, or with neither close
+    date, is never in progress.
 
     Args:
         r (MentorshipRoundEntity): The round.
@@ -157,5 +178,5 @@ def is_in_progress(r: MentorshipRoundEntity, now: datetime) -> bool:
         bool: True inside the window.
     """
     start = r.promotion_start_at
-    end = r.feedback_deadline_at
+    end = r.feedback_deadline_at or feedback_window(r).closes_at
     return bool(start and end and start <= now <= end)

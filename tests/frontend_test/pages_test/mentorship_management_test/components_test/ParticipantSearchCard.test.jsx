@@ -106,14 +106,19 @@ const roundsLoaded = () =>
 /**
  * Renders the card at `url` with the API listing `rounds`, and waits for them
  * to load. `rounds: null` leaves the rounds request pending.
+ * `onApprovalsChanged` is passed through to the card when given.
  */
-const renderCard = async ({ url = "/", rounds = TEST_ROUNDS } = {}) => {
+const renderCard = async ({
+  url = "/",
+  rounds = TEST_ROUNDS,
+  onApprovalsChanged,
+} = {}) => {
   getAllMentorshipRounds.mockReturnValue(
     rounds === null ? new Promise(() => {}) : Promise.resolve({ data: rounds }),
   );
   const view = render(
     <MemoryRouter initialEntries={[url]}>
-      <ParticipantSearchCard />
+      <ParticipantSearchCard onApprovalsChanged={onApprovalsChanged} />
       <LocationProbe />
     </MemoryRouter>,
   );
@@ -1172,7 +1177,7 @@ describe("ParticipantSearchCard", () => {
       expect(screen.getByLabelText("List")).toHaveTextContent("Registered");
     });
 
-    it("greys out Not registered, with no hint, for a round not in progress", async () => {
+    it("greys out Not registered for a round not in progress, keeping its label", async () => {
       await renderCard({ url: "/?round=3" });
       await mounted();
 
@@ -1181,6 +1186,105 @@ describe("ParticipantSearchCard", () => {
 
       expect(option).toHaveAttribute("aria-disabled", "true");
       expect(option).toHaveTextContent(/^Not registered$/);
+    });
+
+    describe("hint for a round not in progress", () => {
+      const HINT_ROUNDS = [
+        {
+          id: 7,
+          name: "Fall 2026",
+          isInProgress: true,
+          timeline: { promotionStartAt: "2026-08-18T07:00:00Z" },
+          feedbackClosesAt: "2027-02-01T07:59:59Z",
+        },
+        {
+          id: 3,
+          name: "Spring 2026",
+          isInProgress: false,
+          timeline: {
+            promotionStartAt: "2025-12-18T08:00:00Z",
+            onboardingDeadlineAt: "2026-02-10T07:59:59Z",
+            feedbackDeadlineAt: null,
+          },
+          feedbackClosesAt: "2026-07-01T06:59:59Z",
+        },
+        {
+          id: 5,
+          name: "Summer 2025",
+          isInProgress: false,
+          timeline: { promotionStartAt: "2025-04-18T07:00:00Z" },
+          feedbackClosesAt: "2025-10-01T06:59:59Z",
+        },
+        {
+          id: 9,
+          name: "Pilot 2024",
+          isInProgress: false,
+          timeline: { promotionStartAt: null },
+          feedbackClosesAt: "2024-12-01T07:59:59Z",
+        },
+        {
+          id: 4,
+          name: "Winter 2024",
+          isInProgress: false,
+          timeline: { promotionStartAt: "2024-01-10T08:00:00Z" },
+          feedbackClosesAt: null,
+        },
+      ];
+      const TEXT_A =
+        "Only while the round is in progress: 2025-12-18 to 2026-06-30";
+      const TEXT_B =
+        "Only while the round is in progress: 2025-04-18 to 2025-09-30";
+      const TEXT_C =
+        "Only while the round is in progress. This round has no in-progress dates set.";
+
+      const openList = async (url) => {
+        await renderCard({ url, rounds: HINT_ROUNDS });
+        await mounted();
+        await userEvent.click(screen.getByLabelText("List"));
+      };
+
+      it("gives the in-progress dates in Pacific", async () => {
+        await openList("/?round=3");
+
+        expect(screen.getByText(TEXT_A)).toBeInTheDocument();
+      });
+
+      it("shows no hint for a round in progress", async () => {
+        await openList("/?round=7");
+
+        expect(
+          screen.getByRole("option", { name: "Not registered" }),
+        ).not.toHaveAttribute("aria-disabled");
+        expect(
+          screen.queryByText(/Only while the round is in progress/),
+        ).not.toBeInTheDocument();
+      });
+
+      it("follows the round picked before Search", async () => {
+        await renderCard({ url: "/?round=3", rounds: HINT_ROUNDS });
+        await mounted();
+
+        await userEvent.click(screen.getByLabelText("Round"));
+        await userEvent.click(
+          screen.getByRole("option", { name: "Summer 2025" }),
+        );
+        await userEvent.click(screen.getByLabelText("List"));
+
+        expect(screen.getByText(TEXT_B)).toBeInTheDocument();
+        expect(screen.queryByText(TEXT_A)).not.toBeInTheDocument();
+      });
+
+      it("says no dates are set for a round with no start", async () => {
+        await openList("/?round=9");
+
+        expect(screen.getByText(TEXT_C)).toBeInTheDocument();
+      });
+
+      it("says no dates are set for a round with no close", async () => {
+        await openList("/?round=4");
+
+        expect(screen.getByText(TEXT_C)).toBeInTheDocument();
+      });
     });
 
     it("does not switch lists until Search, and greys out training and approval as soon as it is picked", async () => {
@@ -1379,7 +1483,7 @@ describe("ParticipantSearchCard", () => {
       );
     });
 
-    it("greys out Eligible, with no hint, for a round not in progress", async () => {
+    it("greys out Eligible for a round not in progress, keeping its label", async () => {
       await renderCard({ url: "/?round=3", rounds: ROUNDS });
       await mounted();
 
@@ -1646,7 +1750,7 @@ describe("ParticipantSearchCard", () => {
       ).toBeInTheDocument();
     });
 
-    it("does not show the Edit button for a v1 pair", async () => {
+    it("shows the Edit button for a pair with only hand-logged meetings in a round in progress", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       getMeetingLog.mockResolvedValue(meetingLogResponse("v1", "m-1"));
       await renderCard({ url: SEARCHED_PARTICIPANTS });
@@ -1655,9 +1759,7 @@ describe("ParticipantSearchCard", () => {
       );
 
       await screen.findByText(/Meeting Log —/);
-      expect(
-        screen.queryByRole("button", { name: "Edit" }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     });
 
     it("does not fetch the meeting log for every row just from rendering the table", async () => {
@@ -1847,6 +1949,157 @@ describe("ParticipantSearchCard", () => {
       expect(runButton()).toBeDisabled();
     });
 
+    // Started 14:30 Pacific by someone other than the viewer (9) or the editor.
+    const succeededOverview = (overrides = {}) => ({
+      data: {
+        status: "succeeded",
+        runId: "r7-a",
+        startedAt: "2026-10-05T21:30:00Z",
+        triggeredByUserId: "5845",
+        triggeredByName: "Ada Ng",
+        mentorCount: 4,
+        menteeCount: 6,
+        draftCount: 0,
+        editLock: null,
+        publishRequest: null,
+        ...overrides,
+      },
+    });
+
+    const openConfirm = async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalled());
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      await userEvent.click(runButton());
+      return screen.findByRole("dialog");
+    };
+
+    it("cannot run while the round's result is being edited, and says by whom", async () => {
+      const user = userEvent.setup();
+      getMatchingRun.mockResolvedValue(
+        succeededOverview({
+          editLock: {
+            userId: "58",
+            name: "Mei Tanaka",
+            expiresAt: "2026-10-05T22:00:00Z",
+          },
+        }),
+      );
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalled());
+
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      await waitFor(() => expect(runButton()).toBeDisabled());
+      await user.hover(runButton().parentElement);
+      expect(
+        await screen.findByRole("tooltip", {
+          name: "Being edited by Mei Tanaka — finish or discard the edit first.",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("warns that Run replaces the unpublished result, and replaces it as before", async () => {
+      getMatchingRun.mockResolvedValue(succeededOverview());
+
+      const dialog = await openConfirm();
+
+      expect(
+        within(dialog).getByText(
+          "This replaces the current result (run started by Ada Ng at 2026-10-05 14:30). The current result can't be recovered.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: "Run" }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Replace and run" }),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("location-path")).toHaveTextContent(
+          "/mentorship-management/matching/7",
+        ),
+      );
+      expect(startMatchingRun).toHaveBeenCalledWith({
+        roundId: 7,
+        participantIds: [11, 12],
+      });
+    });
+
+    it("counts the draft edits the replaced result carries", async () => {
+      getMatchingRun.mockResolvedValue(succeededOverview({ draftCount: 3 }));
+
+      const dialog = await openConfirm();
+
+      expect(
+        within(dialog).getByText(
+          "This replaces the current result (run started by Ada Ng at 2026-10-05 14:30), including 3 draft edits. The current result can't be recovered.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the refusal when the result is taken for editing after the page loaded, and stays", async () => {
+      getMatchingRun.mockResolvedValue(succeededOverview());
+      startMatchingRun.mockRejectedValue({
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            message:
+              "Round 7's result is being edited by Mei Tanaka. Finish or discard the edit before running again.",
+          },
+        },
+      });
+
+      const dialog = await openConfirm();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Replace and run" }),
+      );
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "Round 7's result is being edited by Mei Tanaka. Finish or discard the edit before running again.",
+        ),
+      );
+      expect(screen.getByTestId("location-path")).toHaveTextContent(/^\/$/);
+    });
+
+    it.each([
+      ["no run, or a published one", { data: { status: "never_run" } }],
+      [
+        "a failed run",
+        {
+          data: {
+            status: "failed",
+            runId: "r7-b",
+            startedAt: "2026-10-05T21:30:00Z",
+            triggeredByName: "Ada Ng",
+            error: "matcher crashed",
+          },
+        },
+      ],
+    ])("asks plainly with %s", async (_label, overview) => {
+      getMatchingRun.mockResolvedValue(overview);
+
+      const dialog = await openConfirm();
+
+      expect(
+        within(dialog).queryByText(/This replaces/),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: "Run" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: "Replace and run" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("asks before running, and Cancel starts nothing", async () => {
       await renderCard({ url: ELIGIBLE_URL });
       await screen.findByText("Cara Wang");
@@ -2000,6 +2253,163 @@ describe("ParticipantSearchCard", () => {
       expect(
         screen.getByRole("checkbox", { name: "Select Alice Doe" }),
       ).not.toBeChecked();
+    });
+  });
+
+  describe("filters edited after a search", () => {
+    const ELIGIBLE_URL = "/?round=7&eligible=1";
+    const SEARCH_AGAIN = "Search again to act on these filters.";
+
+    const mentor = participantRow({
+      userId: 11,
+      preferredName: "Alice Doe",
+      participantRole: "mentor",
+      pairs: [],
+    });
+    const mentee = participantRow({
+      userId: 12,
+      firstName: "Cara",
+      lastName: "Wang",
+      preferredName: "Cara Wang",
+      primaryEmail: "cara@x.com",
+      participantRole: "mentee",
+      pairs: [],
+    });
+
+    const runButton = () =>
+      screen.getByRole("button", { name: /^Run matching · \d+$/ });
+
+    const pick = (name) =>
+      userEvent.click(screen.getByRole("checkbox", { name: `Select ${name}` }));
+
+    const nameBox = () => screen.getByPlaceholderText("Name / email");
+
+    const pickBoth = async (url = ELIGIBLE_URL) => {
+      await renderCard({ url });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+    };
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      searchParticipants.mockResolvedValue(resultsOf([mentor, mentee]));
+    });
+
+    it("flags the list and holds Run matching, keeping the picks", async () => {
+      const user = userEvent.setup();
+      await pickBoth();
+      expect(runButton()).toBeEnabled();
+
+      await user.type(nameBox(), "zed");
+
+      expect(
+        screen.getByText("Filters changed. Click Search to update the list."),
+      ).toBeInTheDocument();
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      expect(runButton()).toBeDisabled();
+      expect(
+        screen.getByRole("checkbox", { name: "Select Alice Doe" }),
+      ).toBeChecked();
+      await user.hover(runButton().parentElement);
+      expect(
+        await screen.findByRole("tooltip", { name: SEARCH_AGAIN }),
+      ).toBeInTheDocument();
+      expect(searchParticipants).toHaveBeenCalledTimes(1);
+    });
+
+    it("lifts the hold when the filter is put back as searched", async () => {
+      await pickBoth();
+      await userEvent.click(screen.getByLabelText("Account"));
+      await userEvent.click(
+        await screen.findByRole("option", { name: "Blocked" }),
+      );
+      expect(
+        screen.getByText("Filters changed. Click Search to update the list."),
+      ).toBeInTheDocument();
+
+      await userEvent.click(screen.getByLabelText("Account"));
+      await userEvent.click(
+        await screen.findByRole("option", { name: "Any account" }),
+      );
+
+      expect(
+        screen.queryByText("Filters changed. Click Search to update the list."),
+      ).not.toBeInTheDocument();
+      expect(runButton()).toBeEnabled();
+    });
+
+    it("names an edit in progress over the filter edit", async () => {
+      const user = userEvent.setup();
+      getMatchingRun.mockResolvedValue({
+        data: {
+          status: "succeeded",
+          runId: "r7-a",
+          startedAt: "2026-10-05T21:30:00Z",
+          triggeredByName: "Ada Ng",
+          draftCount: 0,
+          editLock: {
+            userId: "58",
+            name: "Mei Tanaka",
+            expiresAt: "2026-10-05T22:00:00Z",
+          },
+        },
+      });
+      await pickBoth();
+      await waitFor(() => expect(runButton()).toBeDisabled());
+
+      await user.type(nameBox(), "zed");
+      await user.hover(runButton().parentElement);
+
+      expect(
+        await screen.findByRole("tooltip", {
+          name: "Being edited by Mei Tanaka — finish or discard the edit first.",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("drops the hint and the picks on Search", async () => {
+      await pickBoth();
+      await userEvent.type(nameBox(), "zed");
+
+      await search();
+
+      await waitFor(() => expect(urlParams().get("q")).toBe("zed"));
+      await screen.findByText("Cara Wang");
+      expect(
+        screen.queryByText("Filters changed. Click Search to update the list."),
+      ).not.toBeInTheDocument();
+      expect(runButton()).toHaveTextContent("Run matching · 0");
+    });
+
+    it("never shows the hint for paging", async () => {
+      searchParticipants.mockImplementation(({ offset }) =>
+        Promise.resolve({
+          data: { participantRows: offset ? [mentee] : [mentor], total: 21 },
+        }),
+      );
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Alice Doe");
+      await pick("Alice Doe");
+
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await screen.findByText("Cara Wang");
+      expect(
+        screen.queryByText("Filters changed. Click Search to update the list."),
+      ).not.toBeInTheDocument();
+      expect(runButton()).toHaveTextContent("Run matching · 1");
+    });
+
+    it("changes nothing before the first search", async () => {
+      await renderCard();
+      await userEvent.type(nameBox(), "zed");
+
+      expect(
+        screen.getByText("Set filters and click Search to see participants."),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Filters changed. Click Search to update the list."),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -2269,6 +2679,136 @@ describe("ParticipantSearchCard", () => {
           decision: "approve",
           comment: undefined,
         }),
+      );
+    });
+  });
+
+  describe("pending approvals card", () => {
+    const NEEDS_URL = "/?round=7&needsExemption=1";
+
+    const waitingOnViewer = (requestId) =>
+      participantRow({
+        userId: 21,
+        firstName: "Ann",
+        lastName: "Lee",
+        preferredName: "Ann Lee",
+        participantRole: "mentee",
+        approvalStatus: "signed_up",
+        pairs: [],
+        exemptionFindings: [],
+        exemptionRequest: {
+          requestId,
+          action: "exempt_matching",
+          status: "pending",
+          round: { roundId: 7, name: "Fall 2026" },
+          targetId: "7:21",
+          person: { userId: 21, name: "Ann Lee" },
+          raisedBy: { userId: 9, name: "Ada Ng" },
+          reviewer: { userId: 8, name: "Rae Kim" },
+          reason: "Her mentor left midway",
+        },
+      });
+
+    const approveOnRow = async () => {
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Approve" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Approve" }),
+      );
+    };
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      useAuth.mockReturnValue({
+        permissions: ["mentorship.admin.read", "mentorship.approve"],
+        user: { userId: 8 },
+      });
+      decideMentorshipApproval.mockResolvedValue({ data: {} });
+      vi.spyOn(toast, "success").mockImplementation(() => {});
+      vi.spyOn(toast, "error").mockImplementation(() => {});
+    });
+
+    it("refreshes the pending approvals after an approval on the row", async () => {
+      const onApprovalsChanged = vi.fn();
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(61)]));
+      await renderCard({ url: NEEDS_URL, onApprovalsChanged });
+
+      await approveOnRow();
+
+      await waitFor(() => expect(onApprovalsChanged).toHaveBeenCalledTimes(1));
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(61, {
+        decision: "approve",
+        comment: undefined,
+      });
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+    });
+
+    it("refreshes the pending approvals after a rejection on the row", async () => {
+      const onApprovalsChanged = vi.fn();
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(62)]));
+      await renderCard({ url: NEEDS_URL, onApprovalsChanged });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Reject" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.type(
+        within(dialog).getByLabelText("Reason"),
+        "Short by one meeting only",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Reject" }),
+      );
+
+      await waitFor(() => expect(onApprovalsChanged).toHaveBeenCalledTimes(1));
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(62, {
+        decision: "reject",
+        comment: "Short by one meeting only",
+      });
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+    });
+
+    it("leaves the pending approvals alone when the decision is refused", async () => {
+      const onApprovalsChanged = vi.fn();
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(63)]));
+      decideMentorshipApproval.mockRejectedValue({
+        response: { data: { message: "This request is no longer pending." } },
+      });
+      await renderCard({ url: NEEDS_URL, onApprovalsChanged });
+
+      await approveOnRow();
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "This request is no longer pending.",
+        ),
+      );
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(
+        63,
+        expect.anything(),
+      );
+      expect(onApprovalsChanged).not.toHaveBeenCalled();
+    });
+
+    it("still reads the list again and closes the dialog without the prop", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([waitingOnViewer(64)]));
+      await renderCard({ url: NEEDS_URL });
+
+      await approveOnRow();
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith("Exemption granted."),
+      );
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(
+        64,
+        expect.anything(),
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
     });
   });
@@ -2575,6 +3115,51 @@ describe("ParticipantSearchCard", () => {
       await pick("Cara Wang");
 
       expect(markButton()).toHaveTextContent("Mark as notified · 2");
+    });
+
+    it("holds Send notification and Mark as notified after a filter edit, keeping the picks, and says why Send waits", async () => {
+      const user = userEvent.setup();
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      expect(sendButton()).toBeEnabled();
+      expect(markButton()).toBeEnabled();
+
+      await user.type(screen.getByPlaceholderText("User ID"), "58");
+
+      expect(
+        screen.getByText("Filters changed. Click Search to update the list."),
+      ).toBeInTheDocument();
+      expect(sendButton()).toHaveTextContent("Send notification · 2");
+      expect(sendButton()).toBeDisabled();
+      expect(markButton()).toHaveTextContent("Mark as notified · 2");
+      expect(markButton()).toBeDisabled();
+
+      await user.hover(sendButton().parentElement);
+      expect(
+        await screen.findByRole("tooltip", {
+          name: "Search again to act on these filters.",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("says why Mark as notified waits after a filter edit", async () => {
+      const user = userEvent.setup();
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pick("Cara Wang");
+
+      await user.type(screen.getByPlaceholderText("User ID"), "58");
+
+      expect(markButton()).toHaveTextContent("Mark as notified · 1");
+      expect(markButton()).toBeDisabled();
+      await user.hover(markButton().parentElement);
+      expect(
+        await screen.findByRole("tooltip", {
+          name: "Search again to act on these filters.",
+        }),
+      ).toBeInTheDocument();
     });
 
     it("does not offer Mark as notified in a round not in progress", async () => {

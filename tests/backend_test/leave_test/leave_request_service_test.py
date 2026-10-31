@@ -850,6 +850,10 @@ class TestDecisions(LeaveRequestServiceTest):
         )
 
     async def test_approving_an_exchange_credits_it(self):
+        self.holidays.list_by_year.return_value = [
+            _holiday(datetime.date(2026, 8, 13), is_exchangeable=True),
+            _holiday(datetime.date(2026, 8, 14), is_exchangeable=True),
+        ]
         self._pending(
             request_type=LeaveRequestType.EXCHANGE,
             hours="16.00",

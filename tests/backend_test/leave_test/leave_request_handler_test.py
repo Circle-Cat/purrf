@@ -26,6 +26,10 @@ MANAGER = 40
 TODAY = datetime.date(2026, 10, 7)
 START = datetime.date(2026, 11, 3)
 END = datetime.date(2026, 11, 5)
+# The day an exchange below is filed for, and an unrelated exchangeable
+# holiday, so a check that looked at the wrong day would not pass by luck.
+EXCHANGE_DAY = datetime.date(2026, 11, 26)
+OTHER_EXCHANGEABLE_DAY = datetime.date(2026, 12, 24)
 
 
 def _holiday(day, exchangeable=False):
@@ -169,6 +173,48 @@ class LeaveRequestHandlerTest(unittest.IsolatedAsyncioTestCase):
         problems = await self.handler.problems_at_approval(self.session, _request())
         self.assertEqual(len(problems), 1)
         self.assertIn("company holidays entered since", problems[0])
+
+    async def test_an_exchange_still_on_an_exchangeable_holiday_is_approved(self):
+        self.leave = _leave(
+            leave_type=LeaveRequestType.EXCHANGE, start=EXCHANGE_DAY, end=EXCHANGE_DAY
+        )
+        self.holidays.list_by_year.return_value = [
+            _holiday(EXCHANGE_DAY, exchangeable=True)
+        ]
+        self.assertEqual(
+            await self.handler.problems_at_approval(self.session, _request()), []
+        )
+
+    async def test_an_exchange_whose_day_is_no_longer_exchangeable_is_stopped(self):
+        self.leave = _leave(
+            leave_type=LeaveRequestType.EXCHANGE, start=EXCHANGE_DAY, end=EXCHANGE_DAY
+        )
+        self.holidays.list_by_year.return_value = [
+            _holiday(EXCHANGE_DAY, exchangeable=False),
+            _holiday(OTHER_EXCHANGEABLE_DAY, exchangeable=True),
+        ]
+        problems = await self.handler.problems_at_approval(self.session, _request())
+        self.assertEqual(
+            problems,
+            [
+                "These days are no longer exchangeable company holidays: "
+                "2026-11-26. Reject it and ask for it to be filed again."
+            ],
+        )
+
+    async def test_an_exchange_whose_day_is_no_longer_a_holiday_is_stopped(self):
+        self.leave = _leave(
+            leave_type=LeaveRequestType.EXCHANGE, start=EXCHANGE_DAY, end=EXCHANGE_DAY
+        )
+        self.holidays.list_by_year.return_value = [
+            _holiday(OTHER_EXCHANGEABLE_DAY, exchangeable=True)
+        ]
+        problems = await self.handler.problems_at_approval(self.session, _request())
+        self.assertEqual(len(problems), 1)
+        self.assertIn(
+            "no longer exchangeable company holidays: 2026-11-26.", problems[0]
+        )
+        self.assertNotIn(str(OTHER_EXCHANGEABLE_DAY), problems[0])
 
     async def test_a_year_with_no_holidays_entered_stops_the_approval(self):
         self.holidays.list_by_year.return_value = []

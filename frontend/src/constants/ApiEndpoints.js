@@ -115,10 +115,14 @@ export const API_ENDPOINTS = {
   ADMIN_ACCOUNT_REACTIVATE: (userId) => `/admin/accounts/${userId}/reactivate`,
   ADMIN_ACCOUNT_UNBLOCK: (userId) => `/admin/accounts/${userId}/unblock`,
   ADMIN_ACCOUNT_BLOCK: (userId) => `/admin/accounts/${userId}/block`,
+  ADMIN_ACCOUNT_BLOCK_REQUESTS: (userId) =>
+    `/admin/accounts/${userId}/block-requests`,
   BLOCK_REQUEST_REVIEWERS: "/block-request-reviewers",
   BLOCK_PREFLIGHT: (userId) => `/block-preflight/${userId}`,
   BLOCK_REQUESTS: "/block-requests",
   BLOCK_REQUESTS_RAISED: "/block-requests/raised",
+  BLOCK_REQUESTS_RAISED_DECIDED: (userId) =>
+    `/block-requests/raised/${userId}/decided`,
   BLOCK_REQUEST_REASSIGN: (requestId) =>
     `/block-requests/${requestId}/reassign`,
   BLOCK_REQUEST_DECIDE: (requestId) => `/block-requests/${requestId}/decide`,

@@ -250,6 +250,7 @@ class ApprovalService:
                 "requestId": request_id,
                 "action": action,
                 "previousReviewerId": previous_reviewer_id,
+                "reviewerId": reviewer_id,
             },
         )
         await session.commit()
@@ -535,6 +536,30 @@ class ApprovalService:
             session, action, handler.target_type, target_ids
         )
         return {row.target_id: row for row in rows}
+
+    async def list_by_status_for_targets(
+        self,
+        session,
+        action: str,
+        target_ids: Collection[str],
+        statuses: Collection[ApprovalRequestStatus],
+    ) -> list[ApprovalRequestEntity]:
+        """Every request on these targets that ended in one of these
+        statuses, for a page that shows what was decided about them.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            action (str): The action.
+            target_ids (Collection[str]): The targets.
+            statuses (Collection[ApprovalRequestStatus]): The statuses to list.
+
+        Returns:
+            list[ApprovalRequestEntity]: Newest decision first.
+        """
+        handler = self.handler_for(action)
+        return await self._requests.list_by_status_for_targets(
+            session, action, handler.target_type, target_ids, statuses
+        )
 
     async def get_latest_closed_for_target(
         self, session, action: str, target_id: str

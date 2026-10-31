@@ -240,6 +240,40 @@ describe("InboxPage list", () => {
 });
 
 describe("InboxPage thread detail", () => {
+  it("shows a pasted image from the message's own attachment", async () => {
+    api.getInboxThread.mockResolvedValue({
+      data: detail({
+        messages: [
+          message({
+            bodyHtml: '<p>Hello</p><img alt="shot" src="cid:ii_3">',
+            attachments: [
+              {
+                name: "image.png",
+                size: 10,
+                attachmentId: 0,
+                contentId: "ii_3",
+              },
+            ],
+          }),
+        ],
+      }),
+    });
+    renderAt();
+    await screen.findByText("Question about meeting cadence", {
+      selector: "span",
+    });
+    open("Question about meeting cadence");
+    const pane = await thread();
+    await within(pane).findByText("Hello");
+    expect(pane.querySelector('img[alt="shot"]')).toHaveAttribute(
+      "src",
+      "http://api.test/inbox/threads/1/messages/11/attachments/0",
+    );
+    expect(
+      within(pane).queryByText(/Images are hidden/),
+    ).not.toBeInTheDocument();
+  });
+
   it("sanitizes the HTML body and links attachments", async () => {
     api.getInboxThread.mockResolvedValue({
       data: detail({

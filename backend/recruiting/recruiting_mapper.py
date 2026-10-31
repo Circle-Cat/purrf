@@ -75,6 +75,7 @@ class RecruitingMapper:
         last_reject_kind: str | None = None,
         reviewer_id: int | None = None,
         submitted_by: int | None = None,
+        submitted_by_name: str | None = None,
         submit_message: str | None = None,
         submit_blockers: list[str] | None = None,
     ) -> JobDto:
@@ -94,6 +95,8 @@ class RecruitingMapper:
                 cycle, otherwise ``None``. Serialised as ``reviewerId``.
             submitted_by (int | None): The user_id who opened the posting's
                 currently-open review, or None when none is open.
+            submitted_by_name (str | None): That person's display name, or
+                None when no review is open.
             submit_message (str | None): The note the requester wrote to the
                 reviewer when opening that same review cycle, or ``None``
                 when there is no open cycle or it carried no note.
@@ -123,6 +126,7 @@ class RecruitingMapper:
             cooldown_days=job.cooldown_days,
             reviewer_id=reviewer_id,
             submitted_by=submitted_by,
+            submitted_by_name=submitted_by_name,
             submit_message=submit_message,
             submit_blockers=submit_blockers or [],
         )
@@ -179,6 +183,7 @@ class RecruitingMapper:
         application: ApplicationEntity,
         user: UsersEntity,
         reviewer_name: str | None = None,
+        interview_booked: bool | None = None,
         applicant_email: str = "",
         applicant_name: str | None = None,
     ) -> BoardCardDto:
@@ -192,6 +197,9 @@ class RecruitingMapper:
                 ``BoardService.get_board``), or None when there is no
                 reviewer to show (either the stage isn't an interview stage,
                 or nobody is assigned yet).
+            interview_booked (bool | None): Whether the current stage+round
+                has an interview booked; None for stages no interview is
+                booked for.
             applicant_email (str): The applicant's contact address from
                 user_emails; empty when they have none.
             applicant_name (str | None): The applicant's resolved name (see
@@ -213,6 +221,7 @@ class RecruitingMapper:
             round=application.current_round,
             is_blocked=bool(user.is_blocked),
             reviewer_name=reviewer_name,
+            interview_booked=interview_booked,
         )
 
     def to_board_applicant_hit_dto(

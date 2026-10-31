@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 
@@ -44,18 +44,6 @@ const INTERVIEW = {
   scheduledByName: "Jane Smith",
 };
 
-/**
- * Pick an interviewer via the shared PeoplePicker (shadcn Select) dropdown.
- * Radix also renders a visually-hidden native <select> fallback with
- * matching <option> text for form semantics, so the option must be looked
- * up scoped to the open listbox rather than via a document-wide query.
- */
-const pickInterviewer = async (user, label) => {
-  await user.click(screen.getByRole("combobox", { name: "Interviewer" }));
-  const listbox = await screen.findByRole("listbox");
-  await user.click(within(listbox).getByText(label));
-};
-
 const renderDialog = (props = {}) => {
   const onSubmit = vi.fn();
   const onOpenChange = vi.fn();
@@ -65,7 +53,7 @@ const renderDialog = (props = {}) => {
       onOpenChange={onOpenChange}
       mode="schedule"
       interview={null}
-      defaultAssigneeId={null}
+      assigneeId={null}
       interviewPool={POOL}
       viewerTimezone={VIEWER_TZ}
       onSubmit={onSubmit}
@@ -89,7 +77,7 @@ describe("InterviewMeetingDialog", () => {
 
   it("emits the IANA key the shared selector hands back, not its label", async () => {
     const user = userEvent.setup();
-    const { onSubmit } = renderDialog({ defaultAssigneeId: 10 });
+    const { onSubmit } = renderDialog({ assigneeId: 10 });
     fireEvent.change(screen.getByTestId("timezone-selector"), {
       target: { value: "America/New_York" },
     });
@@ -105,29 +93,45 @@ describe("InterviewMeetingDialog", () => {
     );
   });
 
-  it("preselects the round's current assignee", () => {
-    renderDialog({ defaultAssigneeId: 11 });
+  it("names the round's assignee from the pool, with no picker", () => {
+    renderDialog({ assigneeId: 11 });
     expect(
-      screen.getByRole("combobox", { name: "Interviewer" }),
-    ).toHaveTextContent("Ivan Interviewer");
+      screen.getByText("Interviewer: Ivan Interviewer"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Interviewer" })).toBeNull();
   });
 
-  it("falls back to the stage default assignee when the round is unassigned", () => {
-    renderDialog({ defaultAssigneeId: 10 });
-    expect(
-      screen.getByRole("combobox", { name: "Interviewer" }),
-    ).toHaveTextContent("Eve Evaluator");
+  it("names an assignee outside the pool as User <id>", () => {
+    renderDialog({ assigneeId: 99 });
+    expect(screen.getByText("Interviewer: User 99")).toBeInTheDocument();
   });
 
-  it("keeps submit disabled until interviewer, date and time are filled", async () => {
-    const user = userEvent.setup();
-    renderDialog({ defaultAssigneeId: null });
+  it("names the interviewer once in edit mode, in the attendee notice", () => {
+    renderDialog({
+      mode: "edit",
+      interview: { ...INTERVIEW, assigneeId: 10, assigneeName: "Olga Booked" },
+      assigneeId: 10,
+    });
+    expect(screen.getAllByText(/^Interviewer: /)).toHaveLength(1);
+    expect(screen.getByText("Interviewer: Olga Booked")).toBeInTheDocument();
+  });
+
+  it("says nobody is assigned and never enables submit without an assignee", () => {
+    renderDialog({ assigneeId: null });
+    expect(
+      screen.getByText("Interviewer: Nobody assigned"),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "2026-08-05" },
+    });
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "14:00" },
+    });
     expect(screen.getByRole("button", { name: "Schedule" })).toBeDisabled();
+  });
 
-    await pickInterviewer(user, "Eve Evaluator (eve@example.com)");
-    expect(
-      screen.getByRole("combobox", { name: "Interviewer" }),
-    ).toHaveTextContent("Eve Evaluator");
+  it("keeps submit disabled until date and time are filled", () => {
+    renderDialog({ assigneeId: 10 });
     expect(screen.getByRole("button", { name: "Schedule" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Date"), {
@@ -141,9 +145,9 @@ describe("InterviewMeetingDialog", () => {
     expect(screen.getByRole("button", { name: "Schedule" })).toBeEnabled();
   });
 
-  it("submits wall-clock fields, not a UTC instant", async () => {
+  it("submits wall-clock fields and the round's assignee, not a UTC instant", async () => {
     const user = userEvent.setup();
-    const { onSubmit } = renderDialog({ defaultAssigneeId: 10 });
+    const { onSubmit } = renderDialog({ assigneeId: 11 });
     fireEvent.change(screen.getByLabelText("Date"), {
       target: { value: "2026-08-05" },
     });
@@ -152,7 +156,7 @@ describe("InterviewMeetingDialog", () => {
     });
     await user.click(screen.getByRole("button", { name: "Schedule" }));
     expect(onSubmit).toHaveBeenCalledWith({
-      assigneeId: 10,
+      assigneeId: 11,
       date: "2026-08-05",
       startTime: "14:00",
       durationMinutes: 45,
@@ -167,7 +171,7 @@ describe("InterviewMeetingDialog", () => {
     renderDialog({
       mode: "edit",
       interview: INTERVIEW,
-      defaultAssigneeId: null,
+      assigneeId: null,
       viewerTimezone: "Asia/Taipei",
     });
     expect(screen.getByLabelText("Date")).toHaveValue("2026-08-06");
@@ -175,11 +179,11 @@ describe("InterviewMeetingDialog", () => {
     expect(screen.getByTestId("timezone-selector")).toHaveValue("Asia/Taipei");
   });
 
-  it("prefills every field from the existing booking in edit mode", () => {
+  it("prefills every time field from the existing booking in edit mode", () => {
     renderDialog({
       mode: "edit",
       interview: INTERVIEW,
-      defaultAssigneeId: null,
+      assigneeId: 10,
     });
     expect(screen.getByLabelText("Date")).toHaveValue("2026-08-05");
     expect(screen.getByLabelText("Start time")).toHaveValue("14:00");
@@ -189,9 +193,7 @@ describe("InterviewMeetingDialog", () => {
     expect(screen.getByTestId("timezone-selector")).toHaveValue(
       "America/Los_Angeles",
     );
-    expect(
-      screen.getByRole("combobox", { name: "Interviewer" }),
-    ).toHaveTextContent("Eve Evaluator");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
   });
 
   it("falls back to a selectable duration when the booked length is not offered", () => {
@@ -222,9 +224,6 @@ describe("InterviewMeetingDialog", () => {
       interview: INTERVIEW,
       candidateName: "Alice Smith",
     });
-    // Exact strings from the info block -- the combobox's own display and
-    // the hidden native <select> fallback both also contain "Eve Evaluator"
-    // as substrings, so a loose regex match would be ambiguous.
     expect(screen.getByText("Candidate: Alice Smith")).toBeInTheDocument();
     expect(screen.getByText("Interviewer: Eve Evaluator")).toBeInTheDocument();
     expect(screen.getByText("Organizer: Jane Smith")).toBeInTheDocument();
@@ -237,7 +236,7 @@ describe("InterviewMeetingDialog", () => {
         onOpenChange={vi.fn()}
         mode="schedule"
         interview={null}
-        defaultAssigneeId={null}
+        assigneeId={null}
         interviewPool={POOL}
         onSubmit={vi.fn()}
       />,
@@ -249,7 +248,7 @@ describe("InterviewMeetingDialog", () => {
         onOpenChange={vi.fn()}
         mode="edit"
         interview={INTERVIEW}
-        defaultAssigneeId={null}
+        assigneeId={null}
         interviewPool={POOL}
         onSubmit={vi.fn()}
       />,

@@ -6,6 +6,7 @@ import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
 import {
   createBlockRequest,
   getBlockPreflight,
+  getLatestClosedBlockRequest,
   getRaisedBlockRequests,
   getUserAdmins,
   reassignBlockRequest,
@@ -13,6 +14,8 @@ import {
 } from "@/api/adminAccountsApi";
 import { useAuth } from "@/context/auth";
 import { approvalPersonLabel } from "@/pages/MentorshipManagement/utils/approvalLabels";
+import RejectedBlockRequest from "@/pages/AdminAccounts/components/RejectedBlockRequest";
+import { resolveViewerTimezone } from "@/utils/dateTime";
 
 // Shown to the reviewer as where the request came from; the backend accepts
 // it only from holders of mentorship write access.
@@ -47,11 +50,16 @@ const BlockFromPurrf = ({
   // read last settled for (success or failure).
   const [ownRequest, setOwnRequest] = useState(null);
   const [settledFor, setSettledFor] = useState(null);
+  // The caller's own latest closed request about this person, to say how it
+  // ended once nothing is waiting.
+  const [closedRequest, setClosedRequest] = useState(null);
   // A withdrawn request stays in the prop until the page reloads.
   const [withdrawnId, setWithdrawnId] = useState(null);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
+  // Bumped to re-run the raiser reads after someone else closed the request.
+  const [ownReads, setOwnReads] = useState(0);
 
   const pending =
     pendingBlockRequest?.requestId === withdrawnId ? null : pendingBlockRequest;
@@ -73,10 +81,18 @@ const BlockFromPurrf = ({
       .finally(() => {
         if (current) setSettledFor(personId);
       });
+    Promise.resolve()
+      .then(() => getLatestClosedBlockRequest(personId))
+      .then((res) => {
+        if (current) setClosedRequest(res?.data ?? null);
+      })
+      .catch(() => {
+        if (current) setClosedRequest(null);
+      });
     return () => {
       current = false;
     };
-  }, [canWrite, personId]);
+  }, [canWrite, personId, ownReads]);
   const settled = !canWrite || settledFor === personId;
 
   const loadHolders = () => {
@@ -84,6 +100,18 @@ const BlockFromPurrf = ({
     getUserAdmins()
       .then(({ data }) => setHolders(data ?? []))
       .catch(() => setHoldersError(true));
+  };
+
+  /**
+   * After a 409 the request was closed by someone else: re-read the raiser's
+   * requests and have the page refetch its stale pending request.
+   */
+  const rereadClosedRequest = () => {
+    // The dialog only renders in the raiser's row, but a stale flag would
+    // reopen it with the next request.
+    setReassignOpen(false);
+    setOwnReads((n) => n + 1);
+    onRequested();
   };
 
   const reassign = (reviewerId) => {
@@ -96,7 +124,10 @@ const BlockFromPurrf = ({
         toast.success(`Reassigned to ${data.reviewerName}.`);
         onRequested();
       })
-      .catch((e) => toast.error(e?.response?.data?.message ?? e.message))
+      .catch((e) => {
+        toast.error(e?.response?.data?.message ?? e.message);
+        if (e?.response?.status === 409) rereadClosedRequest();
+      })
       .finally(() => setReassigning(false));
   };
 
@@ -107,10 +138,16 @@ const BlockFromPurrf = ({
       .then(() => {
         setWithdrawnId(ownRequest.id);
         setOwnRequest(null);
+        // The one just withdrawn is now the latest closed; an older rejection
+        // is no longer the news.
+        setClosedRequest(null);
         toast.success("Block request withdrawn.");
         onRequested();
       })
-      .catch((e) => toast.error(e?.response?.data?.message ?? e.message))
+      .catch((e) => {
+        toast.error(e?.response?.data?.message ?? e.message);
+        if (e?.response?.status === 409) rereadClosedRequest();
+      })
       .finally(() => setWithdrawing(false));
   };
 
@@ -198,6 +235,12 @@ const BlockFromPurrf = ({
       <Button variant="destructive" size="sm" onClick={openDialog}>
         Block from Purrf
       </Button>
+      {!ownRequest && (
+        <RejectedBlockRequest
+          request={closedRequest}
+          tz={resolveViewerTimezone()}
+        />
+      )}
       <BlockDialog
         open={open}
         onOpenChange={setOpen}

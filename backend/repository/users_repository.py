@@ -176,8 +176,8 @@ class UsersRepository:
         Args:
             session (AsyncSession): The active async database session.
             search (str | None): Case-insensitive substring over first_name /
-                last_name / preferred_name / any user_emails address; None
-                lists everyone.
+                last_name / preferred_name / any user_emails address, with
+                surrounding whitespace ignored; None or blank lists everyone.
             user_id (int | None): When not None, restricts results to the user
                 with this exact ``user_id``. Applied in addition to ``search``.
             limit (int): Max rows to return.
@@ -243,6 +243,7 @@ class UsersRepository:
         })
 
         filters = []
+        search = (search or "").strip()
         if search:
             pattern = f"%{search.lower()}%"
             search_targets = [

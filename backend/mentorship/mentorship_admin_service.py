@@ -13,6 +13,7 @@ from backend.dto.participant_detail_dto import (
     ParticipantNoteDto,
     ParticipationHistoryRowDto,
     PendingRequestDto,
+    RejectedRequestDto,
 )
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
@@ -682,6 +683,9 @@ class MentorshipAdminService:
         primary_email, alternative_emails = self._extract_emails(
             emails_map.get(user_id, [])
         )
+        pair_ids = (
+            [p.pair_id for p in registration.pairs] if registration is not None else []
+        )
         return ParticipantDetailDto(
             person=PersonRowDto(
                 user_id=user_id,
@@ -713,12 +717,13 @@ class MentorshipAdminService:
             pending_requests=[
                 PendingRequestDto.model_validate(r)
                 for r in await self.mentorship_approval_service.pending_for_participant(
-                    session,
-                    round_id,
-                    user_id,
-                    pair_ids=[p.pair_id for p in registration.pairs]
-                    if registration is not None
-                    else [],
+                    session, round_id, user_id, pair_ids=pair_ids
+                )
+            ],
+            rejected_requests=[
+                RejectedRequestDto.model_validate(r)
+                for r in await self.mentorship_approval_service.rejected_for_participant(
+                    session, round_id, user_id, pair_ids=pair_ids
                 )
             ],
             history=await self._history(session, round_entity, rows, exempted_rounds),
@@ -911,10 +916,9 @@ class MentorshipAdminService:
 
         The entity-row twin of `_resolve_meeting_notes`, used by the read path
         that has switched from the JSONB column to querying
-        `MentorshipMeetingRepository` directly. MANUAL rows always have these
-        columns NULL (the `google_fields` CHECK constraint enforces it), so
-        this naturally yields an empty list for them without a separate
-        branch, same as the dict-based version does via missing keys.
+        `MentorshipMeetingRepository` directly. Rows of every source are read
+        the same way: a MANUAL row carries attendance only once an admin has
+        marked it, and yields an empty list until then.
 
         Args:
             meeting (MentorshipMeetingEntity): A single meeting row.
@@ -1274,14 +1278,12 @@ class MentorshipAdminService:
             ValueError: updates and deletes are both empty; the same
                 meeting_id appears in both; a meeting_id doesn't exist among
                 this pair's rows; or the pair itself doesn't exist.
-            ConflictError: Any targeted meeting_id (update or delete) belongs
-                to a MANUAL row (v1, read-only history). The check is
-                per-row, not per-pair -- a pair holding both MANUAL and
-                GOOGLE rows may still have its GOOGLE rows edited freely;
-                only a targeted row that is itself MANUAL is rejected. Also
-                raised, with code ``round_not_in_progress``, when the pair's
-                round is not in progress: a past round's log is read-only.
-                Also raised, with code ``calendar_cancel_failed``, when
+            ConflictError: With code ``round_not_in_progress`` when the
+                pair's round is not in progress: a past round's log is
+                read-only, whatever its rows' source. MANUAL rows of a round
+                in progress (what a mentee logs by hand) are edited and
+                deleted like GOOGLE ones. Also raised, with code
+                ``calendar_cancel_failed``, when
                 Calendar refuses to cancel a deleted upcoming GOOGLE
                 meeting's event; nothing is written then.
         """
@@ -1319,12 +1321,6 @@ class MentorshipAdminService:
             raise ValueError(
                 f"meeting_id(s) not found for this pair: {sorted(missing)}"
             )
-
-        manual_targets = {
-            mid for mid in target_ids if by_id[mid].source == MeetingSource.MANUAL
-        }
-        if manual_targets:
-            raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
 
         if delete_ids:
             # An upcoming meeting still has a live invite; a started one is

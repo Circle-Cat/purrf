@@ -11,6 +11,8 @@ export const getAccounts = ({
   userId,
   status,
   userType,
+  sortBy,
+  order,
   limit,
   offset,
 } = {}) =>
@@ -20,6 +22,8 @@ export const getAccounts = ({
       user_id: userId,
       status,
       user_type: userType,
+      sort_by: sortBy,
+      order,
       limit,
       offset,
     },
@@ -77,6 +81,20 @@ export const getPendingBlockRequests = () =>
  */
 export const getRaisedBlockRequests = () =>
   request.get(API_ENDPOINTS.BLOCK_REQUESTS_RAISED);
+
+/**
+ * The caller's own latest closed block request about one person, or null, so
+ * the page they raised it from can say how it ended. Scoped to the caller.
+ */
+export const getLatestClosedBlockRequest = (userId) =>
+  request.get(API_ENDPOINTS.BLOCK_REQUESTS_RAISED_DECIDED(userId));
+
+/**
+ * Every closed block request about one account, newest decision first, for
+ * its page: rejected, withdrawn and superseded ones leave no other trace.
+ */
+export const getAccountBlockRequests = (userId) =>
+  request.get(API_ENDPOINTS.ADMIN_ACCOUNT_BLOCK_REQUESTS(userId));
 
 /** Hand a request the caller raised to a different reviewer. */
 export const reassignBlockRequest = (requestId, reviewerId) =>

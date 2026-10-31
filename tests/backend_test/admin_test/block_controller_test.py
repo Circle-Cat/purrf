@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from backend.admin.block_controller import BlockController
 from backend.common.api_endpoints import (
+    ADMIN_ACCOUNT_BLOCK_REQUESTS_ENDPOINT,
     BLOCK_REQUEST_REVIEWERS_ENDPOINT,
+    BLOCK_REQUESTS_RAISED_DECIDED_ENDPOINT,
     BLOCK_PREFLIGHT_ENDPOINT,
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
@@ -67,6 +69,8 @@ class TestBlockController(unittest.TestCase):
         self.service.withdraw = AsyncMock(return_value=_request_dto())
         self.service.list_pending_for_reviewer = AsyncMock(return_value=[])
         self.service.list_pending_raised_by_actor = AsyncMock(return_value=[])
+        self.service.list_decided_for_target = AsyncMock(return_value=[])
+        self.service.latest_decided_raised_by_actor = AsyncMock(return_value=None)
         self.service.list_user_admins = AsyncMock(return_value=[])
 
     def _client(self, *, permissions, user_id=CALLER):
@@ -191,6 +195,44 @@ class TestBlockController(unittest.TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
         self.service.list_pending_raised_by_actor.assert_not_awaited()
+
+    def test_only_a_user_admin_reads_a_person_s_block_requests(self):
+        """The account page's record of every closed request, behind the
+        account console's own gate; a raiser has their own echo instead."""
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
+
+        resp = client.get(ADMIN_ACCOUNT_BLOCK_REQUESTS_ENDPOINT.format(user_id=TARGET))
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.list_decided_for_target.assert_not_awaited()
+
+        client = self._client(permissions=[Permission.USER_ADMIN])
+
+        resp = client.get(ADMIN_ACCOUNT_BLOCK_REQUESTS_ENDPOINT.format(user_id=TARGET))
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.service.list_decided_for_target.assert_awaited_once()
+        self.assertEqual(
+            self.service.list_decided_for_target.await_args.args[1], TARGET
+        )
+
+    def test_the_echo_is_the_caller_s_own_and_behind_the_raise_gate(self):
+        client = self._client(permissions=[Permission.USER_ADMIN])
+
+        resp = client.get(BLOCK_REQUESTS_RAISED_DECIDED_ENDPOINT.format(user_id=TARGET))
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.latest_decided_raised_by_actor.assert_not_awaited()
+
+        client = self._client(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])
+
+        resp = client.get(BLOCK_REQUESTS_RAISED_DECIDED_ENDPOINT.format(user_id=TARGET))
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            self.service.latest_decided_raised_by_actor.await_args.args[1:],
+            (CALLER, TARGET),
+        )
 
     def test_user_admin_cannot_withdraw(self):
         """Withdrawing takes back a question you asked, so it sits with the

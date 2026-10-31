@@ -132,6 +132,7 @@ beforeEach(() => {
     data: requestDto(88, "Sam Steward"),
   });
   adminApi.getRaisedBlockRequests.mockResolvedValue({ data: [] });
+  adminApi.getLatestClosedBlockRequest.mockResolvedValue({ data: null });
   adminApi.withdrawBlockRequest.mockResolvedValue({ data: null });
 });
 
@@ -168,6 +169,62 @@ const raiseRequest = async (user, reviewerValue = "77") => {
   await user.type(screen.getByLabelText(/^Reason/), "repeated no-shows");
   await user.click(screen.getByRole("button", { name: "Send request" }));
 };
+
+describe("Request block — how the caller's last request ended", () => {
+  const closedDto = (status) => ({
+    id: 40,
+    targetUserId: APPLICANT_ID,
+    reviewerId: 77,
+    reviewerName: "Rita Reviewer",
+    status,
+    decidedByName: "Rita Reviewer",
+    decidedAt: "2026-10-20T17:00:00Z",
+    decisionNote: "Not enough evidence",
+  });
+
+  it("says the caller's last request was rejected, by whom and why", async () => {
+    adminApi.getLatestClosedBlockRequest.mockResolvedValue({
+      data: closedDto("rejected"),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Rita Reviewer: Not enough evidence"),
+    ).toBeInTheDocument();
+    expect(adminApi.getLatestClosedBlockRequest).toHaveBeenCalledWith(
+      APPLICANT_ID,
+    );
+  });
+
+  it("drops it while a newer request of theirs waits", async () => {
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    adminApi.getLatestClosedBlockRequest.mockResolvedValue({
+      data: closedDto("rejected"),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await requestRow();
+    expect(screen.queryByText("Request rejected")).toBeNull();
+  });
+
+  it("says nothing of a request the caller withdrew", async () => {
+    adminApi.getLatestClosedBlockRequest.mockResolvedValue({
+      data: closedDto("withdrawn"),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await waitFor(() =>
+      expect(adminApi.getLatestClosedBlockRequest).toHaveBeenCalled(),
+    );
+    expect(screen.queryByText("Request rejected")).toBeNull();
+  });
+});
 
 describe("Request block — permission gate", () => {
   it("disables the button, rather than hiding it, without the advance grant", async () => {
@@ -460,6 +517,94 @@ describe("Request block — withdrawing it", () => {
     expect(
       screen.getByRole("button", { name: "Request block" }),
     ).toBeDisabled();
+  });
+});
+
+describe("Request block — closed by someone else before the click", () => {
+  const conflict = (message) =>
+    Object.assign(new Error(message), { response: { status: 409 } });
+
+  it("re-reads on a refused withdraw and shows the rejection", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests
+      .mockResolvedValueOnce({
+        data: [{ ...requestDto(77, "Rita Reviewer"), id: 63 }],
+      })
+      .mockResolvedValue({ data: [] });
+    adminApi.getLatestClosedBlockRequest
+      .mockResolvedValueOnce({ data: null })
+      .mockResolvedValue({
+        data: {
+          id: 63,
+          targetUserId: APPLICANT_ID,
+          reviewerId: 77,
+          reviewerName: "Rita Reviewer",
+          status: "rejected",
+          decidedByName: "Rita Reviewer",
+          decidedAt: "2026-10-29T17:00:00Z",
+          decisionNote: "Spoke to her already",
+        },
+      });
+    adminApi.withdrawBlockRequest.mockRejectedValue(
+      conflict("This request has already been closed."),
+    );
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Withdraw" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This request has already been closed.",
+      ),
+    );
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Rita Reviewer: Spoke to her already"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+  });
+
+  it("re-reads on a refused reassign and shows the applicant blocked", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests
+      .mockResolvedValueOnce({
+        data: [{ ...requestDto(77, "Rita Reviewer"), id: 64 }],
+      })
+      .mockResolvedValue({ data: [] });
+    api.getApplicationDetail
+      .mockResolvedValueOnce({ data: makeDetail() })
+      .mockResolvedValue({
+        data: { ...makeDetail(), applicantIsBlocked: true },
+      });
+    adminApi.reassignBlockRequest.mockRejectedValue(
+      conflict(
+        "This request was closed because what it asked for was done directly.",
+      ),
+    );
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Reassign" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Reviewer"), "88");
+    await user.click(within(dialog).getByRole("button", { name: "Reassign" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This request was closed because what it asked for was done directly.",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request block" }),
+      ).toHaveAttribute("title", "This applicant is already blocked"),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument();
   });
 });
 

@@ -35,7 +35,6 @@ const ROLE_LABELS = { mentor: "Mentor", mentee: "Mentee" };
  *   open: boolean,
  *   onOpenChange: (open: boolean) => void,
  *   roundName: string,
- *   roundVersion: "v1" | "v2" | null,
  *   roundInProgress: boolean,
  *   subjectName: string,
  *   subjectRole: "mentor" | "mentee",
@@ -51,7 +50,6 @@ const MeetingLogDialog = ({
   open,
   onOpenChange,
   roundName,
-  roundVersion,
   roundInProgress,
   subjectName,
   subjectRole,
@@ -65,8 +63,7 @@ const MeetingLogDialog = ({
   const mentorName = subjectRole === "mentor" ? subjectName : partnerName;
   const menteeName = subjectRole === "mentee" ? subjectName : partnerName;
   const editor = useMeetingLogEditor({ meetings, onSave });
-  const canEdit =
-    roundVersion === "v2" && roundInProgress && meetings.length > 0;
+  const canEdit = roundInProgress && meetings.length > 0;
   const { confirmAction, setConfirmAction, resetEditState } = editor;
 
   useEffect(() => {

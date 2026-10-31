@@ -7,14 +7,18 @@ import {
 } from "@/api/mentorshipApi";
 import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
+import AwaitingDecisionCard from "@/components/approval/AwaitingDecisionCard";
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
 import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
 import {
+  APPROVAL_ACTION,
   approvalActionLabel,
   approvalPersonLabel,
+  exemptionApprovalConsequence,
 } from "@/pages/MentorshipManagement/utils/approvalLabels";
 import { userDisplayName } from "@/utils/userName";
 import { statusRequestType } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
+import { formatPacific } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
 const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
 
@@ -27,6 +31,9 @@ const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
  * else gets buttons, and nobody does while approvals are switched off.
  *
  * @param {object} props
+ * @param {boolean} [props.asCard] Show the first request alone as a card to
+ *   decide, the way every approval shows the one waiting on the viewer:
+ *   who asked, when and why, with only Approve / Reject for its reviewer.
  * @param {Object[]} props.requests The pending requests, from the detail API.
  * @param {Object[]} [props.pairs] The person's pairs this round, to name the
  *   pair a request is about.
@@ -39,6 +46,7 @@ const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
  * @returns {JSX.Element|null}
  */
 const WaitingOnDecision = ({
+  asCard = false,
   requests,
   pairs = [],
   personId,
@@ -77,6 +85,88 @@ const WaitingOnDecision = ({
     const partner = pairPartner(request);
     return partner?.name ? ` — about the pair with ${partner.name}` : "";
   };
+
+  const decisionDialog = (
+    <ApprovalDecisionDialog
+      open={dialog?.kind === "approve" || rejecting}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) setDialog(null);
+      }}
+      decision={rejecting ? "reject" : "approve"}
+      title={
+        open
+          ? `${rejecting ? "Reject" : "Approve"}: ${
+              typeOf(open)?.label ?? approvalActionLabel(open.action)
+            } — ${personName}`
+          : ""
+      }
+      description={
+        rejecting
+          ? "Your reason is shown to the person who asked."
+          : `${
+              (open &&
+                typeOf(open)?.consequences(personName, {
+                  partnerName: pairPartner(open)?.name,
+                })) ||
+              (open?.action === APPROVAL_ACTION.EXEMPT_MATCHING &&
+                exemptionApprovalConsequence(personName)) ||
+              "It takes effect at once and cannot be undone."
+            }${open && !typeOf(open)?.partnerMayNotReview ? aboutPair(open) : ""}`
+      }
+      submitting={busy}
+      onConfirm={(comment) =>
+        act(
+          () =>
+            decideMentorshipApproval(open.requestId, {
+              decision: rejecting ? "reject" : "approve",
+              comment: rejecting ? comment : undefined,
+            }),
+          rejecting ? "Request rejected." : "Request approved.",
+          rejecting
+            ? "Could not reject the request."
+            : "Could not approve the request.",
+        )
+      }
+    />
+  );
+
+  if (asCard) {
+    const request = requests[0];
+    const partner = pairPartner(request);
+    const isReviewer =
+      canApprove && sameUser(request.reviewer?.userId, viewerId);
+    return (
+      <AwaitingDecisionCard
+        title={`${approvalActionLabel(request.action)} awaiting your decision`}
+        meta={[
+          `Raised by ${approvalPersonLabel(request.raisedBy)}${
+            request.createdAt ? ` on ${formatPacific(request.createdAt)}` : ""
+          }`,
+          partner?.name ? `About the pair with ${partner.name}` : null,
+        ]}
+        reason={request.reason}
+      >
+        {actionsOn && isReviewer && (
+          <>
+            <Button
+              onClick={() => setDialog({ kind: "approve", request })}
+              disabled={busy}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setDialog({ kind: "reject", request })}
+              disabled={busy}
+            >
+              Reject
+            </Button>
+          </>
+        )}
+        {decisionDialog}
+      </AwaitingDecisionCard>
+    );
+  }
 
   return (
     <section aria-label="Waiting on a decision" className="space-y-2">
@@ -173,45 +263,7 @@ const WaitingOnDecision = ({
           )
         }
       />
-      <ApprovalDecisionDialog
-        open={dialog?.kind === "approve" || rejecting}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) setDialog(null);
-        }}
-        decision={rejecting ? "reject" : "approve"}
-        title={
-          open
-            ? `${rejecting ? "Reject" : "Approve"}: ${
-                typeOf(open)?.label ?? approvalActionLabel(open.action)
-              } — ${personName}`
-            : ""
-        }
-        description={
-          rejecting
-            ? "Your reason is shown to the person who asked."
-            : `${
-                (open &&
-                  typeOf(open)?.consequences(personName, {
-                    partnerName: pairPartner(open)?.name,
-                  })) ||
-                "It takes effect at once and cannot be undone."
-              }${open && !typeOf(open)?.partnerMayNotReview ? aboutPair(open) : ""}`
-        }
-        submitting={busy}
-        onConfirm={(comment) =>
-          act(
-            () =>
-              decideMentorshipApproval(open.requestId, {
-                decision: rejecting ? "reject" : "approve",
-                comment: rejecting ? comment : undefined,
-              }),
-            rejecting ? "Request rejected." : "Request approved.",
-            rejecting
-              ? "Could not reject the request."
-              : "Could not approve the request.",
-          )
-        }
-      />
+      {decisionDialog}
     </section>
   );
 };

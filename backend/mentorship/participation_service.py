@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from backend.dto.partner_dto import PartnerDto
-from backend.mentorship.round_windows import feedback_window
+from backend.mentorship.round_windows import feedback_window, is_announced
 from backend.dto.matches_dto import MatchesDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
@@ -79,6 +79,9 @@ class ParticipationService:
            primary_email field is populated only for a live pair, and only
            when round_id is provided and the user's approval status is
            MATCHED; otherwise None.
+        4. Leaves out pairings of rounds not yet announced (is_announced):
+           a round_id request for one returns an empty list, and the
+           all-rounds list skips its pairs.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -90,10 +93,18 @@ class ParticipationService:
                             or an empty list if no users are found.
         """
         current_user_id = user_context.user_id
+        now = datetime.now(timezone.utc)
 
         if round_id is None:
+            held_back = [
+                r.round_id
+                for r in await self.mentorship_round_repository.get_all_rounds(session)
+                if not is_announced(r, now)
+            ]
             partner_ids = await self.mentorship_pairs_repository.get_all_partner_ids(
-                session=session, user_id=current_user_id
+                session=session,
+                user_id=current_user_id,
+                exclude_round_ids=held_back,
             )
             if not partner_ids:
                 self.logger.info(
@@ -115,6 +126,14 @@ class ParticipationService:
                 )
                 for u in users
             ]
+
+        if not await self._is_round_announced(session, round_id, now):
+            self.logger.info(
+                "Pairings of round_id=%s are not announced yet; no partners for user_id=%s",
+                round_id,
+                current_user_id,
+            )
+            return []
 
         pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
             session=session,
@@ -261,6 +280,9 @@ class ParticipationService:
         still who the user was matched with, so it is reported with
         `is_active` false rather than left out; its contact email is withheld.
 
+        Until the round is announced (is_announced) no pairing is reported,
+        and MATCHED / UNMATCHED read as PENDING.
+
         Args:
             session (AsyncSession): The SQLAlchemy async session used for database operations.
             user_context (UserContextDto): Context information used to identify the current user.
@@ -295,6 +317,24 @@ class ParticipationService:
         )
 
         partners: list[PartnerDto] = []
+
+        # Before the match notification the result is the admins' alone: a
+        # matched or unmatched status would itself tell the user whether they
+        # were paired. Rejected and withdrawn come from the user's own
+        # standing, so they keep their status, but no pairing is shown.
+        if current_status in (
+            MatchStatus.MATCHED,
+            MatchStatus.UNMATCHED,
+            MatchStatus.REJECTED,
+            MatchStatus.WITHDRAWN,
+        ) and not await self._is_round_announced(
+            session, round_id, datetime.now(timezone.utc)
+        ):
+            if current_status in (MatchStatus.MATCHED, MatchStatus.UNMATCHED):
+                current_status = MatchStatus.PENDING
+            return MatchesDto(
+                round_id=round_id, current_status=current_status, partners=partners
+            )
 
         # A pairing is reported for the statuses that can have produced one:
         # the user is matched; was matched and their pair ended, leaving them
@@ -347,6 +387,15 @@ class ParticipationService:
         return MatchesDto(
             round_id=round_id, current_status=current_status, partners=partners
         )
+
+    async def _is_round_announced(
+        self, session: AsyncSession, round_id: int, now: datetime
+    ) -> bool:
+        """Whether members may see the round's pairings; see is_announced."""
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, round_id
+        )
+        return round_entity is None or is_announced(round_entity, now)
 
     async def get_program_feedback(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int

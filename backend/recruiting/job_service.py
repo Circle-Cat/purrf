@@ -530,6 +530,7 @@ class JobService:
             job,
             reviewer_id=reviewer_id,
             submitted_by=submitted_by,
+            submitted_by_name=await self._name_of(session, submitted_by),
             submit_message=(message or "").strip() or None,
             submit_blockers=submit_blockers(job),
         )
@@ -801,6 +802,7 @@ class JobService:
             job,
             reviewer_id=moved.reviewer_id,
             submitted_by=moved.raised_by,
+            submitted_by_name=await self._name_of(session, moved.raised_by),
             submit_message=moved.reason,
             submit_blockers=submit_blockers(job),
         )
@@ -902,20 +904,27 @@ class JobService:
         return [self.recruiting_mapper.to_public_job_summary_dto(j) for j in jobs]
 
     @staticmethod
-    def _reject_info(latest) -> tuple[str | None, str | None]:
+    def _reject_info(latest, job: JobEntity) -> tuple[str | None, str | None]:
         """Return (reject_comment, kind) if latest is a rejected review.
+
+        A rejected revision only stands while its staged edit does: once the
+        author discards the edit there is nothing left to resubmit or fix.
 
         Args:
             latest (ApprovalRequestEntity | None): The job's most-recent
                 review, or None if it has never had one.
+            job (JobEntity): The posting the review is about.
 
         Returns:
             tuple[str | None, str | None]: (comment, kind) when latest is a
-            rejected review, otherwise (None, None).
+            rejected review that still stands, otherwise (None, None).
         """
         if latest is None or latest.status != ApprovalRequestStatus.REJECTED:
             return None, None
-        return latest.decision_comment, latest.payload["kind"]
+        kind = latest.payload["kind"]
+        if kind == JobReviewKind.REVISION and job.pending_payload is None:
+            return None, None
+        return latest.decision_comment, kind
 
     async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
         """List postings of every status (internal/admin view).
@@ -943,7 +952,7 @@ class JobService:
         dtos = []
         for j in jobs:
             latest = latest_reviews.get(str(j.job_id))
-            comment, kind = self._reject_info(latest)
+            comment, kind = self._reject_info(latest, j)
             reviewer_id = (
                 latest.reviewer_id
                 if latest is not None and latest.status == ApprovalRequestStatus.PENDING
@@ -1011,15 +1020,34 @@ class JobService:
         latest_reviews = await self.approval_service.latest_for_targets(
             session, JOB_REVIEW, [str(job_id)]
         )
-        comment, kind = self._reject_info(latest_reviews.get(str(job_id)))
+        comment, kind = self._reject_info(latest_reviews.get(str(job_id)), job)
         return self.recruiting_mapper.to_job_dto(
             job,
             last_reject_comment=comment,
             last_reject_kind=kind,
             reviewer_id=open_review.reviewer_id if open_review else None,
             submitted_by=open_review.raised_by if open_review else None,
+            submitted_by_name=(
+                await self._name_of(session, open_review.raised_by)
+                if open_review
+                else None
+            ),
             submit_message=open_review.reason if open_review else None,
+            submit_blockers=submit_blockers(job),
         )
+
+    async def _name_of(self, session: AsyncSession, user_id: int) -> str:
+        """A person's display name, or ``User <id>`` when their row is gone.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The person.
+
+        Returns:
+            str: The name to show.
+        """
+        users = await self.users_repository.get_all_by_ids(session, [user_id])
+        return display_name_or_id(users[0]) if users else f"User {user_id}"
 
     async def get_job_activity(
         self, session: AsyncSession, job_id: int

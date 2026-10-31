@@ -111,6 +111,7 @@ beforeEach(() => {
   });
   api.getSignInMethods.mockResolvedValue({ data: signInMethods() });
   api.getPendingBlockRequests.mockResolvedValue({ data: [] });
+  api.getAccountBlockRequests.mockResolvedValue({ data: [] });
   api.getBlockPreflight.mockResolvedValue({
     data: { applicationCount: 0, interviewTimes: [] },
   });
@@ -119,6 +120,85 @@ beforeEach(() => {
   api.unblockAccount.mockResolvedValue({ data: null });
   api.blockAccount.mockResolvedValue({ data: null });
   api.decideBlockRequest.mockResolvedValue({ data: null });
+});
+
+describe("AccountDetailPage — closed block requests", () => {
+  const closed = (overrides) => ({
+    id: 2,
+    targetUserId: 1203,
+    raisedBy: 31,
+    raisedByName: "Dana Wu",
+    raisedFrom: "recruiting_application",
+    raisedAt: "2026-10-18T17:00:00Z",
+    reason: "Missed three interviews",
+    reviewerId: 32,
+    reviewerName: "Rita Reviewer",
+    status: "rejected",
+    decidedBy: 32,
+    decidedByName: "Rita Reviewer",
+    decidedAt: "2026-10-20T17:00:00Z",
+    decisionNote: "Not enough evidence",
+    ...overrides,
+  });
+
+  const section = () =>
+    screen.getByRole("heading", { name: "Block requests" }).closest("section");
+
+  it("lists every closed request in the order sent, with who asked and who decided", async () => {
+    api.getAccountBlockRequests.mockResolvedValue({
+      data: [
+        closed(),
+        closed({
+          id: 1,
+          raisedByName: "Sam Steward",
+          raisedFrom: "mentorship_participant",
+          reason: null,
+          status: "withdrawn",
+          decidedByName: "Sam Steward",
+          decisionNote: null,
+        }),
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(api.getAccountBlockRequests).toHaveBeenCalledWith(1203);
+    const items = within(section()).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent("Rejected");
+    expect(items[0]).toHaveTextContent(
+      "Raised by Dana Wu from recruiting application",
+    );
+    expect(items[0]).toHaveTextContent("Missed three interviews");
+    expect(items[0]).toHaveTextContent("Rita Reviewer");
+    expect(items[0]).toHaveTextContent("Not enough evidence");
+    expect(items[1]).toHaveTextContent("Withdrawn");
+    expect(items[1]).toHaveTextContent(
+      "Raised by Sam Steward from mentorship participant",
+    );
+  });
+
+  it("says when no request about the account has been closed", async () => {
+    renderPage();
+    await waitLoaded();
+
+    expect(within(section()).getByText("None closed yet.")).toBeInTheDocument();
+  });
+
+  it("says so when they could not be read, rather than that there are none", async () => {
+    api.getAccountBlockRequests.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      within(section()).getByText(
+        "Couldn't read this account's block requests.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(section()).queryByText("None closed yet."),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("AccountDetailPage — getting back out", () => {
@@ -323,6 +403,76 @@ describe("AccountDetailPage — the block request card", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(api.decideBlockRequest).not.toHaveBeenCalled();
+  });
+
+  it("shows the approver the same pre-flight the raiser read, mentorship pairs included", async () => {
+    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
+    api.getBlockPreflight.mockResolvedValue({
+      data: {
+        applicationCount: 3,
+        interviewTimes: ["2026-11-02T17:00:00Z", "2026-11-03T17:00:00Z"],
+        mentorshipPairCount: 4,
+        mentorshipMeetingCount: 5,
+      },
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Approve and block/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(api.getBlockPreflight).toHaveBeenCalledWith(1203),
+    );
+    expect(
+      within(dialog).getByText(
+        "Sam Rivera is blocked from Purrf as soon as you approve.",
+      ),
+    ).toBeInTheDocument();
+    const preflight = await within(dialog).findByTestId("block-preflight");
+    await waitFor(() =>
+      expect(preflight).toHaveTextContent("Tag 3 affected applications"),
+    );
+    expect(preflight).toHaveTextContent("Cancel 2 interviews");
+    expect(preflight).toHaveTextContent(
+      "End 4 mentorship pairs in rounds in progress and cancel 5 upcoming meetings",
+    );
+    expect(
+      within(dialog).queryByText(/Couldn't read what this will affect/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the pre-flight could not be read and still lets the approver decide", async () => {
+    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
+    api.getBlockPreflight.mockRejectedValue({
+      response: { data: { message: "boom" } },
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Approve and block/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(/Couldn't read what this will affect/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByTestId("block-preflight")).toHaveTextContent(
+      "Still counting the applications, interviews and mentorship pairs",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await waitFor(() =>
+      expect(api.decideBlockRequest).toHaveBeenCalledWith(7, true, null),
+    );
+  });
+
+  it("reads no pre-flight for a rejection", async () => {
+    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByTestId("block-preflight")).toBeNull();
+    expect(api.getBlockPreflight).not.toHaveBeenCalled();
   });
 
   it("needs a reason to reject, and sends it trimmed so the raiser is told why", async () => {

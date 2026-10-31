@@ -833,4 +833,187 @@ describe("MentorshipParticipantsCard", () => {
       expect(screen.queryByTestId("feedback-dialog")).not.toBeInTheDocument();
     });
   });
+
+  describe("pairing state", () => {
+    const ENDED_LINE = "Your pairing for this round has ended.";
+    const NO_PAIRING = "No active pairing this round.";
+
+    // The overview's `participantRole` is the viewer's role in that pair.
+    const pairing = (partnerId, preferredName, viewerRole, isActive) => ({
+      partnerId,
+      preferredName,
+      requiredMeetings: 3,
+      completedCount: 0,
+      completedRate: 0,
+      meetingTimeList: [],
+      participantRole: viewerRole,
+      isActive,
+    });
+
+    const renderCard = ({ roundStatus = "active", viewerRole, pairings }) =>
+      render(
+        <MentorshipParticipantsCard
+          {...baseProps}
+          roundSelectionData={{
+            sortedRounds: [
+              { id: "1", name: "2026 Spring", status: roundStatus },
+            ],
+          }}
+          participantDetails={{
+            ...baseProps.participantDetails,
+            roundInfo: {
+              ...baseProps.participantDetails.roundInfo,
+              status: roundStatus,
+            },
+            partnerMeetingOverview: pairings,
+            participantRole: viewerRole,
+          }}
+        />,
+      );
+
+    const endedBadges = () => screen.queryAllByText("Ended");
+
+    describe("Manage Meetings", () => {
+      it("stays available to a mentor with two live pairings and one ended", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(11, "Carol", "mentor", true),
+            pairing(12, "Dave", "mentor", true),
+            pairing(13, "Erin", "mentor", false),
+          ],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", "");
+        expect(dialog).toHaveAttribute("data-can-log-past", "false");
+      });
+
+      it("is unavailable to a mentor whose pairings have all ended", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(21, "Frank", "mentor", false),
+            pairing(22, "Grace", "mentor", false),
+          ],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", NO_PAIRING);
+        expect(dialog).toHaveAttribute("data-can-log-past", "false");
+      });
+
+      it("offers scheduling and logging to a mentee with one live pairing", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(31, "Heidi", "mentee", true)],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", "");
+        expect(dialog).toHaveAttribute("data-log-unavailable", "");
+        expect(dialog).toHaveAttribute("data-log-partner-id", "31");
+      });
+
+      it("is unavailable to a mentee whose pairing has ended", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(41, "Ivan", "mentee", false)],
+        });
+
+        // The dialog greys its trigger when every tab has a reason, and
+        // lists each tab's reason as the tooltip.
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", NO_PAIRING);
+        expect(dialog.getAttribute("data-log-unavailable")).not.toBe("");
+      });
+
+      it("names the closed round rather than the pairing once the round is completed", () => {
+        renderCard({
+          roundStatus: "completed",
+          viewerRole: "mentee",
+          pairings: [pairing(51, "Judy", "mentee", true)],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute(
+          "data-schedule-unavailable",
+          "No active mentorship round",
+        );
+      });
+    });
+
+    it.each(["active", "completed"])(
+      "shows no round status badge for a %s round",
+      (roundStatus) => {
+        renderCard({
+          roundStatus,
+          viewerRole: "mentee",
+          pairings: [pairing(61, "Mallory", "mentee", true)],
+        });
+
+        expect(screen.queryByText("Active")).not.toBeInTheDocument();
+        expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+      },
+    );
+
+    describe("ended pairings", () => {
+      it("marks nothing while the only pairing is live", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(71, "Niaj", "mentee", true)],
+        });
+
+        expect(screen.queryByText(ENDED_LINE)).not.toBeInTheDocument();
+        expect(endedBadges()).toHaveLength(0);
+      });
+
+      it("marks only the ended row when a live pairing remains", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(81, "Olivia", "mentor", true),
+            pairing(82, "Peggy", "mentor", false),
+          ],
+        });
+
+        expect(screen.queryByText(ENDED_LINE)).not.toBeInTheDocument();
+        const badges = endedBadges();
+        expect(badges).toHaveLength(1);
+        expect(badges[0].closest("p")).toHaveTextContent("Peggy");
+        expect(badges[0]).toHaveClass("text-amber-600");
+      });
+
+      it("says the pairing has ended when the only pairing has ended", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(91, "Rupert", "mentee", false)],
+        });
+
+        expect(screen.getByText(ENDED_LINE)).toHaveClass("text-amber-600");
+        const badges = endedBadges();
+        expect(badges).toHaveLength(1);
+        expect(badges[0].closest("p")).toHaveTextContent("Rupert");
+        expect(badges[0]).toHaveClass("text-amber-600");
+      });
+
+      it("says it once when every pairing has ended", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(101, "Sybil", "mentor", false),
+            pairing(102, "Trent", "mentor", false),
+          ],
+        });
+
+        expect(screen.getAllByText(ENDED_LINE)).toHaveLength(1);
+        const badges = endedBadges();
+        expect(badges.map((badge) => badge.closest("p").textContent)).toEqual([
+          expect.stringContaining("Sybil"),
+          expect.stringContaining("Trent"),
+        ]);
+        badges.forEach((badge) => expect(badge).toHaveClass("text-amber-600"));
+      });
+    });
+  });
 });

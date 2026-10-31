@@ -873,6 +873,7 @@ class AppDependencyBuilder:
             matching_job_client=self.matching_job_client,
             matching_eligibility_service=self.matching_eligibility_service,
             approval_service=self.approval_service,
+            users_repository=self.users_repository,
             logger=self.logger,
         )
         self.matching_run_read_service = MatchingRunReadService(

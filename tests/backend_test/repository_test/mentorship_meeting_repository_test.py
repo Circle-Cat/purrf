@@ -813,6 +813,27 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         with self.assertRaises(IntegrityError):
             await repo.insert_meeting(self.session, meeting)
 
+    async def test_insert_meeting_manual_with_attendance_succeeds(self):
+        """An admin marks attendance on hand-logged meetings too, so the
+        attendance columns are not Google-only."""
+        pair = await self._seed_pair()
+        meeting = self._manual_meeting(
+            pair.pair_id,
+            absent_user_id=pair.mentee_id,
+            late_user_ids=[pair.mentor_id],
+            has_unknown_absent=False,
+            has_unknown_late=False,
+            has_insufficient_duration=True,
+        )
+        repo = MentorshipMeetingRepository()
+
+        await repo.insert_meeting(self.session, meeting)
+
+        fetched = await self.session.get(MentorshipMeetingEntity, meeting.meeting_id)
+        self.assertEqual(fetched.absent_user_id, pair.mentee_id)
+        self.assertEqual(fetched.late_user_ids, [pair.mentor_id])
+        self.assertTrue(fetched.has_insufficient_duration)
+
     async def test_insert_meeting_end_before_start_violates_check(self):
         pair = await self._seed_pair()
         start = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)

@@ -777,4 +777,101 @@ describe("useParticipantSearch", () => {
       );
     });
   });
+
+  describe("filtersEdited", () => {
+    const SEARCHED =
+      "/?round=7&q=ali&account=active&internal=internal&role=mentor&approval=matched&training=completed&id=42";
+
+    it("is false before the first search, whatever the drafts say", async () => {
+      const { result } = renderSearch();
+      act(() => result.current.search.setQ("ali"));
+      await act(async () => {});
+
+      expect(result.current.search.filtersEdited).toBe(false);
+    });
+
+    it.each([
+      ["user id", (s) => s.setUserId("43")],
+      ["name / email", (s) => s.setQ("bo")],
+      ["account", (s) => s.setAccountStatus("blocked")],
+      ["internal", (s) => s.setInternal("external")],
+      ["training", (s) => s.setOnboardingStatus("incomplete")],
+      ["round", (s) => s.setRoundId("3")],
+      ["role", (s) => s.setParticipantRole("mentee")],
+      ["approval", (s) => s.setApprovalStatus("rejected")],
+      ["list", (s) => s.setListEligible(true)],
+    ])(
+      "turns on when the %s draft moves off the search",
+      async (_label, edit) => {
+        const { result } = renderSearch(SEARCHED);
+        await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+        expect(result.current.search.filtersEdited).toBe(false);
+
+        act(() => edit(result.current.search));
+
+        expect(result.current.search.filtersEdited).toBe(true);
+      },
+    );
+
+    it("turns off when the draft is put back as searched", async () => {
+      const { result } = renderSearch(SEARCHED);
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+
+      act(() => result.current.search.setQ("alic"));
+      expect(result.current.search.filtersEdited).toBe(true);
+      act(() => result.current.search.setQ("ali "));
+
+      expect(result.current.search.filtersEdited).toBe(false);
+    });
+
+    it("turns off on Search", async () => {
+      const { result } = renderSearch(SEARCHED);
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+      act(() => result.current.search.setInternal("external"));
+
+      act(() => result.current.search.submitSearch());
+
+      await waitFor(() =>
+        expect(paramsOf(result).get("internal")).toBe("external"),
+      );
+      expect(result.current.search.filtersEdited).toBe(false);
+    });
+
+    it("stays off through paging and sorting", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 45 }));
+      const { result } = renderSearch(SEARCHED);
+      await waitFor(() => expect(result.current.search.total).toBe(45));
+
+      act(() => result.current.search.nextPage());
+      await waitFor(() => expect(result.current.search.offset).toBe(20));
+      expect(result.current.search.filtersEdited).toBe(false);
+
+      act(() => result.current.search.toggleSort("user_id"));
+      await waitFor(() => expect(result.current.search.sortBy).toBe("user_id"));
+      expect(result.current.search.filtersEdited).toBe(false);
+    });
+
+    it("counts a notification filter only once both halves are picked", async () => {
+      const { result } = renderSearch(SEARCHED, ROUNDS, {
+        notificationsOn: true,
+      });
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+
+      act(() =>
+        result.current.search.setNotification({
+          stage: "midterm_reminder",
+          state: "",
+        }),
+      );
+      expect(result.current.search.filtersEdited).toBe(false);
+
+      act(() =>
+        result.current.search.setNotification({
+          stage: "midterm_reminder",
+          state: "not_notified",
+        }),
+      );
+      expect(result.current.search.filtersEdited).toBe(true);
+    });
+  });
 });

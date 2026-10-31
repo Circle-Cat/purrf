@@ -373,11 +373,79 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
             self.session, request_id=31, actor_id=RAISER, reviewer_id=PERSON
         )
 
+    async def test_rejected_requests_on_a_participant_come_newest_first(self):
+        """What was turned down about the person, for their timeline: their
+        own requests and the end-pair requests on their pairs, and only those
+        that were rejected."""
+
+        def rejected(row, day, comment):
+            row.status = ApprovalRequestStatus.REJECTED
+            row.decided_at = datetime(2026, 10, day, tzinfo=timezone.utc)
+            row.decision_comment = comment
+            return row
+
+        withdrawal = rejected(_withdrawal(), 3, "Still replying")
+        mark = rejected(_mark("mark_red_flag", 52, None), 5, "Not serious enough")
+        ending = rejected(_end_pair(), 4, "They made up")
+        found = {
+            "withdraw_participant": [withdrawal],
+            "mark_red_flag": [mark],
+            "end_pair": [ending],
+        }
+        self.approvals.list_by_status_for_targets = AsyncMock(
+            side_effect=lambda session, action, targets, status: found.get(action, [])
+        )
+
+        result = await self.service.rejected_for_participant(
+            self.session, 7, PERSON, pair_ids=[PAIR]
+        )
+
+        self.assertEqual(
+            [
+                c.args[1:]
+                for c in self.approvals.list_by_status_for_targets.await_args_list
+            ],
+            [
+                ("withdraw_participant", ["7:21"], [ApprovalRequestStatus.REJECTED]),
+                ("mark_no_show", ["7:21"], [ApprovalRequestStatus.REJECTED]),
+                ("mark_red_flag", ["7:21"], [ApprovalRequestStatus.REJECTED]),
+                ("exempt_matching", ["7:21"], [ApprovalRequestStatus.REJECTED]),
+                ("end_pair", [str(PAIR)], [ApprovalRequestStatus.REJECTED]),
+            ],
+        )
+        self.assertEqual([r["request_id"] for r in result], [52, 61, 41])
+        self.assertEqual(
+            [r["decision_comment"] for r in result],
+            ["Not serious enough", "They made up", "Still replying"],
+        )
+        self.assertEqual(result[0]["reviewer"]["user_id"], REVIEWER)
+
+    async def test_rejected_with_no_pairs_skips_the_end_pair_lookup(self):
+        self.approvals.list_by_status_for_targets = AsyncMock(return_value=[])
+
+        self.assertEqual(
+            await self.service.rejected_for_participant(self.session, 7, PERSON), []
+        )
+        self.assertNotIn(
+            "end_pair",
+            [
+                c.args[1]
+                for c in self.approvals.list_by_status_for_targets.await_args_list
+            ],
+        )
+
     async def test_pending_requests_on_a_participant_are_described(self):
+        """An exemption is listed with the rest, so it can still be withdrawn
+        or rejected here once the person drops out of Needs exemption."""
+        exemption = _request(action="exempt_matching", request_id=71)
+        exemption.target_type = "round_participant"
+        exemption.target_id = "7:21"
+        exemption.payload = {"round_id": 7, "user_id": PERSON}
         waiting = {
             "withdraw_participant": _withdrawal(),
             "mark_no_show": _mark("mark_no_show", request_id=51, pair_id=501),
             "mark_red_flag": _mark("mark_red_flag", request_id=52, pair_id=None),
+            "exempt_matching": exemption,
         }
         self.approvals.get_pending_for_target.side_effect = (
             lambda session, action, target: waiting.get(action)
@@ -391,10 +459,11 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                 ("withdraw_participant", "7:21"),
                 ("mark_no_show", "7:21"),
                 ("mark_red_flag", "7:21"),
+                ("exempt_matching", "7:21"),
             ],
         )
-        self.assertEqual([r["request_id"] for r in result], [41, 51, 52])
-        self.assertEqual([r["pair_id"] for r in result], [None, 501, None])
+        self.assertEqual([r["request_id"] for r in result], [41, 51, 52, 71])
+        self.assertEqual([r["pair_id"] for r in result], [None, 501, None, None])
         self.assertEqual(result[0]["raised_by"]["user_id"], RAISER)
         self.assertEqual(result[0]["reviewer"]["user_id"], REVIEWER)
 

@@ -386,7 +386,56 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             self.session, caller_id=ME, status="active", limit=50, offset=0
         )
 
-        self.assertIsNone(self.users.list_users.await_args.kwargs["sort_by"])
+        kwargs = self.users.list_users.await_args.kwargs
+        self.assertIsNone(kwargs["sort_by"])
+        self.assertEqual(kwargs["order"], "asc")
+
+    async def test_sorts_by_user_id_in_either_direction(self):
+        """Newest accounts first is the common question; it overrides the
+        blocked view's default too."""
+        self.users.list_users.return_value = ([], 0)
+
+        for status in (None, "blocked"):
+            for order in ("asc", "desc"):
+                await self.service.list_accounts(
+                    self.session,
+                    caller_id=ME,
+                    status=status,
+                    sort_by="user_id",
+                    order=order,
+                    limit=50,
+                    offset=0,
+                )
+                kwargs = self.users.list_users.await_args.kwargs
+                self.assertEqual(
+                    (kwargs["sort_by"], kwargs["order"]), ("user_id", order)
+                )
+
+    async def test_other_sort_columns_keep_the_default_order(self):
+        self.users.list_users.return_value = ([], 0)
+
+        await self.service.list_accounts(
+            self.session,
+            caller_id=ME,
+            status="blocked",
+            sort_by="last_name",
+            order="asc",
+            limit=50,
+            offset=0,
+        )
+        kwargs = self.users.list_users.await_args.kwargs
+        self.assertEqual((kwargs["sort_by"], kwargs["order"]), ("blocked_at", "desc"))
+
+        await self.service.list_accounts(
+            self.session,
+            caller_id=ME,
+            sort_by="last_name",
+            order="desc",
+            limit=50,
+            offset=0,
+        )
+        kwargs = self.users.list_users.await_args.kwargs
+        self.assertEqual((kwargs["sort_by"], kwargs["order"]), (None, "asc"))
 
     async def test_no_status_filters_nothing(self):
         self.users.list_users.return_value = ([], 0)

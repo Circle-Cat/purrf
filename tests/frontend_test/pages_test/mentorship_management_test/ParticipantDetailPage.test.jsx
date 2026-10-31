@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import ParticipantDetailPage from "@/pages/MentorshipManagement/ParticipantDetailPage";
 import {
   addParticipantNote,
+  decideMentorshipApproval,
   getAllMentorshipRounds,
   getMeetingLog,
   getMentorshipApprovers,
@@ -33,6 +34,7 @@ import {
   noteOf,
   pairOf,
   registrationOf,
+  rejectedOf,
 } from "./participantDetail.helper";
 
 vi.mock("@/api/mentorshipApi", () => ({
@@ -58,6 +60,7 @@ vi.mock("@/api/mentorshipApi", () => ({
 vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
   getBlockPreflight: vi.fn(),
+  getLatestClosedBlockRequest: vi.fn(),
   getUserAdmins: vi.fn(),
   getRaisedBlockRequests: vi.fn(),
   reassignBlockRequest: vi.fn(),
@@ -458,6 +461,16 @@ describe("ParticipantDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a rejected request on the timeline", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({ rejectedRequests: [rejectedOf()] }),
+    });
+    renderPage();
+    expect(
+      await screen.findByText("Reason: Still replying on Teams"),
+    ).toBeInTheDocument();
+  });
+
   it("goes back to the list with the filters it came from", async () => {
     renderPage("/mentorship-management/participants/3104?round=7", {
       returnSearch: "?round=7&q=alice",
@@ -854,6 +867,160 @@ describe("ParticipantDetailPage", () => {
     expect(
       screen.queryByRole("button", { name: "Mark as notified" }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("opened from Review", () => {
+    const APPROVE = "mentorship.approve";
+    // Waits on the viewer, Rae Kim (8); raised by Dana Wu (9).
+    const reviewed = {
+      requestId: 41,
+      action: "withdraw_participant",
+      raisedBy: { userId: 9, name: "Dana Wu" },
+      reviewer: { userId: 8, name: "Rae Kim" },
+      reason: "Stopped replying",
+      createdAt: "2026-10-09T08:00:00Z",
+    };
+    const other = {
+      ...reviewed,
+      requestId: 52,
+      action: "mark_red_flag",
+      reason: null,
+    };
+    const REVIEW_URL =
+      "/mentorship-management/participants/3104?round=7&review=41";
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      useAuth.mockReturnValue({
+        permissions: [READ, WRITE, APPROVE],
+        user: { userId: 8 },
+      });
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({
+          notes: [noteOf()],
+          pendingRequests: [reviewed, other],
+        }),
+      });
+      getParticipantEmails.mockResolvedValue({ data: conversationOf() });
+      decideMentorshipApproval.mockResolvedValue({ data: {} });
+    });
+
+    it("puts the request first and leaves out every other action", async () => {
+      renderPage(REVIEW_URL);
+
+      const top = await screen.findByRole("region", {
+        name: "Withdrawal from round awaiting your decision",
+      });
+      expect(
+        within(top).getByText(/^Raised by Dana Wu on 2026-10-09/),
+      ).toBeInTheDocument();
+      expect(within(top).getByText("Stopped replying")).toBeInTheDocument();
+      expect(
+        within(top).getByRole("button", { name: "Approve" }),
+      ).toBeInTheDocument();
+      expect(
+        within(top).getByRole("button", { name: "Reject" }),
+      ).toBeInTheDocument();
+      expect(
+        top.compareDocumentPosition(
+          screen.getByRole("heading", { name: "Alice Chen" }),
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      for (const name of [
+        "Send email",
+        "Change status / flag",
+        "Block from Purrf",
+        "Add a note",
+        "Refresh emails",
+      ]) {
+        expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+      }
+      const rest = screen.getByRole("region", {
+        name: "Waiting on a decision",
+      });
+      expect(within(rest).getByText(/^Red flag/)).toBeInTheDocument();
+      expect(
+        within(rest).queryByText(/^Withdrawal from round/),
+      ).not.toBeInTheDocument();
+      expect(within(rest).queryAllByRole("button")).toHaveLength(0);
+      expect(
+        screen.getByText("Asked to move the first meeting."),
+      ).toBeInTheDocument();
+    });
+
+    it("goes back to Mentorship Management once the request is decided", async () => {
+      const user = userEvent.setup();
+      renderPage(REVIEW_URL);
+      const top = await screen.findByRole("region", {
+        name: "Withdrawal from round awaiting your decision",
+      });
+
+      await user.click(within(top).getByRole("button", { name: "Approve" }));
+      await user.click(
+        screen.getAllByRole("button", { name: "Approve" }).at(-1),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("where")).toHaveTextContent(
+          /^\/mentorship-management$/,
+        ),
+      );
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(41, {
+        decision: "approve",
+        comment: undefined,
+      });
+      expect(toast.success).toHaveBeenCalledWith("Request approved.");
+    });
+
+    it("stays on the page when the decision is refused", async () => {
+      const user = userEvent.setup();
+      decideMentorshipApproval.mockRejectedValue({
+        response: { data: { message: "Dana Wu has already left this round." } },
+      });
+      renderPage(REVIEW_URL);
+      const top = await screen.findByRole("region", {
+        name: "Withdrawal from round awaiting your decision",
+      });
+
+      await user.click(within(top).getByRole("button", { name: "Approve" }));
+      await user.click(
+        screen.getAllByRole("button", { name: "Approve" }).at(-1),
+      );
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "Dana Wu has already left this round.",
+        ),
+      );
+      expect(screen.getByTestId("where")).toHaveTextContent("review=41");
+      // The confirmation stays open to try again or cancel, over the request.
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(
+        screen.getByRole("region", {
+          name: "Withdrawal from round awaiting your decision",
+          hidden: true,
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("says a request no longer waiting was dealt with and shows the page as usual", async () => {
+      renderPage("/mentorship-management/participants/3104?round=7&review=99");
+
+      expect(
+        await screen.findByText(
+          "This request has already been decided or withdrawn.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", {
+          name: "Withdrawal from round awaiting your decision",
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Change status / flag" }),
+      ).toBeInTheDocument();
+    });
   });
 
   describe("email", () => {

@@ -181,6 +181,9 @@ const ParticipantDetailPage = () => {
   const [searchParams] = useSearchParams();
   const roundId = searchParams.get("round");
   const pairParam = searchParams.get("pair");
+  // Set by Review in Pending approvals: this visit is for deciding that
+  // request, so it comes first and the page's other actions are left out.
+  const reviewParam = searchParams.get("review");
   const location = useLocation();
   const navigate = useNavigate();
   const returnSearch = location.state?.returnSearch;
@@ -295,6 +298,13 @@ const ParticipantDetailPage = () => {
     // Requests go through the mentorship approvals, which sit behind the
     // matching-run flag.
     const pendingRequests = detail.pendingRequests ?? [];
+    const reviewed =
+      reviewParam != null
+        ? pendingRequests.find((r) => String(r.requestId) === reviewParam)
+        : undefined;
+    const reviewing = Boolean(reviewed);
+    // Decided or withdrawn since the Review link was followed.
+    const reviewGone = reviewParam != null && !reviewing;
     const statusTypes = matchingOn
       ? availableStatusRequestTypes({
           canWrite,
@@ -337,6 +347,24 @@ const ParticipantDetailPage = () => {
 
     body = (
       <div className="space-y-6">
+        {reviewing && (
+          <WaitingOnDecision
+            asCard
+            requests={[reviewed]}
+            pairs={pairs}
+            personId={person.userId}
+            personName={name}
+            viewerId={user?.userId}
+            canApprove={canApprove}
+            actionsOn={matchingOn}
+            onChanged={() => navigate(ROUTE_PATHS.MENTORSHIP_MANAGEMENT)}
+          />
+        )}
+        {reviewGone && (
+          <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+            This request has already been decided or withdrawn.
+          </p>
+        )}
         <div className="flex flex-wrap items-start gap-4">
           <div>
             <h2 className="text-lg font-semibold">{name}</h2>
@@ -353,34 +381,36 @@ const ParticipantDetailPage = () => {
               <MarkBadges noShow={marks.noShow} redFlag={marks.redFlag} />
             </div>
           </div>
-          <div className="ml-auto flex flex-wrap items-start gap-2">
-            {canEmail && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={emailOptions.length === 0}
-                title={
-                  emailOptions.length === 0
-                    ? "No email address on file"
-                    : undefined
-                }
-                onClick={emailCompose.openCompose}
-              >
-                Send email
-              </Button>
-            )}
-            {statusTypes.length > 0 && (
-              <Button size="sm" onClick={() => setChangingStatus(true)}>
-                Change status / flag
-              </Button>
-            )}
-            <BlockFromPurrf
-              person={person}
-              pendingBlockRequest={detail.pendingBlockRequest}
-              canWrite={canWrite}
-              onRequested={refetch}
-            />
-          </div>
+          {!reviewing && (
+            <div className="ml-auto flex flex-wrap items-start gap-2">
+              {canEmail && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={emailOptions.length === 0}
+                  title={
+                    emailOptions.length === 0
+                      ? "No email address on file"
+                      : undefined
+                  }
+                  onClick={emailCompose.openCompose}
+                >
+                  Send email
+                </Button>
+              )}
+              {statusTypes.length > 0 && (
+                <Button size="sm" onClick={() => setChangingStatus(true)}>
+                  Change status / flag
+                </Button>
+              )}
+              <BlockFromPurrf
+                person={person}
+                pendingBlockRequest={detail.pendingBlockRequest}
+                canWrite={canWrite}
+                onRequested={refetch}
+              />
+            </div>
+          )}
           {canEmail && (
             <ComposeEmailDialog
               {...emailCompose.dialogProps}
@@ -444,7 +474,7 @@ const ParticipantDetailPage = () => {
                   exempted={detail.exempted}
                   markedSince={markedSinceExemption}
                   roundId={round.roundId}
-                  matchingOn={matchingOn}
+                  matchingOn={matchingOn && !reviewing}
                   canWrite={canWrite}
                   canApprove={canApprove}
                   userId={user?.userId}
@@ -457,7 +487,7 @@ const ParticipantDetailPage = () => {
                   pair={pair}
                   subject={subject}
                   round={round}
-                  canWrite={writable}
+                  canWrite={writable && !reviewing}
                   open={openPairId === pair.pairId}
                   onToggle={() =>
                     setOpenPairId((id) =>
@@ -472,23 +502,28 @@ const ParticipantDetailPage = () => {
         </section>
 
         <WaitingOnDecision
-          requests={pendingRequests}
+          requests={
+            reviewing
+              ? pendingRequests.filter((r) => r !== reviewed)
+              : pendingRequests
+          }
           pairs={pairs}
           personId={person.userId}
           personName={name}
           viewerId={user?.userId}
           canApprove={canApprove}
-          actionsOn={matchingOn}
+          actionsOn={matchingOn && !reviewing}
           onChanged={refetch}
         />
 
         <NoteTimeline
           notes={detail.notes}
+          rejectedRequests={detail.rejectedRequests ?? []}
           sends={sends}
           roundId={round.roundId}
           userId={person.userId}
           pairs={pairs}
-          canAdd={writable}
+          canAdd={writable && !reviewing}
           onAdded={refetch}
           canMarkNotified={kitEmailOn}
           personName={name}
@@ -496,12 +531,12 @@ const ParticipantDetailPage = () => {
           notifiedStages={notifiedStagesOf(sends, detail.notes)}
           emailThreads={emails.conversation?.threads ?? []}
           emailLoadError={emails.loadError}
-          canReply={canEmail}
+          canReply={canEmail && !reviewing}
           onReply={emailCompose.openReply}
           attachmentUrl={(messageId, index) =>
             participantEmailAttachmentUrl(roundId, userId, messageId, index)
           }
-          onRefreshEmails={canWrite ? emails.refresh : undefined}
+          onRefreshEmails={canWrite && !reviewing ? emails.refresh : undefined}
         />
 
         <ParticipantFeedback feedback={detail.feedback} />

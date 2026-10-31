@@ -376,6 +376,9 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.storage = MagicMock()
         self.storage.claim_round.return_value = True
+        self.storage.edit_lock.return_value = None
+        self.users = MagicMock()
+        self.users.get_all_by_ids = AsyncMock(return_value=[])
         self.job_client = MagicMock()
         self.job_client.start.return_value = "projects/p/l/jobs/j/executions/e"
         self.approvals = _no_approvals()
@@ -385,6 +388,7 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
             matching_job_client=self.job_client,
             matching_eligibility_service=_everyone_eligible(),
             approval_service=self.approvals,
+            users_repository=self.users,
             logger=MagicMock(),
         )
 
@@ -516,6 +520,17 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.approvals.get_pending_for_target.assert_not_awaited()
 
+    async def test_a_result_being_edited_by_an_unknown_user_names_the_id(self):
+        self.storage.current_run_id.return_value = "r7-edited"
+        self.storage.edit_lock.return_value = ("91", 600)
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.start_run(MagicMock(), 7, [1, 2])
+
+        self.assertIn("being edited by user 91.", str(caught.exception))
+        self.storage.edit_lock.assert_called_once_with("r7-edited")
+        self.storage.claim_round.assert_not_called()
+
 
 class MatchingRunFailedStartTest(unittest.IsolatedAsyncioTestCase):
     """What a failed trigger leaves in Redis, through the real key layout."""
@@ -530,12 +545,24 @@ class MatchingRunFailedStartTest(unittest.IsolatedAsyncioTestCase):
         )
         self.job_client = MagicMock()
         self.approvals = _no_approvals()
+        self.users = MagicMock()
+        self.users.get_all_by_ids = AsyncMock(
+            return_value=[
+                MagicMock(
+                    user_id=58,
+                    first_name="Mei",
+                    last_name="Tanaka",
+                    preferred_name=None,
+                )
+            ]
+        )
         self.service = MatchingRunService(
             matching_payload_service=payload_service,
             matching_storage=MatchingStorage(self.redis, MagicMock()),
             matching_job_client=self.job_client,
             matching_eligibility_service=_everyone_eligible(),
             approval_service=self.approvals,
+            users_repository=self.users,
             logger=MagicMock(),
         )
 
@@ -562,6 +589,39 @@ class MatchingRunFailedStartTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(started, "r7-reviewed-earlier")
         self.assertEqual(self.redis.strings["match:round:7:lock"], started)
         self.assertEqual(self.redis.strings["match:round:7:current"], started)
+
+    async def test_a_result_being_edited_refuses_a_new_run_without_taking_the_round(
+        self,
+    ):
+        self.redis.strings["match:r7-reviewed-earlier:edit_lock"] = "58"
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.start_run(MagicMock(), 7, [1, 2])
+
+        self.assertEqual(
+            str(caught.exception),
+            "Round 7's result is being edited by Mei Tanaka. "
+            "Finish or discard the edit before running again.",
+        )
+        self.assertEqual(self.users.get_all_by_ids.await_args.args[1], [58])
+        self.assertNotIn("match:round:7:lock", self.redis.strings)
+        self.assertEqual(
+            self.redis.strings["match:round:7:current"], "r7-reviewed-earlier"
+        )
+        self.job_client.start.assert_not_called()
+
+    async def test_a_saved_draft_with_the_lock_free_does_not_stop_a_new_run(self):
+        self.redis.hashes["match:r7-reviewed-earlier:draft"] = {
+            "301": "{}",
+            "302": "{}",
+            "303": "{}",
+        }
+        self.job_client.start.return_value = "execution"
+
+        result = await self.service.start_run(MagicMock(), 7, [1, 2])
+
+        self.assertEqual(self.redis.strings["match:round:7:current"], result["run_id"])
+        self.job_client.start.assert_called_once()
 
 
 if __name__ == "__main__":

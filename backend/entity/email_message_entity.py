@@ -55,7 +55,8 @@ class EmailMessageEntity(Base):
         DateTime(timezone=True), index=True
     )
     inbound_kind: Mapped[str | None] = mapped_column(String)
-    # Metadata only: [{"name", "size", "gmailAttachmentId"}].
+    # Metadata only: [{"name", "size", "gmailAttachmentId"}], plus "contentId"
+    # on an inline part the HTML body references as cid:<contentId>.
     attachments: Mapped[list | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

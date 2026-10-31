@@ -7,10 +7,10 @@ chooses or changes the reviewer. The request's own status says where it is
 moves it: approving writes the ledger row, rejecting and withdrawing close
 it.
 
-Approving re-checks three things that can stop being true while a request
-waits, and refuses rather than writes a ledger row that is wrong: the leave
-has already started, a holiday entered since has changed its hours, or the
-employee is no longer active.
+Approving re-checks what can stop being true while a request waits, and
+refuses rather than writes a ledger row that is wrong: the leave has already
+started, a holiday entered since has changed its hours, an exchange's days
+are no longer exchangeable holidays, or the employee is no longer active.
 """
 
 from backend.approval.approval_handler import ApprovalHandler
@@ -20,6 +20,7 @@ from backend.common.leave_enums import (
     LEAVE_REQUEST_SUBJECT,
     LeaveEvent,
     LeaveRequestStatus,
+    LeaveRequestType,
 )
 from backend.common.name_utils import user_display_name
 from backend.leave.leave_clock import business_today
@@ -27,6 +28,7 @@ from backend.leave.leave_request_service import (
     ledger_entry_for,
     load_calendar,
     overdraft_now,
+    unexchangeable_days,
 )
 from backend.leave.leave_workdays import request_hours
 
@@ -113,7 +115,7 @@ class LeaveRequestHandler(ApprovalHandler):
             )
         else:
             try:
-                holidays, _ = await load_calendar(
+                holidays, exchangeable = await load_calendar(
                     session, self._holidays, today, leave.start_date, leave.end_date
                 )
             except ValueError as exc:
@@ -133,6 +135,18 @@ class LeaveRequestHandler(ApprovalHandler):
                         f"the company holidays entered since it comes to "
                         f"{hours:.2f}. Reject it and ask for it to be filed again."
                     )
+                if leave.type is LeaveRequestType.EXCHANGE:
+                    # Filing checked this too, but the calendar can be
+                    # re-saved while the request waits.
+                    ineligible = unexchangeable_days(
+                        leave.start_date, leave.end_date, exchangeable
+                    )
+                    if ineligible:
+                        problems.append(
+                            "These days are no longer exchangeable company "
+                            f"holidays: {', '.join(map(str, ineligible))}. "
+                            "Reject it and ask for it to be filed again."
+                        )
         employee = await self._users.get_user_by_user_id(session, leave.user_id)
         if employee is None or not employee.is_active:
             problems.append(

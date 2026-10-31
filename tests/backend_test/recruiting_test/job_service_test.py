@@ -11,6 +11,7 @@ from backend.recruiting.job_review_handler import JOB_REVIEW, JobReviewHandler
 from backend.recruiting.job_service import JobService
 import backend.recruiting.recipient_resolvers  # noqa: F401 -- registers resolvers
 from backend.repository.notification_repository import NotificationRepository
+from backend.recruiting.job_blockers import NO_RECRUITER, NO_STAGE
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto
 from backend.entity.approval_request_entity import ApprovalRequestEntity
@@ -272,6 +273,12 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         u.user_id = uid
         return u
 
+    def _submitter(self):
+        """User 1, who submits the reviews these tests open."""
+        u = UsersEntity(first_name="Dana", last_name="Wu")
+        u.user_id = 1
+        return u
+
     def _two_approvers(self):
         """Make reviewer id 2 a valid approver alongside id 3."""
         self.perms.get_active_users_with_permission.return_value = [
@@ -357,6 +364,37 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.submitted_by, 1)
 
+    async def test_get_job_names_the_submitter_of_the_open_review(self):
+        """The reviewer's card says who is asking, so the name comes with
+        the id rather than being looked up on the page."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(raised_by=1, reviewer_id=4)
+        self.users_repo.get_all_by_ids.return_value = [self._submitter()]
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submitted_by_name, "Dana Wu")
+        self.users_repo.get_all_by_ids.assert_awaited_once_with(self.session, [1])
+
+    async def test_get_job_names_a_submitter_whose_row_is_gone_by_id(self):
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(raised_by=1, reviewer_id=4)
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submitted_by_name, "User 1")
+
+    async def test_get_job_names_no_submitter_without_open_review(self):
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertIsNone(result.submitted_by_name)
+        self.users_repo.get_all_by_ids.assert_not_awaited()
+
     async def test_get_job_submitted_by_none_without_open_review(self):
         """Nothing is waiting, so there is nobody whose request it is."""
         job = self._job(status=JobStatus.DRAFT)
@@ -398,7 +436,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_job_surfaces_last_reject_kind(self):
         """get_job populates last_reject_comment/last_reject_kind from the job's most-recent rejected review, mirroring list_all_jobs."""
-        job = self._job(status=JobStatus.DRAFT)
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload={"title": "T2"})
         self.repo.get_by_job_id.return_value = job
         self._seed_review(
             JobReviewKind.REVISION,
@@ -420,6 +458,149 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.last_reject_comment)
         self.assertIsNone(result.last_reject_kind)
+
+    async def test_get_job_shows_a_rejected_revision_while_its_edit_is_staged(self):
+        """The author can still fix and resubmit the staged edit, so the rejection stands."""
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload={"title": "T2"})
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Add the salary band",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind),
+            ("Add the salary band", "revision"),
+        )
+
+    async def test_get_job_hides_a_rejected_revision_once_its_edit_is_gone(self):
+        """A discarded edit leaves nothing to resubmit, so the rejection no longer shows."""
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload=None)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Drop the second stage",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind), (None, None)
+        )
+
+    async def test_list_all_jobs_hides_a_rejected_revision_once_its_edit_is_gone(self):
+        """Each posting is judged by its own staged edit, as get_job does."""
+        staged = self._job(status=JobStatus.PUBLISHED, pending_payload={"title": "T2"})
+        staged.job_id = 41
+        discarded = self._job(status=JobStatus.PUBLISHED, pending_payload=None)
+        discarded.job_id = 42
+        self.repo.list_all.return_value = [staged, discarded]
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Keep the old title",
+            job_id=41,
+        )
+        self._seed_review(
+            JobReviewKind.REVISION,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Shorten the form",
+            job_id=42,
+        )
+
+        result = await self.service.list_all_jobs(self.session)
+
+        dto_41 = next(r for r in result if r.id == 41)
+        dto_42 = next(r for r in result if r.id == 42)
+        self.assertEqual(
+            (dto_41.last_reject_comment, dto_41.last_reject_kind),
+            ("Keep the old title", "revision"),
+        )
+        self.assertEqual(
+            (dto_42.last_reject_comment, dto_42.last_reject_kind), (None, None)
+        )
+
+    async def test_get_job_keeps_a_rejected_close_with_nothing_staged(self):
+        """A close rejection is about the status change, not an edit."""
+        job = self._job(status=JobStatus.PUBLISHED, pending_payload=None)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.CLOSE,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Still hiring for this",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind),
+            ("Still hiring for this", "close"),
+        )
+
+    async def test_get_job_keeps_a_rejected_reopen_with_nothing_staged(self):
+        """A reopen rejection is about the status change, not an edit."""
+        job = self._job(status=JobStatus.CLOSED, pending_payload=None)
+        self.repo.get_by_job_id.return_value = job
+        self._seed_review(
+            JobReviewKind.REOPEN,
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Budget is frozen",
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(
+            (result.last_reject_comment, result.last_reject_kind),
+            ("Budget is frozen", "reopen"),
+        )
+
+    async def test_get_job_lists_every_submit_blocker_of_a_draft(self):
+        """The detail page disables Submit for review from this list, so a
+        draft missing both a stage and a recruiter has to arrive with both."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_blockers, [NO_STAGE, NO_RECRUITER])
+
+    async def test_get_job_has_no_submit_blockers_once_submittable(self):
+        """A draft with a stage and a recruiter may be submitted."""
+        job = self._job(
+            status=JobStatus.DRAFT,
+            pipeline_config={
+                "stages": [{"stage": "tech", "rounds": 1}],
+                "ownerIds": [5],
+            },
+        )
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_blockers, [])
+
+    async def test_get_job_judges_submit_blockers_on_the_staged_edit(self):
+        """A published posting is submitted with its staged edit, so a live
+        config that is complete does not hide a staged one that is not."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            pipeline_config={
+                "stages": [{"stage": "tech", "rounds": 1}],
+                "ownerIds": [5],
+            },
+        )
+        job.pending_payload = {
+            "pipelineConfig": {"stages": [{"stage": "tech", "rounds": 1}]}
+        }
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_blockers, [NO_RECRUITER])
 
     async def test_update_published_any_field_parks_pending_payload(self):
         """Editing a PUBLISHED posting — any field — parks a full draft, live
@@ -823,6 +1004,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         job.pipeline_config = self._valid_pipeline()
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
+        self.users_repo.get_all_by_ids.return_value = [self._submitter()]
 
         result = await self.service.submit_for_review(
             self.session,
@@ -833,6 +1015,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.submitted_by, 1)
+        self.assertEqual(result.submitted_by_name, "Dana Wu")
         self.assertEqual(result.submit_message, "Ready for you")
 
     async def test_submit_revision_validates_staged_pipeline_not_live(self):
@@ -1018,6 +1201,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": created.request_id,
                 "message": "please",
+                "reviewerId": 2,
                 "requestId": created.request_id,
                 "action": JOB_REVIEW,
             },
@@ -1184,6 +1368,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": review.request_id,
                 "message": None,
+                "reviewerId": 9,
                 "requestId": review.request_id,
                 "action": JOB_REVIEW,
                 "decision": "approved",
@@ -1325,7 +1510,8 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.submit_message, "Please take a look")
 
     async def test_reassign_review_records_who_it_came_from(self):
-        """The event carries the previous reviewer, which the row no longer does.
+        """The event carries the previous reviewer, which the row no longer
+        does, and the new one, which the timeline names.
 
         Without it the timeline can say a reassignment happened but not what
         it undid, and the row has already been overwritten by then.
@@ -1348,6 +1534,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["event_type"], RecruitingEvent.REVIEW_REASSIGNED)
         self.assertEqual(kwargs["details"]["reviewId"], review.request_id)
         self.assertEqual(kwargs["details"]["previousReviewerId"], 2)
+        # The handler's snapshot is taken before the move, so the service's
+        # own reviewerId has to be the one that lands.
+        self.assertEqual(kwargs["details"]["reviewerId"], 3)
         # The event must be written before the commit, or a rollback would
         # drop the notification while the reassignment survived.
         self.assertEqual(self.call_order, ["record", "commit"])
@@ -1512,6 +1701,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": review.request_id,
                 "message": "please",
+                "reviewerId": 9,
                 "requestId": review.request_id,
                 "action": JOB_REVIEW,
                 "decision": "rejected",
@@ -1611,6 +1801,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "kind": "initial",
                 "reviewId": review.request_id,
                 "message": "please",
+                "reviewerId": 2,
                 "requestId": review.request_id,
                 "action": JOB_REVIEW,
                 "decision": "withdrawn",
@@ -1662,7 +1853,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_all_jobs_surfaces_latest_rejection_comment(self):
         """list_all_jobs populates last_reject_comment for jobs whose latest review is REJECTED."""
-        job_with_reject = self._job(status=JobStatus.DRAFT)
+        job_with_reject = self._job(
+            status=JobStatus.PUBLISHED, pending_payload={"title": "T2"}
+        )
         job_with_reject.job_id = 41
         job_no_reject = self._job(status=JobStatus.PUBLISHED)
         job_no_reject.job_id = 42

@@ -17,6 +17,7 @@ const BASE_FORM = {
   onboardingDeadlineAt: new Date(2026, 1, 9),
   matchNotificationAt: new Date(2026, 1, 12),
   meetingsCompletionDeadlineAt: new Date(2026, 3, 30),
+  feedbackDeadlineAt: new Date(2026, 4, 9),
 };
 
 describe("validateForm", () => {
@@ -36,6 +37,7 @@ describe("validateForm", () => {
     "onboardingDeadlineAt",
     "matchNotificationAt",
     "meetingsCompletionDeadlineAt",
+    "feedbackDeadlineAt",
   ])("requires %s", (field) => {
     expect(validateForm({ ...BASE_FORM, [field]: null })[field]).toBe(
       "This field is required.",

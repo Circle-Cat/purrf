@@ -89,6 +89,8 @@ class UserAccountController:
         user_id: int | None = None,
         status: str | None = None,
         user_type: str | None = None,
+        sort_by: str | None = None,
+        order: str = "asc",
         limit: int = 20,
         offset: int = 0,
     ):
@@ -107,6 +109,10 @@ class UserAccountController:
                 ``"blocked"``, or None for no filter. Unknown values surface as
                 400 from the service.
             user_type (str | None): ``"internal"`` / ``"external"`` / None.
+            sort_by (str | None): ``"user_id"``; anything else keeps the
+                default order (newest block first for the blocked view,
+                ascending user_id otherwise).
+            order (str): ``"asc"`` or ``"desc"`` (default ``"asc"``).
             limit (int): Page size.
             offset (int): Rows to skip (pagination).
 
@@ -126,6 +132,8 @@ class UserAccountController:
                 # search by reason, and the default stays off so the older
                 # permission-page endpoint keeps its exact result set.
                 search_blocked_reason=True,
+                sort_by=sort_by,
+                order=order,
                 limit=limit,
                 offset=offset,
             )

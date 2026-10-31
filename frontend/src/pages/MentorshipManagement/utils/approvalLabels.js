@@ -22,6 +22,7 @@ const ACTION_LABELS = {
 
 // Requests about one person in one round, decided on their page.
 const DECIDED_ON_PERSON_PAGE = new Set([
+  APPROVAL_ACTION.EXEMPT_MATCHING,
   APPROVAL_ACTION.WITHDRAW_PARTICIPANT,
   APPROVAL_ACTION.MARK_NO_SHOW,
   APPROVAL_ACTION.MARK_RED_FLAG,
@@ -36,11 +37,21 @@ export const approvalActionLabel = (action) =>
   ACTION_LABELS[action] ?? "Approval";
 
 /**
+ * What approving an exemption does, said to the reviewer before they confirm.
+ * @param {string} name - Who the exemption is for.
+ * @returns {string}
+ */
+export const exemptionApprovalConsequence = (name) =>
+  `${name} goes into this round's matching pool, and nothing before this round counts against them again. It cannot be undone.`;
+
+/**
  * Where a reviewer decides a request: decisions are taken on the page of the
  * thing they are about. A publish request opens that round's matching
- * results; an exemption opens the round's Needs exemption list narrowed to
- * the person; a withdrawal or a mark opens the person's page for the round;
- * ending a pair opens the mentee's page.
+ * results; an exemption, a withdrawal or a mark opens the person's page for
+ * the round; ending a pair opens the mentee's page. An exemption goes to the
+ * person's page rather than Needs exemption because it is listed there even
+ * after the person drops out of that list. The person's page opens in review
+ * mode on the request.
  *
  * @param {{action: string, round: {roundId: number},
  *          person?: {userId: number}|null,
@@ -50,23 +61,20 @@ export const approvalActionLabel = (action) =>
 export const approvalReviewLink = (request) => {
   const roundId = request.round?.roundId;
   if (request.action === APPROVAL_ACTION.END_PAIR) {
-    return participantLink(request.pair?.mentee?.userId, roundId);
+    return participantLink(
+      request.pair?.mentee?.userId,
+      roundId,
+      null,
+      request.requestId,
+    );
   }
   if (DECIDED_ON_PERSON_PAGE.has(request.action)) {
-    return participantLink(request.person?.userId, roundId);
-  }
-  if (request.action === APPROVAL_ACTION.EXEMPT_MATCHING) {
-    const search = new URLSearchParams({
-      round: String(roundId),
-      needsExemption: "1",
-    });
-    if (request.person?.userId != null) {
-      search.set("id", String(request.person.userId));
-    }
-    return {
-      pathname: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
-      search: `?${search.toString()}`,
-    };
+    return participantLink(
+      request.person?.userId,
+      roundId,
+      null,
+      request.requestId,
+    );
   }
   return { pathname: ROUTE_PATHS.MENTORSHIP_MATCHING(roundId), search: "" };
 };

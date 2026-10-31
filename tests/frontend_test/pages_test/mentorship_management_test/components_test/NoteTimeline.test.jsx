@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import { addParticipantNote } from "@/api/mentorshipApi";
 import { stagesForList } from "@/pages/MentorshipManagement/components/email/emailLabels";
-import { noteOf } from "../participantDetail.helper";
+import { noteOf, rejectedOf } from "../participantDetail.helper";
 import {
   replyOf,
   threadOf,
@@ -180,6 +180,58 @@ describe("NoteTimeline", () => {
       "NotificationKit · 2026-09-20 10:00Admission & onboarding · Welcome aboardNot sent. Not handed to Kit: unsubscribed",
       expect.stringContaining("Older note"),
     ]);
+  });
+
+  it("puts a rejected request among the notes by when it was rejected", () => {
+    renderTimeline({
+      notes: [
+        noteOf({
+          noteId: 2,
+          body: "Newer note",
+          createdAt: "2026-10-05T18:00:00Z",
+        }),
+        noteOf({
+          noteId: 1,
+          body: "Older note",
+          createdAt: "2026-09-01T18:00:00Z",
+        }),
+      ],
+      rejectedRequests: [rejectedOf()],
+    });
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Newer note");
+    expect(items[2]).toHaveTextContent("Older note");
+    const rejected = items[1];
+    expect(rejected).toHaveTextContent("Rejected: Withdrawal from round");
+    expect(rejected).toHaveTextContent("Rae Kim · 2026-09-20 10:00");
+    expect(rejected).toHaveTextContent("(via approval)");
+    expect(rejected).toHaveTextContent("Reason: Still replying on Teams");
+    expect(rejected).toHaveTextContent('Asked by Dana Wu — "Stopped replying"');
+  });
+
+  it("names the partner of a rejected end-pair request and leaves out a missing reason", () => {
+    renderTimeline({
+      pairs: [
+        {
+          pairId: 80,
+          partner: { firstName: "Bob", lastName: "Smith", preferredName: null },
+        },
+      ],
+      rejectedRequests: [
+        rejectedOf({
+          requestId: 61,
+          action: "end_pair",
+          pairId: 80,
+          reason: null,
+        }),
+      ],
+    });
+    const item = screen.getByRole("listitem");
+    expect(item).toHaveTextContent("Rejected: End pair");
+    expect(item).toHaveTextContent("with Bob Smith");
+    expect(item).toHaveTextContent("Asked by Dana Wu");
+    expect(item).not.toHaveTextContent("—");
   });
 
   it("offers no Add a note when it cannot add", () => {

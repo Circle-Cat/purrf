@@ -5,6 +5,7 @@ import {
   blockAccount,
   deactivateAccount,
   decideBlockRequest,
+  getAccountBlockRequests,
   getAccounts,
   getBlockPreflight,
   getPendingBlockRequests,
@@ -35,6 +36,8 @@ export const PARAM = Object.freeze({
   PENDING: "pending",
   FOCUS: "focus",
   USER_ID: "user_id",
+  SORT: "sort",
+  ORDER: "order",
 });
 
 /** Read an integer query parameter, falling back when it is absent or junk. */
@@ -60,6 +63,12 @@ export const useAccountAdmin = () => {
   const status = searchParams.get(PARAM.STATUS) ?? "";
   const offset = Math.max(0, readInt(searchParams, PARAM.OFFSET, 0));
   const pendingOnly = searchParams.get(PARAM.PENDING) === "1";
+  // User ID is the one sortable column. With no sort chosen the list is in
+  // ascending user_id, except the blocked view, which shows the newest block
+  // first.
+  const sortBy = searchParams.get(PARAM.SORT) === "user_id" ? "user_id" : null;
+  const order = searchParams.get(PARAM.ORDER) === "desc" ? "desc" : "asc";
+  const userIdSort = sortBy ? order : status === "blocked" ? null : "asc";
   const focusedUserId = searchParams.has(PARAM.FOCUS)
     ? readInt(searchParams, PARAM.FOCUS, null)
     : null;
@@ -136,6 +145,8 @@ export const useAccountAdmin = () => {
         userId: userId || undefined,
         status: status || undefined,
         userType: userType || undefined,
+        sortBy: sortBy ?? undefined,
+        order: sortBy ? order : undefined,
         limit: LIMIT,
         offset,
       });
@@ -155,6 +166,8 @@ export const useAccountAdmin = () => {
     userId,
     status,
     userType,
+    sortBy,
+    order,
     offset,
     pendingOnly,
     pendingKey,
@@ -201,6 +214,12 @@ export const useAccountAdmin = () => {
   // while it is on (the list is a fixed set of ids, not a query), and keeping
   // them is what lets "Show all accounts" put the reviewer back where they
   // were. AccountList disables the controls so the pause is visible.
+  /** Flip User ID between ascending and descending, from page one. */
+  const toggleUserIdSort = () =>
+    updateParams({
+      [PARAM.SORT]: "user_id",
+      [PARAM.ORDER]: userIdSort === "asc" ? "desc" : "asc",
+    });
   const showPendingOnly = () => updateParams({ [PARAM.PENDING]: "1" });
   const clearPendingOnly = () => updateParams({ [PARAM.PENDING]: "" });
 
@@ -234,6 +253,8 @@ export const useAccountAdmin = () => {
     setUserType,
     status,
     setStatus,
+    userIdSort,
+    toggleUserIdSort,
     offset,
     limit: LIMIT,
     nextPage,
@@ -250,8 +271,9 @@ export const useAccountAdmin = () => {
 
 /**
  * Owns one account's detail view: the row itself, its sign-in methods, the
- * block request waiting on the caller (if any), the block pre-flight, and
- * every state-changing action on the page.
+ * block request waiting on the caller (if any), the block requests about it
+ * that were closed, the block pre-flight, and every state-changing action on
+ * the page.
  *
  * @param {number|null} userId - The account being viewed.
  */
@@ -267,6 +289,8 @@ export const useAccountDetail = (userId) => {
   // person that nobody established.
   const [signInMethodsFailed, setSignInMethodsFailed] = useState(false);
   const [pendingRequestFailed, setPendingRequestFailed] = useState(false);
+  const [closedRequests, setClosedRequests] = useState([]);
+  const [closedRequestsFailed, setClosedRequestsFailed] = useState(false);
   const [preflight, setPreflight] = useState(null);
   const [preflightError, setPreflightError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -281,10 +305,11 @@ export const useAccountDetail = (userId) => {
       // Only the account read decides whether this page has anything to show.
       // The other two are decoration on it, and a failure in either used to
       // make the page announce that an account that plainly exists does not.
-      const [listed, methods, pending] = await Promise.allSettled([
+      const [listed, methods, pending, closed] = await Promise.allSettled([
         getAccounts({ userId, limit: 1 }),
         getSignInMethods(userId),
         getPendingBlockRequests(),
+        getAccountBlockRequests(userId),
       ]);
       if (!isCurrent(seq)) return;
 
@@ -316,6 +341,10 @@ export const useAccountDetail = (userId) => {
         pendingRows.find((r) => r.targetUserId === userId) ?? null,
       );
       setPendingRequestFailed(pending.status === "rejected");
+      setClosedRequests(
+        closed.status === "fulfilled" ? (closed.value?.data ?? []) : [],
+      );
+      setClosedRequestsFailed(closed.status === "rejected");
     } catch (err) {
       if (!isCurrent(seq)) return;
       toast.error(err?.response?.data?.message ?? "Failed to load the account");
@@ -406,6 +435,8 @@ export const useAccountDetail = (userId) => {
     signInMethodsFailed,
     pendingRequest,
     pendingRequestFailed,
+    closedRequests,
+    closedRequestsFailed,
     preflight,
     preflightError,
     loadPreflight,

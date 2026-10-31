@@ -249,6 +249,69 @@ describe("WaitingOnDecision", () => {
     expect(screen.queryByText(/about the pair/)).not.toBeInTheDocument();
   });
 
+  it("lists an exemption and says what approving it does", async () => {
+    const user = userEvent.setup();
+    renderBlock({
+      requests: [{ ...waiting, requestId: 71, action: "exempt_matching" }],
+      viewerId: 8,
+      canApprove: true,
+    });
+
+    expect(
+      screen.getByText(
+        "Matching exemption \u2014 raised by Dana Wu \u00b7 sent to Rae Kim",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(
+      await screen.findByText(/^Mia Ko goes into this round's matching pool/),
+    ).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Approve" }).at(-1));
+    await waitFor(() =>
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(71, {
+        decision: "approve",
+        comment: undefined,
+      }),
+    );
+  });
+
+  it("shows one request as a card to decide, with who asked, when and why", async () => {
+    const user = userEvent.setup();
+    renderBlock({
+      requests: [waiting],
+      asCard: true,
+      viewerId: 8,
+      canApprove: true,
+    });
+
+    const card = screen.getByRole("region", {
+      name: "Withdrawal from round awaiting your decision",
+    });
+    expect(
+      within(card).getByText(/^Raised by Dana Wu on 2026-10-09/),
+    ).toBeInTheDocument();
+    expect(within(card).getByText("Stopped replying")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Withdraw" })).toBeNull();
+
+    await user.click(within(card).getByRole("button", { name: "Approve" }));
+    await user.click(screen.getAllByRole("button", { name: "Approve" }).at(-1));
+    await waitFor(() =>
+      expect(decideMentorshipApproval).toHaveBeenCalledWith(41, {
+        decision: "approve",
+        comment: undefined,
+      }),
+    );
+  });
+
+  it("offers no decision on the card to someone it does not wait on", () => {
+    renderBlock({ requests: [waiting], asCard: true, viewerId: 77 });
+
+    const card = screen.getByRole("region", {
+      name: "Withdrawal from round awaiting your decision",
+    });
+    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+  });
+
   it("lets the raiser withdraw the request or hand it to another reviewer", async () => {
     const user = userEvent.setup();
     const { onChanged } = renderBlock();

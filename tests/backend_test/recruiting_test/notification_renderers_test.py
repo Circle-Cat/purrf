@@ -378,17 +378,24 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
             "job",
             job.job_id,
             actor,
-            details={"kind": "initial", "decision": "rejected", "comment": "no"},
+            details={
+                "kind": "initial",
+                "decision": "rejected",
+                "comment": "Add a salary range",
+            },
         )
 
         approved_subject, approved_body = await render_registry.render(
             self.session, approved_event
         )
-        rejected_subject, _ = await render_registry.render(self.session, rejected_event)
+        rejected_subject, rejected_body = await render_registry.render(
+            self.session, rejected_event
+        )
 
         self.assertEqual(approved_subject, "Posting approved: Backend Engineer")
         self.assertIn("Grace Hopper approved your submission", approved_body)
         self.assertEqual(rejected_subject, "Posting rejected: Backend Engineer")
+        self.assertIn("Their reason: Add a salary range", rejected_body)
 
     async def test_review_decided_by_withdrawal_tells_the_reviewer_it_is_off(self):
         """A withdrawal is no verdict: it must not read as a rejection, which
@@ -434,6 +441,125 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertEqual(subject, "Posting review reassigned: Backend Engineer")
         self.assertIn("Grace Hopper", body)
         self.assertIn("Backend Engineer", body)
+
+    async def test_review_events_read_the_kind_from_details(self):
+        """The renderers hand the event's kind to the copy, for every event."""
+        actor = _make_user("Rae", "Kim")
+        await self.insert_entities([actor])
+        job = await self._make_job()
+        expected = {
+            "revision": {
+                "recruiting.review_opened": (
+                    "Posting changes to review",
+                    'Rae Kim submitted changes to "Backend Engineer" for your review.',
+                ),
+                "recruiting.review_reassigned": (
+                    "Posting review reassigned",
+                    'Rae Kim moved the review of the changes to "Backend Engineer" to you.',
+                ),
+                "approved": (
+                    "Posting changes approved",
+                    'Rae Kim approved your changes to "Backend Engineer".',
+                ),
+                "rejected": (
+                    "Posting changes rejected",
+                    'Rae Kim rejected your changes to "Backend Engineer".',
+                ),
+                "withdrawn": (
+                    "Posting changes withdrawn",
+                    'Rae Kim withdrew the changes to "Backend Engineer".',
+                ),
+            },
+            "close": {
+                "recruiting.review_opened": (
+                    "Posting close requested",
+                    'Rae Kim asked to close "Backend Engineer".',
+                ),
+                "recruiting.review_reassigned": (
+                    "Posting review reassigned",
+                    'Rae Kim moved the request to close "Backend Engineer" to you.',
+                ),
+                "approved": (
+                    "Posting close approved",
+                    'Rae Kim approved closing "Backend Engineer".',
+                ),
+                "rejected": (
+                    "Posting close rejected",
+                    'Rae Kim rejected closing "Backend Engineer".',
+                ),
+                "withdrawn": (
+                    "Posting close request withdrawn",
+                    'Rae Kim withdrew the request to close "Backend Engineer".',
+                ),
+            },
+            "reopen": {
+                "recruiting.review_opened": (
+                    "Posting reopen requested",
+                    'Rae Kim asked to reopen "Backend Engineer".',
+                ),
+                "recruiting.review_reassigned": (
+                    "Posting review reassigned",
+                    'Rae Kim moved the request to reopen "Backend Engineer" to you.',
+                ),
+                "approved": (
+                    "Posting reopen approved",
+                    'Rae Kim approved reopening "Backend Engineer".',
+                ),
+                "rejected": (
+                    "Posting reopen rejected",
+                    'Rae Kim rejected reopening "Backend Engineer".',
+                ),
+                "withdrawn": (
+                    "Posting reopen request withdrawn",
+                    'Rae Kim withdrew the request to reopen "Backend Engineer".',
+                ),
+            },
+        }
+        for kind, by_event in expected.items():
+            for which, (subject_prefix, sentence) in by_event.items():
+                with self.subTest(kind=kind, event=which):
+                    if which.startswith("recruiting."):
+                        event_type, details = which, {"kind": kind, "reviewId": 1}
+                    else:
+                        event_type = "recruiting.review_decided"
+                        details = {"kind": kind, "decision": which, "comment": "x"}
+                    event = await self._make_event(
+                        event_type, "job", job.job_id, actor, details=details
+                    )
+
+                    subject, body = await render_registry.render(self.session, event)
+
+                    self.assertEqual(subject, f"{subject_prefix}: Backend Engineer")
+                    self.assertIn(f"<p>{sentence}", body)
+
+    async def test_review_events_without_a_kind_read_as_a_first_publication(self):
+        """Events recorded before the kind was carried keep the old copy."""
+        actor = _make_user("Grace", "Hopper")
+        await self.insert_entities([actor])
+        job = await self._make_job()
+        opened = await self._make_event(
+            "recruiting.review_opened", "job", job.job_id, actor, details={}
+        )
+        approved = await self._make_event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            actor,
+            details={"decision": "approved", "comment": None},
+        )
+
+        opened_subject, opened_body = await render_registry.render(self.session, opened)
+        approved_subject, approved_body = await render_registry.render(
+            self.session, approved
+        )
+
+        self.assertEqual(opened_subject, "Posting review requested: Backend Engineer")
+        self.assertIn(
+            'Grace Hopper submitted the posting "Backend Engineer" for your review.',
+            opened_body,
+        )
+        self.assertEqual(approved_subject, "Posting approved: Backend Engineer")
+        self.assertIn("Grace Hopper approved your submission", approved_body)
 
     async def test_reassigned_names_the_evaluator_rather_than_you(self):
         """The posting owners get this email too, so it names the evaluator."""

@@ -213,6 +213,113 @@ describe("RoundFeedbackPage", () => {
     expect(screen.getByText("Nobody here.")).toBeInTheDocument();
   });
 
+  describe("how many rows the filters leave", () => {
+    // 3 mentors (2 sent) and 3 mentees (none sent): no filter below leaves
+    // 2 rows, so a count read from the 2 sent cannot pass.
+    const person = (userId, role, hasSubmitted) => ({
+      userId,
+      name: `Person ${userId}`,
+      role,
+      hasSubmitted,
+      mostValuableAspects: null,
+      challenges: null,
+      programRating: null,
+      partnerFeedback: [],
+    });
+    const SIX = {
+      roundId: 7,
+      roundName: "Mentorship 2026 Fall",
+      owed: 6,
+      sent: 2,
+      participants: [
+        person(4001, "mentor", true),
+        person(4002, "mentor", true),
+        person(4003, "mentor", false),
+        person(4004, "mentee", false),
+        person(4005, "mentee", false),
+        person(4006, "mentee", false),
+      ],
+    };
+
+    const openWith = async ({ role, notSentOnly = false } = {}) => {
+      getRoundFeedback.mockResolvedValue({ data: SIX });
+      renderPage();
+      await screen.findByText("Person 4001");
+      if (role) {
+        fireEvent.change(screen.getByLabelText("Role"), {
+          target: { value: role },
+        });
+      }
+      if (notSentOnly) fireEvent.click(screen.getByLabelText("Not sent only"));
+    };
+
+    it("shows all of them when nothing is filtered", async () => {
+      await openWith();
+      expect(screen.getByText("6 shown")).toBeInTheDocument();
+      expect(screen.getByText("2 of 6 sent")).toBeInTheDocument();
+    });
+
+    it("counts the mentors when the role is Mentor", async () => {
+      await openWith({ role: "mentor" });
+      expect(screen.getByText("3 shown")).toBeInTheDocument();
+      expect(screen.getByText("2 of 6 sent")).toBeInTheDocument();
+    });
+
+    it("counts the mentors who have not sent it", async () => {
+      await openWith({ role: "mentor", notSentOnly: true });
+      expect(screen.getByText("1 shown")).toBeInTheDocument();
+      expect(screen.getByText("2 of 6 sent")).toBeInTheDocument();
+    });
+
+    it("counts the mentees who have not sent it", async () => {
+      await openWith({ role: "mentee", notSentOnly: true });
+      expect(screen.getByText("3 shown")).toBeInTheDocument();
+      expect(screen.getByText("2 of 6 sent")).toBeInTheDocument();
+    });
+  });
+
+  describe("who is listed", () => {
+    const WHO =
+      "Feedback is asked of everyone paired in this round, including pairs " +
+      "that ended. People who registered but were never paired are not listed.";
+
+    it("says who is listed once the feedback has loaded", async () => {
+      renderPage();
+      await screen.findByText("Cara Wang");
+
+      expect(screen.getByText(WHO)).toBeInTheDocument();
+    });
+
+    it("says who is listed when nobody is", async () => {
+      getRoundFeedback.mockResolvedValue({
+        data: { ...FEEDBACK, owed: 0, sent: 0, participants: [] },
+      });
+      renderPage();
+      await screen.findByText("Nobody here.");
+
+      expect(screen.getByText(WHO)).toBeInTheDocument();
+    });
+
+    it("does not say it while loading", async () => {
+      getRoundFeedback.mockReturnValue(new Promise(() => {}));
+      renderPage();
+
+      expect(
+        await screen.findByText("Loading feedback..."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(WHO)).not.toBeInTheDocument();
+    });
+
+    it("does not say it when the feedback cannot be loaded", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      getRoundFeedback.mockRejectedValue(new Error("boom"));
+      renderPage();
+
+      await screen.findByText("Could not load this round's feedback.");
+      expect(screen.queryByText(WHO)).not.toBeInTheDocument();
+    });
+  });
+
   it("says so when the feedback cannot be loaded", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     getRoundFeedback.mockRejectedValue(new Error("boom"));

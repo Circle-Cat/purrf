@@ -108,6 +108,19 @@ class _FakeApprovalRequestRepository:
             and r.action in actions
         ]
 
+    async def list_by_status_for_targets(
+        self, session, action, target_type, target_ids, statuses
+    ):
+        rows = [
+            r
+            for r in self.rows
+            if r.action == action
+            and r.target_type == target_type
+            and r.target_id in target_ids
+            and r.status in statuses
+        ]
+        return sorted(rows, key=lambda r: (r.decided_at, r.request_id), reverse=True)
+
     async def list_pending_raised_by(self, session, raised_by, actions):
         return [
             r
@@ -634,6 +647,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                 "requestId": request.id,
                 "action": BLOCK_USER,
                 "previousReviewerId": REVIEWER,
+                "reviewerId": OTHER_ADMIN,
             },
         )
 
@@ -1086,6 +1100,60 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(out, [])
+
+    def _decided(self, status, day, **fields):
+        return self._seed_request(
+            status=status,
+            decided_by=REVIEWER,
+            decided_at=datetime(2026, 10, day, tzinfo=timezone.utc),
+            **fields,
+        )
+
+    async def test_decided_requests_on_a_person_come_newest_first(self):
+        """The account page's record: every request that was closed, however
+        it was closed, and nothing still waiting or about someone else."""
+        approved = self._decided(ApprovalRequestStatus.APPROVED, 1)
+        withdrawn = self._decided(ApprovalRequestStatus.WITHDRAWN, 2)
+        rejected = self._decided(
+            ApprovalRequestStatus.REJECTED, 3, decision_comment="Not enough"
+        )
+        superseded = self._decided(ApprovalRequestStatus.SUPERSEDED, 4)
+        self._seed_request()
+        self._decided(ApprovalRequestStatus.REJECTED, 5, target_id="999")
+
+        out = await self.service.list_decided_for_target(self.session, TARGET)
+
+        self.assertEqual(
+            [r.id for r in out],
+            [
+                superseded.request_id,
+                rejected.request_id,
+                withdrawn.request_id,
+                approved.request_id,
+            ],
+        )
+        self.assertEqual(out[1].status, "rejected")
+        self.assertEqual(out[1].decision_note, "Not enough")
+
+    async def test_raiser_reads_back_their_latest_decided_request(self):
+        """The raising page's echo: the caller's own most recent closed
+        request about this person, not a newer one someone else raised."""
+        self._decided(ApprovalRequestStatus.REJECTED, 1, decision_comment="No")
+        mine = self._decided(ApprovalRequestStatus.WITHDRAWN, 2)
+        self._decided(ApprovalRequestStatus.REJECTED, 3, raised_by=OTHER_RAISER)
+        self._seed_request()
+
+        out = await self.service.latest_decided_raised_by_actor(
+            self.session, RAISER, TARGET
+        )
+
+        self.assertEqual(out.id, mine.request_id)
+        self.assertEqual(out.status, "withdrawn")
+        self.assertIsNone(
+            await self.service.latest_decided_raised_by_actor(
+                self.session, REVIEWER, TARGET
+            )
+        )
 
 
 if __name__ == "__main__":

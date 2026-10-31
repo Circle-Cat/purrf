@@ -541,6 +541,130 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  describe("the reviewer's card", () => {
+    // Submitted by Dana Wu (5), waiting on the viewer (9).
+    const pendingRevision = (overrides = {}) => ({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submittedBy: 5,
+        submittedByName: "Dana Wu",
+        submitMessage: "Updated the salary range",
+        ...overrides,
+      },
+    });
+    const CARD = "Revision awaiting your decision";
+
+    beforeEach(() => {
+      api.getJob.mockResolvedValue(pendingRevision());
+      api.listMyReviews.mockResolvedValue({
+        data: [
+          {
+            reviewId: 3,
+            jobId: 1,
+            kind: "revision",
+            createdAt: "2026-10-29T07:20:00Z",
+          },
+        ],
+      });
+      api.decideReview.mockResolvedValue({ data: {} });
+      authState.userId = 9;
+      authState.permissions = ["recruiting.job.approve"];
+    });
+
+    it("shows who submitted it, when and their note, with nothing else to fill in", async () => {
+      renderAt(1);
+
+      const card = await screen.findByRole("region", { name: CARD });
+      expect(
+        within(card).getByText(
+          "Submitted by Dana Wu on 2026-10-29 15:20 Asia/Shanghai",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(card).getByText("Updated the salary range"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Note to the reviewer"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText("Rejection comment (required to reject)"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says when the submitter left no note", async () => {
+      api.getJob.mockResolvedValue(pendingRevision({ submitMessage: null }));
+      renderAt(1);
+
+      const card = await screen.findByRole("region", { name: CARD });
+      expect(within(card).getByText("No note given.")).toBeInTheDocument();
+    });
+
+    it("approves after a confirmation that says what approving does", async () => {
+      const user = userEvent.setup();
+      renderAt(1);
+      const card = await screen.findByRole("region", { name: CARD });
+
+      await user.click(within(card).getByRole("button", { name: "Approve" }));
+      const dialog = screen.getByRole("dialog");
+      expect(
+        within(dialog).getByText(/The staged changes go live to applicants/),
+      ).toBeInTheDocument();
+      expect(api.decideReview).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+      await waitFor(() =>
+        expect(api.decideReview).toHaveBeenCalledWith(3, {
+          decision: "approve",
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith("Review approved.");
+    });
+
+    it("rejects with the reason given in the confirmation", async () => {
+      const user = userEvent.setup();
+      renderAt(1);
+      const card = await screen.findByRole("region", { name: CARD });
+
+      await user.click(within(card).getByRole("button", { name: "Reject" }));
+      const dialog = screen.getByRole("dialog");
+      await user.type(
+        within(dialog).getByRole("textbox"),
+        "  Keep the old range  ",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Reject" }));
+
+      await waitFor(() =>
+        expect(api.decideReview).toHaveBeenCalledWith(3, {
+          decision: "reject",
+          comment: "Keep the old range",
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith("Review rejected.");
+    });
+
+    it("leaves the note box for everyone else", async () => {
+      authState.userId = 5;
+      authState.permissions = ["recruiting.job.write"];
+      api.listMyReviews.mockResolvedValue({ data: [] });
+      renderAt(1);
+
+      expect(
+        await screen.findByText("Note to the reviewer"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: CARD }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("shows Approve/Reject only for the assigned reviewer", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -651,8 +775,13 @@ describe("PostingDetailPage", () => {
       },
     });
     api.listApprovers.mockResolvedValue({
-      data: [{ userId: 9, name: "Yanpei Wang" }],
+      data: [
+        { userId: 9, name: "Yanpei Wang" },
+        { userId: 12, name: "Mei Lin" },
+      ],
     });
+    // The details mirror what JobReviewHandler.event_details and the
+    // approval service write for each event.
     api.listJobActivity.mockResolvedValue({
       data: [
         {
@@ -666,21 +795,49 @@ describe("PostingDetailPage", () => {
         {
           id: 2,
           eventType: "recruiting.review_opened",
-          details: { kind: "initial", reviewerIds: [9], message: null },
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 9,
+            requestId: 40,
+            action: "job_review",
+          },
           actorId: 3,
           actorName: "Yuanyuan Huang",
           createdAt: "2026-07-11T09:20:00Z",
         },
         {
           id: 3,
+          eventType: "recruiting.review_reassigned",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            previousReviewerId: 9,
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T10:00:00Z",
+        },
+        {
+          id: 4,
           eventType: "recruiting.review_decided",
           details: {
             kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
             decision: "rejected",
             comment: "Fix the title",
           },
-          actorId: 9,
-          actorName: "Yanpei Wang",
+          actorId: 12,
+          actorName: "Mei Lin",
           createdAt: "2026-07-11T15:21:39Z",
         },
       ],
@@ -705,7 +862,64 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Yanpei Wang rejected the review.*Fix the title.*sent back to draft/,
+        /Yuanyuan Huang reassigned the review from Yanpei Wang to Mei Lin/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Mei Lin rejected the review.*Fix the title.*sent back to draft/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names a reviewer who is no longer an approver by id in the review history", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 12,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 12, name: "Mei Lin" }],
+    });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.review_reassigned",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            previousReviewerId: 9,
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T10:00:00Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Yuanyuan Huang reassigned the review from Reviewer #9 to Mei Lin/,
       ),
     ).toBeInTheDocument();
   });

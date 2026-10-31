@@ -34,6 +34,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Table from "@/components/common/Table";
+import DisabledReason from "@/components/common/DisabledReason";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
@@ -81,6 +82,28 @@ const ELIGIBLE = "eligible";
 const NEEDS_EXEMPTION = "needs_exemption";
 
 const NO_SELECTION = new Map();
+
+// Why the bulk actions wait while the filters differ from the list shown.
+const SEARCH_AGAIN = "Search again to act on these filters.";
+
+/**
+ * What the Run confirm dialog says a new run throws away: the round's
+ * unpublished result, and the draft edits saved on it.
+ *
+ * @param {{triggeredByName?: string, triggeredByUserId?: string,
+ *   startedAt: string, draftCount?: number}} run The succeeded run's overview.
+ * @returns {string}
+ */
+const replaceWarning = (run) => {
+  const by =
+    run.triggeredByName ||
+    (run.triggeredByUserId != null ? `ID ${run.triggeredByUserId}` : "unknown");
+  const at = formatInTz(run.startedAt, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm");
+  const drafts = run.draftCount
+    ? `, including ${run.draftCount} draft ${run.draftCount === 1 ? "edit" : "edits"}`
+    : "";
+  return `This replaces the current result (run started by ${by} at ${at})${drafts}. The current result can't be recovered.`;
+};
 
 /**
  * Maps table column accessors to backend sort_by field names. Only columns
@@ -151,6 +174,21 @@ const NOT_REGISTERED_COLUMNS = [
 const trainingLabel = (status) => {
   if (status == null) return "No course";
   return status === "done" ? "Done" : "Not done";
+};
+
+/**
+ * @param {Object} round - A round from the rounds list.
+ * @returns {string} Why the lists that need a round in progress are greyed
+ *   out: the round's in-progress span in Pacific, or that it has none.
+ */
+const inProgressHint = (round) => {
+  const start = round.timeline?.promotionStartAt;
+  const end = round.feedbackClosesAt;
+  if (!start || !end) {
+    return "Only while the round is in progress. This round has no in-progress dates set.";
+  }
+  const day = (iso) => formatInTz(iso, MEETING_TIMEZONE, "yyyy-MM-dd");
+  return `Only while the round is in progress: ${day(start)} to ${day(end)}`;
 };
 
 /**
@@ -319,8 +357,13 @@ const NotificationsCell = ({ stages }) =>
  * after scheduling, a list so filtered is searched again. While the round is
  * in progress, writers can also mark the people picked as notified by hand,
  * for a notification sent outside Purrf.
+ *
+ * @param {object} props
+ * @param {() => Promise<void>|void} [props.onApprovalsChanged] Called after an
+ *   exemption action on a row succeeds, to reload the pending approvals.
+ * @returns {JSX.Element}
  */
-const ParticipantSearchCard = () => {
+const ParticipantSearchCard = ({ onApprovalsChanged }) => {
   const rounds = useParticipantSearchRounds();
   const flags = useFeatureFlags();
   // The backend refuses every Kit email endpoint while the flag is off.
@@ -351,6 +394,7 @@ const ParticipantSearchCard = () => {
     submitSearch,
     committedRoundId,
     listKey,
+    filtersEdited,
     eligible,
     notRegistered,
     listNotRegistered,
@@ -424,13 +468,25 @@ const ParticipantSearchCard = () => {
   const menteeCount = pickedRoles.filter(
     (r) => r === MentorshipParticipantRoles.MENTEE,
   ).length;
+  // A new run takes the round's pointer from the result being edited, and
+  // with it the edit and the draft it would save.
+  const editLock = committedRun?.editLock;
+  // An edit in progress is named first: searching again would not lift it.
+  const runBlockedReason = editLock
+    ? `Being edited by ${editLock.name || `ID ${editLock.userId}`} — finish or discard the edit first.`
+    : filtersEdited
+      ? SEARCH_AGAIN
+      : null;
   // A result waiting for approval to publish would be pushed aside by a new
   // run, so none starts until it is decided.
   const canRun =
     mentorCount > 0 &&
     menteeCount > 0 &&
     committedRun?.status !== RUN_STATUS.RUNNING &&
-    committedRun?.publishRequest == null;
+    committedRun?.publishRequest == null &&
+    runBlockedReason == null;
+  const replacing =
+    committedRun?.status === RUN_STATUS.SUCCEEDED ? committedRun : null;
   const committedRoundName =
     (rounds ?? []).find((r) => String(r.id) === committedRoundId)?.name ?? "";
 
@@ -493,6 +549,7 @@ const ParticipantSearchCard = () => {
     if (notificationFiltered) refetch();
   };
 
+  const draftRound = (rounds ?? []).find((r) => String(r.id) === roundId);
   const hasPrev = offset > 0;
   const hasNext = offset + limit < total;
 
@@ -515,7 +572,6 @@ const ParticipantSearchCard = () => {
 
   const {
     meetings: activeMeetings,
-    roundVersion: activeRoundVersion,
     roundInProgress: activeRoundInProgress,
     loading: meetingLoading,
     error: meetingError,
@@ -525,6 +581,12 @@ const ParticipantSearchCard = () => {
   const handleMeetingSave = async (batch) => {
     await saveMeetingBatch(batch);
     refetch();
+  };
+
+  // A decision on a row also takes it off the Pending approvals card above.
+  const handleExemptionChanged = () => {
+    onApprovalsChanged?.();
+    return refetch();
   };
 
   // Reverse-lookup: find the accessor whose mapped backend field matches sortBy.
@@ -651,7 +713,7 @@ const ParticipantSearchCard = () => {
               canWrite={canWrite}
               canApprove={canApprove}
               userId={user?.userId}
-              onChanged={refetch}
+              onChanged={handleExemptionChanged}
             />
           ),
           notifications: (
@@ -877,6 +939,11 @@ const ParticipantSearchCard = () => {
               <SelectItem value={ELIGIBLE} disabled={!canListEligible}>
                 Eligible for matching
               </SelectItem>
+              {draftRound && !canListNotRegistered && (
+                <p className="max-w-56 px-2 py-1.5 text-xs text-muted-foreground">
+                  {inProgressHint(draftRound)}
+                </p>
+              )}
             </SelectContent>
           </Select>
           {kitEmailOn && !listEligible && !listNeedsExemption && (
@@ -903,16 +970,23 @@ const ParticipantSearchCard = () => {
           </p>
         ) : (
           <>
+            {filtersEdited && (
+              <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Filters changed. Click Search to update the list.
+              </p>
+            )}
             {showRunUi && (
               <div className="mb-3 flex justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!canRun}
-                  onClick={() => setConfirmOpen(true)}
-                >
-                  Run matching · {picked.size}
-                </Button>
+                <DisabledReason reason={runBlockedReason}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!canRun}
+                    onClick={() => setConfirmOpen(true)}
+                  >
+                    Run matching · {picked.size}
+                  </Button>
+                </DisabledReason>
               </div>
             )}
             <Table
@@ -949,22 +1023,28 @@ const ParticipantSearchCard = () => {
                 <span className="text-sm">
                   <strong>{picked.size} people</strong> selected
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setNotifyOpen(true)}
-                >
-                  Send notification · {picked.size}
-                </Button>
-                {canMarkNotified && (
+                <DisabledReason reason={filtersEdited ? SEARCH_AGAIN : null}>
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    onClick={() => setMarkOpen(true)}
+                    disabled={filtersEdited}
+                    onClick={() => setNotifyOpen(true)}
                   >
-                    Mark as notified · {picked.size}
+                    Send notification · {picked.size}
                   </Button>
+                </DisabledReason>
+                {canMarkNotified && (
+                  <DisabledReason reason={filtersEdited ? SEARCH_AGAIN : null}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={filtersEdited}
+                      onClick={() => setMarkOpen(true)}
+                    >
+                      Mark as notified · {picked.size}
+                    </Button>
+                  </DisabledReason>
                 )}
               </div>
             )}
@@ -1002,6 +1082,11 @@ const ParticipantSearchCard = () => {
                 {mentorCount} mentors and {menteeCount} mentees.
               </DialogDescription>
             </DialogHeader>
+            {replacing && (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {replaceWarning(replacing)}
+              </p>
+            )}
             <DialogFooter>
               <Button
                 type="button"
@@ -1011,8 +1096,13 @@ const ParticipantSearchCard = () => {
               >
                 Cancel
               </Button>
-              <Button type="button" disabled={starting} onClick={runMatching}>
-                Run
+              <Button
+                type="button"
+                variant={replacing ? "destructive" : "default"}
+                disabled={starting}
+                onClick={runMatching}
+              >
+                {replacing ? "Replace and run" : "Run"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1033,7 +1123,6 @@ const ParticipantSearchCard = () => {
           meetings={activeMeetings}
           loading={meetingLoading}
           error={meetingError}
-          roundVersion={activeRoundVersion}
           roundInProgress={activeRoundInProgress}
           onSave={handleMeetingSave}
         />
