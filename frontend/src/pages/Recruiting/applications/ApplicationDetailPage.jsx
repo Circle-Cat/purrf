@@ -1086,6 +1086,9 @@ const ApplicationDetailPage = () => {
   // The caller's own latest closed request about the applicant, so the page
   // can say it was rejected instead of silently offering the button again.
   const [closedBlockRequest, setClosedBlockRequest] = useState(null);
+  // Bumped to re-run the two raiser reads after someone else closed the
+  // request.
+  const [blockRequestReads, setBlockRequestReads] = useState(0);
   const [blockReassignOpen, setBlockReassignOpen] = useState(false);
   const [blockReassigning, setBlockReassigning] = useState(false);
   const [blockWithdrawing, setBlockWithdrawing] = useState(false);
@@ -1231,7 +1234,7 @@ const ApplicationDetailPage = () => {
     return () => {
       current = false;
     };
-  }, [applicantId, canRequestBlock]);
+  }, [applicantId, canRequestBlock, blockRequestReads]);
 
   const jobStages = useMemo(
     () => (job?.pipelineConfig?.stages ?? []).map((s) => s.stage),
@@ -1614,6 +1617,18 @@ const ApplicationDetailPage = () => {
       .finally(() => setBlockSubmitting(false));
   };
 
+  /**
+   * After a 409 the request was closed by someone else: re-read the raiser's
+   * requests and the page detail so the page shows what is true now. The
+   * dialog is closed first, or it pops back open once load() remounts the
+   * body.
+   */
+  const rereadClosedBlockRequest = () => {
+    setBlockReassignOpen(false);
+    setBlockRequestReads((n) => n + 1);
+    load();
+  };
+
   const handleReassignBlockRequest = (reviewerId) => {
     if (blockReassigning) return;
     setBlockReassigning(true);
@@ -1623,7 +1638,10 @@ const ApplicationDetailPage = () => {
         setBlockReassignOpen(false);
         toast.success(`Reassigned to ${data.reviewerName}.`);
       })
-      .catch((e) => toast.error(e.message))
+      .catch((e) => {
+        toast.error(e.message);
+        if (e?.response?.status === 409) rereadClosedBlockRequest();
+      })
       .finally(() => setBlockReassigning(false));
   };
 
@@ -1639,7 +1657,10 @@ const ApplicationDetailPage = () => {
         setClosedBlockRequest(null);
         toast.success("Block request withdrawn.");
       })
-      .catch((e) => toast.error(e.message))
+      .catch((e) => {
+        toast.error(e.message);
+        if (e?.response?.status === 409) rereadClosedBlockRequest();
+      })
       .finally(() => setBlockWithdrawing(false));
   };
 
