@@ -54,7 +54,7 @@ const EXCLUSION_GROUPS = [
  *
  * @returns {JSX.Element}
  */
-const LeaveBalancesPage = () => {
+const LeaveBalancesPage = ({ onViewHistory }) => {
   const {
     people,
     excluded,
@@ -148,6 +148,14 @@ const LeaveBalancesPage = () => {
                           {`${person.balanceHours} h`}
                         </span>
                         <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onViewHistory?.(person.userId)}
+                        >
+                          View history
+                        </Button>
+
+                        <Button
                           variant="outline"
                           onClick={() => setAdjusting(person)}
                         >
@@ -178,7 +186,10 @@ const LeaveBalancesPage = () => {
                   </p>
                   <p className="m-0 text-sm">
                     {problemGroups[key]
-                      .map((person) => person.name || person.ldap)
+                      .map(
+                        (person) =>
+                          person.name || person.ldap || `User ${person.userId}`,
+                      )
                       .join(", ")}
                   </p>
                 </CardContent>
@@ -212,7 +223,7 @@ const LeaveBalancesPage = () => {
                       {group
                         .map(
                           (person) =>
-                            `${person.name || person.ldap} ${person.balanceHours} h`,
+                            `${person.name || person.ldap || `User ${person.userId}`} ${person.balanceHours} h`,
                         )
                         .join(" · ")}
                     </p>
@@ -232,7 +243,9 @@ const LeaveBalancesPage = () => {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <p className="m-0 text-sm text-muted-foreground">{fix}</p>
-                  <p className="m-0 text-sm">{excluded[key].join(", ")}</p>
+                  <p className="m-0 text-sm">
+                    {(excluded[key] ?? []).join(", ")}
+                  </p>
                 </CardContent>
               </Card>
             ),
