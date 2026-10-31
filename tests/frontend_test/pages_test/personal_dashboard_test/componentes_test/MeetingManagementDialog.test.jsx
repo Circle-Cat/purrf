@@ -124,6 +124,42 @@ describe("MeetingManagementDialog Component", () => {
     ).not.toBeDisabled();
   });
 
+  it("should name every tab's reason when both tabs are closed", () => {
+    const { rerender } = render(
+      <MeetingManagementDialog
+        roundId={2}
+        scheduleUnavailableReason="No active mentorship round"
+        canLogPast={true}
+        logUnavailableReason="Logging meetings for this round has closed."
+      />,
+    );
+
+    const triggerButton = screen.getByRole("button", {
+      name: /manage meetings/i,
+    });
+    expect(triggerButton).toBeDisabled();
+    expect(triggerButton.closest("div")).toHaveAttribute(
+      "title",
+      "Schedule Meeting: No active mentorship round\n" +
+        "Log Past Meeting: Logging meetings for this round has closed.",
+    );
+
+    // One tab still open: the button works and carries no reason.
+    rerender(
+      <MeetingManagementDialog
+        roundId={2}
+        scheduleUnavailableReason="No active mentorship round"
+        canLogPast={true}
+        logPartnerId={9}
+      />,
+    );
+    const enabledButton = screen.getByRole("button", {
+      name: /manage meetings/i,
+    });
+    expect(enabledButton).not.toBeDisabled();
+    expect(enabledButton.closest("div")).not.toHaveAttribute("title");
+  });
+
   it("should not offer a partner whose pairing has ended", async () => {
     // The partner list doubles as the name lookup for meetings already held,
     // so it carries pairings that have ended. Booking against one is refused
