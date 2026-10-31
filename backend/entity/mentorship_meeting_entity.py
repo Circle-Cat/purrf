@@ -18,16 +18,13 @@ from backend.common.base import Base
 from backend.common.mentorship_enums import MeetingSource
 
 # The columns that only ever apply to a GOOGLE row. Named once so the CHECK
-# constraint below and any future reader agree on the list.
+# constraint below and any future reader agree on the list. The attendance
+# results are not among them: an admin marks attendance on hand-logged
+# meetings too.
 _GOOGLE_ONLY_COLUMNS = (
     "meet_link",
     "google_meeting_code",
     "entry_points",
-    "absent_user_id",
-    "late_user_ids",
-    "has_unknown_absent",
-    "has_unknown_late",
-    "has_insufficient_duration",
     "last_sync_at",
 )
 
@@ -104,8 +101,7 @@ class MentorshipMeetingEntity(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set when an admin changes any attendance result above through the
     # meeting log editor. From then on the row's outcome is the admin's, and
-    # the attendance sweep no longer selects it. Deliberately outside
-    # _GOOGLE_ONLY_COLUMNS: the editor also accepts LEGACY rows.
+    # the attendance sweep no longer selects it.
     attendance_set_by_admin_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
@@ -120,8 +116,8 @@ class MentorshipMeetingEntity(Base):
             name="times",
         ),
         # This is what makes a wide table with a discriminator honest rather
-        # than a flattened blob: the nine columns above are meaningless for a
-        # manual or legacy entry, and the database now says so.
+        # than a flattened blob: the Meet columns are meaningless for a manual
+        # or legacy entry, and the database says so.
         CheckConstraint(
             "source = 'google' OR ("
             + " AND ".join(f"{c} IS NULL" for c in _GOOGLE_ONLY_COLUMNS)
