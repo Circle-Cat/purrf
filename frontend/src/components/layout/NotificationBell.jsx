@@ -236,6 +236,9 @@ const describe = (n) => {
       return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
     case "recruiting.review_opened":
       return `${actor} ${reviewLines(n.details).opened(n.jobTitle)}`;
+    // Told to the new reviewer only.
+    case "recruiting.review_reassigned":
+      return `${actor} moved the review of "${n.jobTitle}" to you`;
     case "recruiting.review_decided": {
       // Withdrawn is told to the reviewer it was waiting on; the other two
       // to the submitter.
