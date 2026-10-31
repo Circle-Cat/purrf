@@ -207,4 +207,84 @@ describe("useLeaveApprovals", () => {
       ),
     );
   });
+
+  it("re-reads the list after a refused approval so the stale row goes", async () => {
+    // The employee withdrew while the page was open; the 409 says so and the
+    // row must leave the queue without a manual reload.
+    api.getLeaveApprovals
+      .mockResolvedValueOnce(envelope([row({ requestId: 7 })]))
+      .mockResolvedValue(
+        envelope([row({ requestId: 7, status: "withdrawn" })]),
+      );
+    api.decideLeaveRequest.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { message: "This request was withdrawn." },
+      },
+    });
+
+    const { result } = renderHook(() => useLeaveApprovals());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.decide(7, true);
+
+    await waitFor(() => expect(result.current.pendingCount).toBe(0));
+    expect(api.getLeaveApprovals).toHaveBeenCalledTimes(2);
+    expect(result.current.decided.map((r) => r.requestId)).toEqual([7]);
+    expect(result.current.decideError).toBe("This request was withdrawn.");
+  });
+
+  it("re-reads the list after a decision that failed without a response", async () => {
+    // A network error may still have reached the server; the re-read shows
+    // what actually happened.
+    api.getLeaveApprovals
+      .mockResolvedValueOnce(envelope([row({ requestId: 8 })]))
+      .mockResolvedValue(
+        envelope([row({ requestId: 8 }), row({ requestId: 12 })]),
+      );
+    api.decideLeaveRequest.mockRejectedValue(new Error("network error"));
+
+    const { result } = renderHook(() => useLeaveApprovals());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.decide(8, false, "Short-staffed");
+
+    await waitFor(() =>
+      expect(result.current.pending.map((r) => r.requestId)).toEqual([8, 12]),
+    );
+    expect(result.current.decideError).toBe(
+      "That decision didn't go through. Nothing was recorded — try again.",
+    );
+  });
+
+  it("keeps the decision in flight until the reload after a refusal is back", async () => {
+    // Clearing decidingId before the reload lands would re-enable the buttons
+    // on the stale row.
+    let release;
+    api.getLeaveApprovals
+      .mockResolvedValueOnce(envelope([row({ requestId: 9 })]))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+    api.decideLeaveRequest.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { message: "This leave has already started." },
+      },
+    });
+
+    const { result } = renderHook(() => useLeaveApprovals());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const decision = result.current.decide(9, true);
+    await waitFor(() => expect(api.getLeaveApprovals).toHaveBeenCalledTimes(2));
+    expect(result.current.decidingId).toBe(9);
+
+    release(envelope([row({ requestId: 9, status: "rejected" })]));
+    await decision;
+    await waitFor(() => expect(result.current.decidingId).toBe(null));
+    expect(result.current.pendingCount).toBe(0);
+  });
 });

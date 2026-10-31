@@ -82,6 +82,10 @@ export const useLeaveApprovals = ({ enabled = true } = {}) => {
           error?.response?.data?.message ??
             "That decision didn't go through. Nothing was recorded — try again.",
         );
+        // Re-read on failure too. A refusal usually means the request moved
+        // under us (withdrawn, already started), and a network error may have
+        // reached the server; the stale row would keep offering the same click.
+        await load();
       } finally {
         setDecidingId(null);
       }
