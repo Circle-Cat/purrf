@@ -545,6 +545,49 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    [
+      "reassigned to the new reviewer",
+      "recruiting.review_reassigned",
+      "Rae Kim",
+      "Backend Engineer",
+      { kind: "initial", reviewId: 31, previousReviewerId: 7 },
+      'Rae Kim moved the review of "Backend Engineer" to you',
+    ],
+    [
+      "reassigned with an empty actor name",
+      "recruiting.review_reassigned",
+      "",
+      "Backend Engineer",
+      { kind: "initial", reviewId: 31 },
+      'Someone moved the review of "Backend Engineer" to you',
+    ],
+    [
+      "opened with its existing wording",
+      "recruiting.review_opened",
+      "Rae Kim",
+      "Data Analyst",
+      { kind: "initial", reviewId: 31 },
+      'Rae Kim submitted "Data Analyst" for your review',
+    ],
+  ])(
+    "describes a posting review %s",
+    async (_, eventType, actorName, jobTitle, details, text) => {
+      await openWith({
+        id: 13,
+        eventType,
+        jobTitle,
+        applicantName: "",
+        subjectName: "",
+        actorName,
+        createdAt: "2026-10-07T00:00:00Z",
+        details,
+      });
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
   // -- mentorship approvals ----------------------------------------------
   //
   // Written under subject_type "mentorship_round": what is asked for, the
