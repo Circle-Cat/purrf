@@ -174,8 +174,14 @@ export default function MeetingManagementDialog({
 
   // Nothing behind the button can be acted on, so it opens onto a wall of
   // placeholders -- say why on the button instead of letting it be clicked.
+  // With more than one tab, each is closed for its own reason; naming only the
+  // first would hide the rest, so every reason is listed against its tab.
   const isDisabled = usableTabs.length === 0;
-  const tooltipText = isDisabled ? tabs[0]?.unavailableReason : undefined;
+  const tooltipText = !isDisabled
+    ? undefined
+    : tabs.length <= 1
+      ? tabs[0]?.unavailableReason
+      : tabs.map((tab) => `${tab.label}: ${tab.unavailableReason}`).join("\n");
 
   const closeAndResetDialog = () => {
     setIsOpen(false);

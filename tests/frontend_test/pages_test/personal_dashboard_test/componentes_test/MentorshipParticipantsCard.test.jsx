@@ -922,7 +922,7 @@ describe("MentorshipParticipantsCard", () => {
         });
 
         // The dialog greys its trigger when every tab has a reason, and
-        // shows the first tab's -- scheduling's -- as the tooltip.
+        // lists each tab's reason as the tooltip.
         const dialog = screen.getByTestId("meeting-dialog");
         expect(dialog).toHaveAttribute("data-schedule-unavailable", NO_PAIRING);
         expect(dialog.getAttribute("data-log-unavailable")).not.toBe("");
