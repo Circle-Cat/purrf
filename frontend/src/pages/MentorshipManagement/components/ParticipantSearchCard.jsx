@@ -357,8 +357,13 @@ const NotificationsCell = ({ stages }) =>
  * after scheduling, a list so filtered is searched again. While the round is
  * in progress, writers can also mark the people picked as notified by hand,
  * for a notification sent outside Purrf.
+ *
+ * @param {object} props
+ * @param {() => Promise<void>|void} [props.onApprovalsChanged] Called after an
+ *   exemption action on a row succeeds, to reload the pending approvals.
+ * @returns {JSX.Element}
  */
-const ParticipantSearchCard = () => {
+const ParticipantSearchCard = ({ onApprovalsChanged }) => {
   const rounds = useParticipantSearchRounds();
   const flags = useFeatureFlags();
   // The backend refuses every Kit email endpoint while the flag is off.
@@ -578,6 +583,12 @@ const ParticipantSearchCard = () => {
     refetch();
   };
 
+  // A decision on a row also takes it off the Pending approvals card above.
+  const handleExemptionChanged = () => {
+    onApprovalsChanged?.();
+    return refetch();
+  };
+
   // Reverse-lookup: find the accessor whose mapped backend field matches sortBy.
   const activeSortAccessor = sortBy
     ? (Object.keys(ACCESSOR_TO_SORT_FIELD).find(
@@ -702,7 +713,7 @@ const ParticipantSearchCard = () => {
               canWrite={canWrite}
               canApprove={canApprove}
               userId={user?.userId}
-              onChanged={refetch}
+              onChanged={handleExemptionChanged}
             />
           ),
           notifications: (

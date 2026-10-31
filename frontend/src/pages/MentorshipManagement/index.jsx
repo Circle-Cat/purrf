@@ -32,7 +32,9 @@ const MentorshipManagement = () => {
   const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
   const flags = useFeatureFlags();
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
-  const { requests } = useMyMentorshipApprovals(canApprove && matchingOn);
+  const { requests, reload: reloadApprovals } = useMyMentorshipApprovals(
+    canApprove && matchingOn,
+  );
 
   const {
     sortedRounds,
@@ -62,7 +64,9 @@ const MentorshipManagement = () => {
           canReadFeedback={canRead}
         />
       )}
-      {canRead && <ParticipantSearchCard />}
+      {canRead && (
+        <ParticipantSearchCard onApprovalsChanged={reloadApprovals} />
+      )}
     </div>
   );
 };
