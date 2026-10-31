@@ -916,10 +916,9 @@ class MentorshipAdminService:
 
         The entity-row twin of `_resolve_meeting_notes`, used by the read path
         that has switched from the JSONB column to querying
-        `MentorshipMeetingRepository` directly. MANUAL rows always have these
-        columns NULL (the `google_fields` CHECK constraint enforces it), so
-        this naturally yields an empty list for them without a separate
-        branch, same as the dict-based version does via missing keys.
+        `MentorshipMeetingRepository` directly. Rows of every source are read
+        the same way: a MANUAL row carries attendance only once an admin has
+        marked it, and yields an empty list until then.
 
         Args:
             meeting (MentorshipMeetingEntity): A single meeting row.
