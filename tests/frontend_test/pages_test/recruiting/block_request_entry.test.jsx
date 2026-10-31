@@ -520,6 +520,94 @@ describe("Request block — withdrawing it", () => {
   });
 });
 
+describe("Request block — closed by someone else before the click", () => {
+  const conflict = (message) =>
+    Object.assign(new Error(message), { response: { status: 409 } });
+
+  it("re-reads on a refused withdraw and shows the rejection", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests
+      .mockResolvedValueOnce({
+        data: [{ ...requestDto(77, "Rita Reviewer"), id: 63 }],
+      })
+      .mockResolvedValue({ data: [] });
+    adminApi.getLatestClosedBlockRequest
+      .mockResolvedValueOnce({ data: null })
+      .mockResolvedValue({
+        data: {
+          id: 63,
+          targetUserId: APPLICANT_ID,
+          reviewerId: 77,
+          reviewerName: "Rita Reviewer",
+          status: "rejected",
+          decidedByName: "Rita Reviewer",
+          decidedAt: "2026-10-29T17:00:00Z",
+          decisionNote: "Spoke to her already",
+        },
+      });
+    adminApi.withdrawBlockRequest.mockRejectedValue(
+      conflict("This request has already been closed."),
+    );
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Withdraw" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This request has already been closed.",
+      ),
+    );
+    expect(await screen.findByText("Request rejected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Rita Reviewer: Spoke to her already"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+  });
+
+  it("re-reads on a refused reassign and shows the applicant blocked", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests
+      .mockResolvedValueOnce({
+        data: [{ ...requestDto(77, "Rita Reviewer"), id: 64 }],
+      })
+      .mockResolvedValue({ data: [] });
+    api.getApplicationDetail
+      .mockResolvedValueOnce({ data: makeDetail() })
+      .mockResolvedValue({
+        data: { ...makeDetail(), applicantIsBlocked: true },
+      });
+    adminApi.reassignBlockRequest.mockRejectedValue(
+      conflict(
+        "This request was closed because what it asked for was done directly.",
+      ),
+    );
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Reassign" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Reviewer"), "88");
+    await user.click(within(dialog).getByRole("button", { name: "Reassign" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This request was closed because what it asked for was done directly.",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request block" }),
+      ).toHaveAttribute("title", "This applicant is already blocked"),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument();
+  });
+});
+
 describe("Request block — the raised request lives only in page state", () => {
   it("loses the row on remount, because nothing reads it back", async () => {
     // Known gap, not an accident. There is no backend read scoped to the

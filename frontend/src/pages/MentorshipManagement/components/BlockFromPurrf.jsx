@@ -58,6 +58,8 @@ const BlockFromPurrf = ({
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
+  // Bumped to re-run the raiser reads after someone else closed the request.
+  const [ownReads, setOwnReads] = useState(0);
 
   const pending =
     pendingBlockRequest?.requestId === withdrawnId ? null : pendingBlockRequest;
@@ -90,7 +92,7 @@ const BlockFromPurrf = ({
     return () => {
       current = false;
     };
-  }, [canWrite, personId]);
+  }, [canWrite, personId, ownReads]);
   const settled = !canWrite || settledFor === personId;
 
   const loadHolders = () => {
@@ -98,6 +100,18 @@ const BlockFromPurrf = ({
     getUserAdmins()
       .then(({ data }) => setHolders(data ?? []))
       .catch(() => setHoldersError(true));
+  };
+
+  /**
+   * After a 409 the request was closed by someone else: re-read the raiser's
+   * requests and have the page refetch its stale pending request.
+   */
+  const rereadClosedRequest = () => {
+    // The dialog only renders in the raiser's row, but a stale flag would
+    // reopen it with the next request.
+    setReassignOpen(false);
+    setOwnReads((n) => n + 1);
+    onRequested();
   };
 
   const reassign = (reviewerId) => {
@@ -110,7 +124,10 @@ const BlockFromPurrf = ({
         toast.success(`Reassigned to ${data.reviewerName}.`);
         onRequested();
       })
-      .catch((e) => toast.error(e?.response?.data?.message ?? e.message))
+      .catch((e) => {
+        toast.error(e?.response?.data?.message ?? e.message);
+        if (e?.response?.status === 409) rereadClosedRequest();
+      })
       .finally(() => setReassigning(false));
   };
 
@@ -127,7 +144,10 @@ const BlockFromPurrf = ({
         toast.success("Block request withdrawn.");
         onRequested();
       })
-      .catch((e) => toast.error(e?.response?.data?.message ?? e.message))
+      .catch((e) => {
+        toast.error(e?.response?.data?.message ?? e.message);
+        if (e?.response?.status === 409) rereadClosedRequest();
+      })
       .finally(() => setWithdrawing(false));
   };
 
