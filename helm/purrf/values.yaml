@@ -189,16 +189,9 @@ cronjobs:
   - name: leave-annual-close
     schedule: "10 16 31 12 *"   # 31 Dec 16:10 UTC = 1 Jan 00:10 Beijing
     url: "/api/leave/jobs/annual-close"
-    # Runs at 00:10 on 1 January Beijing time. The job closes the year before
-    # its Beijing "today", so the UTC date in the schedule reading 31 December
-    # is right: 16:10 UTC is already 1 January in Beijing.
-    #
-    # As early in the day as that allows, because a disabled account carries
-    # no date: anybody whose last day is 1 January and whose account is turned
-    # off before this runs is read as gone, and is not settled for the year
-    # they completed. HR turns accounts off during working hours, so a run
-    # just after midnight is ahead of them. A rerun later in January is not;
-    # see PUR-604.
+    # The job closes the year before its Beijing date, and 16:10 UTC on
+    # 31 December is already 1 January in Beijing. It runs just after
+    # midnight because an account disabled before the run is skipped.
     #
     # Suspended with the accrual job. Unsuspend it in the same change -- if
     # accrual runs for a year without this, every one of those years ends about
