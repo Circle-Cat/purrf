@@ -188,20 +188,4 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
 
     expect(defaultProps.onPageChange).toHaveBeenCalledWith(2);
   });
-
-  it("triggers onPageChange when page buttons are clicked", () => {
-    mockUseLeaveLedger.mockReturnValue({
-      entries: [{ leaveLedgerId: 1 }],
-      totalEntries: 100,
-      isLoading: false,
-      loadError: false,
-    });
-
-    render(<LedgerPage {...defaultProps} page={1} />);
-
-    const nextBtn = screen.getByRole("button", { name: /Next/i });
-    fireEvent.click(nextBtn);
-
-    expect(defaultProps.onPageChange).toHaveBeenCalledWith(2);
-  });
 });

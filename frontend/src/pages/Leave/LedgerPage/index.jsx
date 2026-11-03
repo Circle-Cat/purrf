@@ -55,7 +55,7 @@ export default function LedgerPage({
     });
 
     return Array.from(map.values());
-  }, [people, entries]);
+  }, [people]);
 
   return (
     <div className="space-y-4 py-4">
