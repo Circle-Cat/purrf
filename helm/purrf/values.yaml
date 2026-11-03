@@ -187,12 +187,11 @@ cronjobs:
     # the annual close settles the difference.
     suspend: true
   - name: leave-annual-close
-    schedule: "10 0 1 1 *"   # 1 Jan 00:10 UTC = 1 Jan 08:10 Beijing
+    schedule: "10 16 31 12 *"   # 31 Dec 16:10 UTC = 1 Jan 00:10 Beijing
     url: "/api/leave/jobs/annual-close"
-    # Must land on 1 January in Beijing, not in UTC: the job closes the year
-    # before "today", and 31 December 20:00 UTC is already 1 January there,
-    # which would close the wrong year. 00:10 UTC is safely inside the Beijing
-    # day.
+    # The job closes the year before its Beijing date, and 16:10 UTC on
+    # 31 December is already 1 January in Beijing. It runs just after
+    # midnight because an account disabled before the run is skipped.
     #
     # Suspended with the accrual job. Unsuspend it in the same change -- if
     # accrual runs for a year without this, every one of those years ends about
