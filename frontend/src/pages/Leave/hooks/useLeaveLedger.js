@@ -11,8 +11,7 @@ import { getLeaveLedger } from "@/api/leaveApi";
  *   entries: Array,
  *   totalEntries: number,
  *   isLoading: boolean,
- *   loadError: boolean,
- *   load: (opts?: { isCancelled?: () => boolean }) => Promise<void>
+ *   loadError: boolean
  * }}
  */
 export const useLeaveLedger = ({
