@@ -15,7 +15,9 @@ class NotificationRepository:
     not gone out and erase the record of one that had.
 
     The bell reads -- ``list_by_user`` and ``count_by_user`` -- are scoped to
-    undismissed rows. The delivery ones below are not, and must not be:
+    undismissed rows, and the count to unread ones as well: a read row stays
+    in the list but no longer counts. The delivery ones below are not, and
+    must not be:
     dismissing takes the row off the bell, not out of the mail queue, so a
     notification dismissed before its email went out still gets sent.
     """
@@ -52,16 +54,44 @@ class NotificationRepository:
         return list(result.scalars().all())
 
     async def count_by_user(self, session: AsyncSession, user_id: int) -> int:
-        """Count one user's undismissed notifications."""
+        """Count one user's undismissed notifications they have not read."""
         result = await session.execute(
             select(func.count())
             .select_from(NotificationEntity)
             .where(
                 NotificationEntity.user_id == user_id,
                 NotificationEntity.dismissed_at.is_(None),
+                NotificationEntity.read_at.is_(None),
             )
         )
         return result.scalar_one()
+
+    async def mark_read(
+        self, session: AsyncSession, user_id: int, notification_ids: list[int]
+    ) -> None:
+        """Mark the given notifications read, only those that are user_id's.
+
+        Ids belonging to someone else are ignored rather than refused, so the
+        call says nothing about which ids exist. A row already read keeps its
+        first ``read_at``.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The caller, whose rows alone are touched.
+            notification_ids (list[int]): The rows the bell showed.
+        """
+        if not notification_ids:
+            return
+        await session.execute(
+            update(NotificationEntity)
+            .where(
+                NotificationEntity.notification_id.in_(notification_ids),
+                NotificationEntity.user_id == user_id,
+                NotificationEntity.read_at.is_(None),
+            )
+            .values(read_at=func.now())
+        )
+        await session.flush()
 
     async def get_by_id(
         self, session: AsyncSession, notification_id: int

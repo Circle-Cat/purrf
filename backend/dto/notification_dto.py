@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from pydantic import Field
+
 from backend.common.recruiting_enums import JobKind
 from backend.dto.base_dto import BaseDto
 
@@ -34,16 +36,27 @@ class NotificationDto(BaseDto):
     subject_name: str = ""
     actor_name: str | None = None
     created_at: datetime
+    is_read: bool = False
 
 
 class NotificationListDto(BaseDto):
-    """A page of one user's notifications plus their total pending count."""
+    """A page of one user's notifications plus how many of all of theirs are unread."""
 
     notifications: list[NotificationDto]
     unread_count: int
 
 
 class UnreadCountDto(BaseDto):
-    """Returned by dismiss/dismiss-all so the frontend can update the badge without a refetch."""
+    """Returned by dismiss/dismiss-all/mark-read so the frontend can update the badge without a refetch."""
 
     unread_count: int
+
+
+class MarkNotificationsReadDto(BaseDto):
+    """The notifications the bell showed, to be marked read.
+
+    Capped well above the bell's page of 20 so one request cannot name an
+    unbounded list.
+    """
+
+    ids: list[int] = Field(max_length=100)
