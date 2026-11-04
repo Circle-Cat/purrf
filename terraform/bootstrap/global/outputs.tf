@@ -48,14 +48,8 @@ output "notification_gateway_service_tokens" {
   }
 }
 
-# The apply router's Worker secrets, CF_ACCESS_CLIENT_ID and
-# CF_ACCESS_CLIENT_SECRET, set out of band like the gateway's above:
-#
-#   terraform -chdir=terraform/bootstrap/global output -json apply_router_service_tokens
-#
-# Rotation works the same way: taint the token, re-apply, update the secrets.
 output "apply_router_service_tokens" {
-  description = "Access service token credentials for the apply router Worker, keyed by environment. Set on the Worker out of band; see the comment above."
+  description = "Access service token credentials for the apply router Worker, keyed by environment. Set on the Worker out of band."
   sensitive   = true
   value = {
     test = {
