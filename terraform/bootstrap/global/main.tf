@@ -932,6 +932,77 @@ resource "cloudflare_zero_trust_access_policy" "notification_delivery_test" {
 }
 
 
+# Apply router. <env>-apply.purrf.io is the public entry candidates reach from
+# the official site: a Worker splits them between Workable and Purrf and renders
+# the public job pages. Like the hook host it has no origin, only the Worker
+# route declared in workers/apply-router/wrangler.jsonc.
+#
+# The host is deliberately in no Access application. It serves visitors who
+# have not signed in; an application here would send every one of them to a
+# login page before they saw a single posting.
+
+resource "cloudflare_dns_record" "apply_test" {
+  zone_id = local.zone_id
+  name    = "test-apply"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+# The router reads the job list from the backend with its own service token,
+# not the notification gateway's: each Worker holds only the credential for
+# the paths it serves. Non-expiring for the same reason as the gateway's, and
+# set on the Worker out of band the same way -- see outputs.tf.
+
+resource "cloudflare_zero_trust_access_service_token" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-apply-router-test"
+  duration   = "forever"
+}
+
+
+# Path-scoped like the delivery application, so it governs the anonymous job
+# list alone and leaves the host-wide application untouched. The backend
+# serves that path without a session; this is what keeps it from being open
+# to the whole internet. Any other path the router comes to read must be
+# listed here too, or it falls to the host-wide application and the router
+# gets a login redirect back.
+
+resource "cloudflare_zero_trust_access_application" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-apply-router-test"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.test.api_host}/api/recruiting/anonymous/jobs" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.apply_router_test.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "apply-router-only-test"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.apply_router_test.id
+    }
+  }]
+}
+
+
 # The staging set. Everything above about why each of these four exists holds
 # here unchanged; only the environment differs.
 
