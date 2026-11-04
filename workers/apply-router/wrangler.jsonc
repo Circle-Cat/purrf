@@ -19,6 +19,14 @@
         "APP_ORIGIN": "https://test.purrf.io",
         "PURRF_RATIO": "0.5"
       }
+    },
+    "prod": {
+      "routes": [{ "pattern": "apply.purrf.io/*", "zone_name": "purrf.io" }],
+      "vars": {
+        "API_ORIGIN": "https://api.purrf.io",
+        "APP_ORIGIN": "https://purrf.io",
+        "PURRF_RATIO": "0"
+      }
     }
   }
 }
