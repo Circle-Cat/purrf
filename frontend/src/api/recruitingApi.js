@@ -318,10 +318,10 @@ export const listNotifications = () =>
 export const markNotificationsRead = (ids) =>
   request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ, { ids });
 
-/** Dismiss (delete) one notification. Returns { unreadCount }. */
+/** Take one notification off the bell. Returns { unreadCount }. */
 export const dismissNotification = (id) =>
   request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATION(id));
 
-/** Dismiss (delete) every notification. Returns { unreadCount }. */
+/** Take every notification off the bell. Returns { unreadCount }. */
 export const dismissAllNotifications = () =>
   request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);

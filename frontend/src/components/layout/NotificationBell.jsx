@@ -333,44 +333,48 @@ const NotificationBell = () => {
   const latestNotifications = useRef([]);
   const { pathname } = useLocation();
 
-  // Set synchronously before the first await: visibilitychange and focus both
-  // fire when returning to a hidden tab, and state would batch them into two
-  // requests.
-  const inFlight = useRef(false);
-  // Bumped by every dismiss so a refetch that raced it can drop its response
-  // instead of resurrecting the row the user just removed.
+  // The fetch in progress, if any. Set synchronously before the first await:
+  // visibilitychange and focus both fire when returning to a hidden tab, and
+  // state would batch them into two requests. A caller arriving mid-fetch
+  // shares this one instead of starting another.
+  const inFlight = useRef(null);
+  // Bumped by every write (dismiss, Clear all, mark read) so a refetch that
+  // raced it drops its response instead of resurrecting a removed row or an
+  // old count.
   const mutations = useRef(0);
   const isFirstLoad = useRef(true);
 
   /**
-   * Fetch the list and the unread count.
+   * Fetch the list and the unread count, or join the fetch already running.
    * @param {{showToast: boolean}} options
-   * @returns {Promise<object[]|null>} The rows fetched, or null when this
-   *   call fetched nothing usable (another was in flight, it failed, or a
-   *   write raced it).
+   * @returns {Promise<object[]|null>} The rows fetched, or null when the
+   *   fetch failed or a write raced it.
    */
-  const load = useCallback(async ({ showToast }) => {
-    if (inFlight.current) return null;
-    inFlight.current = true;
-    const mutationsAtStart = mutations.current;
-    setLoadError(false);
-    try {
-      const { data } = await listNotifications();
-      if (mutations.current !== mutationsAtStart) return null;
-      const rows = data?.notifications ?? [];
-      latestNotifications.current = rows;
-      setNotifications(rows);
-      setUnreadCount(data?.unreadCount ?? 0);
-      return rows;
-    } catch (e) {
-      if (mutations.current !== mutationsAtStart) return null;
-      // Keep the last good data; a refetch failing shouldn't blank the list.
-      setLoadError(true);
-      if (showToast) toast.error(e.message);
-      return null;
-    } finally {
-      inFlight.current = false;
-    }
+  const load = useCallback(({ showToast }) => {
+    if (inFlight.current) return inFlight.current;
+    const run = async () => {
+      const mutationsAtStart = mutations.current;
+      setLoadError(false);
+      try {
+        const { data } = await listNotifications();
+        if (mutations.current !== mutationsAtStart) return null;
+        const rows = data?.notifications ?? [];
+        latestNotifications.current = rows;
+        setNotifications(rows);
+        setUnreadCount(data?.unreadCount ?? 0);
+        return rows;
+      } catch (e) {
+        if (mutations.current !== mutationsAtStart) return null;
+        // Keep the last good data; a refetch failing shouldn't blank the list.
+        setLoadError(true);
+        if (showToast) toast.error(e.message);
+        return null;
+      } finally {
+        inFlight.current = null;
+      }
+    };
+    inFlight.current = run();
+    return inFlight.current;
   }, []);
 
   // Covers both the initial mount and every later pathname change. Deliberately
@@ -400,8 +404,10 @@ const NotificationBell = () => {
   /**
    * On open: refresh, remember which rows are new, and mark them read.
    * Only the rows shown are marked, so an unread one beyond the page is not
-   * marked read unseen. When the refresh fetched nothing usable, the rows
-   * already on screen are the ones the user is looking at.
+   * marked read unseen. A fetch already running (the first load, a route
+   * change) is waited for rather than started again. When it fetched
+   * nothing usable, the rows already on screen are the ones the user is
+   * looking at.
    */
   const handleOpen = async () => {
     const rows =
@@ -409,10 +415,12 @@ const NotificationBell = () => {
     const unreadIds = rows.filter((n) => !n.isRead).map((n) => n.id);
     setNewThisOpen(new Set(unreadIds));
     if (unreadIds.length === 0) return;
-    // A refetch that raced this would bring back the count from before it.
+    // Bumped on both sides of the request: a refetch started before it, or
+    // while it was in flight, may carry the count from before it committed.
     mutations.current += 1;
     try {
       const { data } = await markNotificationsRead(unreadIds);
+      mutations.current += 1;
       setUnreadCount(data?.unreadCount ?? 0);
     } catch (e) {
       toast.error(e.message);
