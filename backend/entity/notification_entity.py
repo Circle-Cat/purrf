@@ -20,7 +20,8 @@ class NotificationEntity(Base):
     older than the ack deadline may be retaken, since a process that died
     mid-send would otherwise strand the row. ``dismissed_at`` marks a row as
     gone from the bell rather than deleting it, because that delivery state
-    lives here too.
+    lives here too. ``read_at`` marks a row the user has seen in the bell; it
+    stays listed, and only the unread ones count toward the badge.
     """
 
     __tablename__ = "notification"
@@ -55,5 +56,8 @@ class NotificationEntity(Base):
         DateTime(timezone=True), nullable=True
     )
     dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    read_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

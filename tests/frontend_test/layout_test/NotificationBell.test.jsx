@@ -9,7 +9,12 @@ import * as api from "@/api/recruitingApi";
 vi.mock("@/api/recruitingApi");
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Opening the panel marks what it shows read; the automock would hand back
+  // undefined, which the bell would report as a failed request.
+  api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+});
 
 // The bell reads useLocation(), so it needs router context.  react-router-dom
 // re-exports live hooks from react-router and vi.mock does not intercept them
@@ -145,6 +150,225 @@ describe("NotificationBell", () => {
     await waitFor(() =>
       expect(screen.queryByText("2")).not.toBeInTheDocument(),
     );
+  });
+
+  // -- read state --------------------------------------------------------
+  //
+  // Opening the panel marks the rows it shows read. Rows that were unread at
+  // that moment keep their dot until the next open; read rows show grey.
+
+  const mentionRow = (id, applicantName, isRead) => ({
+    id,
+    eventType: "recruiting.mentioned",
+    jobTitle: "Backend Engineer",
+    applicantName,
+    actorName: "Grace Hopper",
+    createdAt: "2026-11-02T00:00:00Z",
+    isRead,
+  });
+
+  const rowFor = (applicantName) =>
+    screen.getByText(new RegExp(applicantName)).closest("[data-read]");
+
+  it("marks only the unread rows shown read when the panel opens", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 2,
+        notifications: [
+          mentionRow(7, "Ada Lovelace", false),
+          mentionRow(12, "Alan Turing", false),
+          mentionRow(3, "Edsger Dijkstra", true),
+        ],
+      },
+    });
+    api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+    renderBell();
+
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() =>
+      expect(api.markNotificationsRead).toHaveBeenCalledWith([7, 12]),
+    );
+    expect(api.markNotificationsRead).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.queryByText("2")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the dot on rows that were new until the panel opens again", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          mentionRow(7, "Ada Lovelace", false),
+          mentionRow(3, "Edsger Dijkstra", true),
+        ],
+      },
+    });
+    renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await waitFor(() => expect(api.markNotificationsRead).toHaveBeenCalled());
+
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(
+      rowFor("Ada Lovelace").querySelector('[aria-label="Unread"]'),
+    ).not.toBeNull();
+    expect(rowFor("Edsger Dijkstra")).toHaveAttribute("data-read", "true");
+
+    // The server now has the row as read. A refetch while the panel is still
+    // open (here, the window regaining focus) must not grey it yet. The
+    // refetched row names a different actor, so the check below runs against
+    // what the refetch brought, not the list from before it.
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 0,
+        notifications: [
+          {
+            ...mentionRow(7, "Ada Lovelace", true),
+            actorName: "Barbara Liskov",
+          },
+          mentionRow(3, "Edsger Dijkstra", true),
+        ],
+      },
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await waitFor(() =>
+      expect(screen.getByText(/Barbara Liskov/)).toBeInTheDocument(),
+    );
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() =>
+      expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "true"),
+    );
+    expect(
+      rowFor("Ada Lovelace").querySelector('[aria-label="Unread"]'),
+    ).toBeNull();
+    expect(api.markNotificationsRead).toHaveBeenCalledTimes(1);
+  });
+
+  /** A promise with its resolve handed back, to hold a request in flight. */
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+
+  it("waits for a fetch already running when opened, and marks what it brings", async () => {
+    const user = userEvent.setup();
+    const firstLoad = deferred();
+    api.listNotifications.mockReturnValue(firstLoad.promise);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await act(async () =>
+      firstLoad.resolve({
+        data: {
+          unreadCount: 2,
+          notifications: [
+            mentionRow(21, "Ada Lovelace", false),
+            mentionRow(34, "Alan Turing", false),
+          ],
+        },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(api.markNotificationsRead).toHaveBeenCalledWith([21, 34]),
+    );
+    expect(api.listNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the badge at zero when a refetch from before the mark lands after it", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 2,
+        notifications: [
+          mentionRow(7, "Ada Lovelace", false),
+          mentionRow(12, "Alan Turing", false),
+        ],
+      },
+    });
+    const mark = deferred();
+    api.markNotificationsRead.mockReturnValue(mark.promise);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await waitFor(() => expect(api.markNotificationsRead).toHaveBeenCalled());
+
+    // A refetch starts while the mark is in flight and is answered with the
+    // count from before the mark committed, but only after the mark returns.
+    const staleRefetch = deferred();
+    api.listNotifications.mockReturnValue(staleRefetch.promise);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await act(async () => mark.resolve({ data: { unreadCount: 0 } }));
+    await waitFor(() =>
+      expect(screen.queryByText("2")).not.toBeInTheDocument(),
+    );
+    await act(async () =>
+      staleRefetch.resolve({
+        data: {
+          unreadCount: 2,
+          notifications: [
+            mentionRow(7, "Ada Lovelace", false),
+            mentionRow(12, "Alan Turing", false),
+          ],
+        },
+      }),
+    );
+
+    expect(screen.queryByText("2")).not.toBeInTheDocument();
+  });
+
+  it("does not call the server when nothing shown is unread", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 0,
+        notifications: [mentionRow(3, "Edsger Dijkstra", true)],
+      },
+    });
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(2));
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    expect(rowFor("Edsger Dijkstra")).toHaveAttribute("data-read", "true");
+  });
+
+  it("keeps the rows and says so when marking read fails", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [mentionRow(7, "Ada Lovelace", false)],
+      },
+    });
+    api.markNotificationsRead.mockRejectedValue(new Error("Network down"));
+    renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Network down"),
+    );
+    expect(rowFor("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
   });
 
   it("shows an inline error when the initial load fails", async () => {
