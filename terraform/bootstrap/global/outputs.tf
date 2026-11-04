@@ -47,3 +47,14 @@ output "notification_gateway_service_tokens" {
     }
   }
 }
+
+output "apply_router_service_tokens" {
+  description = "Access service token credentials for the apply router Worker, keyed by environment. Set on the Worker out of band."
+  sensitive   = true
+  value = {
+    test = {
+      client_id     = cloudflare_zero_trust_access_service_token.apply_router_test.client_id
+      client_secret = cloudflare_zero_trust_access_service_token.apply_router_test.client_secret
+    }
+  }
+}

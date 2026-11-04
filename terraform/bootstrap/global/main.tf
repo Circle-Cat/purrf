@@ -932,6 +932,62 @@ resource "cloudflare_zero_trust_access_policy" "notification_delivery_test" {
 }
 
 
+# Apply router: public entry for candidates, answered by a Worker. Keep it out
+# of every Access application -- its visitors have not signed in.
+
+resource "cloudflare_dns_record" "apply_test" {
+  zone_id = local.zone_id
+  name    = "test-apply"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+resource "cloudflare_zero_trust_access_service_token" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-apply-router-test"
+  duration   = "forever"
+}
+
+
+# The backend serves this path without a session; this application is what
+# keeps it closed to everyone but the router.
+
+resource "cloudflare_zero_trust_access_application" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-apply-router-test"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.test.api_host}/api/recruiting/anonymous/jobs" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.apply_router_test.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "apply-router-only-test"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.apply_router_test.id
+    }
+  }]
+}
+
+
 # The staging set. Everything above about why each of these four exists holds
 # here unchanged; only the environment differs.
 
