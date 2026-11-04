@@ -1,0 +1,12 @@
+{
+  "name": "purrf-apply-router",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Public job pages for visitors who have not signed in, and the Apply split between Purrf and Workable.",
+  "scripts": {
+    "test": "pnpm dlx vitest@2 run",
+    "deploy": "pnpm dlx wrangler@4 deploy",
+    "tail": "pnpm dlx wrangler@4 tail",
+    "destroy": "pnpm dlx wrangler@4 delete"
+  }
+}
