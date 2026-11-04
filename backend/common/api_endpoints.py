@@ -241,6 +241,7 @@ RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
     "/recruiting/applications/{application_id}/mentionable-users"
 )
 RECRUITING_NOTIFICATIONS_ENDPOINT = "/recruiting/notifications"
+RECRUITING_NOTIFICATIONS_READ_ENDPOINT = "/recruiting/notifications/read"
 RECRUITING_NOTIFICATION_ENDPOINT = "/recruiting/notifications/{notification_id}"
 NOTIFICATION_DELIVER_ENDPOINT = "/notifications/deliver"
 GMAIL_PUSH_ENDPOINT = "/email/gmail/push"

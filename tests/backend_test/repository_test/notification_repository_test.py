@@ -195,6 +195,89 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             await self.session.refresh(row)
             self.assertIsNotNone(row.dismissed_at)
 
+    async def test_count_by_user_skips_read_and_dismissed_rows(self):
+        """The badge counts only what the user has not seen yet."""
+        _app, recipient = await self._seed()
+        long_ago = datetime(2026, 1, 5, tzinfo=timezone.utc)
+        await self.insert_entities([
+            NotificationEntity(user_id=recipient.user_id, event_id=self.event.event_id),
+            NotificationEntity(
+                user_id=recipient.user_id,
+                event_id=self.event.event_id,
+                read_at=long_ago,
+            ),
+            NotificationEntity(
+                user_id=recipient.user_id,
+                event_id=self.event.event_id,
+                dismissed_at=long_ago,
+            ),
+        ])
+        repo = NotificationRepository()
+
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
+        self.assertEqual(
+            len(await repo.list_by_user(self.session, recipient.user_id)), 2
+        )
+
+    async def test_mark_read_marks_only_the_named_rows_of_that_user(self):
+        _app, recipient = await self._seed()
+        other = _make_user()
+        await self.insert_entities([other])
+        shown = NotificationEntity(
+            user_id=recipient.user_id, event_id=self.event.event_id
+        )
+        not_shown = NotificationEntity(
+            user_id=recipient.user_id, event_id=self.event.event_id
+        )
+        someone_elses = NotificationEntity(
+            user_id=other.user_id, event_id=self.event.event_id
+        )
+        await self.insert_entities([shown, not_shown, someone_elses])
+        repo = NotificationRepository()
+
+        await repo.mark_read(
+            self.session,
+            recipient.user_id,
+            [shown.notification_id, someone_elses.notification_id],
+        )
+
+        for row in (shown, not_shown, someone_elses):
+            await self.session.refresh(row)
+        self.assertIsNotNone(shown.read_at)
+        self.assertIsNone(not_shown.read_at)
+        self.assertIsNone(someone_elses.read_at)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
+        self.assertEqual(await repo.count_by_user(self.session, other.user_id), 1)
+
+    async def test_mark_read_keeps_the_first_read_time(self):
+        _app, recipient = await self._seed()
+        first_read = datetime(2026, 2, 9, 8, 30, tzinfo=timezone.utc)
+        row = NotificationEntity(
+            user_id=recipient.user_id,
+            event_id=self.event.event_id,
+            read_at=first_read,
+        )
+        await self.insert_entities([row])
+
+        await NotificationRepository().mark_read(
+            self.session, recipient.user_id, [row.notification_id]
+        )
+
+        await self.session.refresh(row)
+        self.assertEqual(row.read_at, first_read)
+
+    async def test_mark_read_with_no_ids_touches_nothing(self):
+        _app, recipient = await self._seed()
+        row = NotificationEntity(
+            user_id=recipient.user_id, event_id=self.event.event_id
+        )
+        await self.insert_entities([row])
+
+        await NotificationRepository().mark_read(self.session, recipient.user_id, [])
+
+        await self.session.refresh(row)
+        self.assertIsNone(row.read_at)
+
     async def _notification(
         self, recipient, *, status=None, claimed_at=None, created_at=None
     ):

@@ -310,6 +310,14 @@ export const getAuditOverview = ({ startDate, endDate, jobIds = [] }) =>
 export const listNotifications = () =>
   request.get(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);
 
+/**
+ * Mark the notifications the bell showed read. They stay listed; only the
+ * badge stops counting them. Returns { unreadCount }.
+ * @param {number[]} ids The notifications shown.
+ */
+export const markNotificationsRead = (ids) =>
+  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ, { ids });
+
 /** Dismiss (delete) one notification. Returns { unreadCount }. */
 export const dismissNotification = (id) =>
   request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATION(id));

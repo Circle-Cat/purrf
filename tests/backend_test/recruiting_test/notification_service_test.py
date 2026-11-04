@@ -422,6 +422,54 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.unread_count, 3)
 
+    async def test_list_for_user_says_which_rows_are_read(self):
+        unread = self._row(1, 1)
+        read = self._row(2, 1)
+        read.read_at = datetime(2026, 3, 2, tzinfo=timezone.utc)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[unread, read])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        self.event_repo.get_by_ids = AsyncMock(
+            return_value=[
+                self._event(
+                    event_id=1,
+                    subject_type="job",
+                    subject_id=1,
+                    event_type="recruiting.review_opened",
+                )
+            ]
+        )
+        self.app_repo.get_by_ids = AsyncMock(return_value=[])
+        job = JobEntity(kind=JobKind.ACTIVITY, title="Ops", status=JobStatus.DRAFT)
+        job.job_id = 1
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[job])
+        self._stub_users()
+
+        result = await self.service.list_for_user(self.session, user_id=2)
+
+        self.assertEqual(
+            [(n.id, n.is_read) for n in result.notifications],
+            [(1, False), (2, True)],
+        )
+        self.assertEqual(result.unread_count, 1)
+
+    async def test_mark_read_commits_after_marking_and_returns_the_count(self):
+        order = []
+        self.notification_repo.mark_read = AsyncMock(
+            side_effect=lambda *a: order.append("mark")
+        )
+        self.session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+        self.notification_repo.count_by_user = AsyncMock(return_value=4)
+
+        result = await self.service.mark_read(
+            self.session, user_id=2, notification_ids=[7, 8]
+        )
+
+        self.notification_repo.mark_read.assert_awaited_once_with(
+            self.session, 2, [7, 8]
+        )
+        self.assertEqual(order, ["mark", "commit"])
+        self.assertEqual(result.unread_count, 4)
+
     async def test_dismiss_all_commits_and_returns_zero(self):
         self.notification_repo.dismiss_all_by_user = AsyncMock()
         self.notification_repo.count_by_user = AsyncMock(return_value=0)

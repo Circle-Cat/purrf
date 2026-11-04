@@ -22,11 +22,12 @@ async def _by_id(load, session, ids, key):
 
 
 class RecruitingNotificationService:
-    """Read-side logic for in-app notifications: list + dismiss/dismiss-all.
+    """Read-side logic for in-app notifications: list, mark read, dismiss.
 
-    Notifications are light reminders: dismissing one (the frontend's
-    "read") marks it, so everything listed is undismissed. The row survives
-    because it also carries the email state machine.
+    Notifications are light reminders. Opening the bell marks what it shows
+    read, which only greys it out; dismissing one takes it off the bell, so
+    everything listed is undismissed. The row survives either way because it
+    also carries the email state machine.
 
     The write side (creating notifications) is deliberately NOT here --
     ``record_event`` writes the event and one row per resolved recipient, in
@@ -124,6 +125,7 @@ class RecruitingNotificationService:
             subject_name=subject_name,
             actor_name=actor_name,
             created_at=row.created_at,
+            is_read=row.read_at is not None,
         )
 
     async def _load_page(self, session: AsyncSession, rows):
@@ -180,7 +182,7 @@ class RecruitingNotificationService:
     async def list_for_user(
         self, session: AsyncSession, user_id: int, limit: int = 20, offset: int = 0
     ) -> NotificationListDto:
-        """List one user's notifications (newest first) plus their pending count.
+        """List one user's notifications (newest first) plus their unread count.
 
         A page costs the same number of queries however many rows it holds:
         see ``_load_page``. The bell refetches on every route change and
@@ -194,7 +196,7 @@ class RecruitingNotificationService:
 
         Returns:
             NotificationListDto: The page of notifications and the total
-                pending count (independent of `limit`/`offset`).
+                unread count (independent of `limit`/`offset`).
         """
         rows = await self.notification_repository.list_by_user(
             session, user_id, limit, offset
@@ -208,6 +210,30 @@ class RecruitingNotificationService:
         items = [self._to_dto(row, *lookups) for row in rows]
         return NotificationListDto(notifications=items, unread_count=unread_count)
 
+    async def mark_read(
+        self, session: AsyncSession, user_id: int, notification_ids: list[int]
+    ) -> UnreadCountDto:
+        """Mark the notifications the bell showed read and commit.
+
+        Only the ids sent are marked: the bell lists the newest page, and an
+        unread row beyond it has not been seen. Ids that are not user_id's
+        are ignored.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The authenticated caller.
+            notification_ids (list[int]): The rows the bell showed.
+
+        Returns:
+            UnreadCountDto: The caller's unread count afterwards.
+        """
+        await self.notification_repository.mark_read(session, user_id, notification_ids)
+        await session.commit()
+        unread_count = await self.notification_repository.count_by_user(
+            session, user_id
+        )
+        return UnreadCountDto(unread_count=unread_count)
+
     async def dismiss(
         self, session: AsyncSession, user_id: int, notification_id: int
     ) -> UnreadCountDto:
@@ -219,7 +245,7 @@ class RecruitingNotificationService:
             notification_id (int): The notification to dismiss.
 
         Returns:
-            UnreadCountDto: The caller's pending count afterwards.
+            UnreadCountDto: The caller's unread count afterwards.
         """
         await self.notification_repository.dismiss_by_id(
             session, notification_id, user_id
