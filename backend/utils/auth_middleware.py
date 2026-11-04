@@ -13,6 +13,7 @@ from backend.common.api_endpoints import (
     PUBSUB_PUSH_GERRIT_ENDPOINT,
     PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
     PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+    RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.identity_type import is_rowless_login
@@ -42,6 +43,10 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 #
 # The health check is probed by Kubernetes, which sends no credentials. It
 # answers a fixed body and reads nothing.
+#
+# The anonymous job list is read by the apply Worker on behalf of visitors who
+# have not signed in. It returns only the candidate-safe summaries of live
+# postings, the same ones every signed-in user can already list.
 _UNAUTHENTICATED_PATHS = frozenset({
     HEALTH_ENDPOINT,
     f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
@@ -50,6 +55,7 @@ _UNAUTHENTICATED_PATHS = frozenset({
     f"/api{PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT}",
     f"/api{PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT}",
     f"/api{PUBSUB_PUSH_GERRIT_ENDPOINT}",
+    f"/api{RECRUITING_ANONYMOUS_JOBS_ENDPOINT}",
 })
 
 # Course files are requested by the course's own JavaScript, which cannot
