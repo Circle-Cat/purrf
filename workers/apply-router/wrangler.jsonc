@@ -17,7 +17,7 @@
       "vars": {
         "API_ORIGIN": "https://test-api.purrf.io",
         "APP_ORIGIN": "https://test.purrf.io",
-        "PURRF_RATIO": "0"
+        "PURRF_RATIO": "0.5"
       }
     }
   }
