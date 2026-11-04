@@ -181,6 +181,7 @@ RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT = "/recruiting/jobs/{job_id}/review/with
 RECRUITING_JOB_ACTIVITY_ENDPOINT = "/recruiting/jobs/{job_id}/activity"
 RECRUITING_PUBLIC_JOB_ENDPOINT = "/recruiting/public/jobs/{job_id}"
 RECRUITING_PUBLIC_JOBS_ENDPOINT = "/recruiting/public/jobs"
+RECRUITING_ANONYMOUS_JOBS_ENDPOINT = "/recruiting/anonymous/jobs"
 RECRUITING_RESUMES_ENDPOINT = "/recruiting/resumes"
 RECRUITING_APPLICATIONS_ENDPOINT = "/recruiting/applications"
 RECRUITING_APPLICATION_ENDPOINT = "/recruiting/applications/{application_id}"

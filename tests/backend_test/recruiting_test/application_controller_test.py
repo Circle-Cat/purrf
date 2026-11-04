@@ -88,6 +88,40 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.job_service.list_publicly_visible.assert_awaited_once_with(self.session)
         self.assertEqual(resp["data"][0].title, "Mentee")
 
+    async def test_list_anonymous_jobs_returns_the_candidate_summaries(self):
+        from backend.dto.job_dto import PublicJobSummaryDto
+        from backend.common.recruiting_enums import JobKind
+
+        summaries = [
+            PublicJobSummaryDto(
+                id=1, title="Mentee", kind=JobKind.ACTIVITY, description="About"
+            )
+        ]
+        self.job_service.list_publicly_visible = AsyncMock(return_value=summaries)
+        resp = await self.controller.list_anonymous_jobs()
+        self.job_service.list_publicly_visible.assert_awaited_once_with(self.session)
+        self.assertEqual(resp["data"], summaries)
+
+    def test_anonymous_job_list_route_is_not_wrapped_by_authenticate(self):
+        """authenticate() stamps __wrapped__ via functools.wraps; the anonymous
+        route must be the bare method so it needs no current_user."""
+        route = next(
+            r
+            for r in self.controller.router.routes
+            if r.path == "/recruiting/anonymous/jobs"
+        )
+        self.assertFalse(hasattr(route.endpoint, "__wrapped__"))
+        self.assertEqual(route.methods, {"GET"})
+
+    def test_every_other_route_still_authenticates(self):
+        """Only the anonymous list is open; a new route left unwrapped by
+        mistake would fail here."""
+        for route in self.controller.router.routes:
+            if route.path == "/recruiting/anonymous/jobs":
+                continue
+            with self.subTest(path=route.path):
+                self.assertTrue(hasattr(route.endpoint, "__wrapped__"))
+
     async def test_get_my_application_uses_job_id_query_param(self):
         resp = await self.controller.get_my_application(self.ctx, job_id=7)
         self.app_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 7)

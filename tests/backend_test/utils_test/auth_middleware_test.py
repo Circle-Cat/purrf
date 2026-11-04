@@ -18,6 +18,7 @@ from backend.common.api_endpoints import (
     PUBSUB_PUSH_GERRIT_ENDPOINT,
     PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
     PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+    RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
     TRAINING_CONTENT_ENDPOINT,
 )
 from backend.training.content_host import resolve_content_host
@@ -688,6 +689,49 @@ class TestAuthMiddleware(unittest.TestCase):
         self.assertEqual(response.text, "OK")
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
+
+    def test_anonymous_job_list_skips_authentication(self):
+        """Visitors who have not signed in reach the job list through the
+        apply Worker with no Auth0 session, so the middleware must let them
+        through rather than answer 400.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{RECRUITING_ANONYMOUS_JOBS_ENDPOINT}",
+                lambda request: PlainTextResponse("listed"),
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.get(f"/api{RECRUITING_ANONYMOUS_JOBS_ENDPOINT}")
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "listed")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_a_path_under_the_anonymous_job_list_still_authenticates(self):
+        """A per-job path below the list must not inherit its exemption, or a
+        later detail route there would open the application form to anyone.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{RECRUITING_ANONYMOUS_JOBS_ENDPOINT}/1",
+                lambda request: PlainTextResponse("nope"),
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.get(f"/api{RECRUITING_ANONYMOUS_JOBS_ENDPOINT}/1")
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.mock_auth_service.authenticate_request.assert_called_once()
 
     def test_only_the_exact_delivery_path_is_exempt(self):
         """The exemption is an exact match, not a prefix.
