@@ -60,5 +60,9 @@ output "apply_router_service_tokens" {
       client_id     = cloudflare_zero_trust_access_service_token.apply_router_test.client_id
       client_secret = cloudflare_zero_trust_access_service_token.apply_router_test.client_secret
     }
+    prod = {
+      client_id     = cloudflare_zero_trust_access_service_token.apply_router_prod.client_id
+      client_secret = cloudflare_zero_trust_access_service_token.apply_router_prod.client_secret
+    }
   }
 }
