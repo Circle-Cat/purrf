@@ -44,6 +44,7 @@ from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     JobReviewKind,
+    RecruitingEvent,
 )
 
 _FOOTER = (
@@ -340,6 +341,46 @@ _REVIEW_WORDING = {
         withdrawn='withdrew the request to reopen "{title}"',
     ),
 }
+
+
+# The phrase a review event's line uses. For every decision the backend
+# writes this picks what the email renderer picks; a decision the map does
+# not name reads as a rejection, so a row is still worded where the email
+# renderer would refuse a missing one.
+_REVIEW_PHRASE_BY_EVENT = {
+    RecruitingEvent.REVIEW_OPENED: "requested",
+    RecruitingEvent.REVIEW_REASSIGNED: "reassigned",
+}
+_REVIEW_PHRASE_BY_DECISION = {"approved": "approved", "withdrawn": "withdrawn"}
+
+
+def review_summary(
+    event_type: str, details: dict | None, actor: str | None, title: str
+) -> str | None:
+    """The one-line, plain-text account of a posting review event, worded as
+    its email is, for the bell.
+
+    Args:
+        event_type (str): The event's type.
+        details (dict | None): The event's details, carrying ``kind`` and, for
+            a decision, ``decision``.
+        actor (str | None): Who acted; blank or None reads as "Someone".
+        title (str): The posting's title, unescaped.
+
+    Returns:
+        str | None: The line, or None when the event is not a posting review.
+    """
+    details = details or {}
+    if event_type == RecruitingEvent.REVIEW_DECIDED:
+        phrase = _REVIEW_PHRASE_BY_DECISION.get(details.get("decision"), "rejected")
+    else:
+        phrase = _REVIEW_PHRASE_BY_EVENT.get(event_type)
+        if phrase is None:
+            return None
+    wording = _REVIEW_WORDING.get(
+        details.get("kind"), _REVIEW_WORDING[JobReviewKind.INITIAL]
+    )
+    return f"{actor or _MISSING_ACTOR} {getattr(wording, phrase).format(title=title)}"
 
 
 def _review_wording(dto) -> _ReviewWording:

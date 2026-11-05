@@ -69,61 +69,20 @@ const leaveAsk = (details) => {
 };
 
 /**
- * What happened in a posting review, per review kind, after the actor's name.
- * Keyed by `details.kind`, then by "opened" or the decision.
+ * The line shown for a notification nothing else words: an event type the
+ * bell has no case for, or a case that cannot word this one. Never blank.
  */
-const REVIEW_LINES = {
-  initial: {
-    opened: (title) => `submitted "${title}" for your review`,
-    approved: (title) => `approved "${title}"`,
-    rejected: (title) => `rejected "${title}"`,
-    withdrawn: (title) => `withdrew the review of "${title}"`,
-    reassigned: (title) => `moved the review of "${title}" to you`,
-  },
-  revision: {
-    opened: (title) => `submitted changes to "${title}" for your review`,
-    approved: (title) => `approved your changes to "${title}"`,
-    rejected: (title) => `rejected your changes to "${title}"`,
-    withdrawn: (title) => `withdrew the changes to "${title}"`,
-    reassigned: (title) =>
-      `moved the review of the changes to "${title}" to you`,
-  },
-  close: {
-    opened: (title) => `asked to close "${title}"`,
-    approved: (title) => `approved closing "${title}"`,
-    rejected: (title) => `rejected closing "${title}"`,
-    withdrawn: (title) => `withdrew the request to close "${title}"`,
-    reassigned: (title) => `moved the request to close "${title}" to you`,
-  },
-  reopen: {
-    opened: (title) => `asked to reopen "${title}"`,
-    approved: (title) => `approved reopening "${title}"`,
-    rejected: (title) => `rejected reopening "${title}"`,
-    withdrawn: (title) => `withdrew the request to reopen "${title}"`,
-    reassigned: (title) => `moved the request to reopen "${title}" to you`,
-  },
-};
+const FALLBACK_LINE = "You have a new notification";
 
 /**
- * The phrases for a posting review's kind. A missing or unknown kind (events
- * from before the kind was carried) reads as a first publication.
- * @param {{kind?: string}} details
- * @returns {Record<string, (title: string) => string>}
- */
-const reviewLines = (details) =>
-  Object.hasOwn(REVIEW_LINES, details?.kind ?? "")
-    ? REVIEW_LINES[details.kind]
-    : REVIEW_LINES.initial;
-
-/**
- * Compose a notification's display text from its event type and details.
+ * Word a notification from its event type and details, or "" when it can't.
  *
  * Two audiences share this switch. Every recruiting line is written from
  * staff's point of view, about someone else ("{actor} moved {applicant}");
  * the mentorship lines below are written to the person they are about. Match
  * the case you are adding, not the surrounding voice.
  */
-const describe = (n) => {
+const wordOf = (n) => {
   // `||`, not `??`: actorName carries three states. A name renders as
   // itself, null means the system acted under its own rules (those lines
   // never read this value), and "" means a person acted but their user row
@@ -241,22 +200,14 @@ const describe = (n) => {
     // Told to the same people as a reply: it is their message that failed.
     case "recruiting.email_bounced":
       return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
+    // Posting reviews are worded by the backend from the same phrases as
+    // their email, so the two channels say the same thing. The opened and
+    // reassigned lines go to the reviewer, the decided ones to the submitter
+    // (withdrawn to the reviewer it was waiting on).
     case "recruiting.review_opened":
-      return `${actor} ${reviewLines(n.details).opened(n.jobTitle)}`;
-    // Told to the new reviewer only.
     case "recruiting.review_reassigned":
-      return `${actor} ${reviewLines(n.details).reassigned(n.jobTitle)}`;
-    case "recruiting.review_decided": {
-      // Withdrawn is told to the reviewer it was waiting on; the other two
-      // to the submitter.
-      const lines = reviewLines(n.details);
-      if (n.details?.decision === "withdrawn") {
-        return `${actor} ${lines.withdrawn(n.jobTitle)}`;
-      }
-      return n.details?.decision === "approved"
-        ? `${actor} ${lines.approved(n.jobTitle)}`
-        : `${actor} ${lines.rejected(n.jobTitle)}`;
-    }
+    case "recruiting.review_decided":
+      return n.summary ?? "";
     case "recruiting.application_submitted":
       return n.details?.screenAutoHireRuleId
         ? `${n.applicantName} applied to ${n.jobTitle} and was ${
@@ -307,6 +258,14 @@ const describe = (n) => {
       return "";
   }
 };
+
+/**
+ * Compose a notification's display text, falling back to a generic line so
+ * a row is never blank.
+ * @param {object} n The notification.
+ * @returns {string}
+ */
+const describe = (n) => wordOf(n) || FALLBACK_LINE;
 
 /**
  * Header bell + popover for in-app recruiting notifications.

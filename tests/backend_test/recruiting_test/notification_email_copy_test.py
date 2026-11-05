@@ -688,5 +688,93 @@ class TestEscaping(unittest.TestCase):
         self.assertIn("<p>Someone blacklisted A candidate", body)
 
 
+class TestReviewSummary(unittest.TestCase):
+    """The bell's line for a posting review is the email's phrase after the actor."""
+
+    def summary(self, event_type, details, actor="Rae Kim", title="Backend Engineer"):
+        return notification_email_copy.review_summary(event_type, details, actor, title)
+
+    def test_each_kind_and_action_uses_the_email_phrase(self):
+        cases = [
+            (
+                "recruiting.review_opened",
+                {"kind": "initial"},
+                'Rae Kim submitted the posting "Backend Engineer" for your review',
+            ),
+            (
+                "recruiting.review_opened",
+                {"kind": "revision"},
+                'Rae Kim submitted changes to "Backend Engineer" for your review',
+            ),
+            (
+                "recruiting.review_opened",
+                {"kind": "close"},
+                'Rae Kim asked to close "Backend Engineer"',
+            ),
+            (
+                "recruiting.review_opened",
+                {"kind": "reopen"},
+                'Rae Kim asked to reopen "Backend Engineer"',
+            ),
+            (
+                "recruiting.review_reassigned",
+                {"kind": "initial"},
+                'Rae Kim moved the review of the posting "Backend Engineer" to you',
+            ),
+            (
+                "recruiting.review_reassigned",
+                {"kind": "close"},
+                'Rae Kim moved the request to close "Backend Engineer" to you',
+            ),
+            (
+                "recruiting.review_decided",
+                {"kind": "initial", "decision": "approved"},
+                'Rae Kim approved your submission for the posting "Backend Engineer"',
+            ),
+            (
+                "recruiting.review_decided",
+                {"kind": "revision", "decision": "rejected"},
+                'Rae Kim rejected your changes to "Backend Engineer"',
+            ),
+            (
+                "recruiting.review_decided",
+                {"kind": "reopen", "decision": "withdrawn"},
+                'Rae Kim withdrew the request to reopen "Backend Engineer"',
+            ),
+        ]
+        for event_type, details, expected in cases:
+            with self.subTest(event_type=event_type, details=details):
+                self.assertEqual(self.summary(event_type, details), expected)
+
+    def test_a_missing_or_unknown_kind_reads_as_initial(self):
+        for details in ({}, None, {"kind": "archive"}):
+            with self.subTest(details=details):
+                self.assertEqual(
+                    self.summary("recruiting.review_opened", details),
+                    'Rae Kim submitted the posting "Backend Engineer" for your review',
+                )
+
+    def test_an_unnamed_decision_reads_as_a_rejection_as_the_email_does(self):
+        self.assertEqual(
+            self.summary(
+                "recruiting.review_decided", {"kind": "close", "decision": "x"}
+            ),
+            'Rae Kim rejected closing "Backend Engineer"',
+        )
+
+    def test_a_blank_actor_reads_as_someone(self):
+        for actor in ("", None):
+            with self.subTest(actor=actor):
+                self.assertEqual(
+                    self.summary(
+                        "recruiting.review_opened", {"kind": "close"}, actor=actor
+                    ),
+                    'Someone asked to close "Backend Engineer"',
+                )
+
+    def test_other_events_have_no_summary(self):
+        self.assertIsNone(self.summary("recruiting.mentioned", {"kind": "initial"}))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -143,3 +143,13 @@ py_test(
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "bell_event_types_test",
+    srcs = ["bell_event_types_test.py"],
+    data = ["//tests/shared:bell_event_types_vector"],
+    deps = [
+        "//backend/notification_management:recipient_registry",
+        "//backend/utils:fast_app_factory",
+    ],
+)

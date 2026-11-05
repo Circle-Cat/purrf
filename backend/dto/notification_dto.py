@@ -25,6 +25,10 @@ class NotificationDto(BaseDto):
     ``job_kind`` is the resolved posting's kind (None when the posting is
     missing), so consumers outside React can honour the display-only rule
     that an activity posting's `hired` stage reads as "Admitted".
+
+    ``summary`` is the whole line for a posting review event, worded by the
+    same phrases as its email so the two channels cannot drift; None for
+    every other event, which the reader words itself.
     """
 
     id: int
@@ -37,6 +41,7 @@ class NotificationDto(BaseDto):
     actor_name: str | None = None
     created_at: datetime
     is_read: bool = False
+    summary: str | None = None
 
 
 class NotificationListDto(BaseDto):
