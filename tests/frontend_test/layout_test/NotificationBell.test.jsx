@@ -788,46 +788,76 @@ describe("NotificationBell", () => {
 
   it.each([
     [
-      "reassigned to the new reviewer",
-      "recruiting.review_reassigned",
+      "initial",
       "Rae Kim",
       "Backend Engineer",
-      { kind: "initial", reviewId: 31, previousReviewerId: 7 },
       'Rae Kim moved the review of "Backend Engineer" to you',
     ],
     [
-      "reassigned with an empty actor name",
-      "recruiting.review_reassigned",
-      "",
-      "Backend Engineer",
-      { kind: "initial", reviewId: 31 },
-      'Someone moved the review of "Backend Engineer" to you',
+      "revision",
+      "Tom Lee",
+      "Data Analyst",
+      'Tom Lee moved the review of the changes to "Data Analyst" to you',
     ],
     [
-      "opened with its existing wording",
-      "recruiting.review_opened",
-      "Rae Kim",
-      "Data Analyst",
-      { kind: "initial", reviewId: 31 },
-      'Rae Kim submitted "Data Analyst" for your review',
+      "close",
+      "Mia Chen",
+      "Product Designer",
+      'Mia Chen moved the request to close "Product Designer" to you',
+    ],
+    [
+      "reopen",
+      "Ann Wu",
+      "QA Lead",
+      'Ann Wu moved the request to reopen "QA Lead" to you',
     ],
   ])(
-    "describes a posting review %s",
-    async (_, eventType, actorName, jobTitle, details, text) => {
-      await openWith({
-        id: 13,
-        eventType,
-        jobTitle,
-        applicantName: "",
-        subjectName: "",
-        actorName,
-        createdAt: "2026-10-07T00:00:00Z",
-        details,
-      });
+    "tells the reviewer a %s review was reassigned",
+    async (kind, actor, title, text) => {
+      await openWith(
+        reviewRow(
+          "recruiting.review_reassigned",
+          { kind, previousReviewerId: 7 },
+          actor,
+          title,
+        ),
+      );
 
       expect(screen.getByText(text)).toBeInTheDocument();
     },
   );
+
+  it("uses initial wording when a reassigned review has no kind", async () => {
+    await openWith(
+      reviewRow(
+        "recruiting.review_reassigned",
+        { previousReviewerId: 7 },
+        "Sam Liu",
+        "Platform Engineer",
+      ),
+    );
+
+    expect(
+      screen.getByText(
+        'Sam Liu moved the review of "Platform Engineer" to you',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("describes a reassigned review with an empty actor name", async () => {
+    await openWith(
+      reviewRow(
+        "recruiting.review_reassigned",
+        { kind: "initial", previousReviewerId: 7 },
+        "",
+        "Mobile Engineer",
+      ),
+    );
+
+    expect(
+      screen.getByText('Someone moved the review of "Mobile Engineer" to you'),
+    ).toBeInTheDocument();
+  });
 
   // -- mentorship approvals ----------------------------------------------
   //

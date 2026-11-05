@@ -78,24 +78,29 @@ const REVIEW_LINES = {
     approved: (title) => `approved "${title}"`,
     rejected: (title) => `rejected "${title}"`,
     withdrawn: (title) => `withdrew the review of "${title}"`,
+    reassigned: (title) => `moved the review of "${title}" to you`,
   },
   revision: {
     opened: (title) => `submitted changes to "${title}" for your review`,
     approved: (title) => `approved your changes to "${title}"`,
     rejected: (title) => `rejected your changes to "${title}"`,
     withdrawn: (title) => `withdrew the changes to "${title}"`,
+    reassigned: (title) =>
+      `moved the review of the changes to "${title}" to you`,
   },
   close: {
     opened: (title) => `asked to close "${title}"`,
     approved: (title) => `approved closing "${title}"`,
     rejected: (title) => `rejected closing "${title}"`,
     withdrawn: (title) => `withdrew the request to close "${title}"`,
+    reassigned: (title) => `moved the request to close "${title}" to you`,
   },
   reopen: {
     opened: (title) => `asked to reopen "${title}"`,
     approved: (title) => `approved reopening "${title}"`,
     rejected: (title) => `rejected reopening "${title}"`,
     withdrawn: (title) => `withdrew the request to reopen "${title}"`,
+    reassigned: (title) => `moved the request to reopen "${title}" to you`,
   },
 };
 
@@ -240,7 +245,7 @@ const describe = (n) => {
       return `${actor} ${reviewLines(n.details).opened(n.jobTitle)}`;
     // Told to the new reviewer only.
     case "recruiting.review_reassigned":
-      return `${actor} moved the review of "${n.jobTitle}" to you`;
+      return `${actor} ${reviewLines(n.details).reassigned(n.jobTitle)}`;
     case "recruiting.review_decided": {
       // Withdrawn is told to the reviewer it was waiting on; the other two
       // to the submitter.
