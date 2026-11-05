@@ -604,11 +604,14 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
     { type = "public", uri = local.environments.prod.origin_web },
     { type = "public", uri = local.environments.prod.api_host },
   ]
-  allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", "e0e42a6d-d9a1-4e9e-9338-9643176c5fc4"]
+  # Single IdP + auto-redirect, as on test and staging: the backend reads the
+  # user's identity from the custom claims only the Auth0 OIDC IdP puts in the
+  # Access token, so a login through any other IdP arrives with no sub.
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_prod.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true
@@ -826,8 +829,7 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
     { type = "public", uri = "staging.purrf.pages.dev" },
   ]
   # Single IdP + auto-redirect: like test, CF Access skips its own login
-  # chooser and sends visitors straight to the Auth0 page. (Prod keeps the
-  # two-IdP chooser; staging deliberately trades that fidelity away.)
+  # chooser and sends visitors straight to the Auth0 page.
   allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id]
   session_duration     = "24h"
   app_launcher_visible = true
