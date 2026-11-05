@@ -45,6 +45,10 @@ output "notification_gateway_service_tokens" {
       client_id     = cloudflare_zero_trust_access_service_token.notification_gateway_staging.client_id
       client_secret = cloudflare_zero_trust_access_service_token.notification_gateway_staging.client_secret
     }
+    prod = {
+      client_id     = cloudflare_zero_trust_access_service_token.notification_gateway_prod.client_id
+      client_secret = cloudflare_zero_trust_access_service_token.notification_gateway_prod.client_secret
+    }
   }
 }
 

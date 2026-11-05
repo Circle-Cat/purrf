@@ -841,9 +841,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   ]
 }
 
-# Notification push gateway. Prod gets its own set once staging has run for
-# real; every environment needs a full set of its own, because the Worker
-# reaching one backend must not hold a credential the others honour.
+# Notification push gateway. Every environment needs a full set of its own,
+# because the Worker reaching one backend must not hold a credential the
+# others honour.
 #
 # <env>-hook.purrf.io is answered entirely by a Worker. The AAAA record points
 # at the reserved discard address and is proxied, so the name resolves and
@@ -1041,6 +1041,64 @@ resource "cloudflare_zero_trust_access_policy" "notification_delivery_staging" {
   include = [{
     service_token = {
       token_id = cloudflare_zero_trust_access_service_token.notification_gateway_staging.id
+    }
+  }]
+}
+
+
+# The prod set, same shape as staging. The Worker's prod route for
+# hook.purrf.io is already in workers/pubsub-gateway/wrangler.jsonc.
+
+resource "cloudflare_dns_record" "hook_prod" {
+  zone_id = local.zone_id
+  name    = "hook"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+resource "cloudflare_zero_trust_access_service_token" "notification_gateway_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-gateway-prod"
+  duration   = "forever"
+}
+
+
+resource "cloudflare_zero_trust_access_application" "notification_delivery_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-delivery-prod"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.prod.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/pubsub/push/gerrit" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.notification_delivery_prod.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "notification_delivery_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "gateway-worker-only-prod"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.notification_gateway_prod.id
     }
   }]
 }
