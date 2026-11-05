@@ -343,8 +343,10 @@ _REVIEW_WORDING = {
 }
 
 
-# The phrase a review event's line uses. A decision the map does not name
-# reads as a rejection, as the email renderer picks its template.
+# The phrase a review event's line uses. For every decision the backend
+# writes this picks what the email renderer picks; a decision the map does
+# not name reads as a rejection, so a row is still worded where the email
+# renderer would refuse a missing one.
 _REVIEW_PHRASE_BY_EVENT = {
     RecruitingEvent.REVIEW_OPENED: "requested",
     RecruitingEvent.REVIEW_REASSIGNED: "reassigned",

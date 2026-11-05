@@ -756,7 +756,14 @@ describe("NotificationBell", () => {
 
   // Every event the backend can send to the bell, from the list its own test
   // checks against the recipient registry. A type with no case here falls to
-  // the generic line, which is what this catches.
+  // the generic line, which is what this catches. Only the review types get a
+  // summary, as from the backend; every other type must word itself.
+  const REVIEW_TYPES = new Set([
+    "recruiting.review_opened",
+    "recruiting.review_reassigned",
+    "recruiting.review_decided",
+  ]);
+
   it.each(BELL_EVENT_TYPES)("words %s itself", async (eventType) => {
     await openWith({
       id: 15,
@@ -775,8 +782,10 @@ describe("NotificationBell", () => {
         startDate: "2026-11-03",
         endDate: "2026-11-05",
       },
-      summary:
-        'Grace Hopper submitted the posting "Backend Engineer" for your review',
+      ...(REVIEW_TYPES.has(eventType) && {
+        summary:
+          'Grace Hopper submitted the posting "Backend Engineer" for your review',
+      }),
     });
 
     expect(screen.queryByText(FALLBACK)).not.toBeInTheDocument();

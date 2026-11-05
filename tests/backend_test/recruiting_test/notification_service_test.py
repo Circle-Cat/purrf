@@ -496,6 +496,32 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(second.summary)
 
+    async def test_a_review_with_no_posting_or_actor_still_gets_a_summary(self):
+        row = self._row(1, 1)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        self.event_repo.get_by_ids = AsyncMock(
+            return_value=[
+                self._event(
+                    event_id=1,
+                    subject_type="job",
+                    subject_id=77,
+                    actor_id=None,
+                    event_type="recruiting.review_decided",
+                    details={"kind": "close", "decision": "approved"},
+                )
+            ]
+        )
+        self.app_repo.get_by_ids = AsyncMock(return_value=[])
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[])
+        self._stub_users()
+
+        (item,) = (
+            await self.service.list_for_user(self.session, user_id=2)
+        ).notifications
+
+        self.assertEqual(item.summary, 'Someone approved closing ""')
+
     async def test_mark_read_commits_after_marking_and_returns_the_count(self):
         order = []
         self.notification_repo.mark_read = AsyncMock(
