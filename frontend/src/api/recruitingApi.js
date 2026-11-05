@@ -311,12 +311,17 @@ export const listNotifications = () =>
   request.get(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);
 
 /**
- * Mark the notifications the bell showed read. They stay listed; only the
- * badge stops counting them. Returns { unreadCount }.
- * @param {number[]} ids The notifications shown.
+ * Mark notifications read. They stay listed; only the badge stops counting
+ * them. Returns { unreadCount }.
+ * @param {number[]} ids The notifications to mark (the bell sends the one
+ *   clicked).
  */
 export const markNotificationsRead = (ids) =>
   request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ, { ids });
+
+/** Mark every unread notification read. Returns { unreadCount }. */
+export const markAllNotificationsRead = () =>
+  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ_ALL);
 
 /** Take one notification off the bell. Returns { unreadCount }. */
 export const dismissNotification = (id) =>

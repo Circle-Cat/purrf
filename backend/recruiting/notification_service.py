@@ -24,7 +24,7 @@ async def _by_id(load, session, ids, key):
 class RecruitingNotificationService:
     """Read-side logic for in-app notifications: list, mark read, dismiss.
 
-    Notifications are light reminders. Opening the bell marks what it shows
+    Notifications are light reminders. Clicking one in the bell marks it
     read, which only greys it out; dismissing one takes it off the bell, so
     everything listed is undismissed. The row survives either way because it
     also carries the email state machine.
@@ -213,21 +213,40 @@ class RecruitingNotificationService:
     async def mark_read(
         self, session: AsyncSession, user_id: int, notification_ids: list[int]
     ) -> UnreadCountDto:
-        """Mark the notifications the bell showed read and commit.
+        """Mark the given notifications read and commit.
 
-        Only the ids sent are marked: the bell lists the newest page, and an
-        unread row beyond it has not been seen. Ids that are not user_id's
-        are ignored.
+        The bell sends the one row the user clicked. Ids that are not
+        user_id's are ignored.
 
         Args:
             session (AsyncSession): Active database async session.
             user_id (int): The authenticated caller.
-            notification_ids (list[int]): The rows the bell showed.
+            notification_ids (list[int]): The rows to mark.
 
         Returns:
             UnreadCountDto: The caller's unread count afterwards.
         """
         await self.notification_repository.mark_read(session, user_id, notification_ids)
+        await session.commit()
+        unread_count = await self.notification_repository.count_by_user(
+            session, user_id
+        )
+        return UnreadCountDto(unread_count=unread_count)
+
+    async def mark_all_read(
+        self, session: AsyncSession, user_id: int
+    ) -> UnreadCountDto:
+        """Mark every one of user_id's unread notifications read and commit.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The authenticated caller.
+
+        Returns:
+            UnreadCountDto: The caller's unread count afterwards, 0 unless
+                one arrived in between.
+        """
+        await self.notification_repository.mark_all_read(session, user_id)
         await session.commit()
         unread_count = await self.notification_repository.count_by_user(
             session, user_id

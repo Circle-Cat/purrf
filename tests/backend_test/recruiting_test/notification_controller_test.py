@@ -124,6 +124,28 @@ class TestRecruitingNotificationController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertLess(read, by_id)
 
+    async def test_mark_all_read_delegates(self):
+        result = {"unreadCount": 0}
+        self.notification_service.mark_all_read = AsyncMock(return_value=result)
+
+        resp = await self.controller.mark_all_read(self.ctx)
+
+        self.notification_service.mark_all_read.assert_awaited_once_with(
+            self.session, 2
+        )
+        self.assertEqual(resp["data"], result)
+
+    def test_mark_all_read_route_is_a_post_ahead_of_the_id_route(self):
+        paths = [(r.path, sorted(r.methods)) for r in self.controller.router.routes]
+
+        read_all = paths.index(("/recruiting/notifications/read-all", ["POST"]))
+        by_id = next(
+            i
+            for i, (path, _) in enumerate(paths)
+            if path == "/recruiting/notifications/{notification_id}"
+        )
+        self.assertLess(read_all, by_id)
+
     def test_mark_read_body_is_capped_at_one_hundred_ids(self):
         MarkNotificationsReadDto(ids=list(range(100)))
         with self.assertRaises(ValidationError):

@@ -195,6 +195,7 @@ export const API_ENDPOINTS = {
   RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
   RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
   RECRUITING_NOTIFICATIONS_READ: "/recruiting/notifications/read",
+  RECRUITING_NOTIFICATIONS_READ_ALL: "/recruiting/notifications/read-all",
   RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
   TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
   TRAINING_TRIAL_SESSION: (trainingId) =>

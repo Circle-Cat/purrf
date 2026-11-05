@@ -47,16 +47,15 @@ class NotificationListDto(BaseDto):
 
 
 class UnreadCountDto(BaseDto):
-    """Returned by dismiss/dismiss-all/mark-read so the frontend can update the badge without a refetch."""
+    """Returned by dismiss/dismiss-all/mark-read/mark-all-read so the frontend can update the badge without a refetch."""
 
     unread_count: int
 
 
 class MarkNotificationsReadDto(BaseDto):
-    """The notifications the bell showed, to be marked read.
+    """The notifications to mark read: the bell sends the one clicked.
 
-    Capped well above the bell's page of 20 so one request cannot name an
-    unbounded list.
+    Capped so one request cannot name an unbounded list.
     """
 
     ids: list[int] = Field(max_length=100)

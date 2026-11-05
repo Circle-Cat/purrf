@@ -470,6 +470,20 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(order, ["mark", "commit"])
         self.assertEqual(result.unread_count, 4)
 
+    async def test_mark_all_read_commits_after_marking_and_returns_the_count(self):
+        order = []
+        self.notification_repo.mark_all_read = AsyncMock(
+            side_effect=lambda *a: order.append("mark")
+        )
+        self.session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+        self.notification_repo.count_by_user = AsyncMock(return_value=0)
+
+        result = await self.service.mark_all_read(self.session, user_id=6)
+
+        self.notification_repo.mark_all_read.assert_awaited_once_with(self.session, 6)
+        self.assertEqual(order, ["mark", "commit"])
+        self.assertEqual(result.unread_count, 0)
+
     async def test_dismiss_all_commits_and_returns_zero(self):
         self.notification_repo.dismiss_all_by_user = AsyncMock()
         self.notification_repo.count_by_user = AsyncMock(return_value=0)
