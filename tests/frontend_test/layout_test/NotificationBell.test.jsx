@@ -786,6 +786,79 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    [
+      "initial",
+      "Rae Kim",
+      "Backend Engineer",
+      'Rae Kim moved the review of "Backend Engineer" to you',
+    ],
+    [
+      "revision",
+      "Tom Lee",
+      "Data Analyst",
+      'Tom Lee moved the review of the changes to "Data Analyst" to you',
+    ],
+    [
+      "close",
+      "Mia Chen",
+      "Product Designer",
+      'Mia Chen moved the request to close "Product Designer" to you',
+    ],
+    [
+      "reopen",
+      "Ann Wu",
+      "QA Lead",
+      'Ann Wu moved the request to reopen "QA Lead" to you',
+    ],
+  ])(
+    "tells the reviewer a %s review was reassigned",
+    async (kind, actor, title, text) => {
+      await openWith(
+        reviewRow(
+          "recruiting.review_reassigned",
+          { kind, previousReviewerId: 7 },
+          actor,
+          title,
+        ),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
+  it("uses initial wording when a reassigned review has no kind", async () => {
+    await openWith(
+      reviewRow(
+        "recruiting.review_reassigned",
+        { previousReviewerId: 7 },
+        "Sam Liu",
+        "Platform Engineer",
+      ),
+    );
+
+    expect(
+      screen.getByText(
+        'Sam Liu moved the review of "Platform Engineer" to you',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("describes a reassigned review with an empty actor name", async () => {
+    await openWith(
+      reviewRow(
+        "recruiting.review_reassigned",
+        { kind: "initial", previousReviewerId: 7 },
+        "",
+        "Mobile Engineer",
+      ),
+    );
+
+    expect(
+      screen.getByText('Someone moved the review of "Mobile Engineer" to you'),
+    ).toBeInTheDocument();
+  });
+
   // -- mentorship approvals ----------------------------------------------
   //
   // Written under subject_type "mentorship_round": what is asked for, the
