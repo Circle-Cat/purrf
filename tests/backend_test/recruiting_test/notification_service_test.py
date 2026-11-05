@@ -452,6 +452,50 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.unread_count, 1)
 
+    async def test_list_for_user_words_a_review_event_like_its_email(self):
+        review = self._row(1, 1)
+        mention = self._row(2, 2)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[review, mention])
+        self.notification_repo.count_by_user = AsyncMock(return_value=2)
+        self.event_repo.get_by_ids = AsyncMock(
+            return_value=[
+                self._event(
+                    event_id=1,
+                    subject_type="job",
+                    subject_id=4,
+                    actor_id=9,
+                    event_type="recruiting.review_reassigned",
+                    details={"kind": "close"},
+                ),
+                self._event(
+                    event_id=2,
+                    subject_type="job",
+                    subject_id=4,
+                    actor_id=9,
+                    event_type="recruiting.review_opened_unknown",
+                ),
+            ]
+        )
+        self.app_repo.get_by_ids = AsyncMock(return_value=[])
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Data Analyst", status=JobStatus.DRAFT
+        )
+        job.job_id = 4
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[job])
+        actor = UsersEntity(first_name="Grace", last_name="Hopper")
+        actor.user_id = 9
+        self._stub_users(actor)
+
+        first, second = (
+            await self.service.list_for_user(self.session, user_id=2)
+        ).notifications
+
+        self.assertEqual(
+            first.summary,
+            'Grace Hopper moved the request to close "Data Analyst" to you',
+        )
+        self.assertIsNone(second.summary)
+
     async def test_mark_read_commits_after_marking_and_returns_the_count(self):
         order = []
         self.notification_repo.mark_read = AsyncMock(

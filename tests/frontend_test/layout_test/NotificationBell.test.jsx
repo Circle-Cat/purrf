@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,6 +10,18 @@ import NotificationBell from "@/components/layout/NotificationBell";
 import * as api from "@/api/recruitingApi";
 
 vi.mock("@/api/recruitingApi");
+
+const FALLBACK = "You have a new notification";
+
+// Read through node rather than imported: the file lives outside the
+// frontend source tree, shared with the backend test that keeps it in step
+// with the recipient registry.
+const BELL_EVENT_TYPES = JSON.parse(
+  readFileSync(
+    path.resolve(process.cwd(), "../shared/bell_event_types.json"),
+    "utf8",
+  ),
+);
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
 beforeEach(() => {
@@ -661,202 +676,110 @@ describe("NotificationBell", () => {
   });
 
   // -- posting reviews ----------------------------------------------------
+  //
+  // The backend words these from the same phrases as their email and sends
+  // the line as `summary`; its tests pin the wording per kind and decision.
+  // The bell shows it as given.
 
   it.each([
-    ["approved", 'Rae Kim approved "Backend Engineer"'],
-    ["rejected", 'Rae Kim rejected "Backend Engineer"'],
-    ["withdrawn", 'Rae Kim withdrew the review of "Backend Engineer"'],
-  ])("says a posting review was %s", async (decision, text) => {
+    [
+      "recruiting.review_opened",
+      'Rae Kim submitted the posting "Backend Engineer" for your review',
+    ],
+    [
+      "recruiting.review_reassigned",
+      'Mia Chen moved the request to close "Product Designer" to you',
+    ],
+    ["recruiting.review_decided", 'Ann Wu rejected reopening "QA Lead"'],
+  ])("shows the line the backend sent for %s", async (eventType, summary) => {
     await openWith({
-      id: 11,
-      eventType: "recruiting.review_decided",
+      id: 12,
+      eventType,
+      jobTitle: "Something else",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Not this name",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { kind: "initial", reviewId: 31, decision: "approved" },
+      summary,
+    });
+
+    expect(screen.getByText(summary)).toBeInTheDocument();
+  });
+
+  it("falls back to a generic line when a review comes without its summary", async () => {
+    await openWith({
+      id: 12,
+      eventType: "recruiting.review_opened",
       jobTitle: "Backend Engineer",
       applicantName: "",
       subjectName: "",
       actorName: "Rae Kim",
       createdAt: "2026-10-07T00:00:00Z",
-      details: { kind: "initial", reviewId: 31, decision },
+      details: { kind: "initial", reviewId: 31 },
     });
 
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
   });
 
-  // Each kind has its own actor and title, so a line that read another kind's
-  // phrase or the wrong field would not match.
-  const reviewRow = (eventType, details, actorName, jobTitle) => ({
-    id: 12,
-    eventType,
-    jobTitle,
-    applicantName: "",
-    subjectName: "",
-    actorName,
-    createdAt: "2026-10-07T00:00:00Z",
-    details: { reviewId: 31, ...details },
+  // -- never a blank row --------------------------------------------------
+
+  it("shows a generic line for an event type it has no case for", async () => {
+    await openWith({
+      id: 13,
+      eventType: "recruiting.something_new",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {},
+    });
+
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
   });
 
-  it.each([
-    [
-      "initial",
-      "Rae Kim",
-      "Backend Engineer",
-      'Rae Kim submitted "Backend Engineer" for your review',
-    ],
-    [
-      "revision",
-      "Tom Lee",
-      "Data Analyst",
-      'Tom Lee submitted changes to "Data Analyst" for your review',
-    ],
-    [
-      "close",
-      "Mia Chen",
-      "Product Designer",
-      'Mia Chen asked to close "Product Designer"',
-    ],
-    ["reopen", "Ann Wu", "QA Lead", 'Ann Wu asked to reopen "QA Lead"'],
-  ])(
-    "tells the reviewer a %s review was opened",
-    async (kind, actor, title, text) => {
-      await openWith(
-        reviewRow("recruiting.review_opened", { kind }, actor, title),
-      );
+  it("shows a generic line for a decision a case does not know", async () => {
+    await openWith({
+      id: 14,
+      eventType: "mentorship.approval_decided",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { decision: "superseded", action: "exempt_matching" },
+    });
 
-      expect(screen.getByText(text)).toBeInTheDocument();
-    },
-  );
-
-  it.each([
-    ["revision", "approved", 'Tom Lee approved your changes to "Data Analyst"'],
-    ["revision", "rejected", 'Tom Lee rejected your changes to "Data Analyst"'],
-    ["revision", "withdrawn", 'Tom Lee withdrew the changes to "Data Analyst"'],
-    ["close", "approved", 'Mia Chen approved closing "Product Designer"'],
-    ["close", "rejected", 'Mia Chen rejected closing "Product Designer"'],
-    [
-      "close",
-      "withdrawn",
-      'Mia Chen withdrew the request to close "Product Designer"',
-    ],
-    ["reopen", "approved", 'Ann Wu approved reopening "QA Lead"'],
-    ["reopen", "rejected", 'Ann Wu rejected reopening "QA Lead"'],
-    ["reopen", "withdrawn", 'Ann Wu withdrew the request to reopen "QA Lead"'],
-  ])("says a %s review was %s", async (kind, decision, text) => {
-    const [actor, title] = {
-      revision: ["Tom Lee", "Data Analyst"],
-      close: ["Mia Chen", "Product Designer"],
-      reopen: ["Ann Wu", "QA Lead"],
-    }[kind];
-    await openWith(
-      reviewRow("recruiting.review_decided", { kind, decision }, actor, title),
-    );
-
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
   });
 
-  it.each([
-    ["a missing", {}],
-    ["an unknown", { kind: "archive" }],
-    ["a prototype-named", { kind: "toString" }],
-  ])("reads %s review kind as a first publication", async (_, details) => {
-    await openWith(
-      reviewRow(
-        "recruiting.review_opened",
-        details,
-        "Rae Kim",
-        "Backend Engineer",
-      ),
-    );
+  // Every event the backend can send to the bell, from the list its own test
+  // checks against the recipient registry. A type with no case here falls to
+  // the generic line, which is what this catches.
+  it.each(BELL_EVENT_TYPES)("words %s itself", async (eventType) => {
+    await openWith({
+      id: 15,
+      eventType,
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "Alan Turing",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {
+        decision: "approved",
+        kind: "initial",
+        reviewId: 31,
+        roundName: "Spring 2026",
+        leaveType: "paid",
+        startDate: "2026-11-03",
+        endDate: "2026-11-05",
+      },
+      summary:
+        'Grace Hopper submitted the posting "Backend Engineer" for your review',
+    });
 
-    expect(
-      screen.getByText('Rae Kim submitted "Backend Engineer" for your review'),
-    ).toBeInTheDocument();
-  });
-
-  it("reads a decision without a kind as a first publication", async () => {
-    await openWith(
-      reviewRow(
-        "recruiting.review_decided",
-        { decision: "approved" },
-        "Rae Kim",
-        "Backend Engineer",
-      ),
-    );
-
-    expect(
-      screen.getByText('Rae Kim approved "Backend Engineer"'),
-    ).toBeInTheDocument();
-  });
-
-  it.each([
-    [
-      "initial",
-      "Rae Kim",
-      "Backend Engineer",
-      'Rae Kim moved the review of "Backend Engineer" to you',
-    ],
-    [
-      "revision",
-      "Tom Lee",
-      "Data Analyst",
-      'Tom Lee moved the review of the changes to "Data Analyst" to you',
-    ],
-    [
-      "close",
-      "Mia Chen",
-      "Product Designer",
-      'Mia Chen moved the request to close "Product Designer" to you',
-    ],
-    [
-      "reopen",
-      "Ann Wu",
-      "QA Lead",
-      'Ann Wu moved the request to reopen "QA Lead" to you',
-    ],
-  ])(
-    "tells the reviewer a %s review was reassigned",
-    async (kind, actor, title, text) => {
-      await openWith(
-        reviewRow(
-          "recruiting.review_reassigned",
-          { kind, previousReviewerId: 7 },
-          actor,
-          title,
-        ),
-      );
-
-      expect(screen.getByText(text)).toBeInTheDocument();
-    },
-  );
-
-  it("uses initial wording when a reassigned review has no kind", async () => {
-    await openWith(
-      reviewRow(
-        "recruiting.review_reassigned",
-        { previousReviewerId: 7 },
-        "Sam Liu",
-        "Platform Engineer",
-      ),
-    );
-
-    expect(
-      screen.getByText(
-        'Sam Liu moved the review of "Platform Engineer" to you',
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("describes a reassigned review with an empty actor name", async () => {
-    await openWith(
-      reviewRow(
-        "recruiting.review_reassigned",
-        { kind: "initial", previousReviewerId: 7 },
-        "",
-        "Mobile Engineer",
-      ),
-    );
-
-    expect(
-      screen.getByText('Someone moved the review of "Mobile Engineer" to you'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(FALLBACK)).not.toBeInTheDocument();
   });
 
   // -- mentorship approvals ----------------------------------------------
