@@ -422,6 +422,138 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.unread_count, 3)
 
+    async def test_list_for_user_says_which_rows_are_read(self):
+        unread = self._row(1, 1)
+        read = self._row(2, 1)
+        read.read_at = datetime(2026, 3, 2, tzinfo=timezone.utc)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[unread, read])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        self.event_repo.get_by_ids = AsyncMock(
+            return_value=[
+                self._event(
+                    event_id=1,
+                    subject_type="job",
+                    subject_id=1,
+                    event_type="recruiting.review_opened",
+                )
+            ]
+        )
+        self.app_repo.get_by_ids = AsyncMock(return_value=[])
+        job = JobEntity(kind=JobKind.ACTIVITY, title="Ops", status=JobStatus.DRAFT)
+        job.job_id = 1
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[job])
+        self._stub_users()
+
+        result = await self.service.list_for_user(self.session, user_id=2)
+
+        self.assertEqual(
+            [(n.id, n.is_read) for n in result.notifications],
+            [(1, False), (2, True)],
+        )
+        self.assertEqual(result.unread_count, 1)
+
+    async def test_list_for_user_words_a_review_event_like_its_email(self):
+        review = self._row(1, 1)
+        mention = self._row(2, 2)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[review, mention])
+        self.notification_repo.count_by_user = AsyncMock(return_value=2)
+        self.event_repo.get_by_ids = AsyncMock(
+            return_value=[
+                self._event(
+                    event_id=1,
+                    subject_type="job",
+                    subject_id=4,
+                    actor_id=9,
+                    event_type="recruiting.review_reassigned",
+                    details={"kind": "close"},
+                ),
+                self._event(
+                    event_id=2,
+                    subject_type="job",
+                    subject_id=4,
+                    actor_id=9,
+                    event_type="recruiting.review_opened_unknown",
+                ),
+            ]
+        )
+        self.app_repo.get_by_ids = AsyncMock(return_value=[])
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Data Analyst", status=JobStatus.DRAFT
+        )
+        job.job_id = 4
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[job])
+        actor = UsersEntity(first_name="Grace", last_name="Hopper")
+        actor.user_id = 9
+        self._stub_users(actor)
+
+        first, second = (
+            await self.service.list_for_user(self.session, user_id=2)
+        ).notifications
+
+        self.assertEqual(
+            first.summary,
+            'Grace Hopper moved the request to close "Data Analyst" to you',
+        )
+        self.assertIsNone(second.summary)
+
+    async def test_a_review_with_no_posting_or_actor_still_gets_a_summary(self):
+        row = self._row(1, 1)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        self.event_repo.get_by_ids = AsyncMock(
+            return_value=[
+                self._event(
+                    event_id=1,
+                    subject_type="job",
+                    subject_id=77,
+                    actor_id=None,
+                    event_type="recruiting.review_decided",
+                    details={"kind": "close", "decision": "approved"},
+                )
+            ]
+        )
+        self.app_repo.get_by_ids = AsyncMock(return_value=[])
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[])
+        self._stub_users()
+
+        (item,) = (
+            await self.service.list_for_user(self.session, user_id=2)
+        ).notifications
+
+        self.assertEqual(item.summary, 'Someone approved closing ""')
+
+    async def test_mark_read_commits_after_marking_and_returns_the_count(self):
+        order = []
+        self.notification_repo.mark_read = AsyncMock(
+            side_effect=lambda *a: order.append("mark")
+        )
+        self.session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+        self.notification_repo.count_by_user = AsyncMock(return_value=4)
+
+        result = await self.service.mark_read(
+            self.session, user_id=2, notification_ids=[7, 8]
+        )
+
+        self.notification_repo.mark_read.assert_awaited_once_with(
+            self.session, 2, [7, 8]
+        )
+        self.assertEqual(order, ["mark", "commit"])
+        self.assertEqual(result.unread_count, 4)
+
+    async def test_mark_all_read_commits_after_marking_and_returns_the_count(self):
+        order = []
+        self.notification_repo.mark_all_read = AsyncMock(
+            side_effect=lambda *a: order.append("mark")
+        )
+        self.session.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+        self.notification_repo.count_by_user = AsyncMock(return_value=0)
+
+        result = await self.service.mark_all_read(self.session, user_id=6)
+
+        self.notification_repo.mark_all_read.assert_awaited_once_with(self.session, 6)
+        self.assertEqual(order, ["mark", "commit"])
+        self.assertEqual(result.unread_count, 0)
+
     async def test_dismiss_all_commits_and_returns_zero(self):
         self.notification_repo.dismiss_all_by_user = AsyncMock()
         self.notification_repo.count_by_user = AsyncMock(return_value=0)

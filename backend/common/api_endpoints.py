@@ -181,6 +181,7 @@ RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT = "/recruiting/jobs/{job_id}/review/with
 RECRUITING_JOB_ACTIVITY_ENDPOINT = "/recruiting/jobs/{job_id}/activity"
 RECRUITING_PUBLIC_JOB_ENDPOINT = "/recruiting/public/jobs/{job_id}"
 RECRUITING_PUBLIC_JOBS_ENDPOINT = "/recruiting/public/jobs"
+RECRUITING_ANONYMOUS_JOBS_ENDPOINT = "/recruiting/anonymous/jobs"
 RECRUITING_RESUMES_ENDPOINT = "/recruiting/resumes"
 RECRUITING_APPLICATIONS_ENDPOINT = "/recruiting/applications"
 RECRUITING_APPLICATION_ENDPOINT = "/recruiting/applications/{application_id}"
@@ -240,6 +241,8 @@ RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
     "/recruiting/applications/{application_id}/mentionable-users"
 )
 RECRUITING_NOTIFICATIONS_ENDPOINT = "/recruiting/notifications"
+RECRUITING_NOTIFICATIONS_READ_ENDPOINT = "/recruiting/notifications/read"
+RECRUITING_NOTIFICATIONS_READ_ALL_ENDPOINT = "/recruiting/notifications/read-all"
 RECRUITING_NOTIFICATION_ENDPOINT = "/recruiting/notifications/{notification_id}"
 NOTIFICATION_DELIVER_ENDPOINT = "/notifications/deliver"
 GMAIL_PUSH_ENDPOINT = "/email/gmail/push"

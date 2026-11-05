@@ -44,3 +44,13 @@ js_library(
     name = "job_statuses_vector_js",
     srcs = ["job_statuses.json"],
 )
+
+filegroup(
+    name = "bell_event_types_vector",
+    srcs = ["bell_event_types.json"],
+)
+
+js_library(
+    name = "bell_event_types_vector_js",
+    srcs = ["bell_event_types.json"],
+)

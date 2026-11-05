@@ -13,6 +13,8 @@ import {
   dismissAllNotifications,
   dismissNotification,
   listNotifications,
+  markAllNotificationsRead,
+  markNotificationsRead,
 } from "@/api/recruitingApi";
 import { LEAVE_TYPE_LABELS } from "@/constants/LeaveRequest";
 import { serviceOf } from "@/pages/Inbox/inboxDisplay";
@@ -67,56 +69,20 @@ const leaveAsk = (details) => {
 };
 
 /**
- * What happened in a posting review, per review kind, after the actor's name.
- * Keyed by `details.kind`, then by "opened" or the decision.
+ * The line shown for a notification nothing else words: an event type the
+ * bell has no case for, or a case that cannot word this one. Never blank.
  */
-const REVIEW_LINES = {
-  initial: {
-    opened: (title) => `submitted "${title}" for your review`,
-    approved: (title) => `approved "${title}"`,
-    rejected: (title) => `rejected "${title}"`,
-    withdrawn: (title) => `withdrew the review of "${title}"`,
-  },
-  revision: {
-    opened: (title) => `submitted changes to "${title}" for your review`,
-    approved: (title) => `approved your changes to "${title}"`,
-    rejected: (title) => `rejected your changes to "${title}"`,
-    withdrawn: (title) => `withdrew the changes to "${title}"`,
-  },
-  close: {
-    opened: (title) => `asked to close "${title}"`,
-    approved: (title) => `approved closing "${title}"`,
-    rejected: (title) => `rejected closing "${title}"`,
-    withdrawn: (title) => `withdrew the request to close "${title}"`,
-  },
-  reopen: {
-    opened: (title) => `asked to reopen "${title}"`,
-    approved: (title) => `approved reopening "${title}"`,
-    rejected: (title) => `rejected reopening "${title}"`,
-    withdrawn: (title) => `withdrew the request to reopen "${title}"`,
-  },
-};
+const FALLBACK_LINE = "You have a new notification";
 
 /**
- * The phrases for a posting review's kind. A missing or unknown kind (events
- * from before the kind was carried) reads as a first publication.
- * @param {{kind?: string}} details
- * @returns {Record<string, (title: string) => string>}
- */
-const reviewLines = (details) =>
-  Object.hasOwn(REVIEW_LINES, details?.kind ?? "")
-    ? REVIEW_LINES[details.kind]
-    : REVIEW_LINES.initial;
-
-/**
- * Compose a notification's display text from its event type and details.
+ * Word a notification from its event type and details, or "" when it can't.
  *
  * Two audiences share this switch. Every recruiting line is written from
  * staff's point of view, about someone else ("{actor} moved {applicant}");
  * the mentorship lines below are written to the person they are about. Match
  * the case you are adding, not the surrounding voice.
  */
-const describe = (n) => {
+const wordOf = (n) => {
   // `||`, not `??`: actorName carries three states. A name renders as
   // itself, null means the system acted under its own rules (those lines
   // never read this value), and "" means a person acted but their user row
@@ -234,19 +200,14 @@ const describe = (n) => {
     // Told to the same people as a reply: it is their message that failed.
     case "recruiting.email_bounced":
       return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
+    // Posting reviews are worded by the backend from the same phrases as
+    // their email, so the two channels say the same thing. The opened and
+    // reassigned lines go to the reviewer, the decided ones to the submitter
+    // (withdrawn to the reviewer it was waiting on).
     case "recruiting.review_opened":
-      return `${actor} ${reviewLines(n.details).opened(n.jobTitle)}`;
-    case "recruiting.review_decided": {
-      // Withdrawn is told to the reviewer it was waiting on; the other two
-      // to the submitter.
-      const lines = reviewLines(n.details);
-      if (n.details?.decision === "withdrawn") {
-        return `${actor} ${lines.withdrawn(n.jobTitle)}`;
-      }
-      return n.details?.decision === "approved"
-        ? `${actor} ${lines.approved(n.jobTitle)}`
-        : `${actor} ${lines.rejected(n.jobTitle)}`;
-    }
+    case "recruiting.review_reassigned":
+    case "recruiting.review_decided":
+      return n.summary ?? "";
     case "recruiting.application_submitted":
       return n.details?.screenAutoHireRuleId
         ? `${n.applicantName} applied to ${n.jobTitle} and was ${
@@ -299,11 +260,21 @@ const describe = (n) => {
 };
 
 /**
+ * Compose a notification's display text, falling back to a generic line so
+ * a row is never blank.
+ * @param {object} n The notification.
+ * @returns {string}
+ */
+const describe = (n) => wordOf(n) || FALLBACK_LINE;
+
+/**
  * Header bell + popover for in-app recruiting notifications.
  *
  * Notifications are light reminders: they don't navigate anywhere.
- * Dismissing one (the X) or "Clear all" marks it server-side and drops
- * it from the list.
+ * Clicking an unread row marks it read on the server; "Mark all as read"
+ * marks every one, including any beyond the rows listed. Read rows stay
+ * listed in grey, below the unread ones, and the badge counts only unread
+ * rows. Dismissing one (the X) or "Clear all" takes it off the list.
  *
  * Refetches on three user-driven triggers: the tab/window becoming visible
  * again, a route pathname change, and the panel opening. The bell lives in
@@ -325,33 +296,47 @@ const NotificationBell = () => {
   const [loadError, setLoadError] = useState(false);
   const { pathname } = useLocation();
 
-  // Set synchronously before the first await: visibilitychange and focus both
-  // fire when returning to a hidden tab, and state would batch them into two
-  // requests.
-  const inFlight = useRef(false);
-  // Bumped by every dismiss so a refetch that raced it can drop its response
-  // instead of resurrecting the row the user just removed.
+  // The fetch in progress, if any. Set synchronously before the first await:
+  // visibilitychange and focus both fire when returning to a hidden tab, and
+  // state would batch them into two requests. A caller arriving mid-fetch
+  // shares this one instead of starting another.
+  const inFlight = useRef(null);
+  // Bumped by every write (dismiss, Clear all, mark read) so a refetch that
+  // raced it drops its response instead of resurrecting a removed row or an
+  // old count.
   const mutations = useRef(0);
   const isFirstLoad = useRef(true);
 
-  const load = useCallback(async ({ showToast }) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const mutationsAtStart = mutations.current;
-    setLoadError(false);
-    try {
-      const { data } = await listNotifications();
-      if (mutations.current !== mutationsAtStart) return;
-      setNotifications(data?.notifications ?? []);
-      setUnreadCount(data?.unreadCount ?? 0);
-    } catch (e) {
-      if (mutations.current !== mutationsAtStart) return;
-      // Keep the last good data; a refetch failing shouldn't blank the list.
-      setLoadError(true);
-      if (showToast) toast.error(e.message);
-    } finally {
-      inFlight.current = false;
-    }
+  /**
+   * Fetch the list and the unread count, or join the fetch already running.
+   * @param {{showToast: boolean}} options
+   * @returns {Promise<object[]|null>} The rows fetched, or null when the
+   *   fetch failed or a write raced it.
+   */
+  const load = useCallback(({ showToast }) => {
+    if (inFlight.current) return inFlight.current;
+    const run = async () => {
+      const mutationsAtStart = mutations.current;
+      setLoadError(false);
+      try {
+        const { data } = await listNotifications();
+        if (mutations.current !== mutationsAtStart) return null;
+        const rows = data?.notifications ?? [];
+        setNotifications(rows);
+        setUnreadCount(data?.unreadCount ?? 0);
+        return rows;
+      } catch (e) {
+        if (mutations.current !== mutationsAtStart) return null;
+        // Keep the last good data; a refetch failing shouldn't blank the list.
+        setLoadError(true);
+        if (showToast) toast.error(e.message);
+        return null;
+      } finally {
+        inFlight.current = null;
+      }
+    };
+    inFlight.current = run();
+    return inFlight.current;
   }, []);
 
   // Covers both the initial mount and every later pathname change. Deliberately
@@ -377,6 +362,52 @@ const NotificationBell = () => {
       window.removeEventListener("focus", refetch);
     };
   }, [load]);
+
+  /** Set isRead on the listed rows whose ids are given. */
+  const setRead = (ids, isRead) =>
+    setNotifications((prev) =>
+      prev.map((n) => (ids.includes(n.id) ? { ...n, isRead } : n)),
+    );
+
+  /**
+   * Mark one row read when the user clicks it. The row greys and the badge
+   * drops at once; a failure puts both back. The write counter is bumped on
+   * both sides of the request: a refetch started before it, or while it was
+   * in flight, may carry the state from before it committed.
+   */
+  const handleMarkRead = async (notification) => {
+    if (notification.isRead) return;
+    mutations.current += 1;
+    setRead([notification.id], true);
+    setUnreadCount((c) => Math.max(0, c - 1));
+    try {
+      const { data } = await markNotificationsRead([notification.id]);
+      mutations.current += 1;
+      setUnreadCount(data?.unreadCount ?? 0);
+    } catch (e) {
+      setRead([notification.id], false);
+      setUnreadCount((c) => c + 1);
+      toast.error(e.message);
+    }
+  };
+
+  /** Mark every unread notification read, listed or not. */
+  const handleMarkAllRead = async () => {
+    const unreadIds = notifications.filter((n) => !n.isRead).map((n) => n.id);
+    const countBefore = unreadCount;
+    mutations.current += 1;
+    setRead(unreadIds, true);
+    setUnreadCount(0);
+    try {
+      const { data } = await markAllNotificationsRead();
+      mutations.current += 1;
+      setUnreadCount(data?.unreadCount ?? 0);
+    } catch (e) {
+      setRead(unreadIds, false);
+      setUnreadCount(countBefore);
+      toast.error(e.message);
+    }
+  };
 
   const handleDismiss = async (notification) => {
     mutations.current += 1;
@@ -427,14 +458,24 @@ const NotificationBell = () => {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between border-b p-2">
           <span className="text-sm font-medium">Notifications</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={notifications.length === 0}
-            onClick={handleDismissAll}
-          >
-            Clear all
-          </Button>
+          <div className="flex items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={unreadCount === 0}
+              onClick={handleMarkAllRead}
+            >
+              Mark all as read
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={notifications.length === 0}
+              onClick={handleDismissAll}
+            >
+              Clear all
+            </Button>
+          </div>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {loadError && (
@@ -445,23 +486,56 @@ const NotificationBell = () => {
           {!loadError && notifications.length === 0 && (
             <p className="p-4 text-sm text-slate-500">No notifications yet.</p>
           )}
-          {notifications.map((n) => (
-            <div
-              key={n.id}
-              className="flex items-start gap-2 border-b px-4 py-2 text-sm last:border-b-0"
-            >
-              <span className="flex-1 font-medium">{describe(n)}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Dismiss notification"
-                className="h-5 w-5 shrink-0 text-slate-500"
-                onClick={() => handleDismiss(n)}
+          {notifications.map((n) => {
+            const text = (
+              <>
+                <span
+                  aria-label={n.isRead ? undefined : "Unread"}
+                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                    n.isRead ? "invisible" : "bg-blue-500"
+                  }`}
+                />
+                <span
+                  className={`flex-1 ${
+                    n.isRead ? "text-slate-400" : "font-medium text-slate-900"
+                  }`}
+                >
+                  {describe(n)}
+                </span>
+              </>
+            );
+            return (
+              <div
+                key={n.id}
+                data-read={n.isRead ? "true" : "false"}
+                className="flex items-start gap-2 border-b px-4 py-2 text-sm last:border-b-0"
               >
-                <X size={14} />
-              </Button>
-            </div>
-          ))}
+                {n.isRead ? (
+                  <div className="flex flex-1 items-start gap-2">{text}</div>
+                ) : (
+                  // Its own button, beside the X rather than around it, so a
+                  // dismiss never also marks the row read.
+                  <button
+                    type="button"
+                    title="Mark as read"
+                    onClick={() => handleMarkRead(n)}
+                    className="-mx-1 flex flex-1 cursor-pointer items-start gap-2 rounded px-1 text-left hover:bg-slate-50"
+                  >
+                    {text}
+                  </button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Dismiss notification"
+                  className="h-5 w-5 shrink-0 text-slate-500"
+                  onClick={() => handleDismiss(n)}
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       </PopoverContent>
     </Popover>

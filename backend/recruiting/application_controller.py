@@ -4,6 +4,7 @@ from backend.utils.permission_decorators import authenticate
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
 from backend.common.api_endpoints import (
+    RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
     RECRUITING_PUBLIC_JOB_ENDPOINT,
     RECRUITING_PUBLIC_JOBS_ENDPOINT,
     RECRUITING_RESUMES_ENDPOINT,
@@ -62,6 +63,14 @@ class ApplicationController:
             methods=["GET"],
             response_model=None,
         )
+        # No authenticate(): this serves people who have not signed in. See
+        # list_anonymous_jobs for what keeps it safe to leave open.
+        self.router.add_api_route(
+            RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
+            endpoint=self.list_anonymous_jobs,
+            methods=["GET"],
+            response_model=None,
+        )
         self.router.add_api_route(
             RECRUITING_RESUMES_ENDPOINT,
             endpoint=authenticate()(self.upload_resume),
@@ -95,6 +104,23 @@ class ApplicationController:
 
     async def list_public_jobs(self, current_user: UserContextDto):
         """List candidate-visible postings as candidate-safe browse-page summaries."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_publicly_visible(session)
+        return api_response(message="Jobs fetched.", data=result)
+
+    async def list_anonymous_jobs(self):
+        """List candidate-visible postings for visitors who have not signed in.
+
+        Serves the public job pages rendered by the apply Worker, which shows
+        both the list and each posting's detail from this one response. It is
+        a list rather than a list plus a detail route because the auth
+        middleware exempts exact paths only, and a ``{job_id}`` path cannot be
+        named exactly.
+
+        It returns the same summaries as ``list_public_jobs`` and nothing
+        more: no application form, profile config or internal recruiting
+        field, so applying still needs a signed-in session.
+        """
         async with self.database.session() as session:
             result = await self.job_service.list_publicly_visible(session)
         return api_response(message="Jobs fetched.", data=result)

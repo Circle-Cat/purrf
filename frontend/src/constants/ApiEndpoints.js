@@ -93,6 +93,7 @@ export const API_ENDPOINTS = {
   LEAVE_HOLIDAYS_YEAR: (year) => `/leave/holidays/${year}`,
   LEAVE_HOLIDAY_YEARS: "/leave/holiday-years",
   LEAVE_BALANCES: "/leave/balances",
+  LEAVE_LEDGER: "/leave/ledger",
   LEAVE_ME_LEDGER: "/leave/me/ledger",
   LEAVE_ADJUSTMENTS: "/leave/adjustments",
   LEAVE_REQUEST_DECISION: (requestId) =>
@@ -193,6 +194,8 @@ export const API_ENDPOINTS = {
     `/recruiting/applications/${id}/other-applications`,
   RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
   RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
+  RECRUITING_NOTIFICATIONS_READ: "/recruiting/notifications/read",
+  RECRUITING_NOTIFICATIONS_READ_ALL: "/recruiting/notifications/read-all",
   RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
   TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
   TRAINING_TRIAL_SESSION: (trainingId) =>

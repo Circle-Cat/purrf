@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,9 +10,27 @@ import NotificationBell from "@/components/layout/NotificationBell";
 import * as api from "@/api/recruitingApi";
 
 vi.mock("@/api/recruitingApi");
+
+const FALLBACK = "You have a new notification";
+
+// Read through node rather than imported: the file lives outside the
+// frontend source tree, shared with the backend test that keeps it in step
+// with the recipient registry.
+const BELL_EVENT_TYPES = JSON.parse(
+  readFileSync(
+    path.resolve(process.cwd(), "../shared/bell_event_types.json"),
+    "utf8",
+  ),
+);
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // The automock hands back undefined, which the bell would report as a
+  // failed request.
+  api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+  api.markAllNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+});
 
 // The bell reads useLocation(), so it needs router context.  react-router-dom
 // re-exports live hooks from react-router and vi.mock does not intercept them
@@ -145,6 +166,241 @@ describe("NotificationBell", () => {
     await waitFor(() =>
       expect(screen.queryByText("2")).not.toBeInTheDocument(),
     );
+  });
+
+  // -- read state --------------------------------------------------------
+  //
+  // A row becomes read when the user clicks it, or with Mark all as read.
+  // Opening the panel marks nothing. Read rows stay listed in grey.
+
+  const mentionRow = (id, applicantName, isRead) => ({
+    id,
+    eventType: "recruiting.mentioned",
+    jobTitle: "Backend Engineer",
+    applicantName,
+    actorName: "Grace Hopper",
+    createdAt: "2026-11-02T00:00:00Z",
+    isRead,
+  });
+
+  const rowFor = (applicantName) =>
+    screen.getByText(new RegExp(applicantName)).closest("[data-read]");
+
+  const listWith = (unreadCount, notifications) =>
+    api.listNotifications.mockResolvedValue({
+      data: { unreadCount, notifications },
+    });
+
+  /** A promise with its resolve handed back, to hold a request in flight. */
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+
+  const openBell = async (user) =>
+    user.click(screen.getByRole("button", { name: "Notifications" }));
+
+  it("marks nothing read just by opening the panel", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+
+    await openBell(user);
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(2));
+
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    expect(api.markAllNotificationsRead).not.toHaveBeenCalled();
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("marks only the clicked row read, greys it and lowers the badge", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 1 } });
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByText(/Alan Turing/));
+
+    expect(api.markNotificationsRead).toHaveBeenCalledWith([12]);
+    expect(api.markNotificationsRead).toHaveBeenCalledTimes(1);
+    expect(rowFor("Alan Turing")).toHaveAttribute("data-read", "true");
+    expect(
+      rowFor("Alan Turing").querySelector('[aria-label="Unread"]'),
+    ).toBeNull();
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+  });
+
+  it("does nothing when a read row is clicked", async () => {
+    const user = userEvent.setup();
+    listWith(0, [mentionRow(3, "Edsger Dijkstra", true)]);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await openBell(user);
+
+    await user.click(screen.getByText(/Edsger Dijkstra/));
+
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    expect(rowFor("Edsger Dijkstra")).toHaveAttribute("data-read", "true");
+  });
+
+  it("dismisses on the X without marking the row read", async () => {
+    const user = userEvent.setup();
+    listWith(1, [mentionRow(7, "Ada Lovelace", false)]);
+    api.dismissNotification.mockResolvedValue({ data: { unreadCount: 0 } });
+    renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss notification" }),
+    );
+
+    expect(api.dismissNotification).toHaveBeenCalledWith(7);
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+  });
+
+  it("greys every row and clears the badge on Mark all as read", async () => {
+    const user = userEvent.setup();
+    listWith(28, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+      mentionRow(3, "Edsger Dijkstra", true),
+    ]);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("28")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByRole("button", { name: "Mark all as read" }));
+
+    expect(api.markAllNotificationsRead).toHaveBeenCalledTimes(1);
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    for (const name of ["Ada Lovelace", "Alan Turing", "Edsger Dijkstra"]) {
+      expect(rowFor(name)).toHaveAttribute("data-read", "true");
+    }
+    await waitFor(() =>
+      expect(screen.queryByText("28")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
+
+  it("disables Mark all as read when nothing is unread", async () => {
+    const user = userEvent.setup();
+    listWith(0, [mentionRow(3, "Edsger Dijkstra", true)]);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await openBell(user);
+
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
+
+  it("puts the row and the badge back and says so when marking fails", async () => {
+    const user = userEvent.setup();
+    listWith(1, [mentionRow(7, "Ada Lovelace", false)]);
+    api.markNotificationsRead.mockRejectedValue(new Error("Network down"));
+    renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByText(/Ada Lovelace/));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Network down"),
+    );
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("puts every row back when Mark all as read fails", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(3, "Edsger Dijkstra", true),
+    ]);
+    api.markAllNotificationsRead.mockRejectedValue(new Error("Timed out"));
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByRole("button", { name: "Mark all as read" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Timed out"));
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(rowFor("Edsger Dijkstra")).toHaveAttribute("data-read", "true");
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("keeps the new count when a refetch from before the mark lands after it", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    const mark = deferred();
+    api.markNotificationsRead.mockReturnValue(mark.promise);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+    await user.click(screen.getByText(/Ada Lovelace/));
+
+    // A refetch starts while the mark is in flight and is answered with the
+    // state from before the mark committed, but only after the mark returns.
+    const staleRefetch = deferred();
+    api.listNotifications.mockReturnValue(staleRefetch.promise);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await act(async () => mark.resolve({ data: { unreadCount: 1 } }));
+    await act(async () =>
+      staleRefetch.resolve({
+        data: {
+          unreadCount: 2,
+          notifications: [
+            mentionRow(7, "Ada Lovelace", false),
+            mentionRow(12, "Alan Turing", false),
+          ],
+        },
+      }),
+    );
+
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "true");
+  });
+
+  it("joins a fetch already running instead of starting another", async () => {
+    const user = userEvent.setup();
+    const firstLoad = deferred();
+    api.listNotifications.mockReturnValue(firstLoad.promise);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+
+    await openBell(user);
+    await act(async () =>
+      firstLoad.resolve({
+        data: {
+          unreadCount: 1,
+          notifications: [mentionRow(21, "Ada Lovelace", false)],
+        },
+      }),
+    );
+
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(api.listNotifications).toHaveBeenCalledTimes(1);
   });
 
   it("shows an inline error when the initial load fails", async () => {
@@ -420,129 +676,119 @@ describe("NotificationBell", () => {
   });
 
   // -- posting reviews ----------------------------------------------------
+  //
+  // The backend words these from the same phrases as their email and sends
+  // the line as `summary`; its tests pin the wording per kind and decision.
+  // The bell shows it as given.
 
   it.each([
-    ["approved", 'Rae Kim approved "Backend Engineer"'],
-    ["rejected", 'Rae Kim rejected "Backend Engineer"'],
-    ["withdrawn", 'Rae Kim withdrew the review of "Backend Engineer"'],
-  ])("says a posting review was %s", async (decision, text) => {
+    [
+      "recruiting.review_opened",
+      'Rae Kim submitted the posting "Backend Engineer" for your review',
+    ],
+    [
+      "recruiting.review_reassigned",
+      'Mia Chen moved the request to close "Product Designer" to you',
+    ],
+    ["recruiting.review_decided", 'Ann Wu rejected reopening "QA Lead"'],
+  ])("shows the line the backend sent for %s", async (eventType, summary) => {
     await openWith({
-      id: 11,
-      eventType: "recruiting.review_decided",
+      id: 12,
+      eventType,
+      jobTitle: "Something else",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Not this name",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { kind: "initial", reviewId: 31, decision: "approved" },
+      summary,
+    });
+
+    expect(screen.getByText(summary)).toBeInTheDocument();
+  });
+
+  it("falls back to a generic line when a review comes without its summary", async () => {
+    await openWith({
+      id: 12,
+      eventType: "recruiting.review_opened",
       jobTitle: "Backend Engineer",
       applicantName: "",
       subjectName: "",
       actorName: "Rae Kim",
       createdAt: "2026-10-07T00:00:00Z",
-      details: { kind: "initial", reviewId: 31, decision },
+      details: { kind: "initial", reviewId: 31 },
     });
 
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
   });
 
-  // Each kind has its own actor and title, so a line that read another kind's
-  // phrase or the wrong field would not match.
-  const reviewRow = (eventType, details, actorName, jobTitle) => ({
-    id: 12,
-    eventType,
-    jobTitle,
-    applicantName: "",
-    subjectName: "",
-    actorName,
-    createdAt: "2026-10-07T00:00:00Z",
-    details: { reviewId: 31, ...details },
+  // -- never a blank row --------------------------------------------------
+
+  it("shows a generic line for an event type it has no case for", async () => {
+    await openWith({
+      id: 13,
+      eventType: "recruiting.something_new",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {},
+    });
+
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
   });
 
-  it.each([
-    [
-      "initial",
-      "Rae Kim",
-      "Backend Engineer",
-      'Rae Kim submitted "Backend Engineer" for your review',
-    ],
-    [
-      "revision",
-      "Tom Lee",
-      "Data Analyst",
-      'Tom Lee submitted changes to "Data Analyst" for your review',
-    ],
-    [
-      "close",
-      "Mia Chen",
-      "Product Designer",
-      'Mia Chen asked to close "Product Designer"',
-    ],
-    ["reopen", "Ann Wu", "QA Lead", 'Ann Wu asked to reopen "QA Lead"'],
-  ])(
-    "tells the reviewer a %s review was opened",
-    async (kind, actor, title, text) => {
-      await openWith(
-        reviewRow("recruiting.review_opened", { kind }, actor, title),
-      );
+  it("shows a generic line for a decision a case does not know", async () => {
+    await openWith({
+      id: 14,
+      eventType: "mentorship.approval_decided",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { decision: "superseded", action: "exempt_matching" },
+    });
 
-      expect(screen.getByText(text)).toBeInTheDocument();
-    },
-  );
-
-  it.each([
-    ["revision", "approved", 'Tom Lee approved your changes to "Data Analyst"'],
-    ["revision", "rejected", 'Tom Lee rejected your changes to "Data Analyst"'],
-    ["revision", "withdrawn", 'Tom Lee withdrew the changes to "Data Analyst"'],
-    ["close", "approved", 'Mia Chen approved closing "Product Designer"'],
-    ["close", "rejected", 'Mia Chen rejected closing "Product Designer"'],
-    [
-      "close",
-      "withdrawn",
-      'Mia Chen withdrew the request to close "Product Designer"',
-    ],
-    ["reopen", "approved", 'Ann Wu approved reopening "QA Lead"'],
-    ["reopen", "rejected", 'Ann Wu rejected reopening "QA Lead"'],
-    ["reopen", "withdrawn", 'Ann Wu withdrew the request to reopen "QA Lead"'],
-  ])("says a %s review was %s", async (kind, decision, text) => {
-    const [actor, title] = {
-      revision: ["Tom Lee", "Data Analyst"],
-      close: ["Mia Chen", "Product Designer"],
-      reopen: ["Ann Wu", "QA Lead"],
-    }[kind];
-    await openWith(
-      reviewRow("recruiting.review_decided", { kind, decision }, actor, title),
-    );
-
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
   });
 
-  it.each([
-    ["a missing", {}],
-    ["an unknown", { kind: "archive" }],
-    ["a prototype-named", { kind: "toString" }],
-  ])("reads %s review kind as a first publication", async (_, details) => {
-    await openWith(
-      reviewRow(
-        "recruiting.review_opened",
-        details,
-        "Rae Kim",
-        "Backend Engineer",
-      ),
-    );
+  // Every event the backend can send to the bell, from the list its own test
+  // checks against the recipient registry. A type with no case here falls to
+  // the generic line, which is what this catches. Only the review types get a
+  // summary, as from the backend; every other type must word itself.
+  const REVIEW_TYPES = new Set([
+    "recruiting.review_opened",
+    "recruiting.review_reassigned",
+    "recruiting.review_decided",
+  ]);
 
-    expect(
-      screen.getByText('Rae Kim submitted "Backend Engineer" for your review'),
-    ).toBeInTheDocument();
-  });
+  it.each(BELL_EVENT_TYPES)("words %s itself", async (eventType) => {
+    await openWith({
+      id: 15,
+      eventType,
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "Alan Turing",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {
+        decision: "approved",
+        kind: "initial",
+        reviewId: 31,
+        roundName: "Spring 2026",
+        leaveType: "paid",
+        startDate: "2026-11-03",
+        endDate: "2026-11-05",
+      },
+      ...(REVIEW_TYPES.has(eventType) && {
+        summary:
+          'Grace Hopper submitted the posting "Backend Engineer" for your review',
+      }),
+    });
 
-  it("reads a decision without a kind as a first publication", async () => {
-    await openWith(
-      reviewRow(
-        "recruiting.review_decided",
-        { decision: "approved" },
-        "Rae Kim",
-        "Backend Engineer",
-      ),
-    );
-
-    expect(
-      screen.getByText('Rae Kim approved "Backend Engineer"'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(FALLBACK)).not.toBeInTheDocument();
   });
 
   // -- mentorship approvals ----------------------------------------------

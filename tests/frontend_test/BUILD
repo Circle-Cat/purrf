@@ -37,6 +37,7 @@ _SHARD_COUNT = 10
             "//frontend:all_srcs",
             "//tests/shared:application_lock_reasons_vector_js",
             "//tests/shared:application_stages_vector_js",
+            "//tests/shared:bell_event_types_vector_js",
             "//tests/shared:form_visibility_vectors_js",
             "//tests/shared:job_statuses_vector_js",
         ],
