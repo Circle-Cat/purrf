@@ -17,6 +17,7 @@ import {
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
 import { toast } from "sonner";
+import { userDisplayName } from "@/utils/userName";
 
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
 
@@ -346,11 +347,12 @@ export default function MentorshipFeedbackDialog({
           {partners.flatMap((partner) => {
             const entry = partnerFeedback[partner.id] || {};
             const ratingError = errors[`partnerRating-${partner.id}`];
+            const partnerName = userDisplayName(partner);
             return [
               <div key={`${partner.id}-rating`} className="space-y-3">
                 <Label className="text-sm font-semibold">
                   How was your overall experience working with your{" "}
-                  {partnerRoleLabel} {partner.preferredName}?{" "}
+                  {partnerRoleLabel} {partnerName}?{" "}
                   <span className="text-destructive">*</span>
                 </Label>
                 <RadioGroup
@@ -387,14 +389,14 @@ export default function MentorshipFeedbackDialog({
               <div key={`${partner.id}-feedback`} className="space-y-3">
                 <Label className="text-sm font-semibold">
                   What feedback would you like to share about your{" "}
-                  {partnerRoleLabel} {partner.preferredName}?
+                  {partnerRoleLabel} {partnerName}?
                 </Label>
                 <TextArea
                   value={entry.feedback || ""}
                   onChange={(val) =>
                     updatePartnerField(partner.id, "feedback", val)
                   }
-                  placeholder={`Share feedback about ${partner.preferredName}...`}
+                  placeholder={`Share feedback about ${partnerName}...`}
                   maxLength={300}
                   disabled={!isEditable}
                 />

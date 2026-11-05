@@ -1,0 +1,19 @@
+from typing import Literal
+from backend.dto.base_dto import BaseDto
+from backend.common.mentorship_enums import MeetingNoteTag
+
+
+class AdminMeetingDto(BaseDto):
+    meeting_id: str
+    start_datetime: str
+    end_datetime: str
+    is_completed: bool
+    note: list[MeetingNoteTag]
+    create_datetime: str
+
+
+class AdminMeetingLogDto(BaseDto):
+    round_version: Literal["v1", "v2"]
+    meetings: list[AdminMeetingDto]
+    # Only a round in progress can have its meetings edited.
+    round_in_progress: bool

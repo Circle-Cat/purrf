@@ -74,6 +74,10 @@ output "chat_google_events_topic_id" {
   value = google_pubsub_topic.topics["chat-google-events"].name
 }
 
+output "resume_bucket_name" {
+  value = google_storage_bucket.resumes.name
+}
+
 output "microsoft_chat_notification_url" {
   value = "https://${local.domains.cf}/${local.name_prefix}-microsoft-chat"
 }
@@ -93,11 +97,28 @@ output "auth0_management_domain" {
   value = data.auth0_tenant.current.domain
 }
 
-output "auth0_link_action_m2m_client_id" {
-  value = auth0_client.link_action_m2m.client_id
+output "auth0_backend_management_m2m_client_id" {
+  value = auth0_client.backend_management_m2m.client_id
 }
 
-output "auth0_link_action_m2m_client_secret" {
-  value     = auth0_client_credentials.link_action_m2m.client_secret
+output "auth0_backend_management_m2m_client_secret" {
+  value     = auth0_client_credentials.backend_management_m2m.client_secret
   sensitive = true
+}
+
+# Numeric unique_id of the notification push service account, for the gateway
+# Worker's ALLOWED_SUBS. The Worker's secrets live in the global bootstrap
+# configuration, which is a separate state and cannot read this one, so the
+# value is carried across by hand -- apply this module first.
+output "notification_pusher_sub" {
+  value = google_service_account.notification_pusher.unique_id
+}
+
+# Numeric unique_id of the matcher job's service account, for the same Worker
+# allow-list. The job signs its own completion callback, so its sub has to be
+# there beside the pusher's -- ALLOWED_SUBS is a comma-separated list and the
+# Worker rejects anything absent from it. Empty where no matcher is
+# provisioned, so the manual step has nothing to add.
+output "matcher_job_sub" {
+  value = var.enable_matcher ? google_service_account.matcher_job[0].unique_id : ""
 }

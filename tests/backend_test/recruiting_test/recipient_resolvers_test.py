@@ -1,0 +1,805 @@
+import unittest
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
+
+from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobReviewKind,
+    JobStatus,
+    RecruitingEvent,
+)
+from backend.entity.application_assignment_entity import (
+    ApplicationAssignmentEntity,
+)
+from backend.entity.application_comment_entity import ApplicationCommentEntity
+from backend.entity.application_comment_mention_entity import (
+    ApplicationCommentMentionEntity,
+)
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.email_message_entity import EmailMessageEntity
+from backend.entity.email_thread_entity import EmailThreadEntity
+from backend.entity.event_entity import EventEntity
+from backend.entity.job_entity import JobEntity
+from backend.entity.approval_request_entity import ApprovalRequestEntity
+from backend.entity.users_entity import UsersEntity
+from backend.notification_management import recipient_registry
+from backend.notification_management.event_recorder import record_event
+from backend.notification_management.recipient_registry import resolve_recipients
+from backend.recruiting import recipient_resolvers  # noqa: F401  (registers)
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
+from tests.backend_test.repository_test.base_repository_test_lib import (
+    BaseRepositoryTestLib,
+)
+
+
+def _make_user(is_active: bool = True, is_blocked: bool = False) -> UsersEntity:
+    """Build a minimal, unsaved user row satisfying every NOT NULL column.
+
+    Args:
+        is_active (bool): Whether the user is still with the org. Offboarded
+            users must not be resolved as recipients.
+        is_blocked (bool): Whether the user is locked out of Purrf. Blocking
+            deliberately leaves is_active alone, so the two are separate.
+
+    Returns:
+        UsersEntity: The unsaved user.
+    """
+    return UsersEntity(
+        first_name="U",
+        last_name="Ser",
+        timezone="America/Los_Angeles",
+        timezone_updated_at=datetime.now(timezone.utc),
+        communication_channel=CommunicationMethod.EMAIL,
+        is_active=is_active,
+        is_blocked=is_blocked,
+        updated_timestamp=datetime.now(timezone.utc),
+    )
+
+
+def _event(
+    event_type: str,
+    subject_type: str,
+    subject_id: int,
+    details: dict | None = None,
+) -> EventEntity:
+    """Build an unsaved event for feeding straight into ``resolve_recipients``.
+
+    Args:
+        event_type (str): Domain-prefixed type, e.g. ``"recruiting.reassigned"``.
+        subject_type (str): What the event is about, e.g. ``"application"``.
+        subject_id (int): Primary key of that subject.
+        details (dict | None): Extra payload for rendering. Defaults to ``{}``.
+
+    Returns:
+        EventEntity: An event with actor_id=0 and no details, unsaved.
+    """
+    return EventEntity(
+        subject_type=subject_type,
+        subject_id=subject_id,
+        actor_id=0,
+        event_type=event_type,
+        details=details or {},
+    )
+
+
+class RecipientResolversTest(BaseRepositoryTestLib):
+    """DB-backed tests for the recruiting event_type -> recipients wiring.
+
+    Subclasses ``BaseRepositoryTestLib``, like every other DB-backed test in
+    this codebase, so each test runs in its own rolled-back transaction and
+    the shared CI database never accumulates rows.
+    """
+
+    async def _make_job(self, owner_ids: list[int]) -> JobEntity:
+        """Create and insert a job whose pipeline_config carries the given owners.
+
+        Args:
+            owner_ids (list[int]): Owner user ids to store under ``ownerIds``.
+
+        Returns:
+            JobEntity: The inserted job, with ``job_id`` populated.
+        """
+        job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="T",
+            status=JobStatus.PUBLISHED,
+            pipeline_config={"ownerIds": owner_ids},
+        )
+        await self.insert_entities([job])
+        return job
+
+    async def _make_application(
+        self, job_id: int, candidate: UsersEntity
+    ) -> ApplicationEntity:
+        """Create and insert an application for ``candidate`` against ``job_id``.
+
+        Args:
+            job_id (int): The job being applied to.
+            candidate (UsersEntity): The applicant. Never a recipient.
+
+        Returns:
+            ApplicationEntity: The inserted application, with
+                ``application_id`` populated.
+        """
+        application = ApplicationEntity(
+            job_id=job_id,
+            user_id=candidate.user_id,
+            stage=ApplicationStage.APPLIED,
+        )
+        await self.insert_entities([application])
+        return application
+
+    async def _make_assignment(
+        self,
+        application_id: int,
+        assignee: UsersEntity,
+        assigned_by: UsersEntity,
+        stage: ApplicationStage = ApplicationStage.APPLIED,
+        round: int = 1,
+    ) -> ApplicationAssignmentEntity:
+        """Create and insert an assignment row for one stage and round.
+
+        Args:
+            application_id (int): The application being assigned.
+            assignee (UsersEntity): Who is responsible for that stage/round.
+            assigned_by (UsersEntity): Who made the assignment.
+            stage (ApplicationStage): Stage the assignment covers.
+            round (int): Round within that stage.
+
+        Returns:
+            ApplicationAssignmentEntity: The inserted assignment row.
+        """
+        assignment = ApplicationAssignmentEntity(
+            application_id=application_id,
+            stage=stage,
+            round=round,
+            assignee_id=assignee.user_id,
+            assigned_by=assigned_by.user_id,
+        )
+        await self.insert_entities([assignment])
+        return assignment
+
+    async def _make_review(
+        self,
+        job_id: int,
+        submitted_by: UsersEntity,
+        reviewer: UsersEntity,
+    ) -> ApprovalRequestEntity:
+        """Create and insert a pending initial review of a job: a
+        ``job_review`` approval request.
+
+        Args:
+            job_id (int): The job under review.
+            submitted_by (UsersEntity): Who sent it up and waits on the verdict.
+            reviewer (UsersEntity): Who can decide it.
+
+        Returns:
+            ApprovalRequestEntity: The inserted request, with ``request_id``
+                populated.
+        """
+        review = ApprovalRequestEntity(
+            action="job_review",
+            target_type="job",
+            target_id=str(job_id),
+            payload={"kind": JobReviewKind.INITIAL.value},
+            raised_by=submitted_by.user_id,
+            reviewer_id=reviewer.user_id,
+        )
+        await self.insert_entities([review])
+        return review
+
+    async def _make_comment_mentioning(
+        self, application_id: int, author: UsersEntity, mentioned: list[UsersEntity]
+    ) -> ApplicationCommentEntity:
+        """Create and insert a comment plus one mention row per mentioned user.
+
+        Args:
+            application_id (int): The application commented on.
+            author (UsersEntity): Who wrote the comment.
+            mentioned (list[UsersEntity]): Who the comment names.
+
+        Returns:
+            ApplicationCommentEntity: The inserted comment, with ``comment_id``
+                populated.
+        """
+        comment = ApplicationCommentEntity(
+            application_id=application_id,
+            author_id=author.user_id,
+            body="see this",
+        )
+        await self.insert_entities([comment])
+        await self.insert_entities([
+            ApplicationCommentMentionEntity(
+                comment_id=comment.comment_id, mentioned_user_id=user.user_id
+            )
+            for user in mentioned
+        ])
+        return comment
+
+    async def test_application_submitted_goes_to_the_job_owners(self):
+        owner_a, owner_b, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner_a, owner_b, candidate])
+        job = await self._make_job([owner_a.user_id, owner_b.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        event = _event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {owner_a.user_id, owner_b.user_id},
+        )
+
+    async def test_reassigned_reaches_the_assignee_written_moments_ago(self):
+        """Guards the ordering rule: record_event must run after the business write."""
+        owner, candidate, assignee = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, candidate, assignee])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, assignee, owner)
+        event = _event(
+            "recruiting.reassigned", "application", application.application_id
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {owner.user_id, assignee.user_id},
+        )
+
+    async def test_the_candidate_is_never_a_recipient(self):
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        event = _event(
+            "recruiting.stage_changed", "application", application.application_id
+        )
+
+        self.assertNotIn(
+            candidate.user_id, await resolve_recipients(self.session, event)
+        )
+
+    async def test_legacy_scalar_owner_id_is_still_resolved(self):
+        """Guards the legacy ``pipeline_config`` shape.
+
+        Configs saved before multi-owner store a scalar ``ownerId`` instead
+        of an ``ownerIds`` list. ``normalized_owner_ids`` is the only thing
+        standing between this and a silent empty recipient set for every job
+        created before that migration.
+        """
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="T",
+            status=JobStatus.PUBLISHED,
+            pipeline_config={"ownerId": owner.user_id},
+        )
+        await self.insert_entities([job])
+        application = await self._make_application(job.job_id, candidate)
+        event = _event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
+
+    async def test_only_the_current_stage_and_round_assignee_is_reached(self):
+        """Assignment rows accumulate; interviewers from finished rounds are done.
+
+        Reassignment overwrites only within one (application, stage, round),
+        so an unscoped read keeps every earlier screener as a recipient for
+        the rest of the application's life.
+        """
+        owner, candidate = _make_user(), _make_user()
+        past, current = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate, past, current])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, past, owner, round=1)
+        await self._make_assignment(application.application_id, current, owner, round=3)
+        application.current_round = 3
+        await self.session.flush()
+        event = _event(
+            "recruiting.interview_cancelled", "application", application.application_id
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {owner.user_id, current.user_id},
+        )
+
+    async def test_an_offboarded_assignee_is_not_reached(self):
+        """A left assignee whose row is still there must stop accruing notifications."""
+        owner, candidate = _make_user(), _make_user()
+        gone = _make_user(is_active=False)
+        await self.insert_entities([owner, candidate, gone])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, gone, owner)
+        event = _event(
+            "recruiting.reassigned", "application", application.application_id
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
+
+    async def test_a_blocked_assignee_is_not_reached(self):
+        """Someone locked out of Purrf must stop receiving mail about it.
+
+        Blocking leaves is_active True on purpose, so filtering on activity
+        alone keeps mailing an assignee who cannot open the application the
+        mail is about.
+        """
+        owner, candidate = _make_user(), _make_user()
+        blocked = _make_user(is_blocked=True)
+        await self.insert_entities([owner, candidate, blocked])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, blocked, owner)
+        event = _event(
+            "recruiting.reassigned", "application", application.application_id
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
+
+    async def test_auto_assigned_reaches_only_the_assignee(self):
+        """Owners hear about a submission once, from application_submitted."""
+        owner, candidate, assignee = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, candidate, assignee])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, assignee, owner)
+        event = _event(
+            "recruiting.auto_assigned", "application", application.application_id
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {assignee.user_id}
+        )
+
+    async def test_review_opened_reaches_the_reviewer_on_the_review(self):
+        """The review row is the truth; the event carries only its id."""
+        submitter, reviewer = _make_user(), _make_user()
+        await self.insert_entities([submitter, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_opened",
+            "job",
+            job.job_id,
+            details={"reviewId": review.request_id},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
+        )
+
+    async def test_review_reassigned_reaches_the_new_reviewer_only(self):
+        """Read off the row, which the service overwrote before recording.
+
+        The previous reviewer is deliberately left out: reassignment exists
+        for the case where they can no longer sign in, and even when it does
+        not, this is the submitter redirecting their own question rather than
+        anybody being relieved of a duty.
+        """
+        submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([submitter, previous, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_reassigned",
+            "job",
+            job.job_id,
+            details={
+                "reviewId": review.request_id,
+                "previousReviewerId": previous.user_id,
+            },
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
+        )
+
+    async def test_review_reassigned_sees_the_reviewer_write_in_the_same_session(
+        self,
+    ):
+        """The whole point of the action must not be undone by a stale read.
+
+        The approval service moves the review with the repository's UPDATE
+        while the row is already loaded in the session, then records the
+        event in the same transaction. Were the loaded row left stale, the
+        resolver would read the previous reviewer and mail the handover
+        notice to the very account the reassignment exists to route around --
+        silently, since a notification addressed to somebody is never
+        obviously the wrong somebody.
+
+        Written against the real repository and ``record_event`` rather than
+        the resolver alone, because the ordering is the thing under test.
+        """
+        submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([submitter, previous, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, previous)
+
+        # Exactly what the service does: the row is loaded, then moved.
+        repository = ApprovalRequestRepository()
+        await repository.get(self.session, review.request_id, for_update=True)
+        moved = await repository.set_reviewer(
+            self.session, review.request_id, reviewer.user_id
+        )
+        self.assertTrue(moved)
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=submitter.user_id,
+            event_type=RecruitingEvent.REVIEW_REASSIGNED,
+            details={
+                "reviewId": review.request_id,
+                "previousReviewerId": previous.user_id,
+            },
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {reviewer.user_id})
+
+    async def test_review_decided_reaches_the_submitter_not_the_owners(self):
+        """Submitting is gated on permission, not ownership.
+
+        The owner set here deliberately excludes the submitter, so a resolver
+        reading ``pipeline_config`` would reach the wrong people.
+        """
+        owner, submitter, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, submitter, reviewer])
+        job = await self._make_job([owner.user_id])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            details={"reviewId": review.request_id, "decision": "rejected"},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {submitter.user_id}
+        )
+
+    async def test_review_decided_by_withdrawal_reaches_the_reviewer(self):
+        """The submitter took it back themselves; the news is for the person
+        it was waiting on."""
+        submitter, reviewer = _make_user(), _make_user()
+        await self.insert_entities([submitter, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            details={"reviewId": review.request_id, "decision": "withdrawn"},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
+        )
+
+    async def test_mentioned_reaches_the_users_named_in_the_comment(self):
+        """Mentions are rows written in the same transaction, not a JSONB list."""
+        owner, candidate = _make_user(), _make_user()
+        named_a, named_b = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate, named_a, named_b])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        comment = await self._make_comment_mentioning(
+            application.application_id, owner, [named_a, named_b]
+        )
+        event = _event(
+            "recruiting.mentioned",
+            "application",
+            application.application_id,
+            details={"commentId": comment.comment_id},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {named_a.user_id, named_b.user_id},
+        )
+
+    async def _make_thread(
+        self, application: ApplicationEntity, senders: list[UsersEntity | None]
+    ) -> EmailThreadEntity:
+        """Create a thread on ``application`` with one outbound message per sender.
+
+        Args:
+            application (ApplicationEntity): The application the thread is about.
+            senders (list[UsersEntity | None]): Who sent each outbound message
+                through Purrf; None for one sent from the Gmail web UI.
+
+        Returns:
+            EmailThreadEntity: The inserted thread, with ``thread_id`` populated.
+        """
+        thread = EmailThreadEntity(
+            user_id=application.user_id,
+            gmail_thread_id=f"t-{application.application_id}-{len(senders)}",
+            context_type=ContextType.APPLICATION,
+            context_id=application.application_id,
+        )
+        await self.insert_entities([thread])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"{thread.gmail_thread_id}-m{index}",
+                direction=EmailDirection.OUTBOUND,
+                sent_by_user_id=None if sender is None else sender.user_id,
+            )
+            for index, sender in enumerate(senders)
+        ])
+        return thread
+
+    async def test_email_received_reaches_who_sent_into_the_thread(self):
+        """Not the owners: the one waiting on the reply is whoever wrote."""
+        owner, sender, other_sender, candidate = (
+            _make_user(),
+            _make_user(),
+            _make_user(),
+            _make_user(),
+        )
+        await self.insert_entities([owner, sender, other_sender, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(
+            application, [sender, other_sender, sender, None]
+        )
+        # A second thread on the same application: its sender is not told.
+        await self._make_thread(application, [owner])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=candidate.user_id,
+            event_type=RecruitingEvent.EMAIL_RECEIVED,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(
+            {n.user_id for n in notifications},
+            {sender.user_id, other_sender.user_id},
+        )
+
+    async def test_email_received_on_a_thread_nobody_sent_through_purrf(self):
+        """Every message sent from the Gmail web UI: the job's owners are told."""
+        owner, other_owner, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, other_owner, candidate])
+        job = await self._make_job([owner.user_id, other_owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {owner.user_id, other_owner.user_id},
+        )
+
+    async def test_email_received_on_an_inbox_thread_nobody_replied_to(self):
+        """An inquiry assigned to an application before anyone wrote: the owners."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"{thread.gmail_thread_id}-in",
+                direction=EmailDirection.INBOUND,
+                from_address="candidate@ext.com",
+            )
+        ])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=candidate.user_id,
+            event_type=RecruitingEvent.EMAIL_RECEIVED,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {owner.user_id})
+
+    async def test_email_received_with_no_sender_and_no_owner_reaches_nobody(self):
+        candidate = _make_user()
+        await self.insert_entities([candidate])
+        job = await self._make_job([])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_received_with_no_sender_on_an_unknown_application(self):
+        candidate = _make_user()
+        await self.insert_entities([candidate])
+        job = await self._make_job([])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            987654321,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_bounced_with_no_sender_still_reaches_nobody(self):
+        """Only a received reply falls back to the owners; a bounce does not."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_BOUNCED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id, "failedRecipients": ["bad@x"]},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_bounced_reaches_who_sent_into_the_thread(self):
+        """The bounce is about their message, so they are the one told."""
+        owner, sender, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, sender, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [sender, None])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=None,
+            event_type=RecruitingEvent.EMAIL_BOUNCED,
+            details={"threadId": thread.thread_id, "failedRecipients": ["bad@x"]},
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {sender.user_id})
+
+    async def test_email_received_without_a_thread_id_is_an_error(self):
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED, "application", application.application_id
+        )
+
+        with self.assertRaises(ValueError):
+            await resolve_recipients(self.session, event)
+
+    async def test_a_pointer_the_write_site_did_not_carry_is_an_error(self):
+        """Failing open here is how @-mentions would silently reach nobody."""
+        job = await self._make_job([])
+        event = _event("recruiting.review_opened", "job", job.job_id)
+
+        with self.assertRaises(ValueError):
+            await resolve_recipients(self.session, event)
+
+    async def test_a_pointer_naming_no_row_is_an_error(self):
+        job = await self._make_job([])
+        event = _event(
+            "recruiting.review_opened", "job", job.job_id, details={"reviewId": 987654}
+        )
+
+        with self.assertRaises(ValueError):
+            await resolve_recipients(self.session, event)
+
+    async def test_a_subject_of_the_wrong_kind_is_an_error(self):
+        """A job id read as an application id resolves an unrelated posting's owners."""
+        owner = _make_user()
+        await self.insert_entities([owner])
+        job = await self._make_job([owner.user_id])
+        event = _event("recruiting.application_submitted", "job", job.job_id)
+
+        with self.assertRaises(ValueError):
+            await resolve_recipients(self.session, event)
+
+
+class RegistrationCoverageTest(unittest.TestCase):
+    """Guards the wiring itself, not resolver behavior.
+
+    The behavior tests above cover each resolver shape once; repeating them
+    per event type adds nothing. What actually goes wrong is registration: an
+    event type left unregistered, or one registered under a typo'd string that
+    then never fires. This compares ``_RESOLVERS`` against ``RecruitingEvent``
+    -- the catalogue itself, not a copy of it, so the two cannot drift apart.
+    """
+
+    SILENT = {
+        RecruitingEvent.EMAIL_SENT,
+        RecruitingEvent.JOB_CREATED,
+        RecruitingEvent.PENDING_EDIT_DISCARDED,
+    }
+
+    def test_every_event_type_outside_the_silent_set_has_a_resolver(self):
+        registered = set(recipient_registry._RESOLVERS)
+        expected = set(RecruitingEvent) - self.SILENT
+        self.assertEqual(expected - registered, set())
+
+    def test_silent_event_types_stay_unregistered(self):
+        """Timeline-only events notify nobody by having no resolver at all."""
+        registered = set(recipient_registry._RESOLVERS)
+        self.assertEqual(self.SILENT & registered, set())
+
+    def test_no_recruiting_resolver_is_registered_outside_the_catalogue(self):
+        """A typo'd event_type would register but never fire; catch it here."""
+        recruiting = {
+            key
+            for key in recipient_registry._RESOLVERS
+            if key.startswith("recruiting.")
+        }
+        self.assertEqual(recruiting - set(RecruitingEvent), set())
+
+    def test_every_resolver_declares_the_subject_it_reads(self):
+        """subject_id is an integer either way; only the declaration separates them."""
+        for event_type, (subject_type, _) in recipient_registry._RESOLVERS.items():
+            if not event_type.startswith("recruiting."):
+                continue
+            with self.subTest(event_type=event_type):
+                self.assertIn(subject_type, {"application", "job"})
+
+
+class SharedThreadRuleTest(unittest.IsolatedAsyncioTestCase):
+    """Both email resolvers ask the rule every domain shares."""
+
+    async def test_email_received_uses_the_shared_rule_with_the_owners_behind_it(self):
+        session = Mock()
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED, "application", 7, details={"threadId": 31}
+        )
+        with patch(
+            "backend.recruiting.recipient_resolvers.thread_senders_else",
+            new_callable=AsyncMock,
+            return_value={4},
+        ) as shared:
+            self.assertEqual(await resolve_recipients(session, event), {4})
+
+        self.assertEqual(shared.await_args.args[:2], (session, 31))
+
+    async def test_email_bounced_uses_the_shared_senders(self):
+        session = Mock()
+        event = _event(
+            RecruitingEvent.EMAIL_BOUNCED, "application", 7, details={"threadId": 31}
+        )
+        with patch(
+            "backend.recruiting.recipient_resolvers.thread_senders",
+            new_callable=AsyncMock,
+            return_value={5},
+        ) as shared:
+            self.assertEqual(await resolve_recipients(session, event), {5})
+
+        shared.assert_awaited_once_with(session, 31)
+
+
+if __name__ == "__main__":
+    unittest.main()

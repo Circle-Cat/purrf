@@ -1,6 +1,14 @@
 from datetime import datetime
-from sqlalchemy import Boolean, String, DateTime, func, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import (
+    Boolean,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    func,
+    text,
+    Enum as SAEnum,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import CommunicationMethod
@@ -29,19 +37,46 @@ class UsersEntity(Base):
 
     has_mentorship_mentor_experience: Mapped[bool | None] = mapped_column(Boolean)
 
-    primary_email: Mapped[str] = mapped_column(String, unique=True)
-
-    # text[] array
-    alternative_emails: Mapped[list[str] | None] = mapped_column(ARRAY(String))
-
     linkedin_link: Mapped[str | None] = mapped_column(String)
 
-    subject_identifier: Mapped[str] = mapped_column(
-        String,
-        unique=True,
+    is_active: Mapped[bool] = mapped_column(Boolean)
+
+    # Identity-layer super-admin flag: resolves to the full
+    # Permission set without expanding user_permissions rows.
+    is_super_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
 
-    is_active: Mapped[bool] = mapped_column(Boolean)
+    # Persisted internal-employee state (row-less identity model): set True by
+    # the corp-join lifecycle (absorb_internal_identity) and never cleared this
+    # pass. Sole source of truth for internal classification now that corp
+    # passwordless keeps no user_identities row.
+    is_internal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+
+    # Audit trail for is_blocked, written only by the blacklist action.
+    blocked_by: Mapped[int | None] = mapped_column(Integer)
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_reason: Mapped[str | None] = mapped_column(String)
+
+    # Deactivation trio, serving the same purpose as the block trio above --
+    # but deactivated_by carries a proper foreign key, which blocked_by never
+    # got. Nullable and not backfilled: every existing row is is_active=true
+    # because no code has ever written false. Reason is optional here and
+    # mandatory for blocking -- deactivation is not a finding of fault, so
+    # demanding a reason would imply one. See PUR-633.
+    # The FK has no ondelete clause, so it defaults to RESTRICT: hard-deleting
+    # a user who has ever deactivated someone would fail at the DB level,
+    # which was never true of blocked_by. There is no hard-delete path for
+    # users today and work addresses are never recycled, so this is latent.
+    deactivated_by: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"))
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivated_reason: Mapped[str | None] = mapped_column(String)
 
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()

@@ -1,0 +1,568 @@
+"""Turning one LMSCommit into a row."""
+
+import re
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+
+from backend.common.exceptions import ConflictError
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
+from backend.dto.training_course_dto import TrainingProgressSaveDto
+from backend.training.completion import next_training_status, reports_completion
+from backend.training.training_content_token import (
+    InvalidContentToken,
+    read_session_run,
+)
+
+# What a refused commit from an older tab carries in its 409, so the page can
+# tell it from a replaced package: the advice for the two is opposite -- this
+# tab should be closed, where the other should be reloaded.
+RUN_SUPERSEDED = "training_run_superseded"
+
+# SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
+# hour is already outside the format, and is treated the same as any other
+# unparseable value rather than guessed at.
+_TIMESPAN = re.compile(r"^(\d{2,4}):([0-5]\d):([0-5]\d)(\.\d{1,2})?$")
+
+_LESSON_STATUS = "cmi.core.lesson_status"
+_LESSON_LOCATION = "cmi.core.lesson_location"
+_SUSPEND_DATA = "cmi.suspend_data"
+_SESSION_TIME = "cmi.core.session_time"
+_TOTAL_TIME = "cmi.core.total_time"
+_SCORE_COLUMNS = {
+    "cmi.core.score.raw": "score_raw",
+    "cmi.core.score.min": "score_min",
+    "cmi.core.score.max": "score_max",
+}
+# Numeric(8, 2)'s largest storable magnitude.
+_SCORE_LIMIT = Decimal("999999.99")
+
+# The driver commits every 20 seconds whether or not anything changed, so an
+# idle tab would otherwise rewrite the same row -- and the same tens of
+# kilobytes of suspend_data -- forever. session_time_seconds is deliberately
+# not compared: it is wall clock since the course loaded, so it grows on every
+# commit and would make this never fire. An idle learner's time therefore lags
+# until they do something, or until the page marks a save final -- which it
+# does on unload, and which is written whether the content changed or not.
+_CONTENT_COLUMNS = (
+    "lesson_status",
+    "lesson_location",
+    "suspend_data",
+    "score_raw",
+    "score_min",
+    "score_max",
+)
+
+# The columns behind these are unbounded text on purpose, and the endpoint is
+# open to anyone holding the assignment, so without a cap one learner can grow
+# the database without limit. The limits are far above anything a real course
+# produces: the largest sample in this repo is about 1.3 KB, real packages that
+# ignore SCORM 1.2's 4096-character convention still land nowhere near 64 KB,
+# and a keepalive unload fetch cannot carry a body that big anyway. Passing one
+# is refused with an error the page can show, never truncated or dropped: a
+# write stored short, or discarded quietly, costs the learner their place with
+# no signal at all -- which is the reason the column has no length.
+_LENGTH_LIMITS = {
+    _SUSPEND_DATA: 65536,
+    _LESSON_LOCATION: 4096,
+    _LESSON_STATUS: 64,
+}
+
+
+def _reject_unstorable(cmi: dict) -> None:
+    """Refuse a commit carrying a value no real course would send.
+
+    Every CMI element in SCORM 1.2 is a string, and the columns behind these
+    three are text. A course sending a number, an object or null for one of
+    them is refused rather than coerced: storing str(value) would hand the
+    course back something it never wrote, and the JSON that reaches here is
+    written by whoever holds the assignment, not only by a real course.
+
+    Raises:
+        ValueError: A CMI element is not a string, or is longer than the cap.
+    """
+    for key, limit in _LENGTH_LIMITS.items():
+        if key not in cmi:
+            continue
+        value = cmi[key]
+        if not isinstance(value, str):
+            raise ValueError(f"{key} must be a string.")
+        if len(value) > limit:
+            raise ValueError(f"{key} is {len(value)} characters; the limit is {limit}.")
+
+
+def _content_unchanged(existing, columns: dict) -> bool:
+    """Whether this commit reports the same content the row already holds.
+
+    Only the keys actually present in ``columns`` are compared -- an absent
+    key means the course did not report that element this time, not that it
+    should read as blank.
+    """
+    if existing is None:
+        return False
+    return all(
+        getattr(existing, name) == value
+        for name, value in columns.items()
+        if name in _CONTENT_COLUMNS
+    )
+
+
+def _timespan_seconds(value) -> int | None:
+    """Seconds in a SCORM 1.2 CMITimespan, or None if it is not one.
+
+    A course that reports its session time in a shape we cannot read must not
+    cost the learner the rest of the commit -- and for a value that replaces
+    rather than accumulates, None has to stay distinguishable from an actual
+    zero so the caller can leave the stored value alone. A value that is not
+    a string at all is one more shape we cannot read, not a crash.
+    """
+    if not isinstance(value, str):
+        return None
+    match = _TIMESPAN.match(value.strip())
+    if not match:
+        return None
+    hours, minutes, seconds = (int(match.group(i)) for i in (1, 2, 3))
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _score_decimal(value) -> Decimal | None:
+    """A CMI score string as a Decimal, or None if it cannot be stored.
+
+    Covers three ways a score can be unstorable: it does not parse, it is
+    not finite (``NaN`` / ``Infinity`` both parse as a Decimal), or it
+    overflows the column's Numeric(8, 2) precision. All three are dropped
+    the same way an unparseable score already was, so one bad field does not
+    cost the learner the rest of the commit. A score outside SCORM's 0-100
+    is not clamped into range -- if the column can hold it, it is stored as
+    reported, since silently coercing it would hide a broken course rather
+    than surface one.
+    """
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if not parsed.is_finite() or abs(parsed) > _SCORE_LIMIT:
+        return None
+    return parsed
+
+
+class TrainingProgressService:
+    """Stores what a course reports, and stamps the course verified on completion."""
+
+    def __init__(
+        self,
+        logger,
+        signing_key,
+        training_repository,
+        training_progress_repository,
+        training_course_package_repository,
+    ):
+        """
+        Args:
+            logger: Injected logger.
+            signing_key (str | None): TRAINING_TOKEN_SIGNING_KEY. Reads the
+                package out of the session token a commit names itself with;
+                nothing here issues one.
+            training_repository (TrainingRepository): The assignment being saved.
+            training_progress_repository (TrainingProgressRepository): The row.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Reads the package a commit's own run was opened against --
+                which is what decides whether the commit is stored at all,
+                and what a first completion stamps.
+        """
+        self.logger = logger
+        self.signing_key = signing_key
+        self.training_repository = training_repository
+        self.training_progress_repository = training_progress_repository
+        self.training_course_package_repository = training_course_package_repository
+
+    async def save(
+        self,
+        session,
+        training_id: int,
+        user_id: int,
+        cmi: dict,
+        final: bool = False,
+        may_verify_course: bool = False,
+        session_token=None,
+    ):
+        """Apply one commit to the caller's own assignment.
+
+        Only the CMI elements actually present in ``cmi`` are written. A
+        course that commits a partial payload must not blank out the fields
+        it left out -- an empty string, though, is a value a course writes on
+        purpose and is stored exactly like any other.
+
+        Args:
+            session: The active async database session.
+            training_id (int): The assignment being learned.
+            user_id (int): Who is learning it.
+            cmi (dict): Flattened CMI from the course.
+            final (bool): The page's last save of this session. Written even
+                when the content matches what is stored, because the only
+                thing such a save carries is the elapsed time the content
+                comparison ignores.
+            may_verify_course (bool): Whether the caller holds
+                TRAINING_ADMIN_WRITE, resolved by the middleware from the
+                database and passed down rather than read from the request.
+                Defaults to False so a caller nobody vouched for cannot
+                unlock the course for everybody else.
+            session_token: The content session this commit was reported in,
+                as the page was handed it. Signed, so it can only name a
+                package a run really was opened against. Required: a commit
+                that cannot name a package still being served is refused.
+                A token that names no assignment is a preview and is refused
+                outright: looking at what is live is not a run of it.
+
+        Returns:
+            TrainingProgressSaveDto: Where the assignment stands afterwards,
+            including for a commit that stored nothing.
+
+        Raises:
+            ValueError: No such assignment, or an element over its length cap.
+            PermissionError: The assignment belongs to somebody else, or the
+                session token names a preview with nothing to save into.
+            ConflictError: The run this commit came from is not running a
+                package we still serve -- because the token names none we can
+                read, or because the package it names has been replaced -- or
+                a newer run of the same assignment has been opened since,
+                which carries the code RUN_SUPERSEDED.
+        """
+        _reject_unstorable(cmi)
+
+        # Locked, because what follows reads the status, decides the next one
+        # from it, and writes it back. A course reports `incomplete` and then
+        # `completed` within the same second, and unlocked those two requests
+        # both read TO_DO: whichever commits second wins, and half the time
+        # that is the one holding the stale not-finished decision. The lock
+        # makes the loser re-read the status the winner wrote, where
+        # next_training_status leaves a finished assignment alone.
+        assignment = await self.training_repository.get_training_by_id(
+            session, training_id, for_update=True
+        )
+        if assignment is None:
+            raise ValueError(f"No training assignment with id {training_id}.")
+        if assignment.user_id != user_id:
+            raise PermissionError("This training belongs to somebody else.")
+
+        run, package = await self._package_behind(
+            session, session_token, training_id, user_id
+        )
+
+        # A trial runs the staged package, and opening one is never seeded
+        # with stored progress, so what a trial writes it can never read
+        # back. Storing it would only leave the staged package's bookmark on
+        # the verifier's own row, for their next run as a learner to resume
+        # against a package that was never live. Refusing the commit outright
+        # the way a preview is refused would be wrong: a trial exists to prove
+        # the staged package can be completed, so it still has to reach the
+        # stamp below.
+        stores_progress = package.state is not TrainingPackageState.PENDING
+
+        # Ahead of every read and write that follows, so a refused commit
+        # leaves the row and the assignment exactly as the newer tab left
+        # them. A trial is exempt: it stores nothing to overwrite, and it
+        # still has to reach the stamp.
+        if stores_progress:
+            self._refuse_superseded_run(assignment, run, training_id)
+
+        existing = await self.training_progress_repository.get_by_training_id(
+            session, training_id
+        )
+
+        columns = {}
+        if _LESSON_STATUS in cmi:
+            columns["lesson_status"] = cmi[_LESSON_STATUS]
+        if _LESSON_LOCATION in cmi:
+            columns["lesson_location"] = cmi[_LESSON_LOCATION]
+        if _SUSPEND_DATA in cmi:
+            # Stored whole. Only the abuse cap above bounds it, and that one
+            # refuses the request rather than shortening what it stores.
+            columns["suspend_data"] = cmi[_SUSPEND_DATA]
+
+        if _TOTAL_TIME in cmi:
+            # total_time is seeded total + elapsed wall time for this session
+            # (scorm-again's getCurrentTotalTime), so it is already the right
+            # number to store on every commit -- adding it again would count
+            # the same session more than once.
+            parsed_total = _timespan_seconds(cmi[_TOTAL_TIME])
+            if parsed_total is not None:
+                # Never below what is already banked. The seed a tab computes
+                # from is captured when it opens, so two tabs open at once
+                # each report that same seed plus only their own elapsed
+                # time, and the one that commits last carries a total missing
+                # everything the other banked. Taking the larger costs the
+                # second tab's own minutes -- the model has no per-session
+                # figure to add them back with -- but the alternative spends
+                # time the learner has already served.
+                #
+                # Safe as a read and then a write: the assignment row is held
+                # FOR UPDATE for the whole commit, so a concurrent one cannot
+                # land between them. Nothing else lowers this column either;
+                # replacing a package deliberately leaves it alone while
+                # clearing the bookmark beside it.
+                stored_total = getattr(existing, "session_time_seconds", 0) or 0
+                columns["session_time_seconds"] = max(parsed_total, stored_total)
+            else:
+                # Leave the stored value alone. A course that cannot format
+                # its own elapsed time must not zero out what was already
+                # banked -- but a course that never accumulates anything
+                # should not do so silently forever.
+                self.logger.warning(
+                    "[TrainingProgressService] training %s sent an "
+                    "unparseable cmi.core.total_time %r; leaving the stored "
+                    "value alone",
+                    training_id,
+                    cmi[_TOTAL_TIME],
+                )
+        elif _SESSION_TIME in cmi:
+            # session_time is this session so far, and a course commits it
+            # many times per session, so adding it on each commit would count
+            # the same time again. Without total_time there is nothing safe to
+            # store; our own player always sends it.
+            self.logger.warning(
+                "[TrainingProgressService] training %s sent "
+                "cmi.core.session_time without cmi.core.total_time; leaving "
+                "the stored value alone",
+                training_id,
+            )
+
+        for cmi_key, column in _SCORE_COLUMNS.items():
+            if cmi_key not in cmi:
+                continue
+            raw = cmi[cmi_key]
+            if raw == "":
+                # A course clears a score the way it clears any other field.
+                # Numeric has no empty value, so the clear becomes NULL.
+                columns[column] = None
+                continue
+            parsed_score = _score_decimal(raw)
+            if parsed_score is not None:
+                columns[column] = parsed_score
+            else:
+                # Dropped, not stored -- must not cost the learner the rest
+                # of this commit, but must not vanish without a trace either.
+                self.logger.warning(
+                    "[TrainingProgressService] training %s sent an "
+                    "unstorable %s %r; dropping it",
+                    training_id,
+                    cmi_key,
+                    raw,
+                )
+
+        if not columns:
+            self.logger.warning(
+                "[TrainingProgressService] commit to training %s produced "
+                "no storable columns; keys=%s",
+                training_id,
+                sorted(cmi.keys()),
+            )
+
+        moved = next_training_status(assignment.status, cmi.get(_LESSON_STATUS))
+
+        # A run that stores nothing has no row of its own, so it cannot claim
+        # its content is unchanged: `existing` belongs to the verifier's own
+        # learning of the live package, which a trial can never move. Letting
+        # a trial answer that question parks it on the skip below, short of
+        # the stamp it exists to produce.
+        unchanged = (
+            stores_progress and _content_unchanged(existing, columns) and not final
+        )
+        if unchanged and moved is None:
+            # Nothing to store and nothing to decide -- skip the write
+            # entirely rather than rewrite a row a parked tab keeps
+            # reporting. The course still sees a successful commit.
+            #
+            # last_accessed_at (stamped by upsert) does not advance while a
+            # commit is skipped. That is accepted: touching it would require
+            # the write this skip exists to avoid, and nothing reads the
+            # column today.
+            return TrainingProgressSaveDto(status=assignment.status)
+
+        if not unchanged and stores_progress:
+            await self.training_progress_repository.upsert(
+                session, training_id, **columns
+            )
+
+        if moved is not None:
+            assignment.status = moved
+            if moved is TrainingStatus.DONE and assignment.completed_timestamp is None:
+                assignment.completed_timestamp = datetime.now(timezone.utc)
+
+        # Keyed on what the course reported, not on where the assignment
+        # moved. A re-upload installs a new, unstamped package while leaving
+        # the verifier's row DONE, so their next run moves nothing -- and it
+        # is the run most likely to be proving the replacement package.
+        course_verified = None
+        if reports_completion(cmi.get(_LESSON_STATUS)):
+            course_verified = self._stamp_if_unverified(
+                package, user_id, may_verify_course
+            )
+
+        await session.commit()
+        return TrainingProgressSaveDto(
+            status=assignment.status, course_verified=course_verified
+        )
+
+    async def _package_behind(
+        self, session, session_token, training_id: int, user_id: int
+    ):
+        """The run this commit came from, and the package it is running.
+
+        The token is signed, so a commit cannot claim to be running a package
+        it is not. Expiry is not consulted: the caller already authenticated
+        on the app origin, and refusing a sitting that overran its twelve
+        hours would cost the longest run its last save.
+
+        A commit that cannot name a package we still serve is refused rather
+        than stored. The tab is holding a CMI model belonging to a package
+        that is gone, and every twenty seconds it offers that model again --
+        stored, it writes the old bookmark and the old finishing status back
+        over the row the replacement cleared, and the learner reopens onto a
+        lesson the new package does not have. Our own player always sends the
+        token it was handed, so nothing legitimate arrives without one.
+
+        Returns:
+            tuple: The run's claims, and the package they name.
+
+        Raises:
+            PermissionError: The token names a preview -- one opened with no
+                assignment behind it, which has nothing to save into -- or it
+                names a different assignment or a different person.
+            ConflictError: The token names no readable package, or names one
+                that is no longer served.
+        """
+        run = None
+        if isinstance(session_token, str) and session_token:
+            try:
+                run = read_session_run(self.signing_key, session_token)
+            except (InvalidContentToken, ValueError):
+                run = None
+
+        # A preview names no assignment, so it has nothing to save into and
+        # nothing it may stamp. Refused here rather than trusted not to ask:
+        # the page holding this token reached the app origin with its own
+        # identity, and posting it at an assignment the same person happens
+        # to hold would otherwise land a verification stamp on a live package
+        # nobody ran.
+        if run is not None and run.training_id is None:
+            self.logger.info(
+                "[TrainingProgressService] refused a commit to training %s: "
+                "its run is a preview, which stores nothing",
+                training_id,
+            )
+            raise PermissionError("A preview does not record progress.")
+
+        # The rest of the claim, which the preview check above only reads half
+        # of. The token names the assignment and the person it was minted for,
+        # both signed, so a commit that names a different one is not the run
+        # it claims to be -- and storing it would put this course's bookmark
+        # on another course's row, which is the same breakage a replaced
+        # package causes and the thing the token exists to make impossible.
+        if run is not None and (
+            run.training_id != training_id or run.user_id != user_id
+        ):
+            self.logger.warning(
+                "[TrainingProgressService] refused a commit to training %s "
+                "from user %s: its run is training %s for user %s",
+                training_id,
+                user_id,
+                run.training_id,
+                run.user_id,
+            )
+            raise PermissionError("This run does not belong to this training.")
+
+        package_id = None if run is None else run.package_id
+
+        package = (
+            None
+            if package_id is None
+            else await self.training_course_package_repository.get_by_id(
+                session, package_id
+            )
+        )
+        if package is None:
+            self.logger.info(
+                "[TrainingProgressService] refused a commit to training %s: "
+                "its run names package %s, which is not served any more",
+                training_id,
+                package_id,
+            )
+            raise ConflictError(
+                "This course's package was replaced while this page was open. "
+                "Reload the page to run the new one."
+            )
+        return run, package
+
+    def _refuse_superseded_run(self, assignment, run, training_id: int) -> None:
+        """Refuse a commit from a run opened before the assignment's newest.
+
+        Two tabs on one assignment are seeded from the same row and each
+        commits its own in-memory model; suspend_data is opaque, so the two
+        cannot be merged, and storing whichever arrives last puts the learner
+        back wherever that tab happened to be. Opening a run hands it the
+        assignment, so the newest tab is the one kept.
+
+        Either side being absent holds nothing back. A token minted before
+        runs carried an id belongs to a tab open across that deploy, and
+        refusing it would strand the sitting; an assignment that names no
+        owner has not been opened as a learner run since, so there is no
+        newer tab to defer to.
+
+        Raises:
+            ConflictError: A newer run of this assignment has been opened.
+        """
+        owner = assignment.active_run_id
+        if run.run_id is None or owner is None or run.run_id == owner:
+            return
+        self.logger.info(
+            "[TrainingProgressService] refused a commit to training %s: a "
+            "newer run of it has been opened since",
+            training_id,
+        )
+        raise ConflictError(
+            "This course is open in another tab. Close this tab and continue there.",
+            code=RUN_SUPERSEDED,
+        )
+
+    def _stamp_if_unverified(
+        self, package, user_id: int, may_verify_course: bool
+    ) -> bool | None:
+        """Record that somebody with the grant ran this package to the end.
+
+        The stamp lands on the package the run was opened against, which the
+        token names -- never on whatever is live when the commit arrives. A
+        run whose package is gone never reaches this: it was refused before
+        anything was read.
+
+        Holding an assignment is not enough. Replacing a package installs a
+        new, unstamped row and keeps every existing assignment, so without
+        this any assignee could post a finishing lesson_status with no course
+        involved and unlock the new package for the whole organisation.
+        Reporting your own assignment DONE stays open to anybody -- a course
+        reports its own completion and it costs nobody but the learner -- but
+        the stamp that makes a course assignable needs TRAINING_ADMIN_WRITE.
+
+        Returns:
+            bool | None: Whether the package is verified, for the page to
+            show. None when this commit did not look -- no grant -- rather
+            than False, which would claim an answer nothing here went and got.
+        """
+        if not may_verify_course:
+            self.logger.info(
+                "[TrainingProgressService] user %s finished package %s without "
+                "training.admin.write; leaving it unverified",
+                user_id,
+                package.package_id,
+            )
+            return None
+
+        if package.verified_completable_at is not None:
+            return True
+        package.verified_completable_at = datetime.now(timezone.utc)
+        package.verified_by_user_id = user_id
+        self.logger.info(
+            "[TrainingProgressService] package %s verified completable by user %s",
+            package.package_id,
+            user_id,
+        )
+        return True

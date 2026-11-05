@@ -1,9 +1,9 @@
 import logging
 from typing import Generator
 
-from jira import JIRA
 from jira.resources import Issue
 
+from backend.common.jira_client import JiraClient
 from backend.utils.retry_utils import RetryUtils
 from backend.common.constants import (
     JIRA_MAX_RESULTS_DEFAULT,
@@ -17,14 +17,15 @@ class JiraSearchService:
 
     Args:
         logger (logging.Logger): Logger instance for logging info and errors.
-        jira_client (JIRA): JIRA client instance.
+        jira_client (JiraClient): Provides the Jira connection, which is
+            opened on the first call that needs it.
         retry_utils (RetryUtils): Utility class for handling retries.
     """
 
     def __init__(
         self,
         logger: logging.Logger,
-        jira_client: JIRA,
+        jira_client: JiraClient,
         retry_utils: RetryUtils,
     ):
         """Initialize the JiraSearchService."""
@@ -58,7 +59,7 @@ class JiraSearchService:
 
         while True:
             issues = self.retry_utils.get_retry_on_transient(
-                self.jira_client.search_issues,
+                self.jira_client.get_jira_client().search_issues,
                 jql_str=jql_query,
                 startAt=start_at,
                 maxResults=batch_size,
@@ -123,6 +124,8 @@ class JiraSearchService:
             raise ValueError("issue_id must be provided.")
 
         issue = self.retry_utils.get_retry_on_transient(
-            self.jira_client.issue, id=issue_id, fields="assignee"
+            self.jira_client.get_jira_client().issue,
+            id=issue_id,
+            fields="assignee",
         )
         return issue

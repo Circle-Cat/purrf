@@ -1,4 +1,4 @@
-import "@/components/common/Table.css";
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 
 /**
  * Table Component
@@ -35,20 +35,43 @@ import "@/components/common/Table.css";
  */
 const Table = ({ columns, data, onSort, sortColumn, sortDirection }) => {
   return (
-    <div className="table-container">
-      <table className="custom-table">
+    <div className="overflow-auto rounded-lg border">
+      <table className="w-full min-w-fit border-collapse text-sm leading-normal [&_tbody_tr:hover]:bg-muted [&_tbody_tr:nth-child(even)]:bg-muted [&_td]:whitespace-nowrap [&_td]:border-b [&_td]:px-[15px] [&_td]:py-3 [&_td]:text-left [&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:whitespace-nowrap [&_th]:border-b [&_th]:bg-muted [&_th]:py-3 [&_th]:pl-[15px] [&_th]:pr-[25px] [&_th]:text-left [&_th]:font-bold [&_th]:text-foreground">
         <thead>
           <tr>
-            {columns.map((col, index) => (
-              <th
-                key={index}
-                className={`${col.sortable ? "sortable" : ""} ${sortColumn === col.accessor ? (sortDirection === "asc" ? "sorted-asc" : "sorted-desc") : ""}`}
-                onClick={() => col.sortable && onSort && onSort(col.accessor)}
-              >
-                {col.header}
-                {col.sortable && <span className="sort-indicator"></span>}
-              </th>
-            ))}
+            {columns.map((col, index) => {
+              const isSorted = sortColumn === col.accessor;
+              return (
+                <th
+                  key={index}
+                  className={
+                    col.sortable ? "cursor-pointer select-none" : undefined
+                  }
+                  aria-sort={
+                    isSorted
+                      ? sortDirection === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : col.sortable
+                        ? "none"
+                        : undefined
+                  }
+                  onClick={() => col.sortable && onSort && onSort(col.accessor)}
+                >
+                  {col.header}
+                  {col.sortable &&
+                    (isSorted ? (
+                      sortDirection === "asc" ? (
+                        <ChevronUp className="ml-1 inline size-3.5 align-middle text-foreground" />
+                      ) : (
+                        <ChevronDown className="ml-1 inline size-3.5 align-middle text-foreground" />
+                      )
+                    ) : (
+                      <ChevronsUpDown className="ml-1 inline size-3.5 align-middle text-gray-400" />
+                    ))}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>

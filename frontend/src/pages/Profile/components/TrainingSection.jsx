@@ -1,39 +1,75 @@
 import React from "react";
-import "@/pages/Profile/components/TrainingSection.css";
+import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  isIncompleteOnboarding,
-  TrainingCategoryLabel,
-} from "@/pages/Profile/utils";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { TrainingCategoryLabel } from "@/pages/Profile/utils";
 import { formatInTz } from "@/utils/dateTime";
+import { isIncompleteOnboarding } from "@/utils/training";
+import { safeHttpUrl } from "@/utils/url";
 
 /**
  * Format an API timestamp (ISO 8601) as a calendar date in en-US,
  * interpreted in the viewer's profile timezone (an IANA string like
- * "Asia/Shanghai"). Falls back to UTC so the displayed date still
- * matches the stored value when the user has not picked a timezone.
+ * "Asia/Shanghai").
  *
- * Returns "-" for null/empty/invalid inputs and for the 1970 sentinel
- * the backend stores when a training row hasn't been completed yet.
+ * Returns "-" for null/empty/invalid inputs, and for a timestamp before 2000.
+ * An unfinished training row carries null, not an epoch stand-in -- the
+ * backend only ever writes the completion time it actually observed. The
+ * pre-2000 floor stays as a guard against a stray epoch value reaching the
+ * page and being rendered as a real date in 1970.
  */
 const formatTrainingDate = (iso, timezone) => {
   if (!iso) return "-";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "-";
   if (date.getUTCFullYear() < 2000) return "-";
-  return formatInTz(iso, timezone || "UTC", "MMM d, yyyy");
+  return formatInTz(iso, timezone, "MMM d, yyyy");
+};
+
+// Three states, not two: a learner partway through a course can see that they
+// are partway through it.
+const STATUS_BADGE = {
+  to_do: {
+    label: "Not Started",
+    className: "bg-primary text-primary-foreground",
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-secondary text-secondary-foreground",
+  },
+  done: { label: "Completed", className: "bg-accent text-primary" },
+};
+
+// Opening an in-app course is named after where the learner is, not what
+// they'd be doing. A finished course is always "Review", never "Retake":
+// reopening it must not read as a way back out of Done. Offered only for a
+// course we actually serve -- a row whose course has no package cannot be
+// opened at all, and inviting the click would land the learner on an error.
+const IN_APP_ACTION_LABEL = {
+  to_do: "Start",
+  in_progress: "Continue",
+  done: "Review",
 };
 
 const TrainingSection = ({ list, timezone }) => {
   return (
-    <div className="section">
-      <div className="section-header">
-        <h3>Training</h3>
+    <div className="mb-12">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <h3 className="mb-1 mt-0 text-xl font-semibold tracking-[-0.015em] text-foreground">
+            Training
+          </h3>
+          {list && list.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Dates shown in {timezone}.
+            </p>
+          )}
+        </div>
       </div>
 
       {list && list.length > 0 ? (
-        <table className="training-table">
+        <table className="mt-5 w-full border-separate border-spacing-0 overflow-hidden rounded-xl border text-[0.9375rem] text-foreground [&_a:hover]:underline [&_a]:font-medium [&_a]:text-primary [&_a]:no-underline [&_td]:border-b [&_td]:px-5 [&_td]:py-4 [&_td]:text-left [&_th]:border-b [&_th]:bg-muted [&_th]:px-5 [&_th]:py-4 [&_th]:text-left [&_th]:text-sm [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-[0.05em] [&_th]:text-foreground">
           <thead>
             <tr>
               <th>Name</th>
@@ -46,29 +82,36 @@ const TrainingSection = ({ list, timezone }) => {
           <tbody>
             {list.map((training) => {
               const required = isIncompleteOnboarding(training);
+              const safeLink = safeHttpUrl(training.link);
+              // A live package wins over the stored link: the link was written
+              // when the row was created, before the course had a package,
+              // and nothing clears it when one is published.
+              const hosted = Boolean(training.courseId && training.isHosted);
+              const statusBadge =
+                STATUS_BADGE[training.status] ?? STATUS_BADGE.to_do;
+              const actionLabel =
+                IN_APP_ACTION_LABEL[training.status] ??
+                IN_APP_ACTION_LABEL.to_do;
               return (
                 <tr
                   key={training.id}
-                  className={required ? "training-row-required" : undefined}
+                  className={
+                    required
+                      ? "bg-accent transition-colors hover:bg-[#D6CCFB] [&:last-child>td]:border-b-0"
+                      : "bg-white transition-colors hover:bg-muted [&:last-child>td]:border-b-0"
+                  }
                   data-testid={
                     required ? "training-row-required" : "training-row"
                   }
                 >
                   <td>
-                    {TrainingCategoryLabel[training.category] ??
+                    {training.name ??
+                      TrainingCategoryLabel[training.category] ??
                       training.category}
                   </td>
                   <td>
-                    <Badge
-                      className={
-                        training.status === "done"
-                          ? "training-status-completed"
-                          : "training-status-not-completed"
-                      }
-                    >
-                      {training.status === "done"
-                        ? "Completed"
-                        : "Not Completed"}
+                    <Badge className={statusBadge.className}>
+                      {statusBadge.label}
                     </Badge>
                   </td>
                   <td>
@@ -76,9 +119,22 @@ const TrainingSection = ({ list, timezone }) => {
                   </td>
                   <td>{formatTrainingDate(training.deadline, timezone)}</td>
                   <td>
-                    {training.link ? (
+                    {training.isCourseActive === false ? (
+                      // Deactivating a course closes it to the people already
+                      // on it, part-way through included, whether it is hosted
+                      // or still an external link. The row keeps their status
+                      // and their dates, and their progress is still stored
+                      // for if it is turned back on.
+                      <span className="text-muted-foreground">
+                        No longer available
+                      </span>
+                    ) : hosted ? (
+                      <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
+                        {actionLabel}
+                      </Link>
+                    ) : safeLink ? (
                       <a
-                        href={training.link}
+                        href={safeLink}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -94,7 +150,9 @@ const TrainingSection = ({ list, timezone }) => {
           </tbody>
         </table>
       ) : (
-        <p className="section-text">No training records found.</p>
+        <p className="mb-3 text-base leading-relaxed text-foreground">
+          No training records found.
+        </p>
       )}
     </div>
   );

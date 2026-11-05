@@ -12,7 +12,7 @@ class ApiParamName(str, Enum):
     USER_SUB = "user_sub"
 
 
-def authenticate(roles: list = None):
+def authenticate(permissions: list = None):
     """
     A generic authentication and authorization decorator for FastAPI endpoints.
 
@@ -32,16 +32,16 @@ def authenticate(roles: list = None):
     - `current_user` → Full user object from `request.state.user`
     - `user_sub`     → `user.sub` shortcut value
 
-    Args: roles: A list of roles allowed to access the endpoint.
+    Args: permissions: A list of Permission values allowed to access the endpoint.
                   - If None (default), only checks that the user exists.
-                  - If provided, the user must have at least one role in this list.
+                  - If provided, the user must hold at least one of these permissions.
                   - If the wrapped function does not require user-related parameters,
                     this decorator acts as a simple login check.
     Returns: The decorated async function.
 
     Examples:
-        1. Role-based check with user_sub injection:
-           @authenticate(roles=["manager", "ccInternal"])
+        1. Permission check with user_sub injection:
+           @authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])
            async def delete_item(item_id: str, user_sub: str):
                # user_sub is automatically injected from request.state.user.sub
                print(f"User {user_sub} is deleting {item_id}")
@@ -52,7 +52,7 @@ def authenticate(roles: list = None):
                    self.router = APIRouter()
                    self.router.add_api_route(
                        "/cleanup",
-                       endpoint=authenticate(roles=["admin"])(self.cleanup),
+                       endpoint=authenticate(permissions=[Permission.PERMISSION_MANAGE])(self.cleanup),
                        methods=["POST"]
                    )
 
@@ -124,9 +124,9 @@ def authenticate(roles: list = None):
                 )
 
             # Role-based authorization check (if roles are specified)
-            if roles is not None:
-                user_roles = getattr(user, "roles", None) or []
-                if not any(role in user_roles for role in roles):
+            if permissions is not None:
+                user_permissions = getattr(user, "permissions", None) or frozenset()
+                if not any(p in user_permissions for p in permissions):
                     return api_response(
                         success=False,
                         message="Forbidden: Insufficient permissions",

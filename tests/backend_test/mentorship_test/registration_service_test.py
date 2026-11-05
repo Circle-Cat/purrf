@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from backend.mentorship.registration_service import RegistrationService
 from backend.dto.registration_create_dto import (
@@ -19,16 +19,18 @@ from backend.dto.preference_dto import (
     SkillsetsDto,
 )
 from backend.entity.preference_entity import PreferenceEntity
+from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.common.user_role import UserRole
 from backend.common.mentorship_enums import (
+    ApprovalStatus,
     ParticipantRole,
     TrainingStatus,
     TrainingCategory,
 )
 from backend.entity.training_entity import TrainingEntity
+from backend.common.exceptions import ConflictError
 
 
 class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
@@ -41,7 +43,9 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         self.mock_round_repo.get_by_round_id = AsyncMock()
 
         self.mock_participants_repo = MagicMock()
-        self.mock_participants_repo.get_by_user_id_and_round_id = AsyncMock()
+        self.mock_participants_repo.get_by_user_id_and_round_id = AsyncMock(
+            return_value=None
+        )
         self.mock_participants_repo.upsert_participant = AsyncMock()
 
         self.mock_logger = MagicMock()
@@ -49,20 +53,16 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_participation_service = MagicMock()
         self.mock_participation_service.get_user_round_preferences = AsyncMock()
-        self.mock_participation_service.resolve_participant_role_with_fallback = (
-            AsyncMock()
-        )
-
-        self.mock_user_identity_service = MagicMock()
-        self.mock_user_identity_service.get_user = AsyncMock()
 
         self.mock_mapper = MagicMock()
 
-        self.mock_training_repo = MagicMock()
-        self.mock_training_repo.get_training_by_user_id_and_category = AsyncMock(
-            return_value=None
+        self.mock_onboarding_training_service = MagicMock()
+        self.mock_onboarding_training_service.ensure_onboarding_training = AsyncMock()
+
+        self.mock_application_repo = MagicMock()
+        self.mock_application_repo.get_hired_activity_application = AsyncMock(
+            return_value=MagicMock()
         )
-        self.mock_training_repo.upsert_training = AsyncMock()
 
         self.service = RegistrationService(
             logger=self.mock_logger,
@@ -70,9 +70,9 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             mentorship_round_repository=self.mock_round_repo,
             mentorship_round_participants_repository=self.mock_participants_repo,
             participation_service=self.mock_participation_service,
-            user_identity_service=self.mock_user_identity_service,
             mentorship_mapper=self.mock_mapper,
-            training_repository=self.mock_training_repo,
+            onboarding_training_service=self.mock_onboarding_training_service,
+            application_repository=self.mock_application_repo,
         )
 
         self.sample_dto = RegistrationCreateDto(
@@ -101,14 +101,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_id = 123
-        self.mock_user = MagicMock()
-        self.mock_user.user_id = self.user_id
-        self.user_context = MagicMock(
-            spec=UserContextDto, roles=[UserRole.CONTACT_GOOGLE_CHAT]
+        self.user_context = UserContextDto(
+            sub="auth0|123",
+            primary_email="user@example.com",
+            identity_type="external",
+            user_id=self.user_id,
         )
         self.mock_round_id = 1
-        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
-        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
 
         self.fixed_now = datetime(2026, 4, 20, 0, 0, 0, tzinfo=timezone.utc)
         self.datetime_patcher = patch(
@@ -116,10 +115,33 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_dt = self.datetime_patcher.start()
         self.mock_dt.now.return_value = self.fixed_now
-        self.mock_dt.fromisoformat.side_effect = datetime.fromisoformat
+
+        # Both application deadlines have passed at fixed_now while the
+        # onboarding deadline has not, and none is two days off another, so
+        # a gate or a training deadline read off the wrong column fails.
+        self.mentor_application_deadline = datetime(
+            2026, 4, 15, 23, 59, 59, tzinfo=timezone.utc
+        )
+        self.mentee_application_deadline = datetime(
+            2026, 4, 12, 23, 59, 59, tzinfo=timezone.utc
+        )
+        self.onboarding_deadline = datetime(
+            2026, 4, 27, 23, 59, 59, tzinfo=timezone.utc
+        )
 
     async def asyncTearDown(self):
         self.datetime_patcher.stop()
+
+    def _round(self, **overrides) -> MentorshipRoundEntity:
+        fields = dict(
+            round_id=self.mock_round_id,
+            name="test round",
+            mentor_application_deadline_at=self.mentor_application_deadline,
+            mentee_application_deadline_at=self.mentee_application_deadline,
+            onboarding_deadline_at=self.onboarding_deadline,
+        )
+        fields.update(overrides)
+        return MentorshipRoundEntity(**fields)
 
     async def test_update_preferences_new_user(self):
         """Test: When the user does not have existing preferences, create a new entity."""
@@ -181,7 +203,8 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(existing_entity.specific_industry)
 
     async def test_get_registration_info(self):
-        """Test: Get registration info, containing global and round preferences."""
+        """Test: Get registration info, containing global and round preferences,
+        for a caller who names a role they were admitted into."""
         mock_entity = MagicMock(spec=PreferenceEntity)
         self.mock_preference_repo.get_preferences_by_user_id.return_value = mock_entity
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
@@ -199,22 +222,77 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session,
             user_context=self.user_context,
             round_id=self.mock_round_id,
+            role=ParticipantRole.MENTOR,
         )
 
-        self.mock_user_identity_service.get_user.assert_awaited_once_with(
-            session=self.mock_session, user_info=self.user_context
+        # The named role is checked against the HIRED activity application
+        # and, once cleared, passed straight through — never inferred.
+        self.mock_application_repo.get_hired_activity_application.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_id,
+            mentorship_role=ParticipantRole.MENTOR,
         )
         self.mock_participation_service.get_user_round_preferences.assert_awaited_once_with(
             session=self.mock_session,
-            user_context=self.user_context,
             user_id=self.user_id,
             round_id=self.mock_round_id,
+            participant_role=ParticipantRole.MENTOR,
         )
         self.mock_preference_repo.get_preferences_by_user_id.assert_awaited_once_with(
             session=self.mock_session, user_id=self.user_id
         )
         self.mock_mapper.map_to_global_preferences_dto.assert_called_once_with(
             preference_entity=mock_entity
+        )
+
+    async def test_get_registration_info_rejects_a_role_the_user_lacks(self):
+        """A role named by the caller is checked, not trusted: no HIRED
+        activity application in that role is a 403, mapped from
+        PermissionError by the global handler."""
+        mock_round = MagicMock()
+        mock_round.name = "test_round"
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.mock_application_repo.get_hired_activity_application.return_value = None
+
+        with self.assertRaises(PermissionError):
+            await self.service.get_registration_info(
+                session=self.mock_session,
+                user_context=self.user_context,
+                round_id=self.mock_round_id,
+                role=ParticipantRole.MENTOR,
+            )
+
+        self.mock_participation_service.get_user_round_preferences.assert_not_awaited()
+
+    async def test_get_registration_info_without_a_role_skips_the_eligibility_check(
+        self,
+    ):
+        """Omitting the role asks only "am I registered, and as what" — no
+        eligibility check runs, and there may be nothing to prefill."""
+        mock_round = MagicMock()
+        mock_round.name = "test_round"
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.mock_application_repo.get_hired_activity_application.return_value = None
+        self.mock_preference_repo.get_preferences_by_user_id.return_value = None
+        self.mock_participation_service.get_user_round_preferences.return_value = (
+            None,
+            False,
+        )
+
+        result = await self.service.get_registration_info(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=self.mock_round_id,
+        )
+
+        self.assertIsNone(result.round_preferences)
+        self.assertFalse(result.is_registered)
+        self.mock_application_repo.get_hired_activity_application.assert_not_awaited()
+        self.mock_participation_service.get_user_round_preferences.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            participant_role=None,
         )
 
     async def test_update_user_round_preferences_existing(self):
@@ -246,14 +324,39 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, entity=existing_entity
         )
 
+    async def test_update_user_round_preferences_refuses_a_withdrawn_registration(
+        self,
+    ):
+        """Someone withdrawn from the round cannot edit their way back in."""
+        existing_entity = MentorshipRoundParticipantsEntity(
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            participant_role=ParticipantRole.MENTOR,
+            approval_status=ApprovalStatus.WITHDRAWN,
+            goal="Old goal",
+        )
+        self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
+            existing_entity
+        )
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+        self.sample_dto.round_preferences.goal = "New goal"
+
+        with self.assertRaises(ConflictError) as ctx:
+            await self.service._update_user_round_preferences(
+                session=self.mock_session,
+                user_id=self.user_id,
+                round_id=self.mock_round_id,
+                data=self.sample_dto,
+            )
+
+        self.assertIn("left this round", str(ctx.exception))
+        self.assertEqual(existing_entity.goal, "Old goal")
+        self.mock_participants_repo.upsert_participant.assert_not_called()
+
     async def test_update_registration_info_success(self):
         """Test: Post registration info, containing updated global and round preferences."""
-        mock_round = MagicMock()
-        mock_round.description = {
-            "mentor_application_deadline_at": "2026-04-27T23:59:59Z"
-        }
-        mock_round.name = "test round"
-        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
 
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
             self.sample_registration_dto.global_preferences
@@ -265,6 +368,14 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         global_entity = PreferenceEntity(user_id=self.user_id)
         participant_entity = MentorshipRoundParticipantsEntity(
             user_id=self.user_id, round_id=self.mock_round_id
+        )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=self.onboarding_deadline,
+            link="https://mentor",
         )
 
         with patch.object(
@@ -300,17 +411,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                 )
 
                 self.assertIsInstance(result, RegistrationDto)
-                self.mock_training_repo.upsert_training.assert_awaited_once()
+                self.mock_onboarding_training_service.ensure_onboarding_training.assert_awaited_once()
                 self.assertFalse(result.is_onboarding_training_completed)
 
     async def test_update_registration_info_training_already_completed(self):
         """Test: When the user already has a completed training, do not create a new one."""
-        mock_round = MagicMock()
-        mock_round.description = {
-            "mentor_application_deadline_at": "2026-04-27T23:59:59Z"
-        }
-        mock_round.name = "test round"
-        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
 
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
             self.sample_registration_dto.global_preferences
@@ -324,9 +431,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
             status=TrainingStatus.DONE,
         )
-        self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
-            completed_training
-        )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = completed_training
 
         global_entity = PreferenceEntity(user_id=self.user_id)
         participant_entity = MentorshipRoundParticipantsEntity(
@@ -351,22 +456,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                     preferences_data=self.sample_dto,
                 )
 
-                self.mock_training_repo.upsert_training.assert_not_awaited()
                 self.assertTrue(result.is_onboarding_training_completed)
-
-    async def test_update_registration_info_missing_deadline(self):
-        """Test: When the restration round missing deadline, stop registration."""
-        mock_round = MagicMock()
-        mock_round.description = {}
-        self.mock_round_repo.get_by_round_id.return_value = mock_round
-
-        with self.assertRaisesRegex(ValueError, "missing application deadline"):
-            await self.service.update_registration_info(
-                self.mock_session,
-                self.user_context,
-                self.mock_round_id,
-                self.sample_dto,
-            )
 
     async def test_update_registration_info_round_not_found(self):
         """Test: When the registration round non-existent, stop registration."""
@@ -377,56 +467,84 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                 self.mock_session, self.user_context, 999, self.sample_dto
             )
 
-    async def test_mentor_expired_blocks_registration(self):
-        """Test: Blocks mentor when mentor deadline has passed even if mentee deadline has not."""
+    async def test_registration_accepted_past_the_application_deadline(self):
+        """Test: Registration stays open after the role's application
+        deadline, for both roles, until the onboarding deadline."""
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+
+        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE):
+            with self.subTest(role=role):
+                self.mock_session.commit.reset_mock()
+                self.sample_dto.round_preferences.participant_role = role
+
+                result = await self._register()
+
+                self.assertIsInstance(result, RegistrationDto)
+                self.mock_session.commit.assert_awaited_once()
+
+    async def test_registration_rejected_past_the_onboarding_deadline(self):
+        """Test: Registration is refused once the onboarding deadline has
+        passed, for both roles, even while the application deadlines are
+        still ahead."""
         self.mock_dt.now.return_value = datetime(
             2026, 4, 28, 0, 0, 0, tzinfo=timezone.utc
         )
-        mock_round = MagicMock()
-        mock_round.description = {
-            "mentor_application_deadline_at": "2026-04-27T23:59:59Z",
-            "mentee_application_deadline_at": "2026-05-01T23:59:59Z",
-        }
-        self.mock_round_repo.get_by_round_id.return_value = mock_round
-
-        with self.assertRaisesRegex(ValueError, "has ended at 2026-04-27"):
-            await self.service.update_registration_info(
-                self.mock_session,
-                self.user_context,
-                self.mock_round_id,
-                self.sample_dto,
-            )
-
-    async def test_mentee_expired_blocks_registration(self):
-        """Test: Blocks mentee when mentee deadline has passed even if mentor deadline has not."""
-        self.mock_dt.now.return_value = datetime(
-            2026, 4, 27, 0, 0, 0, tzinfo=timezone.utc
+        self.mock_round_repo.get_by_round_id.return_value = self._round(
+            mentor_application_deadline_at=datetime(2026, 5, 10, tzinfo=timezone.utc),
+            mentee_application_deadline_at=datetime(2026, 5, 12, tzinfo=timezone.utc),
         )
-        mock_round = MagicMock()
-        mock_round.description = {
-            "mentor_application_deadline_at": "2026-05-01T23:59:59Z",
-            "mentee_application_deadline_at": "2026-04-25T23:59:59Z",
-        }
-        self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTEE
 
-        with self.assertRaisesRegex(ValueError, "has ended at 2026-04-25"):
-            await self.service.update_registration_info(
-                self.mock_session,
-                self.user_context,
-                self.mock_round_id,
-                self.sample_dto,
-            )
+        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE):
+            with self.subTest(role=role):
+                self.sample_dto.round_preferences.participant_role = role
 
-    async def test_update_registration_info_role_override(self):
-        """Test: Overrides user-provided role with fallback logic regardless of frontend input."""
-        mock_round = MagicMock()
-        mock_round.description = {
-            "mentee_application_deadline_at": "2026-04-25T23:59:59Z"
-        }
-        mock_round.name = "test round"
-        self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTEE
+                with self.assertRaisesRegex(ValueError, "has ended at 2026-04-27"):
+                    await self.service.update_registration_info(
+                        self.mock_session,
+                        self.user_context,
+                        self.mock_round_id,
+                        self.sample_dto,
+                    )
+
+        self.mock_session.commit.assert_not_awaited()
+        self.mock_onboarding_training_service.ensure_onboarding_training.assert_not_awaited()
+
+    async def test_registration_rejected_at_the_onboarding_deadline_itself(self):
+        """Test: The deadline instant is already closed, for both roles."""
+        self.mock_dt.now.return_value = self.onboarding_deadline
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+
+        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE):
+            with self.subTest(role=role):
+                self.sample_dto.round_preferences.participant_role = role
+
+                with self.assertRaisesRegex(ValueError, "has ended at 2026-04-27"):
+                    await self._register()
+
+        self.mock_session.commit.assert_not_awaited()
+        self.mock_onboarding_training_service.ensure_onboarding_training.assert_not_awaited()
+
+    async def test_registration_accepted_one_microsecond_before_the_deadline(self):
+        """Test: Still open one microsecond before the onboarding deadline."""
+        self.mock_dt.now.return_value = self.onboarding_deadline - timedelta(
+            microseconds=1
+        )
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+
+        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE):
+            with self.subTest(role=role):
+                self.mock_session.commit.reset_mock()
+                self.sample_dto.round_preferences.participant_role = role
+
+                result = await self._register()
+
+                self.assertIsInstance(result, RegistrationDto)
+                self.mock_session.commit.assert_awaited_once()
+
+    async def test_update_registration_info_never_overwrites_the_submitted_role(self):
+        """Test: The role persisted is the one submitted, not any role
+        inferred server-side, as long as the user is admitted into it."""
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
 
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
             self.sample_registration_dto.global_preferences
@@ -435,9 +553,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             self.sample_registration_dto.round_preferences
         )
 
-        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
-
-        self.user_context.roles = [UserRole.MENTORSHIP]
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTEE
 
         global_entity = PreferenceEntity(user_id=self.user_id)
         participant_entity = MentorshipRoundParticipantsEntity(
@@ -473,7 +589,59 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                     ParticipantRole.MENTEE,
                 )
 
+                # The eligibility check has to be asked about the role that
+                # was submitted. A hardcoded role here would let a
+                # mentee-only user register as a mentor.
+                self.mock_application_repo.get_hired_activity_application.assert_awaited_once_with(
+                    session=self.mock_session,
+                    user_id=self.user_id,
+                    mentorship_role=ParticipantRole.MENTEE,
+                )
+
                 self.mock_session.commit.assert_awaited_once()
+
+    async def test_update_rejects_a_role_the_user_was_not_admitted_into(self):
+        """Test: A role the user holds no HIRED activity application for is
+        rejected with PermissionError, and nothing is written."""
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        self.mock_application_repo.get_hired_activity_application.return_value = None
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+
+        with self.assertRaises(PermissionError):
+            await self.service.update_registration_info(
+                session=self.mock_session,
+                user_context=self.user_context,
+                round_id=self.mock_round_id,
+                preferences_data=self.sample_dto,
+            )
+
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_update_rejects_a_role_that_disagrees_with_the_existing_row(self):
+        """Test: A submitted role that disagrees with an existing registration
+        row for this round is rejected with ConflictError, and the row is
+        not overwritten."""
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        existing_entity = MentorshipRoundParticipantsEntity(
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            participant_role=ParticipantRole.MENTEE,
+        )
+        self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
+            existing_entity
+        )
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+
+        with self.assertRaises(ConflictError) as ctx:
+            await self.service.update_registration_info(
+                session=self.mock_session,
+                user_context=self.user_context,
+                round_id=self.mock_round_id,
+                preferences_data=self.sample_dto,
+            )
+
+        self.assertIn("mentee", str(ctx.exception))
+        self.mock_session.commit.assert_not_awaited()
 
     async def test_update_preferences_saves_profile_survey(self):
         """When profile_survey is provided, it should be serialized with exclude_none and saved."""
@@ -566,6 +734,128 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(existing_entity.current_stage)
         self.assertIsNone(existing_entity.time_urgency)
+
+    async def _register(self):
+        """Invoke update_registration_info with the round/preferences mapper
+        plumbing stubbed out, returning its RegistrationDto result."""
+        global_entity = PreferenceEntity(user_id=self.user_id)
+        participant_entity = MentorshipRoundParticipantsEntity(
+            user_id=self.user_id, round_id=self.mock_round_id
+        )
+        self.mock_mapper.map_to_global_preferences_dto.return_value = (
+            self.sample_registration_dto.global_preferences
+        )
+        self.mock_mapper.map_to_round_preference_dto.return_value = (
+            self.sample_registration_dto.round_preferences
+        )
+        with patch.object(
+            self.service,
+            "_update_skill_and_industry_preferences",
+            new_callable=AsyncMock,
+        ) as mock_global_update:
+            with patch.object(
+                self.service, "_update_user_round_preferences", new_callable=AsyncMock
+            ) as mock_round_update:
+                mock_global_update.return_value = global_entity
+                mock_round_update.return_value = participant_entity
+
+                return await self.service.update_registration_info(
+                    session=self.mock_session,
+                    user_context=self.user_context,
+                    round_id=self.mock_round_id,
+                    preferences_data=self.sample_dto,
+                )
+
+    async def test_registration_stamps_the_onboarding_deadline_on_training(self):
+        """Test: The deadline passed to ensure_onboarding_training is the
+        round's onboarding deadline itself, for both roles."""
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        cases = (
+            (ParticipantRole.MENTOR, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING),
+            (ParticipantRole.MENTEE, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING),
+        )
+
+        for role, category in cases:
+            with self.subTest(role=role):
+                ensure = (
+                    self.mock_onboarding_training_service.ensure_onboarding_training
+                )
+                ensure.reset_mock()
+                ensure.return_value = TrainingEntity(
+                    user_id=self.user_id,
+                    category=category,
+                    status=TrainingStatus.TO_DO,
+                    completed_timestamp=None,
+                    deadline=self.onboarding_deadline,
+                    link="https://onboarding",
+                )
+                self.sample_dto.round_preferences.participant_role = role
+
+                await self._register()
+
+                ensure.assert_awaited_once_with(
+                    session=self.mock_session,
+                    user_id=self.user_id,
+                    category=category,
+                    deadline=self.onboarding_deadline,
+                )
+
+    async def test_registration_uses_the_mentee_category_for_a_mentee(self):
+        """Test: A mentee's registration passes the mentee onboarding category,
+        not the mentor one used elsewhere in this fixture's default role."""
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTEE
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=None,
+            link="https://mentee",
+        )
+
+        await self._register()
+
+        kwargs = self.mock_onboarding_training_service.ensure_onboarding_training.await_args.kwargs
+        self.assertEqual(
+            kwargs["category"], TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+        )
+
+    async def test_registration_reports_completed_training(self):
+        """Test: is_onboarding_training_completed reflects a DONE row returned
+        by ensure_onboarding_training."""
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.DONE,
+            completed_timestamp=datetime(2026, 4, 20, tzinfo=timezone.utc),
+            deadline=self.onboarding_deadline,
+            link="https://mentor",
+        )
+
+        result = await self._register()
+
+        self.assertTrue(result.is_onboarding_training_completed)
+
+    async def test_registration_reports_incomplete_training(self):
+        """Test: is_onboarding_training_completed reflects a non-DONE row
+        returned by ensure_onboarding_training."""
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=self.onboarding_deadline,
+            link="https://mentor",
+        )
+
+        result = await self._register()
+
+        self.assertFalse(result.is_onboarding_training_completed)
 
 
 if __name__ == "__main__":

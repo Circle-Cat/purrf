@@ -123,8 +123,10 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_redis.pipeline.return_value = self.mock_pipe
 
         self.mock_retry = Mock()
-        # make retry call the function it receives
-        self.mock_retry.get_retry_on_transient.side_effect = lambda fn: fn()
+        # make retry run the pipeline it receives
+        self.mock_retry.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         # System under test
         self.utils = GoogleChatMessagesUtils(
@@ -147,9 +149,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_pipe.set.assert_called_once_with(
             TEST_MESSAGE_NAME, TEST_STORED_CREATED_MESSAGE
         )
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
         self.mock_pipe.execute.assert_called_once()
         self.mock_logger.debug.assert_any_call(
             "ZADD %s {%s: %s}", TEST_INDEX_REDIS_KEY, REDIS_MEMBER, TEST_SCORE
@@ -170,9 +170,7 @@ class TestGoogleChatMessagesUtils(TestCase):
             TEST_MESSAGE_NAME, TEST_STORED_UPDATED_MESSAGE_POST_UPDATE
         )
         self.mock_pipe.execute.assert_called_once()
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
         self.mock_logger.debug.assert_any_call("SET %s updated", TEST_MESSAGE_NAME)
 
     def test_store_deleted_messages_success(self):
@@ -196,9 +194,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_pipe.zadd.assert_called_once_with(
             TEST_DELETED_INDEX_REDIS_KEY, {REDIS_MEMBER: float(TEST_SCORE)}
         )
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
         self.mock_pipe.execute.assert_called_once()
 
     def test_store_updated_message_does_not_exist(self):
@@ -213,9 +209,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_redis.get.assert_called_once_with(TEST_MESSAGE_NAME)
         self.mock_pipe.set.assert_not_called()
         self.mock_pipe.execute.assert_called_once()
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
 
     def test_store_updated_message_missing_text_is_handled(self):
         """
@@ -243,9 +237,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.assertEqual(parsed["text"][-1]["createTime"], TEST_TIME)
         self.assertEqual(parsed["text"][-1]["value"], TEST_MESSAGE_TEXT)
         self.mock_pipe.execute.assert_called_once()
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
 
     def test_store_deleted_message_does_not_exist(self):
         self.mock_redis.get.return_value = None
@@ -261,9 +253,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_pipe.set.assert_not_called()
         self.mock_pipe.zadd.assert_not_called()
         self.mock_pipe.execute.assert_called_once()
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
 
     def test_store_deleted_message_already_deleted(self):
         self.mock_redis.get.return_value = (
@@ -283,9 +273,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_pipe.zrem.assert_not_called()
         self.mock_pipe.zadd.assert_not_called()
         self.mock_pipe.execute.assert_called_once()  # Pipeline execute will still be called
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
 
     def test_store_created_message_invalid_format(self):
         invalid_payload = {"message": {"sender": TEST_USER}}
@@ -313,9 +301,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_pipe.zadd.assert_not_called()
         self.mock_pipe.set.assert_not_called()
         self.mock_pipe.execute.assert_called_once()
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
 
     def test_sync_batch_created_messages(self):
         # sync_batch_created_messages expects raw message data, not the "message" wrapper
@@ -331,9 +317,7 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_redis.pipeline.assert_called_once()
         self.assertEqual(self.mock_pipe.zadd.call_count, 2)
         self.assertEqual(self.mock_pipe.set.call_count, 2)
-        self.mock_retry.get_retry_on_transient.assert_called_once_with(
-            self.mock_pipe.execute
-        )
+        self.mock_retry.execute_pipeline.assert_called_once_with(self.mock_pipe)
         self.mock_pipe.execute.assert_called_once()
 
     def test_sync_batch_created_messages_pipeline_failure(self):

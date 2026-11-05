@@ -512,7 +512,7 @@ class GerritSyncService:
             if cl_data:
                 write_pipe.zadd(sorted_set_key, cl_data)
 
-        self.retry_utils.get_retry_on_transient(write_pipe.execute)
+        self.retry_utils.execute_pipeline(write_pipe)
         self.logger.info(
             "Successfully wrote all aggregated data to Redis in a single pipeline."
         )

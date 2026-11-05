@@ -1,10 +1,115 @@
 import asyncio
 from http import HTTPStatus
 
+from sqlalchemy.exc import IntegrityError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from backend.common.api_endpoints import (
+    GMAIL_PUSH_ENDPOINT,
+    HEALTH_ENDPOINT,
+    MENTORSHIP_MATCH_RUN_COMPLETE,
+    NOTIFICATION_DELIVER_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+    RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
+)
 from backend.common.fast_api_response_wrapper import api_response
+from backend.common.identity_type import is_rowless_login
+from backend.common.permissions import (
+    Permission,
+    SERVICE_ACCOUNT_PERMISSIONS,
+    SUPER_ADMIN_PERMISSIONS,
+)
+from backend.training.content_host import hostname_of
+
+# Maps stored permission_name strings back to Permission members; unknown
+# (stale) names are skipped during resolution.
+_PERMISSION_BY_VALUE = {p.value: p for p in Permission}
+
+# Paths this middleware does not authenticate, matched exactly rather than by
+# prefix so a future sibling route cannot inherit the exemption.
+#
+# The Pub/Sub push endpoint is reached by Google, not by a person: it carries a
+# Google OIDC token and no Auth0 session, so authenticating it here rejects
+# every push with a 400 before the handler runs. Its guard is the Cloudflare
+# Worker that verifies that token, plus the Access Service Auth policy in front
+# of the origin -- the request cannot arrive without passing both.
+#
+# The matcher job's completion callback arrives the same way, through the same
+# Worker, and its route asserts the Google token and the job's account itself.
+# So do the Google Chat, Microsoft Teams and Gerrit event pushes.
+#
+# The health check is probed by Kubernetes, which sends no credentials. It
+# answers a fixed body and reads nothing.
+#
+# The anonymous job list is read by the apply Worker on behalf of visitors who
+# have not signed in. It returns only the candidate-safe summaries of live
+# postings, the same ones every signed-in user can already list.
+_UNAUTHENTICATED_PATHS = frozenset({
+    HEALTH_ENDPOINT,
+    f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
+    f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
+    f"/api{GMAIL_PUSH_ENDPOINT}",
+    f"/api{PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT}",
+    f"/api{PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT}",
+    f"/api{PUBSUB_PUSH_GERRIT_ENDPOINT}",
+    f"/api{RECRUITING_ANONYMOUS_JOBS_ENDPOINT}",
+})
+
+# Course files are requested by the course's own JavaScript, which cannot
+# present an Access JWT; a signature in the URL path stands in for one.
+#
+# The exemption is on (host, path prefix), never on the path alone. Matching
+# only the path would exempt /p/... on the API host too, and a course that
+# reached that origin would be same-origin with the API -- able to read the
+# Access cookie, which is deliberately JS-readable, and to call any endpoint as
+# the learner. A course knows the token in its own URL, so nothing but this
+# check stops it navigating there itself.
+_CONTENT_PATH_PREFIX = "/p/"
+
+
+def _is_content_origin_request(request: Request, content_host: str | None) -> bool:
+    """Whether this is a course-file request on the content origin.
+
+    Returns False when no content host is configured, so a missing environment
+    variable authenticates everything rather than exempting everything.
+    """
+    if not content_host:
+        return False
+    # Lowercased for the same reason the content route lowercases it: Host is
+    # case-insensitive, and this exemption has to apply exactly where that
+    # route answers, or a mixed-case Host turns a 404 into a 401.
+    host = request.headers.get("host", "").split(":")[0].lower()
+    return host == content_host and request.url.path.startswith(_CONTENT_PATH_PREFIX)
+
+
+# The content host shares a site with the API host, so the browser attaches the
+# learner's Access cookie to anything a course sends to the API. CORS keeps the
+# course from reading a response, but a request that needs no preflight -- a
+# POST with no body, a text/plain or untyped-Blob body, or a form -- still runs
+# with the learner's permissions. Course pages only ever read, so any other
+# method arriving from the content origin is refused before it is
+# authenticated. Requests without an Origin (Pub/Sub, the Worker, cron) and the
+# app's own origins are untouched.
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _is_write_from_content_origin(request: Request, content_host: str | None) -> bool:
+    """Whether this is a state-changing request sent by a course page."""
+    if not content_host or request.method in _READ_METHODS:
+        return False
+    origin = request.headers.get("origin")
+    return bool(origin) and hostname_of(origin) == content_host
+
+
+class AccountDeactivatedError(PermissionError):
+    """Authenticated, but the account is not active."""
+
+
+class AccountSuspendedError(PermissionError):
+    """Authenticated, but the account is blacklisted."""
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -14,21 +119,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
     This middleware automatically detects and verifies authentication tokens from
     multiple sources, including Cloudflare Access JWTs and Google identity tokens.
     It injects the authenticated user's context into the request state, allowing
-    downstream route handlers to access user information and roles.
+    downstream route handlers to access user information and permissions.
 
     Features:
         1. Delegates token verification to `AuthenticationService`.
         2. Adds `request.state.user` containing:
             - sub: Unique identifier
             - primary_email: User's primary email
-            - roles: List of user roles (UserRole Enum)
+            - permissions: frozenset[Permission] resolved from the DB
+            - is_super_admin / is_service_account: identity-layer flags
         3. Returns a standardized API response on authentication failure using `api_response`.
 
     Attributes:
         auth_service: An instance of `AuthenticationService` responsible for token validation.
+        database: Database used to open the short bootstrap transaction.
+        user_identity_service: Resolves / first-login creates the internal user.
+        user_permissions_repository: Reads active permission grants during resolve.
 
     Usage:
-        app.add_middleware(AuthMiddleware, auth_service=auth_service)
+        app.add_middleware(
+            AuthMiddleware,
+            auth_service=auth_service,
+            database=database,
+            user_identity_service=user_identity_service,
+            user_permissions_repository=user_permissions_repository,
+            logger=logger,
+        )
 
     Exception Handling:
         - ValueError: Returns HTTP 400 BAD REQUEST with the error message.
@@ -36,22 +152,35 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     Example:
         @app.get("/dashboard")
-        async def dashboard(request: Request):
-            user = request.state.user
-            if "ccInternal" not in user.roles and "manager" not in user.roles:
+        async def dashboard(current_user: UserContextDto):
+            if not current_user.has_permission(Permission.INTERNAL_ACTIVITY_READ):
                 return api_response(
                     message="Forbidden",
                     status_code=HTTPStatus.FORBIDDEN
                 )
             return api_response(
                 message="Dashboard data",
-                data={"user": user.primary_email}
+                data={"user": current_user.primary_email}
             )
     """
 
-    def __init__(self, app, auth_service):
+    def __init__(
+        self,
+        app,
+        auth_service,
+        database,
+        user_identity_service,
+        user_permissions_repository,
+        logger,
+        training_content_host=None,
+    ):
         super().__init__(app)
         self.auth_service = auth_service
+        self.database = database
+        self.user_identity_service = user_identity_service
+        self.user_permissions_repository = user_permissions_repository
+        self.logger = logger
+        self.training_content_host = training_content_host
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -62,8 +191,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user context to `request.state.user` so that downstream handlers can access it.
 
         If token validation fails with a `ValueError`, a 400 Bad Request response is
-        returned with the error message. For other exceptions, a 403 Forbidden response
-        is returned with a generic "Authentication failed" message.
+        returned with the error message. A `PermissionError` (e.g. a deactivated
+        account that authenticates but is barred from acting) returns a 403 with its
+        reason. For other exceptions, a 403 Forbidden response is returned with a
+        generic "Authentication failed" message.
 
         Args:
             request (Request): The incoming FastAPI request object.
@@ -73,6 +204,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
             Response: The response returned by the next handler, or an error response
                     if authentication fails.
         """
+        if _is_write_from_content_origin(request, self.training_content_host):
+            self.logger.warning(
+                "[AuthMiddleware] %s %s refused: sent from the training content origin",
+                request.method,
+                request.url.path,
+            )
+            return api_response(
+                message="Course content cannot change data.",
+                status_code=HTTPStatus.FORBIDDEN,
+                data=None,
+            )
+
+        if request.url.path in _UNAUTHENTICATED_PATHS:
+            return await call_next(request)
+
+        if _is_content_origin_request(request, self.training_content_host):
+            return await call_next(request)
+
         try:
             # authenticate_request is synchronous and may issue a blocking
             # JWKS HTTP fetch on cache miss. Offload to a worker thread so
@@ -80,13 +229,55 @@ class AuthMiddleware(BaseHTTPMiddleware):
             user_context = await asyncio.to_thread(
                 self.auth_service.authenticate_request, request.headers
             )
+
+            # Service accounts (Google cron tokens) have no users row, so they
+            # skip first-login bootstrap and resolve to a fixed code bundle.
+            # Human users are bootstrapped and their permissions resolved from
+            # the DB.
+            if user_context.is_service_account:
+                user_context.permissions = SERVICE_ACCOUNT_PERMISSIONS
+            else:
+                await self._bootstrap_user(user_context)
+
             request.state.user = user_context
 
         except ValueError as e:
             return api_response(
                 message=str(e), status_code=HTTPStatus.BAD_REQUEST, data=None
             )
+        except AccountSuspendedError as e:
+            self.logger.warning(
+                "[AuthMiddleware] %s %s denied: %s",
+                request.method,
+                request.url.path,
+                e,
+            )
+            return api_response(
+                message=("Your account has been suspended. Contact an administrator."),
+                status_code=HTTPStatus.FORBIDDEN,
+                data=None,
+            )
+        except PermissionError as e:
+            self.logger.warning(
+                "[AuthMiddleware] %s %s denied: %s",
+                request.method,
+                request.url.path,
+                e,
+            )
+            return api_response(
+                message=(
+                    "Your account has been deactivated. "
+                    "Contact an administrator to restore access."
+                ),
+                status_code=HTTPStatus.FORBIDDEN,
+                data=None,
+            )
         except Exception:
+            self.logger.exception(
+                "[AuthMiddleware] Auth middleware failed for %s %s",
+                request.method,
+                request.url.path,
+            )
             return api_response(
                 message="Authentication failed",
                 status_code=HTTPStatus.FORBIDDEN,
@@ -94,3 +285,109 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         return await call_next(request)
+
+    async def _bootstrap_user(self, user_context):
+        """
+        Resolve (and on first login create) the internal user for an
+        authenticated request, then resolve its permissions onto user_context
+        (user_id, is_super_admin, permissions).
+
+        Runs in a short transaction that commits before the request handler
+        opens its own session. For users with a matching user_identities row
+        (sub-routed), this is one SELECT plus the permission lookup. Passwordless
+        users resolved by confirmed-address routing have no identity row and instead
+        re-resolve through create_or_swap_user on each request—multiple SELECTs
+        to check for email ownership, but no writes in the steady state.
+
+        create_or_swap_user always returns a user (untrusted and stale logins
+        are refused upstream, so every login reaching this point is trusted
+        and resolves to a row via swap, routing, or first-login).
+
+        Two concurrent first logins for the same sub both miss find_by_sub and
+        enter create_or_swap_user; the second collides on the
+        subject_identifier UNIQUE constraint, rolls back, and re-finds the row
+        the winner committed. If it's still missing, the violation isn't the
+        race and must surface.
+
+        user_context.last_login_at is threaded down to find_user_by_sub /
+        create_or_swap_user, which stamp it onto user_identities /
+        user_emails as appropriate; there is no account-level last-login
+        column to maintain here.
+        """
+        async with self.database.session() as session:
+            async with session.begin():
+                rowless = is_rowless_login(user_context.sub, user_context.identity_type)
+                user = None
+                if not rowless:
+                    # Sub-routed (google / social only — passwordless, both
+                    # internal and external, is row-less): single JOIN
+                    # resolves the steady state.
+                    user = await self.user_identity_service.find_user_by_sub(
+                        session, user_context.sub, user_context.last_login_at
+                    )
+                if user is None:
+                    try:
+                        # SAVEPOINT around the insert: on a concurrent first
+                        # login the unique-violation rolls back only to here,
+                        # leaving the outer transaction usable.
+                        async with session.begin_nested():
+                            user = await self.user_identity_service.create_or_swap_user(
+                                session, user_context
+                            )
+                    except IntegrityError:
+                        # A concurrent first login committed the winner.
+                        if rowless:
+                            # Row-less winner wrote no identity row — re-resolve
+                            # by confirmed address (routes to the winner).
+                            user = await self.user_identity_service.create_or_swap_user(
+                                session, user_context
+                            )
+                        else:
+                            # Sub-routed winner recorded its sub — re-find it.
+                            user = await self.user_identity_service.find_user_by_sub(
+                                session, user_context.sub, user_context.last_login_at
+                            )
+                        if user is None:
+                            # Not the race — a real bug. Must surface.
+                            raise
+
+                # A deactivated or blacklisted account still authenticates
+                # (valid token, real user) but must not be allowed to act.
+                # is_active is checked first: an account that is both reads as
+                # deactivated, the broader of the two states.
+                if not user.is_active:
+                    raise AccountDeactivatedError("User account is deactivated")
+                if user.is_blocked:
+                    raise AccountSuspendedError("User account is blocked")
+
+                await self._resolve_permissions(session, user, user_context)
+
+    async def _resolve_permissions(self, session, user, user_context):
+        """
+        Resolve a human user's permissions. super_admin short-circuits
+        to the full enum; everyone else gets their active user_permissions rows.
+        Runs in the bootstrap transaction so the user row is not yet expired.
+        """
+        user_context.user_id = user.user_id
+        self.logger.info(
+            "[AuthMiddleware] user login: user_id=%s", user_context.user_id
+        )
+        # The DB flag is authoritative; the auth layer only sets the DTO flag in
+        # local dev (DevAuthenticationService), never in production.
+        user_context.is_super_admin = user.is_super_admin or user_context.is_super_admin
+        if user_context.is_super_admin:
+            user_context.permissions = SUPER_ADMIN_PERMISSIONS
+            return
+        names = await self.user_permissions_repository.get_active_permission_names(
+            session, user.user_id
+        )
+        unknown = [name for name in names if name not in _PERMISSION_BY_VALUE]
+        if unknown:
+            self.logger.warning(
+                "[AuthMiddleware] user_id=%s has unmapped permission grants %s; skipping",
+                user.user_id,
+                unknown,
+            )
+        user_context.permissions = frozenset(
+            _PERMISSION_BY_VALUE[name] for name in names if name in _PERMISSION_BY_VALUE
+        )

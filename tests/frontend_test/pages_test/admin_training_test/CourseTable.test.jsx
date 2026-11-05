@@ -1,0 +1,621 @@
+import React from "react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import "@testing-library/jest-dom";
+
+import CourseTable from "@/pages/AdminTraining/components/CourseTable";
+import * as api from "@/api/trainingApi";
+import { formatDateTimeWithZone } from "@/utils/dateTime";
+
+vi.mock("@/api/trainingApi");
+
+// Pins the viewer's zone so the upload timestamp is asserted end to end
+// (the real formatter, a fixed zone) rather than trusting the wiring blind.
+vi.mock("@/utils/dateTime", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, resolveViewerTimezone: () => "America/New_York" };
+});
+
+// One fixture per `TrainingCourseLiveState`, shaped like the wire DTO
+// (backend/dto/training_course_dto.py -> TrainingCourseDto).
+const verified = {
+  courseId: 1,
+  name: "Mentor Onboarding",
+  description: "What a mentor needs before their first pairing.",
+  category: "mentorship_mentor_onboarding",
+  isActive: true,
+  liveState: "live",
+  link: null,
+  scormVersion: "1.2",
+  packageVersion: "qPpo9zHD",
+  reportingMode: "completed",
+  packageUploadedAt: "2026-08-20T00:00:00Z",
+  verifiedCompletableAt: "2026-08-21T00:00:00Z",
+  verifiedByUserId: 42,
+  assignedCount: 124,
+  unfinishedCount: 3,
+};
+
+const noPackage = {
+  courseId: 3,
+  name: "Corporate Culture",
+  description: null,
+  category: "corporate_culture_course",
+  isActive: true,
+  liveState: "no_package",
+  link: null,
+  scormVersion: null,
+  packageVersion: null,
+  reportingMode: null,
+  packageUploadedAt: null,
+  verifiedCompletableAt: null,
+  verifiedByUserId: null,
+  assignedCount: 0,
+  unfinishedCount: 0,
+};
+
+const externalLink = {
+  courseId: 4,
+  name: "Residency Program Onboarding",
+  description: null,
+  category: "residency_program_onboarding",
+  isActive: true,
+  liveState: "external_link",
+  link: "https://example.com/mentor",
+  scormVersion: null,
+  packageVersion: null,
+  reportingMode: null,
+  packageUploadedAt: null,
+  verifiedCompletableAt: null,
+  verifiedByUserId: null,
+  assignedCount: 61,
+  unfinishedCount: 23,
+};
+
+const renderTable = (courses, onCoursesChanged) =>
+  render(
+    <CourseTable
+      courses={courses}
+      onCoursesChanged={onCoursesChanged}
+      canWrite
+    />,
+    { wrapper: MemoryRouter },
+  );
+
+/** The page is reachable on the read grant alone, so this is a real caller. */
+const renderReadOnly = (courses) =>
+  render(<CourseTable courses={courses} canWrite={false} />, {
+    wrapper: MemoryRouter,
+  });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("CourseTable", () => {
+  it("offers to replace the package on a live course, and nothing else", () => {
+    renderTable([verified]);
+
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /replace package/i }),
+    ).toBeInTheDocument();
+    // Assigning is the bulk card's job now; this table only manages packages.
+    expect(
+      screen.queryByRole("button", { name: /^assign$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reads Off rather than Live once a course is turned off", () => {
+    // The row's own button says "Activate", but that is the action, not the
+    // state. Status is where the state is read, and a course that is off is
+    // shut to everybody on it -- so it cannot go on claiming to be live.
+    renderTable([{ ...verified, isActive: false }]);
+
+    expect(screen.getByText("Off")).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+  });
+
+  it("shows the total assigned count", () => {
+    renderTable([verified]);
+
+    expect(screen.getByText("124")).toBeInTheDocument();
+  });
+
+  it("offers to upload a package for a course that has never had one", () => {
+    renderTable([noPackage]);
+
+    expect(screen.getByText("No package")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /upload package/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /assign/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows an external-link course as such, with the link", () => {
+    render(<CourseTable courses={[externalLink]} canWrite />, {
+      wrapper: MemoryRouter,
+    });
+
+    expect(screen.getByText("External link")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view/i })).toHaveAttribute(
+      "href",
+      "https://example.com/mentor",
+    );
+    expect(
+      screen.getByRole("button", { name: /upload package/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the deactivate dialog naming this row's headcounts", async () => {
+    renderTable([externalLink]);
+
+    await userEvent.click(screen.getByRole("button", { name: /deactivate/i }));
+
+    expect(
+      screen.getByText(/61 people already assigned lose access/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/23 of them have not finished yet/i),
+    ).toBeInTheDocument();
+  });
+
+  it("turns a course off through the dialog, then asks the caller to refetch and closes", async () => {
+    api.updateCourse.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+    renderTable([verified], onCoursesChanged);
+
+    await userEvent.click(screen.getByRole("button", { name: /deactivate/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /turn off course/i }),
+    );
+
+    await waitFor(() =>
+      expect(api.updateCourse).toHaveBeenCalledWith(verified.courseId, {
+        isActive: false,
+      }),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+    // CourseTable never patches `courses` itself -- the dialog is gone, but
+    // the row still reads whatever `courses` says until a fresh prop arrives.
+    expect(screen.queryByText(/nothing is deleted/i)).not.toBeInTheDocument();
+  });
+
+  it("activates a course directly with no dialog, and only reflects it once fresh courses arrive", async () => {
+    const inactive = { ...verified, courseId: 9, isActive: false };
+    const reactivated = { ...inactive, isActive: true };
+    api.updateCourse.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+
+    const { rerender } = renderTable([inactive], onCoursesChanged);
+
+    await userEvent.click(screen.getByRole("button", { name: /^activate$/i }));
+
+    await waitFor(() =>
+      expect(api.updateCourse).toHaveBeenCalledWith(inactive.courseId, {
+        isActive: true,
+      }),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+    // No local patch: the row still says Activate until the parent re-renders
+    // with what the refetch actually returned.
+    expect(
+      screen.getByRole("button", { name: /^activate$/i }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <CourseTable
+        courses={[reactivated]}
+        onCoursesChanged={onCoursesChanged}
+        canWrite
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /deactivate/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the upload dialog for a course with no package, uploads, and refetches on success", async () => {
+    const file = new File(["zip-bytes"], "course.zip", {
+      type: "application/zip",
+    });
+    api.uploadPackage.mockResolvedValue({
+      data: {
+        completionConfigReadable: true,
+        completesViaStoryline: false,
+        completionPercentage: 100,
+      },
+    });
+    const onCoursesChanged = vi.fn();
+    renderTable([noPackage], onCoursesChanged);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /upload package/i }),
+    );
+    await userEvent.upload(screen.getByLabelText(/scorm package/i), file);
+    await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
+
+    // The third argument is the dialog's own progress callback, handed
+    // straight through so the bar it draws is fed by the real transfer.
+    await waitFor(() =>
+      expect(api.uploadPackage).toHaveBeenCalledWith(
+        noPackage.courseId,
+        file,
+        expect.any(Function),
+      ),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the action Replace package for a course that already has one, and says the upload only stages it", async () => {
+    renderTable([verified]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /replace package/i }),
+    );
+
+    expect(
+      screen.getByText(/Learners keep seeing qPpo9zHD until you publish it/),
+    ).toBeInTheDocument();
+  });
+
+  it("makes the live version a link into the preview", () => {
+    renderTable([{ ...verified, courseId: 9, packageVersion: "qPpo9zHD" }]);
+
+    // The version is what shows; a screen reader also hears what it opens.
+    const link = screen.getByRole("link", {
+      name: "Preview package qPpo9zHD",
+    });
+    expect(link).toHaveAttribute("href", "/admin/training/9/preview");
+    expect(screen.getByText("Preview package")).toHaveClass("sr-only");
+  });
+
+  it("leaves a live course whose package version cannot be read with nothing to click", () => {
+    // Deliberate: the version string is itself the entry point into the
+    // preview, so a live package from a toolchain we cannot read renders
+    // "—" and offers no way in. Distinct from `noPackage` above, which
+    // has no package at all.
+    renderTable([{ ...verified, packageVersion: null, link: null }]);
+
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("leaves an external-link course pointing outward", () => {
+    renderTable([
+      { ...verified, link: "https://example.com/c", packageVersion: null },
+    ]);
+
+    expect(screen.getByRole("link", { name: /View/ })).toHaveAttribute(
+      "href",
+      "https://example.com/c",
+    );
+  });
+});
+
+describe("CourseTable without the write grant", () => {
+  // The route onto this page is gated on the read grant, so somebody holding
+  // only that reaches the table. Every control below calls an endpoint the API
+  // answers 403 to, and the Trial run link goes to a route the router bounces
+  // them off. The assignment card beside this table is already hidden from the
+  // same person; the table was the half that had not caught up.
+  it("offers a reader no way to change a live course", () => {
+    renderReadOnly([verified]);
+
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /replace package/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /deactivate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a reader no way to upload to a course that has no package", () => {
+    renderReadOnly([noPackage]);
+
+    expect(
+      screen.queryByRole("button", { name: /upload package/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a reader no way to turn a course back on", () => {
+    renderReadOnly([{ ...verified, isActive: false }]);
+
+    expect(screen.getByText("Off")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /activate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still tells a reader everything the table is for", () => {
+    // Hiding the actions must not hide the catalogue: the point of the read
+    // grant is seeing what exists and what state it is in.
+    renderReadOnly([verified]);
+
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByText(/mentor onboarding/i)).toBeInTheDocument();
+  });
+});
+
+// One staged sub-row per course whose `staged` is non-null (spec §8). Kept
+// separate from the `describe` above because these fixtures shape `staged`
+// directly rather than reusing `verified`/`noPackage`/etc.
+describe("CourseTable staged sub-row", () => {
+  const staged = (over) => ({
+    courseId: 9,
+    name: "Mentee Onboarding",
+    isActive: true,
+    liveState: "live",
+    packageVersion: "qPpo9zHD",
+    staged: {
+      packageId: 2,
+      packageVersion: "RaOvlxxJ",
+      uploadedAt: "2026-09-05T03:41:00Z",
+      verifiedCompletableAt: null,
+    },
+    ...over,
+  });
+
+  it("offers a reader no way to publish, discard or trial a staged package", () => {
+    // The sub-row still appears: that a package is waiting is exactly the kind
+    // of thing the read grant exists to show. Only the three controls go.
+    renderReadOnly([staged()]);
+
+    expect(
+      screen.getByText("Learners still see qPpo9zHD."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^publish$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^discard$/i }),
+    ).not.toBeInTheDocument();
+    // The trial route is gated on the write grant, so this link is a door the
+    // router shuts in their face.
+    expect(
+      screen.queryByRole("link", { name: /trial run/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows no sub-row for a course with nothing staged", () => {
+    renderTable([staged({ staged: null })]);
+
+    expect(screen.queryByText(/staged/i)).not.toBeInTheDocument();
+  });
+
+  it("says what learners still see while a package is staged", () => {
+    renderTable([staged()]);
+
+    expect(
+      screen.getByText("Learners still see qPpo9zHD."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing is live when the course has never published", () => {
+    renderTable([staged({ liveState: "no_package", packageVersion: null })]);
+
+    expect(
+      screen.getByText(
+        "Nothing is live yet; publishing makes this course assignable.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says learners still follow the external link on a seed course", () => {
+    renderTable([
+      staged({
+        liveState: "external_link",
+        packageVersion: null,
+        link: "https://docs.example.com/onboarding",
+      }),
+    ]);
+
+    expect(
+      screen.getByText(
+        "Learners still follow the external link; publishing moves them to this package.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is live yet/)).not.toBeInTheDocument();
+  });
+
+  it("keeps Publish on screen but disabled, and says why on hover", async () => {
+    const user = userEvent.setup();
+    renderTable([staged()]);
+
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish).toBeDisabled();
+
+    // The disabled button takes no pointer events; its wrapper does, and is
+    // focusable for the keyboard.
+    expect(publish.parentElement).toHaveAttribute("tabindex", "0");
+    await user.hover(publish.parentElement);
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Run this package to completion first",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("enables Publish once the staged package is verified", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: "RaOvlxxJ",
+          uploadedAt: "2026-09-05T03:41:00Z",
+          verifiedCompletableAt: "2026-09-05T04:10:00Z",
+        },
+      }),
+    ]);
+
+    expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
+  });
+
+  it("shows the staged package's upload time and version marker", () => {
+    renderTable([staged()]);
+
+    expect(
+      screen.getByText(/⬆ RaOvlxxJ staged — not run yet/),
+    ).toBeInTheDocument();
+  });
+
+  it("marks a verified staged package with a check instead of the upload arrow", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: "RaOvlxxJ",
+          uploadedAt: "2026-09-05T03:41:00Z",
+          verifiedCompletableAt: "2026-09-05T04:10:00Z",
+        },
+      }),
+    ]);
+
+    expect(
+      screen.getByText(/✓ RaOvlxxJ staged — verified/),
+    ).toBeInTheDocument();
+  });
+
+  it("discards the staged package and refetches, without touching the live package", async () => {
+    api.discardPackage.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+    renderTable([staged()], onCoursesChanged);
+
+    await userEvent.click(screen.getByRole("button", { name: /^discard$/i }));
+
+    await waitFor(() => expect(api.discardPackage).toHaveBeenCalledWith(9));
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+    expect(api.publishPackage).not.toHaveBeenCalled();
+  });
+
+  it("sends one DELETE however fast Discard is double-clicked", async () => {
+    // Nothing stands between the click and the request -- spec 6.2 shows a
+    // bare Discard, and re-uploading the zip is the way back -- so the button
+    // itself has to latch. The second DELETE finds nothing staged and reaches
+    // the admin as a red toast on an action that worked.
+    let land;
+    api.discardPackage.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    const onCoursesChanged = vi.fn();
+    renderTable([staged()], onCoursesChanged);
+
+    const discard = screen.getByRole("button", { name: /^discard$/i });
+    await userEvent.click(discard);
+    await userEvent.click(discard);
+
+    expect(api.discardPackage).toHaveBeenCalledTimes(1);
+    land({ data: {} });
+    await waitFor(() => expect(onCoursesChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the publish dialog from a verified staged package, then publishes and refetches", async () => {
+    api.publishPackage.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+    renderTable(
+      [
+        staged({
+          assignedCount: 48,
+          unfinishedCount: 3,
+          staged: {
+            packageId: 2,
+            packageVersion: "RaOvlxxJ",
+            uploadedAt: "2026-09-05T03:41:00Z",
+            verifiedCompletableAt: "2026-09-05T04:10:00Z",
+          },
+        }),
+      ],
+      onCoursesChanged,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    expect(
+      screen.getByText(
+        "RaOvlxxJ replaces qPpo9zHD for everyone on this course.",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /publish package/i }),
+    );
+
+    await waitFor(() => expect(api.publishPackage).toHaveBeenCalledWith(9));
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the staged package without a version when it has none, instead of leaving a gap", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: null,
+          uploadedAt: "2026-09-05T03:41:00Z",
+          verifiedCompletableAt: null,
+        },
+      }),
+    ]);
+
+    expect(
+      screen.getByText("⬆ the staged package — not run yet"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/⬆ +staged/)).not.toBeInTheDocument();
+  });
+
+  it("says learners still see the current package when the live package has no version", () => {
+    renderTable([staged({ packageVersion: null })]);
+
+    expect(
+      screen.getByText("Learners still see the current package."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/still see \./)).not.toBeInTheDocument();
+  });
+
+  it("shows the staged package's upload time in the viewer's timezone", () => {
+    renderTable([staged()]);
+
+    const expected = formatDateTimeWithZone(
+      "2026-09-05T03:41:00Z",
+      "America/New_York",
+    );
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it("names who uploaded the staged package next to the upload time", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: "RaOvlxxJ",
+          uploadedAt: "2026-09-05T03:41:00Z",
+          uploadedByName: "Grace Hopper",
+          verifiedCompletableAt: null,
+        },
+      }),
+    ]);
+
+    const time = formatDateTimeWithZone(
+      "2026-09-05T03:41:00Z",
+      "America/New_York",
+    );
+    expect(
+      screen.getByText(`Uploaded by Grace Hopper · ${time}`),
+    ).toBeInTheDocument();
+  });
+
+  it("offers a Trial run link into the course's own trial route", () => {
+    renderTable([staged()]);
+
+    expect(screen.getByRole("link", { name: /trial run/i })).toHaveAttribute(
+      "href",
+      "/admin/training/9/trial",
+    );
+  });
+});

@@ -33,8 +33,8 @@ class TestMicrosoftMemberSyncService(IsolatedAsyncioTestCase):
         self.mock_pipeline = MagicMock()
         self.mock_redis.pipeline.return_value = self.mock_pipeline
         self.mock_retry_utils = MagicMock()
-        self.mock_retry_utils.get_retry_on_transient.side_effect = (
-            lambda func, *args, **kwargs: func()
+        self.mock_retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
         )
         self.microsoft_member_service = MicrosoftMemberSyncService(
             logger=self.mock_logger,
@@ -87,7 +87,9 @@ class TestMicrosoftMemberSyncService(IsolatedAsyncioTestCase):
 
         self.assertEqual(result, expected_result)
         self.mock_redis.pipeline.assert_called_once()
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(
+            self.mock_pipeline
+        )
 
     def test_get_current_redis_members_by_group_and_status_empty_redis(self):
         mock_redis_data = [{} for _ in range(6)]
@@ -106,7 +108,9 @@ class TestMicrosoftMemberSyncService(IsolatedAsyncioTestCase):
 
         self.assertEqual(result, expected_result)
         self.mock_redis.pipeline.assert_called_once()
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.mock_retry_utils.execute_pipeline.assert_called_once_with(
+            self.mock_pipeline
+        )
 
     async def test_get_latest_members_by_group_and_status_success(self):
         self.mock_microsoft_service.list_all_groups.return_value = [

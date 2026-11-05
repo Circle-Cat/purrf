@@ -1,5 +1,4 @@
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.user_context_dto import UserContextDto
@@ -7,7 +6,6 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RegistrationDto
 from backend.entity.preference_entity import PreferenceEntity
-from backend.entity.training_entity import TrainingEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -17,10 +15,7 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingStatus,
 )
-from backend.common.environment_constants import (
-    MENTORSHIP_MENTOR_ONBOARDING_LINK,
-    MENTORSHIP_MENTEE_ONBOARDING_LINK,
-)
+from backend.common.exceptions import ConflictError
 
 
 class RegistrationService:
@@ -28,8 +23,11 @@ class RegistrationService:
     Service to handle user preferences related to skills and industry.
 
     This service is responsible for fetching, updating, and creating user preferences
-    for skills, specific industries, and related information. It also automatically
-    assigns onboarding training records when a user registers for a round.
+    for skills, specific industries, and related information. It also stamps the
+    onboarding training deadline on first round registration; the training record
+    itself is normally already assigned at admission, and this service only
+    creates one as a legacy fallback for users admitted before that assignment
+    existed.
     """
 
     def __init__(
@@ -39,9 +37,9 @@ class RegistrationService:
         mentorship_round_repository,
         mentorship_round_participants_repository,
         participation_service,
-        user_identity_service,
         mentorship_mapper,
-        training_repository,
+        onboarding_training_service,
+        application_repository,
     ):
         """
         Initialize the RegistrationService with its dependencies.
@@ -53,19 +51,26 @@ class RegistrationService:
             mentorship_round_participants_repository: The repository responsible for handling mentorship
                                                     round participants data.
             participation_service: Service responsible for retrieving participation data.
-            user_identity_service: Service responsible for retrieving user identity information.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
-            training_repository: The repository responsible for handling training data.
+            onboarding_training_service (OnboardingTrainingService): Owns the
+                create-or-stamp rule for onboarding training. Registration is
+                the moment a deadline first becomes known, so it passes one;
+                admission passes none.
+            application_repository: The repository responsible for looking up recruiting
+                                    activity applications. Round registration validates
+                                    the submitted participant role against the user's
+                                    approved (HIRED) activity application in that role,
+                                    which gates registration.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
         self.mentorship_round_repo = mentorship_round_repository
         self.participants_repo = mentorship_round_participants_repository
         self.participation_service = participation_service
-        self.user_identity_service = user_identity_service
         self.mentorship_mapper = mentorship_mapper
-        self.training_repo = training_repository
+        self.onboarding_training_service = onboarding_training_service
+        self.application_repo = application_repository
 
     async def update_registration_info(
         self,
@@ -79,9 +84,14 @@ class RegistrationService:
 
         This method:
         1. Validates the existence of the mentorship round.
-        2. Checks if the application deadline has passed. If the round is still open, updates both
+        2. Validates the submitted participant role: rejects one the user was
+            never admitted into, and one that disagrees with an existing
+            registration row for this round.
+        3. Checks if the round's onboarding deadline has passed. If the round is still open, updates both
             global and round-specific preferences for user.
-        3. Commits the changes to the database.
+        4. Stamps the onboarding training deadline on first registration, via
+            `OnboardingTrainingService.ensure_onboarding_training`.
+        5. Commits the changes to the database.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
@@ -102,53 +112,59 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
+        # The role comes from the entry point the user opened. Validate it;
+        # never substitute one. Which role a round is registered under is
+        # the user's choice, and once a registration exists that choice is
+        # settled for the round.
+        participant_role = preferences_data.round_preferences.participant_role
+        await self._assert_admitted_as(
+            session=session, user_id=user_context.user_id, role=participant_role
         )
-
-        participant_role = (
-            await self.participation_service.resolve_participant_role_with_fallback(
-                session=session, user_context=user_context, user_id=current_user.user_id
-            )
+        existing = await self.participants_repo.get_by_user_id_and_round_id(
+            session=session, user_id=user_context.user_id, round_id=round_id
         )
-        preferences_data.round_preferences.participant_role = participant_role
-
-        description = round_entity.description or {}
-        if participant_role == ParticipantRole.MENTOR:
-            raw_deadline = description.get("mentor_application_deadline_at")
-        else:
-            raw_deadline = description.get("mentee_application_deadline_at")
-
-        if not raw_deadline:
-            self.logger.error(
-                "[RegistrationService] round %s missing application deadline for role %s.",
-                round_id,
+        if (
+            existing
+            and existing.participant_role
+            and existing.participant_role != participant_role
+        ):
+            self.logger.warning(
+                "[RegistrationService] user %s submitted role %s for round %s, "
+                "already registered as %s.",
+                user_context.user_id,
                 participant_role,
+                round_id,
+                existing.participant_role,
             )
-            raise ValueError(
-                f"Round {round_id} missing application deadline for role {participant_role}."
+            raise ConflictError(
+                "You are already registered for this round as a "
+                f"{existing.participant_role.value}."
             )
 
-        application_deadline = datetime.fromisoformat(raw_deadline)
+        # Registration closes with onboarding, for both roles. The
+        # application deadlines belong to recruiting and do not gate it.
+        # Closed from the deadline itself on, as in
+        # get_open_registration_round.
+        registration_deadline = round_entity.onboarding_deadline_at
         register_time = datetime.now(timezone.utc)
 
-        if register_time > application_deadline:
+        if register_time >= registration_deadline:
             self.logger.error(
                 "[RegistrationService] registration failed for round %s. Current time %s is past deadline %s.",
                 round_id,
                 register_time,
-                application_deadline,
+                registration_deadline,
             )
             raise ValueError(
-                f"Registration period has ended at {application_deadline}."
+                f"Registration period has ended at {registration_deadline}."
             )
 
         global_pref = await self._update_skill_and_industry_preferences(
-            session=session, user_id=current_user.user_id, data=preferences_data
+            session=session, user_id=user_context.user_id, data=preferences_data
         )
         round_pref = await self._update_user_round_preferences(
             session=session,
-            user_id=current_user.user_id,
+            user_id=user_context.user_id,
             round_id=round_id,
             data=preferences_data,
         )
@@ -158,28 +174,20 @@ class RegistrationService:
             if participant_role == ParticipantRole.MENTOR
             else TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
         )
+        # The row normally already exists, assigned when the user was admitted
+        # to their mentor/mentee posting, and carries no deadline until now.
+        # Passing one here stamps it on first registration; a row that already
+        # has a deadline keeps it, so later rounds never recompute it. Users
+        # admitted before training was assigned at admission have no row at
+        # all and get one created here, deadline included.
         onboarding_training = (
-            await self.training_repo.get_training_by_user_id_and_category(
-                session=session, user_id=current_user.user_id, category=category
+            await self.onboarding_training_service.ensure_onboarding_training(
+                session=session,
+                user_id=user_context.user_id,
+                category=category,
+                deadline=registration_deadline,
             )
         )
-        if not onboarding_training:
-            link = (
-                os.getenv(MENTORSHIP_MENTOR_ONBOARDING_LINK)
-                if category == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
-                else os.getenv(MENTORSHIP_MENTEE_ONBOARDING_LINK)
-            )
-            onboarding_training = await self.training_repo.upsert_training(
-                session=session,
-                entity=TrainingEntity(
-                    user_id=current_user.user_id,
-                    category=category,
-                    status=TrainingStatus.TO_DO,
-                    completed_timestamp=None,
-                    deadline=application_deadline + timedelta(days=2),
-                    link=link,
-                ),
-            )
 
         await session.commit()
 
@@ -294,10 +302,19 @@ class RegistrationService:
 
         Returns:
             MentorshipRoundParticipantsEntity: The result of the upsert operation.
+
+        Raises:
+            ConflictError: The user was withdrawn from this round.
         """
         entity = await self.participants_repo.get_by_user_id_and_round_id(
             session=session, user_id=user_id, round_id=round_id
         )
+
+        if entity is not None and entity.approval_status == ApprovalStatus.WITHDRAWN:
+            raise ConflictError(
+                "You have left this round, so your registration for it can no "
+                "longer be changed."
+            )
 
         if not entity:
             entity = MentorshipRoundParticipantsEntity(
@@ -328,31 +345,47 @@ class RegistrationService:
         return result
 
     async def get_registration_info(
-        self, session: AsyncSession, user_context: UserContextDto, round_id: int
+        self,
+        session: AsyncSession,
+        user_context: UserContextDto,
+        round_id: int,
+        role: ParticipantRole | None = None,
     ) -> RegistrationDto:
         """
         Consolidates global and round preferences into a comprehensive registration DTO.
 
         This method:
-        1. Resolves the user ID and handles necessary database commits.
-        2. Retrieves both global and round-specific preferences.
-        3. Combines both preference DTOs into a unified RegistrationDto.
+        1. Validates the existence of the mentorship round.
+        2. Gates a supplied role on the user's admissions, before any
+            preference is read: a role they were never admitted into is
+            refused outright.
+        3. Retrieves both global and round-specific preferences.
+        4. Combines both preference DTOs into a unified RegistrationDto.
+
+        The gate is on the role asked about, not on the row that comes back.
+        A user who is registered for this round but whose HIRED application
+        has since disappeared is refused rather than handed their own row —
+        omitting `role` reads that row back without the gate.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
             user_context (UserContextDto): Authenticated user context.
             round_id (int): The ID of the mentorship round.
+            role (ParticipantRole | None): Which role's registration form to
+                answer with. Omitted asks only "am I registered, and as
+                what"; supplied additionally prefills that role's form for a
+                user who has not registered yet.
 
         Returns:
             RegistrationDto: A DTO combining GlobalPreferenceDTO and RoundPreferenceDto.
+
+        Raises:
+            ValueError: No mentorship round with this ID exists.
+            PermissionError: `role` was supplied and the user holds no HIRED
+                activity application in that role.
+            ConflictError: `role` was supplied and disagrees with the role
+                the user's existing registration for this round settled on.
         """
-        (current_user, should_commit) = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-
-        if should_commit:
-            await session.commit()
-
         round_entity = await self.mentorship_round_repo.get_by_round_id(
             session=session, round_id=round_id
         )
@@ -363,7 +396,12 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        current_user_id = current_user.user_id
+        current_user_id = user_context.user_id
+
+        if role is not None:
+            await self._assert_admitted_as(
+                session=session, user_id=current_user_id, role=role
+            )
 
         global_preferences = await self._get_skill_and_industry_preferences(
             session=session, user_id=current_user_id
@@ -373,9 +411,9 @@ class RegistrationService:
             is_registered,
         ) = await self.participation_service.get_user_round_preferences(
             session=session,
-            user_context=user_context,
             user_id=current_user_id,
             round_id=round_id,
+            participant_role=role,
         )
 
         return RegistrationDto(
@@ -384,6 +422,29 @@ class RegistrationService:
             round_name=round_entity.name,
             is_registered=is_registered,
         )
+
+    async def _assert_admitted_as(
+        self, session: AsyncSession, user_id: int, role: ParticipantRole
+    ) -> None:
+        """Reject a role the user was never admitted into.
+
+        The role arrives from the client — the entry point they opened — so
+        it is checked, never trusted and never substituted.
+
+        Raises:
+            PermissionError: The user has no HIRED activity application in
+                this role.
+        """
+        admitted = await self.application_repo.get_hired_activity_application(
+            session=session, user_id=user_id, mentorship_role=role
+        )
+        if admitted is None:
+            self.logger.warning(
+                "[RegistrationService] user %s requested role %s without an approved activity application.",
+                user_id,
+                role,
+            )
+            raise PermissionError(f"You have not been admitted as a {role.value}.")
 
     async def _get_skill_and_industry_preferences(
         self, session: AsyncSession, user_id: int

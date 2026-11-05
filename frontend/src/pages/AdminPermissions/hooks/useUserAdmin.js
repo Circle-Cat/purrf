@@ -1,0 +1,197 @@
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import {
+  getUsers,
+  setSuperAdmin,
+  revokeSuperAdmin,
+} from "@/api/adminPermissionsApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
+
+const LIMIT = 20;
+
+// The account console deep-links here per person. Same name and same meaning
+// as on that page: user_id opens somebody, it does not merely ring their row.
+const LINKED_USER_PARAM = "user_id";
+
+/**
+ * Owns the admin user list. Search/filter inputs are staged as draft state and
+ * only take effect when submitSearch() runs (the Search button) — nothing is
+ * fetched on mount, unless the URL arrived naming one person, which commits a
+ * query for them and opens them. Sorting and pagination apply immediately to
+ * the committed query. Also owns the selected user and the super-admin mutations (which
+ * change AdminUser.isSuperAdmin and therefore belong with the list).
+ */
+export const useUserAdmin = () => {
+  const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+
+  // Draft search/filter inputs — applied only when submitSearch() is called.
+  const [search, setSearch] = useState("");
+  const [userId, setUserId] = useState("");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [userType, setUserType] = useState("");
+  // A permission is a filter on this population, not a separate view of it.
+  const [permissionName, setPermissionName] = useState("");
+
+  // Committed query: null until the user runs a search. A new object reference
+  // is set on every submit so re-submitting the same criteria still refetches.
+  const [query, setQuery] = useState(null);
+  const [offset, setOffset] = useState(0);
+
+  // Sort state (applies to the committed query).
+  const [sortBy, setSortBy] = useState(null);
+  const [order, setOrder] = useState("asc");
+  const { begin, isCurrent } = useRequestGuard();
+
+  const [searchParams] = useSearchParams();
+  const linkedUserId = searchParams.get(LINKED_USER_PARAM);
+  // Cleared once they have been opened, so closing the dialog does not reopen
+  // it and a later search is left alone.
+  const [pendingSelectionId, setPendingSelectionId] = useState(linkedUserId);
+
+  const fetchUsers = useCallback(async () => {
+    if (!query) return;
+    const seq = begin();
+    setLoading(true);
+    try {
+      const { data } = await getUsers({
+        search: query.search || undefined,
+        userId: query.userId || undefined,
+        limit: LIMIT,
+        offset,
+        sortBy: sortBy ?? undefined,
+        order,
+        isSuperAdmin: query.isSuperAdmin || undefined,
+        userType: query.userType || undefined,
+        permissionName: query.permissionName || undefined,
+      });
+      // Ignore a superseded response so rapid sort/page changes can't land an
+      // earlier query's rows under the newer query's sort/page state.
+      if (!isCurrent(seq)) return;
+      setUsers(data.users ?? []);
+      setTotal(data.total ?? 0);
+    } catch (err) {
+      if (!isCurrent(seq)) return;
+      toast.error(err?.response?.data?.message ?? "Failed to load users");
+      setUsers([]);
+      setTotal(0);
+    } finally {
+      if (isCurrent(seq)) setLoading(false);
+    }
+  }, [query, offset, sortBy, order, begin, isCurrent]);
+
+  // Refetch when the committed query, sort, or page changes — never on mount.
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  // Arriving with an id is the one case that fetches without the Search
+  // button: the link already said who to show, and this page would otherwise
+  // greet it with an empty list that gives no sign anyone was named.
+  useEffect(() => {
+    if (!linkedUserId) return;
+    setUserId(linkedUserId);
+    setOffset(0);
+    setQuery({
+      search: "",
+      userId: linkedUserId,
+      isSuperAdmin: false,
+      userType: "",
+      permissionName: "",
+    });
+  }, [linkedUserId]);
+
+  useEffect(() => {
+    if (!pendingSelectionId) return;
+    const linked = users.find(
+      (candidate) => String(candidate.userId) === pendingSelectionId,
+    );
+    if (linked) {
+      setSelectedUser(linked);
+      setPendingSelectionId(null);
+    }
+  }, [users, pendingSelectionId]);
+
+  /** Commit the current draft inputs as the active query and load page 1. */
+  const submitSearch = () => {
+    setOffset(0);
+    setQuery({ search, userId, isSuperAdmin, userType, permissionName });
+  };
+
+  const nextPage = () => {
+    if (offset + LIMIT < total) setOffset((o) => o + LIMIT);
+  };
+  const prevPage = () => setOffset((o) => Math.max(0, o - LIMIT));
+
+  const selectUser = (user) => setSelectedUser(user);
+
+  /**
+   * Toggle sort: if the given backend field is already active, flip the order;
+   * otherwise activate it with "asc". Resets to the first page.
+   * @param {string} field - Backend sort_by field name (e.g. "last_name").
+   */
+  const toggleSort = (field) => {
+    setOffset(0);
+    if (sortBy === field) {
+      setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setOrder("asc");
+    }
+  };
+
+  // After a super-admin change, refresh the list and re-sync the selected user
+  // from the refreshed AdminUser the endpoint returns.
+  const applySuperAdmin = async (fn) => {
+    if (!selectedUser) return;
+    try {
+      const { data } = await fn(selectedUser.userId);
+      setSelectedUser(data);
+      toast.success("Super-admin updated");
+      await fetchUsers();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ?? "Failed to update super-admin",
+      );
+    }
+  };
+
+  const makeSuperAdmin = () => applySuperAdmin(setSuperAdmin);
+  const revokeSuperAdminFor = () => applySuperAdmin(revokeSuperAdmin);
+
+  return {
+    users,
+    total,
+    loading,
+    hasSearched: query !== null,
+    // Draft inputs
+    search,
+    setSearch,
+    userId,
+    setUserId,
+    isSuperAdmin,
+    setIsSuperAdmin,
+    userType,
+    permissionName,
+    setPermissionName,
+    setUserType,
+    submitSearch,
+    // Pagination
+    offset,
+    limit: LIMIT,
+    nextPage,
+    prevPage,
+    // Selection + super-admin mutations
+    selectedUser,
+    selectUser,
+    makeSuperAdmin,
+    revokeSuperAdminFor,
+    // Sort
+    sortBy,
+    order,
+    toggleSort,
+  };
+};

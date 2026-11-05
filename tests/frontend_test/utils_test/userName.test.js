@@ -1,0 +1,65 @@
+import { describe, it, expect } from "vitest";
+import { userDisplayName } from "@/utils/userName";
+
+describe("userDisplayName", () => {
+  it("uses the preferred name when present", () => {
+    expect(
+      userDisplayName({
+        preferredName: "Ali",
+        firstName: "Alice",
+        lastName: "Anderson",
+      }),
+    ).toBe("Ali");
+  });
+
+  it("falls back to the full name when preferred name is missing", () => {
+    expect(
+      userDisplayName({
+        preferredName: "",
+        firstName: "Alice",
+        lastName: "Anderson",
+      }),
+    ).toBe("Alice Anderson");
+  });
+
+  it("falls back to the full name when preferred name is null", () => {
+    expect(
+      userDisplayName({
+        preferredName: null,
+        firstName: "Alice",
+        lastName: "Anderson",
+      }),
+    ).toBe("Alice Anderson");
+  });
+
+  it("trims whitespace and tolerates a missing last name", () => {
+    expect(userDisplayName({ firstName: "Alice", lastName: undefined })).toBe(
+      "Alice",
+    );
+  });
+
+  it("returns an empty string when given nothing", () => {
+    expect(userDisplayName(undefined)).toBe("");
+  });
+
+  it("names a nameless search row by its user id", () => {
+    expect(userDisplayName({ userId: 270, firstName: "", lastName: "" })).toBe(
+      "User 270",
+    );
+  });
+
+  it("names a nameless partner by its id", () => {
+    expect(
+      userDisplayName({
+        id: 268,
+        firstName: " ",
+        lastName: "",
+        preferredName: null,
+      }),
+    ).toBe("User 268");
+  });
+
+  it("returns an empty string for a nameless person with no id", () => {
+    expect(userDisplayName({ firstName: "", lastName: "" })).toBe("");
+  });
+});

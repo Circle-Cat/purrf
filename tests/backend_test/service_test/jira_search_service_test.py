@@ -14,6 +14,7 @@ class TestJiraSearchService(unittest.TestCase):
     def setUp(self):
         self.logger = MagicMock()
         self.jira_client = MagicMock()
+        self.jira = self.jira_client.get_jira_client.return_value
         self.retry_utils = MagicMock()
         self.service = JiraSearchService(
             logger=self.logger,
@@ -22,13 +23,25 @@ class TestJiraSearchService(unittest.TestCase):
         )
         self.required_fields = JIRA_ISSUE_REQUIRED_FIELDS
 
+    def test_connection_is_opened_only_when_a_call_needs_it(self):
+        """Test that the service asks for the connection when it searches, not when it is built.
+
+        Constructing the service happens at startup; a Jira outage there would
+        take down routes that have nothing to do with Jira.
+        """
+        self.jira_client.get_jira_client.assert_not_called()
+
+        self.service.fetch_issue_by_issue_id(issue_id="123")
+
+        self.jira_client.get_jira_client.assert_called_once()
+
     def test_fetch_issue_by_issue_id_success(self):
         self.retry_utils.get_retry_on_transient.return_value = []
 
         self.service.fetch_issue_by_issue_id(issue_id="123")
 
         self.retry_utils.get_retry_on_transient.assert_called_once_with(
-            self.jira_client.issue, id="123", fields="assignee"
+            self.jira.issue, id="123", fields="assignee"
         )
 
     def test_fetch_issue_by_issue_id_with_illegal_id(self):
@@ -62,21 +75,21 @@ class TestJiraSearchService(unittest.TestCase):
 
         expected_calls = [
             call(
-                self.jira_client.search_issues,
+                self.jira.search_issues,
                 jql_str=expected_jql,
                 startAt=0,
                 maxResults=self.MOCK_MAX_RESULTS,
                 fields=self.required_fields,
             ),
             call(
-                self.jira_client.search_issues,
+                self.jira.search_issues,
                 jql_str=expected_jql,
                 startAt=self.MOCK_MAX_RESULTS,
                 maxResults=self.MOCK_MAX_RESULTS,
                 fields=self.required_fields,
             ),
             call(
-                self.jira_client.search_issues,
+                self.jira.search_issues,
                 jql_str=expected_jql,
                 startAt=self.MOCK_MAX_RESULTS * 2,
                 maxResults=self.MOCK_MAX_RESULTS,
@@ -96,7 +109,7 @@ class TestJiraSearchService(unittest.TestCase):
         self.assertEqual(len(all_issues[0]), 0)
 
         self.retry_utils.get_retry_on_transient.assert_called_once_with(
-            self.jira_client.search_issues,
+            self.jira.search_issues,
             jql_str=expected_jql,
             startAt=0,
             maxResults=JIRA_MAX_RESULTS_DEFAULT,
@@ -129,14 +142,14 @@ class TestJiraSearchService(unittest.TestCase):
         self.assertEqual(self.retry_utils.get_retry_on_transient.call_count, 2)
         expected_calls = [
             call(
-                self.jira_client.search_issues,
+                self.jira.search_issues,
                 jql_str=expected_jql,
                 startAt=0,
                 maxResults=self.MOCK_MAX_RESULTS,
                 fields=self.required_fields,
             ),
             call(
-                self.jira_client.search_issues,
+                self.jira.search_issues,
                 jql_str=expected_jql,
                 startAt=self.MOCK_MAX_RESULTS,
                 maxResults=self.MOCK_MAX_RESULTS,

@@ -19,6 +19,25 @@ export const getCookie = (name) => {
 };
 
 /**
+ * Decode one base64url segment into the string it stands for.
+ *
+ * `atob` speaks standard base64 only: it throws on the `-` and `_` a JWT
+ * segment uses, and it hands back one byte per character, which mangles any
+ * multi-byte UTF-8 the payload carries.
+ *
+ * @param {string} segment - A base64url-encoded JWT segment.
+ * @returns {string} The decoded UTF-8 text.
+ */
+const decodeBase64Url = (segment) => {
+  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+  return new TextDecoder().decode(bytes);
+};
+
+/**
  * Generic utility function for parsing a JWT payload
  */
 export const getJwtPayload = (jwtString) => {
@@ -29,7 +48,7 @@ export const getJwtPayload = (jwtString) => {
       console.warn("JWT format is incorrect, not a valid JWT.");
       return null;
     }
-    return JSON.parse(atob(parts[1]));
+    return JSON.parse(decodeBase64Url(parts[1]));
   } catch (e) {
     console.warn("Failed to decode JWT Payload:", e);
     return null;
@@ -93,6 +112,32 @@ export const extractCloudflareUserName = (jwtString) => {
     );
     return null;
   }
+};
+
+/**
+ * Extracts the avatar URL from a Cloudflare Access JWT.
+ *
+ * Cloudflare mints only the claims its identity provider is configured to
+ * pass through, so `picture` is present just for connections that supply one
+ * -- a one-time PIN login has none. Callers must keep a fallback.
+ *
+ * Only `http(s)` URLs are returned: the claim reaches an `img src`, and the
+ * token is decoded here without verifying its signature.
+ *
+ * @param {string} jwtString - The Cloudflare Access JWT.
+ * @returns {string|null} The avatar URL, or null when there is none to use.
+ *
+ * @example
+ * const picture = extractCloudflareUserPicture(getCookie("CF_Authorization"));
+ */
+export const extractCloudflareUserPicture = (jwtString) => {
+  const jwtPayload = getJwtPayload(jwtString);
+  if (!jwtPayload) return null;
+
+  const picture = jwtPayload.custom?.picture || jwtPayload.picture;
+  if (typeof picture !== "string") return null;
+
+  return /^https?:\/\//.test(picture) ? picture : null;
 };
 
 /**

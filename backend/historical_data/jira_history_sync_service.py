@@ -24,7 +24,8 @@ class JiraHistorySyncService:
 
         Args:
             logger: The logger instance for logging messages.
-            jira_client: Jira client instance
+            jira_client: JiraClient providing the Jira connection, which is
+                opened on the first call that needs it
             redis_client: Redis client instance
             jira_search_service: JiraSearchService instance
             date_time_util: A DateTimeUtil for date and time operations.
@@ -57,7 +58,7 @@ class JiraHistorySyncService:
         Returns:
             int: Total number of projects processed
         """
-        projects = self.jira_client.projects()
+        projects = self.jira_client.get_jira_client().projects()
         project_dict = {project.id: project.name for project in projects}
 
         if not project_dict:
@@ -334,7 +335,7 @@ class JiraHistorySyncService:
             self.logger.info(
                 f"Stored {stored_count} issues (batch size: {len(issues_batch)})"
             )
-            self.retry_utils.get_retry_on_transient(pipeline.execute)
+            self.retry_utils.execute_pipeline(pipeline)
             total_stored += stored_count
 
         self.logger.info(f"Backfill complete. Total issues stored: {total_stored}")
@@ -373,9 +374,7 @@ class JiraHistorySyncService:
                 search_pipeline.hgetall(
                     JIRA_ISSUE_DETAILS_KEY.format(issue_id=issue_id)
                 )
-            old_issue_detail_raw = self.retry_utils.get_retry_on_transient(
-                search_pipeline.execute
-            )
+            old_issue_detail_raw = self.retry_utils.execute_pipeline(search_pipeline)
 
             updated_pipeline = self.redis_client.pipeline()
             issues_to_store = []
@@ -445,7 +444,7 @@ class JiraHistorySyncService:
                 )
                 self._queue_issues_in_redis_pipeline(issues_to_store, updated_pipeline)
 
-            self.retry_utils.get_retry_on_transient(updated_pipeline.execute)
+            self.retry_utils.execute_pipeline(updated_pipeline)
             total_processed += len(issues_to_store)
 
         self.logger.info(

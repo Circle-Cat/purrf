@@ -4,6 +4,7 @@ py_library(
     name = "base_repository_test_lib",
     testonly = True,
     srcs = ["base_repository_test_lib.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//backend/common:database",
         "//backend/common:mentorship_enums",
@@ -17,6 +18,24 @@ py_library(
 py_test(
     name = "users_repository_test",
     srcs = ["users_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "user_permissions_repository_test",
+    srcs = ["user_permissions_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "training_audience_repository_test",
+    srcs = ["training_audience_repository_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
         ":base_repository_test_lib",
@@ -38,6 +57,16 @@ py_test(
     env_inherit = ["DATABASE_URL"],
     deps = [
         ":base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "job_repository_test",
+    srcs = ["job_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:recruiting_enums",
     ],
 )
 
@@ -65,6 +94,7 @@ py_test(
     env_inherit = ["DATABASE_URL"],
     deps = [
         ":base_repository_test_lib",
+        "//backend/common:recruiting_enums",
     ],
 )
 
@@ -75,4 +105,315 @@ py_test(
     deps = [
         ":base_repository_test_lib",
     ],
+)
+
+py_test(
+    name = "user_identities_repository_test",
+    srcs = ["user_identities_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "user_emails_repository_test",
+    srcs = ["user_emails_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "application_repository_test",
+    srcs = ["application_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:communication_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "application_assignment_repository_test",
+    srcs = ["application_assignment_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "evaluation_repository_test",
+    srcs = ["evaluation_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "application_comment_repository_test",
+    srcs = ["application_comment_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "application_comment_mention_repository_test",
+    srcs = ["application_comment_mention_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "stage_entered_at_migration_test",
+    srcs = ["stage_entered_at_migration_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
+    name = "event_repository_test",
+    srcs = ["event_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "notification_repository_test",
+    srcs = ["notification_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "application_interview_repository_test",
+    srcs = ["application_interview_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "mentorship_meeting_repository_test",
+    srcs = ["mentorship_meeting_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "email_message_repository_test",
+    srcs = ["email_message_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:communication_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "email_thread_repository_test",
+    srcs = ["email_thread_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:communication_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "gmail_sync_state_repository_test",
+    srcs = ["gmail_sync_state_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:database",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "retire_unconfirmed_emails_migration_test",
+    srcs = ["retire_unconfirmed_emails_migration_test.py"],
+    data = ["//:alembic_files"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
+    name = "leave_holiday_repository_test",
+    srcs = ["leave_holiday_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "leave_ledger_repository_test",
+    srcs = ["leave_ledger_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "user_emails_bulk_lookup_test",
+    srcs = ["user_emails_bulk_lookup_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "leave_request_repository_test",
+    srcs = ["leave_request_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "training_progress_repository_test",
+    srcs = ["training_progress_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "training_course_repository_test",
+    srcs = ["training_course_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "training_course_package_repository_test",
+    srcs = ["training_course_package_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "approval_request_repository_test",
+    srcs = ["approval_request_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:approval_enums",
+        "//backend/entity:entities",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "mentorship_participant_note_repository_test",
+    srcs = ["mentorship_participant_note_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_repository_test",
+    srcs = ["mentorship_email_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [":base_repository_test_lib"],
 )

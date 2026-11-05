@@ -44,7 +44,6 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
             timezone=timezone,
             communication_method=communication_method,
             preferred_name="Ali",
-            alternative_emails=["ali@example.com"],
             linkedin_link="https://linkedin.com/in/alice",
         )
 
@@ -76,6 +75,26 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.timezone, "America/Los_Angeles")
         self.users_repository.upsert_users.assert_awaited_once()
 
+    async def test_update_users_saves_communication_method(self):
+        """A changed communication method lands on the mapped column."""
+        existing_user = UsersEntity(
+            user_id=1,
+            timezone="America/Los_Angeles",
+            communication_channel=CommunicationMethod.EMAIL,
+        )
+
+        profile_dto = self._create_profile_dto(
+            communication_method=CommunicationMethod.GOOGLE_CHAT
+        )
+
+        self.users_repository.upsert_users.side_effect = lambda s, u: u
+
+        result = await self.service.update_users(
+            self.session, profile_dto, existing_user
+        )
+
+        self.assertEqual(result.communication_channel, CommunicationMethod.GOOGLE_CHAT)
+
     async def test_update_users_timezone_success_after_30_days(self):
         """Update timezone successfully when more than 30 days have passed since last update."""
         last_update = datetime.now(timezone.utc) - timedelta(days=31)
@@ -96,8 +115,9 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.timezone, "Asia/Shanghai")
         self.assertGreater(result.timezone_updated_at, last_update)
 
-    async def test_update_users_timezone_restriction_error(self):
-        """Updating timezone too frequently (less than 30 days) should raise ValueError."""
+    async def test_update_users_timezone_success_within_30_days(self):
+        """Updating timezone shortly after a previous update should succeed
+        (the 30-day cooldown restriction has been removed)."""
         last_update = datetime.now(timezone.utc) - timedelta(days=5)
         existing_user = UsersEntity(
             user_id=1,
@@ -107,10 +127,15 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
 
         profile_dto = self._create_profile_dto(timezone="America/New_York")
 
-        with self.assertRaises(ValueError):
-            await self.service.update_users(self.session, profile_dto, existing_user)
+        self.users_repository.upsert_users.side_effect = lambda s, u: u
 
-        self.users_repository.upsert_users.assert_not_awaited()
+        result = await self.service.update_users(
+            self.session, profile_dto, existing_user
+        )
+
+        self.assertEqual(result.timezone, "America/New_York")
+        self.assertGreater(result.timezone_updated_at, last_update)
+        self.users_repository.upsert_users.assert_awaited_once()
 
     async def test_update_users_database_error(self):
         """Database error occurs during save; error should be logged and re-raised."""
@@ -281,6 +306,23 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.experience_repository.upsert_experience.assert_awaited_once()
         self.assertEqual(len(result.work_history), 0)
         self.assertIsNotNone(result.updated_timestamp)
+
+    async def test_update_education_already_empty_skips_upsert(self):
+        """Saving an empty section that is already empty writes nothing."""
+        user_id = 1
+        existing_entity = ExperienceEntity(user_id=user_id)
+        existing_entity.education = []
+        self.experience_repository.get_experience_by_user_id.return_value = (
+            existing_entity
+        )
+
+        profile_dto = self._create_profile_dto(education=[])
+
+        result = await self.service.update_education(self.session, profile_dto, user_id)
+
+        self.experience_repository.upsert_experience.assert_not_awaited()
+        self.assertIsNone(result.updated_timestamp)
+        self.assertEqual(result, existing_entity)
 
 
 if __name__ == "__main__":

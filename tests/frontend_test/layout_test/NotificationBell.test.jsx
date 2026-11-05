@@ -1,0 +1,1527 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { toast } from "sonner";
+import NotificationBell from "@/components/layout/NotificationBell";
+import * as api from "@/api/recruitingApi";
+
+vi.mock("@/api/recruitingApi");
+
+const FALLBACK = "You have a new notification";
+
+// Read through node rather than imported: the file lives outside the
+// frontend source tree, shared with the backend test that keeps it in step
+// with the recipient registry.
+const BELL_EVENT_TYPES = JSON.parse(
+  readFileSync(
+    path.resolve(process.cwd(), "../shared/bell_event_types.json"),
+    "utf8",
+  ),
+);
+vi.spyOn(toast, "error").mockImplementation(() => {});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // The automock hands back undefined, which the bell would report as a
+  // failed request.
+  api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+  api.markAllNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+});
+
+// The bell reads useLocation(), so it needs router context.  react-router-dom
+// re-exports live hooks from react-router and vi.mock does not intercept them
+// in the Bazel sandbox, so use a real router -- createMemoryRouter also hands
+// back a navigate() the pathname-trigger tests need.
+const renderBell = (initialPath = "/") => {
+  const router = createMemoryRouter(
+    [{ path: "*", element: <NotificationBell /> }],
+    {
+      initialEntries: [initialPath],
+    },
+  );
+  const result = render(<RouterProvider router={router} />);
+  return { ...result, router };
+};
+
+/** Set document.visibilityState, which is read-only in jsdom. */
+const setVisibility = (state) =>
+  Object.defineProperty(document, "visibilityState", {
+    value: state,
+    configurable: true,
+  });
+
+afterEach(() => setVisibility("visible"));
+
+describe("NotificationBell", () => {
+  it("shows no unread badge when there are no notifications", async () => {
+    api.listNotifications.mockResolvedValue({
+      data: { notifications: [], unreadCount: 0 },
+    });
+    renderBell();
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("shows the unread count badge and lists notifications in the popover", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.reassigned",
+            jobTitle: "Backend Engineer",
+            applicantName: "Ada Lovelace",
+            actorName: "Grace Hopper",
+            createdAt: "2026-07-09T00:00:00Z",
+          },
+        ],
+      },
+    });
+    renderBell();
+
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(
+      screen.getByText(
+        "Grace Hopper assigned an evaluator for Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("dismisses a single notification and updates the badge on the X", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.mentioned",
+            jobTitle: "Backend Engineer",
+            applicantName: "Ada Lovelace",
+            actorName: "Grace Hopper",
+            createdAt: "2026-07-09T00:00:00Z",
+          },
+        ],
+      },
+    });
+    api.dismissNotification.mockResolvedValue({ data: { unreadCount: 0 } });
+    renderBell();
+
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss notification" }),
+    );
+
+    expect(api.dismissNotification).toHaveBeenCalledWith(1);
+    await waitFor(() =>
+      expect(screen.getByText("No notifications yet.")).toBeInTheDocument(),
+    );
+  });
+
+  it("clears every notification and the badge on Clear all", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 2,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.mentioned",
+            jobTitle: "Backend Engineer",
+            applicantName: "Ada Lovelace",
+            actorName: "Grace Hopper",
+            createdAt: "2026-07-09T00:00:00Z",
+          },
+          {
+            id: 2,
+            eventType: "recruiting.mentioned",
+            jobTitle: "Backend Engineer",
+            applicantName: "Grace Hopper",
+            actorName: "Ada Lovelace",
+            createdAt: "2026-07-09T00:00:00Z",
+          },
+        ],
+      },
+    });
+    api.dismissAllNotifications.mockResolvedValue({
+      data: { unreadCount: 0 },
+    });
+    renderBell();
+
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
+
+    expect(api.dismissAllNotifications).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.queryByText("2")).not.toBeInTheDocument(),
+    );
+  });
+
+  // -- read state --------------------------------------------------------
+  //
+  // A row becomes read when the user clicks it, or with Mark all as read.
+  // Opening the panel marks nothing. Read rows stay listed in grey.
+
+  const mentionRow = (id, applicantName, isRead) => ({
+    id,
+    eventType: "recruiting.mentioned",
+    jobTitle: "Backend Engineer",
+    applicantName,
+    actorName: "Grace Hopper",
+    createdAt: "2026-11-02T00:00:00Z",
+    isRead,
+  });
+
+  const rowFor = (applicantName) =>
+    screen.getByText(new RegExp(applicantName)).closest("[data-read]");
+
+  const listWith = (unreadCount, notifications) =>
+    api.listNotifications.mockResolvedValue({
+      data: { unreadCount, notifications },
+    });
+
+  /** A promise with its resolve handed back, to hold a request in flight. */
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+
+  const openBell = async (user) =>
+    user.click(screen.getByRole("button", { name: "Notifications" }));
+
+  it("marks nothing read just by opening the panel", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+
+    await openBell(user);
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(2));
+
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    expect(api.markAllNotificationsRead).not.toHaveBeenCalled();
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("marks only the clicked row read, greys it and lowers the badge", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 1 } });
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByText(/Alan Turing/));
+
+    expect(api.markNotificationsRead).toHaveBeenCalledWith([12]);
+    expect(api.markNotificationsRead).toHaveBeenCalledTimes(1);
+    expect(rowFor("Alan Turing")).toHaveAttribute("data-read", "true");
+    expect(
+      rowFor("Alan Turing").querySelector('[aria-label="Unread"]'),
+    ).toBeNull();
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+  });
+
+  it("does nothing when a read row is clicked", async () => {
+    const user = userEvent.setup();
+    listWith(0, [mentionRow(3, "Edsger Dijkstra", true)]);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await openBell(user);
+
+    await user.click(screen.getByText(/Edsger Dijkstra/));
+
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    expect(rowFor("Edsger Dijkstra")).toHaveAttribute("data-read", "true");
+  });
+
+  it("dismisses on the X without marking the row read", async () => {
+    const user = userEvent.setup();
+    listWith(1, [mentionRow(7, "Ada Lovelace", false)]);
+    api.dismissNotification.mockResolvedValue({ data: { unreadCount: 0 } });
+    renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss notification" }),
+    );
+
+    expect(api.dismissNotification).toHaveBeenCalledWith(7);
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+  });
+
+  it("greys every row and clears the badge on Mark all as read", async () => {
+    const user = userEvent.setup();
+    listWith(28, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+      mentionRow(3, "Edsger Dijkstra", true),
+    ]);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("28")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByRole("button", { name: "Mark all as read" }));
+
+    expect(api.markAllNotificationsRead).toHaveBeenCalledTimes(1);
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    for (const name of ["Ada Lovelace", "Alan Turing", "Edsger Dijkstra"]) {
+      expect(rowFor(name)).toHaveAttribute("data-read", "true");
+    }
+    await waitFor(() =>
+      expect(screen.queryByText("28")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
+
+  it("disables Mark all as read when nothing is unread", async () => {
+    const user = userEvent.setup();
+    listWith(0, [mentionRow(3, "Edsger Dijkstra", true)]);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await openBell(user);
+
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
+
+  it("puts the row and the badge back and says so when marking fails", async () => {
+    const user = userEvent.setup();
+    listWith(1, [mentionRow(7, "Ada Lovelace", false)]);
+    api.markNotificationsRead.mockRejectedValue(new Error("Network down"));
+    renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByText(/Ada Lovelace/));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Network down"),
+    );
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("puts every row back when Mark all as read fails", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(3, "Edsger Dijkstra", true),
+    ]);
+    api.markAllNotificationsRead.mockRejectedValue(new Error("Timed out"));
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByRole("button", { name: "Mark all as read" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Timed out"));
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(rowFor("Edsger Dijkstra")).toHaveAttribute("data-read", "true");
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("keeps the new count when a refetch from before the mark lands after it", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      mentionRow(7, "Ada Lovelace", false),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    const mark = deferred();
+    api.markNotificationsRead.mockReturnValue(mark.promise);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+    await user.click(screen.getByText(/Ada Lovelace/));
+
+    // A refetch starts while the mark is in flight and is answered with the
+    // state from before the mark committed, but only after the mark returns.
+    const staleRefetch = deferred();
+    api.listNotifications.mockReturnValue(staleRefetch.promise);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await act(async () => mark.resolve({ data: { unreadCount: 1 } }));
+    await act(async () =>
+      staleRefetch.resolve({
+        data: {
+          unreadCount: 2,
+          notifications: [
+            mentionRow(7, "Ada Lovelace", false),
+            mentionRow(12, "Alan Turing", false),
+          ],
+        },
+      }),
+    );
+
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "true");
+  });
+
+  it("joins a fetch already running instead of starting another", async () => {
+    const user = userEvent.setup();
+    const firstLoad = deferred();
+    api.listNotifications.mockReturnValue(firstLoad.promise);
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+
+    await openBell(user);
+    await act(async () =>
+      firstLoad.resolve({
+        data: {
+          unreadCount: 1,
+          notifications: [mentionRow(21, "Ada Lovelace", false)],
+        },
+      }),
+    );
+
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "false");
+    expect(api.listNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an inline error when the initial load fails", async () => {
+    const user = userEvent.setup();
+    api.listNotifications.mockRejectedValue(new Error("boom"));
+    renderBell();
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Couldn't load notifications."),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it.each([
+    [
+      "recruiting.application_submitted",
+      {},
+      "employment",
+      "Ada Lovelace applied to Backend Engineer",
+    ],
+    [
+      "recruiting.auto_rejected",
+      {},
+      "employment",
+      "Ada Lovelace applied to Backend Engineer and was rejected automatically",
+    ],
+    [
+      "recruiting.application_submitted",
+      { screenAutoHireRuleId: "r1" },
+      "activity",
+      "Ada Lovelace applied to Backend Engineer and was admitted automatically",
+    ],
+    [
+      "recruiting.application_submitted",
+      { screenAutoHireRuleId: "r1" },
+      "employment",
+      "Ada Lovelace applied to Backend Engineer and was hired automatically",
+    ],
+    // The one entry written to the person it happened to, rather than to
+    // staff watching a pipeline.
+    [
+      "mentorship.mentor_admitted",
+      {},
+      "activity",
+      "You were admitted to Backend Engineer",
+    ],
+  ])(
+    "describes a %s notification (%s posting)",
+    async (eventType, details, jobKind, text) => {
+      const user = userEvent.setup();
+      api.listNotifications.mockResolvedValue({
+        data: {
+          unreadCount: 1,
+          notifications: [
+            {
+              id: 1,
+              eventType,
+              details,
+              jobTitle: "Backend Engineer",
+              jobKind,
+              applicantName: "Ada Lovelace",
+              actorName: "Ada Lovelace",
+              createdAt: "2026-07-30T00:00:00Z",
+            },
+          ],
+        },
+      });
+      renderBell();
+
+      await waitFor(() =>
+        expect(api.listNotifications).toHaveBeenCalledTimes(1),
+      );
+      await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
+  it("describes an automatic assignment without naming an actor", async () => {
+    // An automatic assignment is the one assignment line that arrives with
+    // actorName null: the pipeline's own default-assignee rule made it, so
+    // the event carries no actor. It must not read through the
+    // `actorName ?? "Someone"` fallback the actor-bearing lines use --
+    // "Someone assigned you" credits the decision to a person nobody can
+    // name. The bell keeps its own copy switch, separate from the email
+    // renderer's, so this invariant needs pinning on both sides.
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.auto_assigned",
+            details: { stage: "recruiter_screening", round: 1 },
+            jobTitle: "Backend Engineer",
+            jobKind: "employment",
+            applicantName: "Ada Lovelace",
+            actorName: null,
+            createdAt: "2026-08-18T00:00:00Z",
+          },
+        ],
+      },
+    });
+    renderBell();
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(
+      screen.getByText(
+        "You were auto-assigned to evaluate Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Someone/)).not.toBeInTheDocument();
+  });
+
+  it("says Someone for an assignment whose actor no longer resolves", async () => {
+    // An actor id that no longer resolves to a user arrives as an empty
+    // name, which is a third state distinct from the null above: a person
+    // did make this decision, they just cannot be named any more. The copy
+    // has to fall back to "Someone" for it rather than render a blank, and
+    // the email renderer words this case the same way.
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.reassigned",
+            jobTitle: "Backend Engineer",
+            applicantName: "Ada Lovelace",
+            actorName: "",
+            createdAt: "2026-08-18T00:00:00Z",
+          },
+        ],
+      },
+    });
+    renderBell();
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(
+      screen.getByText(
+        "Someone assigned an evaluator for Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
+  // -- the block-request lines -------------------------------------------
+  //
+  // These rows are written under subject_type "user", so they carry no job or
+  // applicant -- only subjectName. Before these cases existed the bell listed
+  // them as blank rows that still counted towards the unread badge.
+
+  const blockRow = (overrides) => ({
+    id: 4,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "Ada Lovelace",
+    actorName: "Grace Hopper",
+    createdAt: "2026-09-19T00:00:00Z",
+    ...overrides,
+  });
+
+  const openWith = async (notification) => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: { unreadCount: 1, notifications: [notification] },
+    });
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+  };
+
+  it("tells a reviewer a block request is waiting for them", async () => {
+    await openWith(blockRow({ eventType: "user.block_requested" }));
+
+    expect(
+      screen.getByText("Grace Hopper asked you to block Ada Lovelace"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the raiser their block request was rejected", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "rejected" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper rejected the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the raiser their block request was approved", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "approved" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper approved the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the reviewer the raiser withdrew the block request", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "withdrawn" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper withdrew the block request about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says a direct block closed the request, never that it was rejected", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "superseded" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper blocked Ada Lovelace directly, closing the block request about them",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rejected/)).not.toBeInTheDocument();
+  });
+
+  it("reads the decision field, not the old approved flag", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, approved: true, decision: "rejected" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper rejected the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells both reviewers a block request moved", async () => {
+    await openWith(blockRow({ eventType: "user.block_request_reassigned" }));
+
+    expect(
+      screen.getByText(
+        "Grace Hopper reassigned the block request about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // -- posting reviews ----------------------------------------------------
+  //
+  // The backend words these from the same phrases as their email and sends
+  // the line as `summary`; its tests pin the wording per kind and decision.
+  // The bell shows it as given.
+
+  it.each([
+    [
+      "recruiting.review_opened",
+      'Rae Kim submitted the posting "Backend Engineer" for your review',
+    ],
+    [
+      "recruiting.review_reassigned",
+      'Mia Chen moved the request to close "Product Designer" to you',
+    ],
+    ["recruiting.review_decided", 'Ann Wu rejected reopening "QA Lead"'],
+  ])("shows the line the backend sent for %s", async (eventType, summary) => {
+    await openWith({
+      id: 12,
+      eventType,
+      jobTitle: "Something else",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Not this name",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { kind: "initial", reviewId: 31, decision: "approved" },
+      summary,
+    });
+
+    expect(screen.getByText(summary)).toBeInTheDocument();
+  });
+
+  it("falls back to a generic line when a review comes without its summary", async () => {
+    await openWith({
+      id: 12,
+      eventType: "recruiting.review_opened",
+      jobTitle: "Backend Engineer",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Rae Kim",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { kind: "initial", reviewId: 31 },
+    });
+
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
+  });
+
+  // -- never a blank row --------------------------------------------------
+
+  it("shows a generic line for an event type it has no case for", async () => {
+    await openWith({
+      id: 13,
+      eventType: "recruiting.something_new",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {},
+    });
+
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
+  });
+
+  it("shows a generic line for a decision a case does not know", async () => {
+    await openWith({
+      id: 14,
+      eventType: "mentorship.approval_decided",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { decision: "superseded", action: "exempt_matching" },
+    });
+
+    expect(screen.getByText(FALLBACK)).toBeInTheDocument();
+  });
+
+  // Every event the backend can send to the bell, from the list its own test
+  // checks against the recipient registry. A type with no case here falls to
+  // the generic line, which is what this catches. Only the review types get a
+  // summary, as from the backend; every other type must word itself.
+  const REVIEW_TYPES = new Set([
+    "recruiting.review_opened",
+    "recruiting.review_reassigned",
+    "recruiting.review_decided",
+  ]);
+
+  it.each(BELL_EVENT_TYPES)("words %s itself", async (eventType) => {
+    await openWith({
+      id: 15,
+      eventType,
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "Alan Turing",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {
+        decision: "approved",
+        kind: "initial",
+        reviewId: 31,
+        roundName: "Spring 2026",
+        leaveType: "paid",
+        startDate: "2026-11-03",
+        endDate: "2026-11-05",
+      },
+      ...(REVIEW_TYPES.has(eventType) && {
+        summary:
+          'Grace Hopper submitted the posting "Backend Engineer" for your review',
+      }),
+    });
+
+    expect(screen.queryByText(FALLBACK)).not.toBeInTheDocument();
+  });
+
+  // -- mentorship approvals ----------------------------------------------
+  //
+  // Written under subject_type "mentorship_round": what is asked for, the
+  // round and the person come from details.
+
+  const approvalRow = (eventType, details) => ({
+    id: 9,
+    eventType,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: "Ada Ng",
+    createdAt: "2026-10-07T00:00:00Z",
+    details: {
+      requestId: 31,
+      action: "publish_matching",
+      roundName: "Spring 2026",
+      ...details,
+    },
+  });
+
+  it("tells a reviewer a publish request is waiting on them", async () => {
+    await openWith(approvalRow("mentorship.approval_requested", {}));
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: publish the matching result for Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the person an exemption is for", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_reassigned", {
+        action: "exempt_matching",
+        personName: "Ann Lee",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng moved to you a request to approve: exempt Ann Lee from the matching history check in Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the person and round a withdrawal is for", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_requested", {
+        action: "withdraw_participant",
+        personName: "Mia Ko",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: withdraw Mia Ko from Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names both people when asked to end a pair", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_requested", {
+        action: "end_pair",
+        mentorName: "Mia Ko",
+        menteeName: "Ann Lee",
+        personName: "mentor Mia Ko and mentee Ann Lee",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: end the pair of mentor Mia Ko and mentee Ann Lee in Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "mark_no_show",
+      "Ada Ng asked you to approve: mark Mia Ko as a no show in Spring 2026",
+    ],
+    [
+      "mark_red_flag",
+      "Ada Ng asked you to approve: raise a red flag on Mia Ko in Spring 2026",
+    ],
+  ])(
+    "names the person and round a %s request is about",
+    async (action, text) => {
+      await openWith(
+        approvalRow("mentorship.approval_requested", {
+          action,
+          personName: "Mia Ko",
+        }),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    [
+      "approved",
+      "Ada Ng approved your request: publish the matching result for Spring 2026",
+    ],
+    [
+      "rejected",
+      "Ada Ng rejected your request: publish the matching result for Spring 2026",
+    ],
+    [
+      "withdrawn",
+      "Ada Ng withdrew the request: publish the matching result for Spring 2026",
+    ],
+  ])("tells the other side a request was %s", async (decision, text) => {
+    await openWith(approvalRow("mentorship.approval_decided", { decision }));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  // -- leave requests -----------------------------------------------------
+  //
+  // What the leave was for comes from details; the manager hears of a filing
+  // or a withdrawal, the employee of the decision.
+
+  const leaveRow = (eventType, details) => ({
+    id: 11,
+    eventType,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: "Ann Lee",
+    createdAt: "2026-10-07T00:00:00Z",
+    details: {
+      requestId: 40,
+      leaveType: "paid",
+      startDate: "2026-11-03",
+      endDate: "2026-11-05",
+      ...details,
+    },
+  });
+
+  it("tells a manager a leave request was filed", async () => {
+    await openWith(leaveRow("leave.request_submitted", {}));
+
+    expect(
+      screen.getByText("Ann Lee asked for paid leave, Nov 3 – Nov 5, 2026"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["approved", "Ann Lee approved your paid leave, Nov 3 – Nov 5, 2026"],
+    ["rejected", "Ann Lee rejected your paid leave, Nov 3 – Nov 5, 2026"],
+    [
+      "withdrawn",
+      "Ann Lee withdrew their request for paid leave, Nov 3 – Nov 5, 2026",
+    ],
+  ])("tells the other side a leave request was %s", async (decision, text) => {
+    await openWith(leaveRow("leave.request_decided", { decision }));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  // -- the matching-run line ---------------------------------------------
+  //
+  // Written under subject_type "mentorship_round", so everything it says comes
+  // from details. Before this case existed the admin who started a run saw a
+  // blank row that still counted towards the unread badge.
+
+  const runRow = (details) => ({
+    id: 5,
+    eventType: "mentorship.matching_run_completed",
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: null,
+    createdAt: "2026-09-26T00:00:00Z",
+    details: {
+      roundName: "Mentorship 2026 Fall",
+      status: "succeeded",
+      ...details,
+    },
+  });
+
+  it("tells the admin their matching run finished", async () => {
+    await openWith(runRow({}));
+
+    expect(
+      screen.getByText(
+        "The matching run you started for Mentorship 2026 Fall has finished",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the admin their matching run did not finish", async () => {
+    await openWith(runRow({ status: "failed", error: "PayloadError" }));
+
+    expect(
+      screen.getByText(
+        "The matching run you started for Mentorship 2026 Fall did not finish",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the round out rather than naming a blank one", async () => {
+    await openWith(runRow({ roundName: "   " }));
+
+    expect(
+      screen.getByText("The matching run you started has finished"),
+    ).toBeInTheDocument();
+  });
+
+  const sendRow = (details) => ({
+    id: 7,
+    eventType: "mentorship.email_send_prepared",
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: null,
+    createdAt: "2026-10-09T00:00:00Z",
+    details: {
+      roundName: "Fall 2026",
+      stage: "match_result",
+      status: "scheduled",
+      ...details,
+    },
+  });
+
+  it("tells the send's creator their Kit email is scheduled", async () => {
+    await openWith(sendRow({}));
+
+    expect(
+      screen.getByText("Kit email scheduled: Match result · Fall 2026"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the send's creator their Kit email was not scheduled", async () => {
+    await openWith(sendRow({ status: "failed", failureCode: "draft_gone" }));
+
+    expect(
+      screen.getByText(
+        "Kit email not scheduled: Match result · Fall 2026 — no email was sent",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the send's creator to check Kit when it may still send", async () => {
+    await openWith(
+      sendRow({
+        status: "failed",
+        failureCode: "kit_error",
+        mayStillBeScheduled: true,
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Kit email not scheduled: Match result · Fall 2026 — check Kit, it may still be sent",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells an ops.maintain holder the Gmail sync needs attention", async () => {
+    await openWith({
+      id: 6,
+      eventType: "ops.gmail_sync_alert",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-09-30T00:00:00Z",
+      details: { kind: "watch_renewal_failed" },
+    });
+
+    expect(
+      screen.getByText("Gmail sync needs attention: watch renewal failed"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the recipients a reply arrived, naming the application", async () => {
+    // The actor is the candidate under their preferred name; the line reads
+    // the application's applicant name, so the two differ here.
+    await openWith({
+      id: 7,
+      eventType: "recruiting.email_received",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: "Ada L.",
+      createdAt: "2026-10-01T00:00:00Z",
+      details: { threadId: 3 },
+    });
+
+    expect(
+      screen.getByText(
+        "New reply on the email thread about Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the sender their email bounced, naming the application", async () => {
+    await openWith({
+      id: 8,
+      eventType: "recruiting.email_bounced",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-03T00:00:00Z",
+      details: { threadId: 3, failedRecipients: ["bad@x.com"] },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email about Ada Lovelace — Backend Engineer could not be delivered",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells whoever can handle the thread that an email needs a reply", async () => {
+    await openWith({
+      id: 9,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { subject: "Regarding Q4 plans" },
+    });
+
+    expect(
+      screen.getByText("New email needs a reply: Regarding Q4 plans"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows fallback subject when inbox.needs_reply has no subject", async () => {
+    await openWith({
+      id: 10,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { subject: "" },
+    });
+
+    expect(
+      screen.getByText("New email needs a reply: (no subject)"),
+    ).toBeInTheDocument();
+  });
+
+  it("says who moved a thread that needs a reply and from where", async () => {
+    await openWith({
+      id: 13,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {
+        service: "inquiries",
+        subject: "Regarding Q4 plans",
+        movedFrom: "recruiting",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Grace Hopper transferred an email from Recruiting that needs a reply: Regarding Q4 plans",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the sender their email to a recipient bounced", async () => {
+    await openWith({
+      id: 11,
+      eventType: "inbox.bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { bouncedTo: "recipient@example.com" },
+    });
+
+    expect(
+      screen.getByText("Your email to recipient@example.com was not delivered"),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the address when the bounce names no recipient", async () => {
+    await openWith({
+      id: 12,
+      eventType: "inbox.bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { bouncedTo: "" },
+    });
+
+    expect(
+      screen.getByText("Your email was not delivered"),
+    ).toBeInTheDocument();
+  });
+
+  it("says who replied by email, naming the round", async () => {
+    await openWith({
+      id: 14,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 4,
+        userId: 21,
+        personName: "Maya Chen",
+        roundName: "Spring 2026 Mentorship",
+        threadId: 5,
+        subject: "Re: Your match",
+        from: "maya@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Maya Chen replied by email (Spring 2026 Mentorship): Re: Your match",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the round from a reply when the round is null", async () => {
+    await openWith({
+      id: 15,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 6,
+        userId: 22,
+        personName: "Owen Park",
+        roundName: null,
+        threadId: 7,
+        subject: "Availability next week",
+        from: "owen@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText("Owen Park replied by email: Availability next week"),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to a generic name and subject for a reply with neither", async () => {
+    await openWith({
+      id: 16,
+      eventType: "mentorship.email_received",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 8,
+        userId: 23,
+        personName: "",
+        roundName: null,
+        threadId: 9,
+        subject: "",
+        from: "unknown@example.com",
+      },
+    });
+
+    expect(
+      screen.getByText("A participant replied by email: (no subject)"),
+    ).toBeInTheDocument();
+  });
+
+  it("says which address an email bounced to and about what", async () => {
+    await openWith({
+      id: 17,
+      eventType: "mentorship.email_bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 10,
+        userId: 24,
+        personName: "Priya Nair",
+        roundName: "Autumn 2026 Pilot",
+        threadId: 11,
+        subject: "Welcome to the pilot",
+        bouncedTo: "lee.k@example.org",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email to lee.k@example.org about Welcome to the pilot was not delivered",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the address from a bounce when none is named", async () => {
+    await openWith({
+      id: 18,
+      eventType: "mentorship.email_bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-08T00:00:00Z",
+      details: {
+        roundId: 12,
+        userId: 25,
+        personName: "Sam Ortiz",
+        roundName: null,
+        threadId: 13,
+        subject: "Welcome to the pilot",
+        bouncedTo: "",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email about Welcome to the pilot was not delivered",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+const MENTION = {
+  id: 1,
+  eventType: "recruiting.mentioned",
+  jobTitle: "Backend Engineer",
+  applicantName: "Ada Lovelace",
+  actorName: "Grace Hopper",
+  createdAt: "2026-07-09T00:00:00Z",
+};
+const MENTION_TEXT =
+  "Grace Hopper mentioned you in a comment on Ada Lovelace — Backend Engineer";
+
+/** Resolve listNotifications with a given unread count and no rows. */
+const mockUnread = (unreadCount, notifications = []) =>
+  api.listNotifications.mockResolvedValue({
+    data: { unreadCount, notifications },
+  });
+
+/** Wait for the mount fetch to land so later call counts start from 1. */
+const waitForInitialLoad = () =>
+  waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+
+describe("NotificationBell refetch triggers", () => {
+  it("refetches when the tab becomes visible again", async () => {
+    mockUnread(1);
+    renderBell();
+    await waitForInitialLoad();
+
+    mockUnread(4);
+    setVisibility("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText("4")).toBeInTheDocument());
+  });
+
+  it("does not refetch when the tab is hidden", async () => {
+    mockUnread(1);
+    renderBell();
+    await waitForInitialLoad();
+
+    setVisibility("hidden");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches when the window regains focus", async () => {
+    mockUnread(1);
+    renderBell();
+    await waitForInitialLoad();
+
+    mockUnread(3);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument());
+  });
+
+  it("issues one request when visibilitychange and focus both fire", async () => {
+    mockUnread(1);
+    renderBell();
+    await waitForInitialLoad();
+
+    setVisibility("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops listening once unmounted", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mockUnread(1);
+    const { unmount } = renderBell();
+    await waitForInitialLoad();
+
+    unmount();
+    setVisibility("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(1);
+    const reactWarnings = consoleError.mock.calls.filter(([first]) =>
+      /not wrapped in act|unmounted component/.test(String(first)),
+    );
+    expect(reactWarnings).toEqual([]);
+    consoleError.mockRestore();
+  });
+
+  it("refetches once on mount and again when the pathname changes", async () => {
+    mockUnread(1);
+    const { router } = renderBell("/recruiting/postings");
+    await waitForInitialLoad();
+
+    mockUnread(5);
+    await act(async () => {
+      await router.navigate("/recruiting/board");
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText("5")).toBeInTheDocument());
+  });
+
+  it("does not refetch when only the query string changes", async () => {
+    mockUnread(1);
+    const { router } = renderBell("/recruiting/board?jobId=1");
+    await waitForInitialLoad();
+
+    await act(async () => {
+      await router.navigate("/recruiting/board?jobId=2");
+    });
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches when the panel opens but not when it closes", async () => {
+    const user = userEvent.setup();
+    mockUnread(1);
+    renderBell();
+    await waitForInitialLoad();
+
+    mockUnread(2, [MENTION]);
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(api.listNotifications).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(screen.getByText(MENTION_TEXT)).toBeInTheDocument(),
+    );
+
+    // Assert the panel really closed, so the call count below is meaningful
+    // rather than passing because onOpenChange never fired at all.
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByText(MENTION_TEXT)).not.toBeInTheDocument(),
+    );
+    expect(api.listNotifications).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the previous data and stays silent when a refetch fails", async () => {
+    mockUnread(1, [MENTION]);
+    renderBell();
+    await waitForInitialLoad();
+
+    api.listNotifications.mockRejectedValue(new Error("offline"));
+    setVisibility("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("does not resurrect a notification dismissed while a refetch is in flight", async () => {
+    const user = userEvent.setup();
+    const stale = { data: { unreadCount: 1, notifications: [MENTION] } };
+    api.listNotifications.mockResolvedValueOnce(stale);
+    api.dismissNotification.mockResolvedValue({ data: { unreadCount: 0 } });
+    renderBell();
+    await waitForInitialLoad();
+
+    let resolveRefetch;
+    api.listNotifications.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefetch = resolve;
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss notification" }),
+    );
+
+    await act(async () => {
+      resolveRefetch(stale);
+    });
+
+    expect(screen.queryByText(MENTION_TEXT)).not.toBeInTheDocument();
+    expect(screen.queryByText("1")).not.toBeInTheDocument();
+  });
+});

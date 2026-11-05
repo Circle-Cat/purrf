@@ -1,6 +1,7 @@
 import json
 from backend.common.constants import (
     GERRIT_PROJECTS_KEY,
+    GERRIT_DEDUPE_MERGED_KEY,
     GERRIT_DEDUPE_REVIEWED_KEY,
     GERRIT_UNMERGED_CL_KEY_BY_PROJECT,
     GERRIT_PERSUBMIT_BOT,
@@ -20,7 +21,6 @@ class GerritProcessorService:
         self,
         logger,
         redis_client,
-        pubsub_puller_factory,
         retry_utils,
         date_time_util,
         gerrit_client,
@@ -29,14 +29,12 @@ class GerritProcessorService:
         Args:
             logger: Logger instance.
             redis_client: Redis client instance.
-            pubsub_puller_factory: Factory that creates PubSubPuller(project_id, subscription_id).
             retry_utils: Retry utility.
             date_time_util: A DateTimeUtil instance for handling date and time operations.
             gerrit_client: A Gerrit client instance.
         """
         self.logger = logger
         self.redis_client = redis_client
-        self.pubsub_puller_factory = pubsub_puller_factory
         self.retry_utils = retry_utils
         self.date_time_util = date_time_util
         self.gerrit_client = gerrit_client
@@ -138,6 +136,24 @@ class GerritProcessorService:
             score,
         )
 
+    def _execute_or_release(self, pipeline, release) -> None:
+        """Run the counting pipeline; if it fails, undo the dedupe claim.
+
+        The claim is taken before counting so a concurrent redelivery cannot
+        count too. Releasing it on failure lets Pub/Sub's retry count the
+        event instead of finding it already claimed and dropping it.
+        """
+        try:
+            self.retry_utils.execute_pipeline(pipeline)
+        except Exception:
+            try:
+                self.retry_utils.get_retry_on_transient(release)
+            except Exception:
+                self.logger.exception(
+                    "[GerritProcessorService] Could not release dedupe claim; this event will not be counted"
+                )
+            raise
+
     def _handle_comment_added(self, payload: dict) -> None:
         """
         Process "comment-added" Pub/Sub events to track reviewer contributions.
@@ -162,9 +178,12 @@ class GerritProcessorService:
         event_unix_timestamp = data["event_unix_timestamp"]
         dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=change_number)
 
-        # Check for deduplication before performing any Redis operations
-        has_reviewed = self.redis_client.sismember(dedupe_key, commenter)
-        if has_reviewed:
+        # SADD is the dedupe check and the claim in one step, so two copies of
+        # the same event cannot both see "not yet counted".
+        added = self.retry_utils.get_retry_on_transient(
+            lambda: self.redis_client.sadd(dedupe_key, commenter)
+        )
+        if not added:
             self.logger.info(
                 "[GerritProcessorService] Skipping duplicate count for CL %s, user %s has already reviewed it",
                 change_number,
@@ -188,11 +207,11 @@ class GerritProcessorService:
         )
         pipeline.hincrby(user_weekly_stats_key_global, GERRIT_CL_REVIEWED_FIELD, 1)
 
-        # Add to deduplication set
-        pipeline.sadd(dedupe_key, commenter)
         pipeline.expire(dedupe_key, THREE_MONTHS_IN_SECONDS)
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self._execute_or_release(
+            pipeline, lambda: self.redis_client.srem(dedupe_key, commenter)
+        )
         self.logger.info(
             "[GerritProcessorService] Updated review stats: user %s reviewed CL %s (project: %s), incremented '%s' in %s and %s",
             commenter,
@@ -321,7 +340,7 @@ class GerritProcessorService:
                 cl_created_unix_timestamp,
             )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
 
     def _handle_change_deleted(self, payload: dict) -> None:
         """
@@ -344,7 +363,7 @@ class GerritProcessorService:
             pipeline, owner_ldap, project, change_number, original_change_status
         )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info("[GerritProcessorService] Deleted CL: %s ", change_number)
 
     def _handle_patchset_created(self, payload: dict) -> None:
@@ -402,7 +421,7 @@ class GerritProcessorService:
             GerritChangeStatus.NEW,
             cl_created_unix_timestamp,
         )
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info(
             "[GerritProcessorService] Tracked new under-review CL: %s (project: %s) as NEW (score: %s).",
             change_number,
@@ -421,6 +440,7 @@ class GerritProcessorService:
            - Increment merged CL count for the weekly bucket (project-specific and global).
         3. Removes the CL from the "NEW" status tracking sets (project-specific and global) since it's now merged.
         4. Uses Redis pipeline and retry logic to ensure atomicity and resilience against transient errors.
+        5. Counts each change once: a SET NX marker per change turns away redelivered events.
 
         Args:
             payload: Pub/Sub event payload containing mandatory fields:
@@ -452,6 +472,20 @@ class GerritProcessorService:
         change_summary = self.gerrit_client.get_change_by_change_id(change_number)
         insertions = change_summary.get("insertions", 0)
 
+        # A change merges once, so a second copy of this event is a redelivery.
+        merged_key = GERRIT_DEDUPE_MERGED_KEY.format(change_number=change_number)
+        claimed = self.retry_utils.get_retry_on_transient(
+            lambda: self.redis_client.set(
+                merged_key, 1, nx=True, ex=THREE_MONTHS_IN_SECONDS
+            )
+        )
+        if not claimed:
+            self.logger.info(
+                "[GerritProcessorService] Skipping duplicate change-merged for CL %s; already counted",
+                change_number,
+            )
+            return
+
         bucket = self.date_time_util.compute_buckets_weekly(merged_unix_timestamp)
         cl_merged_field = GERRIT_STATUS_TO_FIELD_TEMPLATE.format(
             status=GerritChangeStatus.MERGED.value
@@ -482,7 +516,7 @@ class GerritProcessorService:
             pipeline, owner_ldap, project, change_number, GerritChangeStatus.NEW
         )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self._execute_or_release(pipeline, lambda: self.redis_client.delete(merged_key))
         self.logger.info(
             "[GerritProcessorService] Merged CL %s: updated stats (LOC: +%d, merged count: +1) in %s and %s; removed from NEW status tracking sets",
             change_number,
@@ -535,7 +569,7 @@ class GerritProcessorService:
             GerritChangeStatus.ABANDONED,
             abandoned_unix_timestamp,
         )
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info(
             "[GerritProcessorService] Abandoned CL %s (project: %s) at %s: moved from NEW to ABANDONED; cleared dedupe key.",
             change_number,
@@ -592,7 +626,7 @@ class GerritProcessorService:
             cl_created_unix_timestamp,
         )
 
-        self.retry_utils.get_retry_on_transient(pipeline.execute)
+        self.retry_utils.execute_pipeline(pipeline)
         self.logger.info(
             "[GerritProcessorService] Restored CL %s (project: %s) at %s: moved from ABANDONED to NEW (score: %s).",
             change_number,
@@ -600,59 +634,3 @@ class GerritProcessorService:
             restored_unix_timestamp,
             cl_created_unix_timestamp,
         )
-
-    def _process_message(self, message):
-        """
-        Process a single Pub/Sub message.
-
-        - Decodes the message data from UTF-8 JSON.
-        - Dispatches the resulting payload to `store_payload`.
-        - Acknowledges the message on success.
-        - Logs and negatively acknowledges the message on failure.
-
-        Args:
-            message: A Pub/Sub message object, expected to have:
-                - .data (bytes): the raw JSON payload
-                - .ack(): method to acknowledge successful processing
-                - .nack(): method to signal processing failure
-        """
-        try:
-            payload = json.loads(message.data.decode("utf-8"))
-            self.store_payload(payload)
-            message.ack()
-        except Exception as err:
-            self.logger.error(
-                "[GerritProcessorService] failed to process message %s: %s",
-                getattr(message, "message_id", "<no-id>"),
-                err,
-                exc_info=True,
-            )
-            message.nack()
-
-    def pull_gerrit(self, project_id: str, subscription_id: str):
-        """
-        Start pulling Gerrit Pub/Sub messages for the given project and subscription,
-        processing each change synchronously via `store_change`.
-
-        Args:
-            project_id (str): Google Cloud project ID (non-empty).
-            subscription_id (str): Pub/Sub subscription ID (non-empty).
-
-        Raises:
-            ValueError: If either `project_id` or `subscription_id` is empty.
-
-        NOTE:
-            Originally implemented using Pub/Sub streaming pull for high-throughput, low-latency processing.
-            Switched to cron-based pull due to lower traffic and simpler operational needs.
-            Keep this for potential future scaling when traffic increases again.
-        """
-        if not project_id:
-            raise ValueError("project_id must be a non-empty string")
-        if not subscription_id:
-            raise ValueError("subscription_id must be a non-empty string")
-
-        puller = self.pubsub_puller_factory.get_puller_instance(
-            project_id, subscription_id
-        )
-
-        puller.start_pulling_messages(self._process_message)

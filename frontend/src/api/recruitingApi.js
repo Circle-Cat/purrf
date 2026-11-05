@@ -1,0 +1,332 @@
+import request from "@/utils/request";
+import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
+
+/** List every posting regardless of status (internal view). */
+export const listJobs = () => request.get(API_ENDPOINTS.RECRUITING_JOBS);
+
+/** Fetch one posting by id. */
+export const getJob = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB(jobId));
+
+/** Create a DRAFT posting. body: {title, description, kind, pipelineConfig, formSchema}. */
+export const createJob = (body) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOBS, body);
+
+/** Update a posting's editable fields. */
+export const updateJob = (jobId, body) =>
+  request.put(API_ENDPOINTS.RECRUITING_JOB(jobId), body);
+
+/** Fetch a job posting's audit timeline, newest first. */
+export const listJobActivity = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_ACTIVITY(jobId));
+
+/** Request close of a published posting via review. body: {reviewerId, message}. */
+export const requestClose = (jobId, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REQUEST_CLOSE(jobId), body);
+
+/** Request reopen of a closed posting via review. body: {reviewerId, message}. */
+export const requestReopen = (jobId, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REQUEST_REOPEN(jobId), body);
+
+/** Discard a posting's staged pending edit without changing its status. */
+export const discardPendingEdit = (jobId) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_DISCARD_PENDING_EDIT(jobId));
+
+/** Delete a posting (only for never-published closed postings). */
+export const deleteJob = (jobId) =>
+  request.delete(API_ENDPOINTS.RECRUITING_JOB(jobId));
+
+/** List active users who may approve postings. */
+export const listApprovers = () =>
+  request.get(API_ENDPOINTS.RECRUITING_APPROVERS);
+
+/** Submit a posting for review. body: {reviewerId, message}. */
+export const submitForReview = (jobId, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_SUBMIT(jobId), body);
+
+/**
+ * Move a posting's open review to a different approver. body: {reviewerId}.
+ *
+ * Addressed by posting, not by review id: only the assigned reviewer ever
+ * learns a review's id, and they are the person this routes around.
+ */
+export const reassignReviewer = (jobId, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_JOB_REVIEW_REVIEWER(jobId), body);
+
+/**
+ * Take back a posting's open review; the posting returns to where it was.
+ * Only its submitter may.
+ * @param {number|string} jobId
+ */
+export const withdrawReview = (jobId) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REVIEW_WITHDRAW(jobId));
+
+/** List the current reviewer's pending reviews. */
+export const listMyReviews = () =>
+  request.get(API_ENDPOINTS.RECRUITING_REVIEWS);
+
+/** Approve or reject a review. body: {decision: "approve"|"reject", comment}. */
+export const decideReview = (reviewId, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_REVIEW(reviewId), body);
+
+/** List active users assignable as interview evaluators (ApproverDto[]). */
+export const listInterviewPool = () =>
+  request.get(API_ENDPOINTS.RECRUITING_INTERVIEW_POOL);
+
+/** List active users eligible to own a posting (ApproverDto[]). */
+export const listJobOwners = () =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_OWNERS);
+
+/** Fetch a public job posting (candidate view). */
+export const getPublicJob = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_PUBLIC_JOB(jobId));
+
+/** List published jobs as candidate-safe card summaries. */
+export const listPublicJobs = () =>
+  request.get(API_ENDPOINTS.RECRUITING_PUBLIC_JOBS);
+
+/** Upload a resume file. Returns resume metadata. */
+export const uploadResume = (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return request.post(API_ENDPOINTS.RECRUITING_RESUMES, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    // The shared instance allows 10s, which is a request/response round trip
+    // budget, not an upload one: a few-megabyte PDF on a slow uplink aborts
+    // partway and the candidate is told their résumé failed for no reason
+    // they can act on.
+    timeout: 120000,
+  });
+};
+
+/** Submit a candidate application. body: {jobId, ...}. */
+export const submitApplication = (body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATIONS, body);
+
+/** Update a candidate application. */
+export const updateApplication = (applicationId, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION(applicationId), body);
+
+/** Fetch the current user's application for a specific job. */
+export const getMyApplication = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATIONS_MINE, {
+    params: { job_id: jobId },
+  });
+
+/** Fetch every application the current user has ever submitted, any job kind. */
+export const listMyApplications = () =>
+  request.get(API_ENDPOINTS.RECRUITING_MY_APPLICATIONS);
+
+/**
+ * The profile blocks of the caller's most recent submission, across every job.
+ *
+ * What the application form falls back to for a block the caller's profile has
+ * nothing for -- someone who applied once without saving to their profile
+ * should not have to retype it. Answers are deliberately not included: they
+ * belong to the job they were asked for.
+ */
+export const getMyLatestProfile = () =>
+  request.get(API_ENDPOINTS.RECRUITING_MY_LATEST_PROFILE);
+
+/**
+ * List all jobs accessible to the current recruiter on the board (job switcher).
+ */
+export const listBoardJobs = () =>
+  request.get(API_ENDPOINTS.RECRUITING_BOARD_JOBS);
+
+/**
+ * Search applicants by name or email across the caller's boards.
+ *
+ * @param {string} q Search term; matched as a case-insensitive substring
+ *   against the applicant's full name and every one of their email
+ *   addresses.
+ * @param {{jobId?: number|null, currentJobId?: number|null}} options
+ *   `jobId` narrows the search to one posting; null/undefined searches every
+ *   posting the caller can open. `currentJobId` only floats the open
+ *   posting's hits to the front of the list.
+ * @returns {Promise<object>} `{data: {hits, truncated}}`.
+ */
+export const searchBoardApplicants = (q, { jobId, currentJobId } = {}) =>
+  request.get(API_ENDPOINTS.RECRUITING_BOARD_APPLICANTS, {
+    params: {
+      q,
+      ...(jobId == null ? {} : { job_id: jobId }),
+      ...(currentJobId == null ? {} : { current_job_id: currentJobId }),
+    },
+  });
+
+/**
+ * Fetch a job's board with all applications grouped by stage/sub-status.
+ */
+export const getJobBoard = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_BOARD(jobId));
+
+/**
+ * Fetch one page of a terminal lane's applications (offset/limit).
+ */
+export const getJobBoardStagePage = (
+  jobId,
+  { stage, limit = 20, offset = 0 },
+) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_BOARD_STAGE(jobId), {
+    params: { stage, limit, offset },
+  });
+
+/**
+ * Fetch detailed application information for the application detail view.
+ */
+export const getApplicationDetail = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION(id));
+
+/**
+ * Change an application's stage (e.g., "screening" → "hired", "rejected", etc.).
+ * body: { toStage: "hired" | "rejected" | ..., reason?: string, note?: string,
+ *         cancelInterview?: boolean }
+ * `cancelInterview` also cancels the meeting booked on the stage+round being
+ * left, which the UI can no longer reach once the application has moved on.
+ */
+export const changeApplicationStage = (id, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_STAGE(id), body);
+
+/**
+ * Set an application's sub-status (e.g., "pending", "in_progress", etc.).
+ * Wraps subStatus in the request body automatically.
+ */
+export const setApplicationSubStatus = (id, subStatus) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_SUB_STATUS(id), {
+    subStatus,
+  });
+
+/**
+ * Advance an application to a specific round within its current stage.
+ * Wraps round, assigneeId and cancelInterview in the request body
+ * automatically. `cancelInterview` also cancels the meeting booked on the
+ * round being left (the backend ignores it when that round has no upcoming
+ * meeting); leave it undefined to say nothing about meetings at all.
+ */
+export const setApplicationRound = (id, round, assigneeId, cancelInterview) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_ROUND(id), {
+    round,
+    assigneeId,
+    cancelInterview,
+  });
+
+/** Reassign the interviewer responsible for an application's current stage. */
+export const reassignApplication = (id, assigneeId) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_ASSIGNMENT(id), {
+    assigneeId,
+  });
+
+/**
+ * Book a Calendar meeting for an application's current stage+round.
+ * body: { assigneeId, date, startTime, durationMinutes, timezone }
+ * (wall-clock terms -- see InterviewScheduleRequestDto on the backend).
+ */
+export const scheduleInterview = (id, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id), body);
+
+/**
+ * Move an already-booked meeting's time and/or swap its interviewer.
+ * Same body shape as scheduleInterview.
+ */
+export const updateInterview = (id, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id), body);
+
+/** Cancel an application's current stage+round's booked meeting. */
+export const cancelInterview = (id) =>
+  request.delete(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id));
+
+/**
+ * Build the full URL to a candidate's resume PDF.
+ * Used to construct href for direct file download links.
+ */
+export const resumeUrl = (id) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id)}`;
+
+/** List the current user's assigned evaluations (EvaluationSummaryDto[]). */
+export const listMyEvaluations = () =>
+  request.get(API_ENDPOINTS.RECRUITING_EVALUATIONS_MINE);
+
+/** body: { responses: object, confirm: boolean } */
+export const submitEvaluation = (id, body) =>
+  request.put(API_ENDPOINTS.RECRUITING_APPLICATION_EVALUATION(id), body);
+
+/** List every evaluation row for an application (owner or current-stage assignee). */
+export const getEvaluationsForApplication = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EVALUATIONS(id));
+
+/** List an application's owner-facing audit timeline (ApplicationActivityDto[]), newest first. */
+export const getApplicationActivity = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_ACTIVITY(id));
+
+/** List every comment on an application (owner or current-stage assignee), newest first. */
+export const getApplicationComments = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id));
+
+/** body: { body: string } */
+export const postComment = (id, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id), body);
+
+export const getApplicationEmails = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id));
+
+export const sendApplicationEmail = (id, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id), body);
+
+/** Preset compose templates, already rendered for this application. */
+export const getApplicationEmailTemplates = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_TEMPLATES(id));
+
+/**
+ * Build the URL of an attachment on a stored email, for a plain download
+ * link; the session cookie authorizes it.
+ */
+export const applicationEmailAttachmentUrl = (id, messageId, index) =>
+  `${request.defaults.baseURL}${API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_ATTACHMENT(id, messageId, index)}`;
+
+/** Everyone who can currently be @-mentioned on this application. */
+export const getMentionableUsers = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_MENTIONABLE_USERS(id));
+
+/** List a candidate's other applications (OtherApplicationDto[]), for the cross-posting aggregation view. */
+export const getOtherApplications = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_OTHER_APPLICATIONS(id));
+
+/**
+ * Fetch the cross-posting recruiting audit overview: open positions,
+ * every job (for the selector), and the stage/daily-trend breakdown for
+ * the given date range and job selection.
+ *
+ * @param {{startDate: string, endDate: string, jobIds?: number[]}} params
+ *   `startDate`/`endDate` are "yyyy-MM-dd"; `jobIds` omitted/empty means
+ *   every job.
+ */
+export const getAuditOverview = ({ startDate, endDate, jobIds = [] }) =>
+  request.get(API_ENDPOINTS.RECRUITING_AUDIT_OVERVIEW, {
+    params: { startDate, endDate, jobIds },
+  });
+
+/** List the current user's notifications (newest first) + unreadCount. */
+export const listNotifications = () =>
+  request.get(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);
+
+/**
+ * Mark notifications read. They stay listed; only the badge stops counting
+ * them. Returns { unreadCount }.
+ * @param {number[]} ids The notifications to mark (the bell sends the one
+ *   clicked).
+ */
+export const markNotificationsRead = (ids) =>
+  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ, { ids });
+
+/** Mark every unread notification read. Returns { unreadCount }. */
+export const markAllNotificationsRead = () =>
+  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ_ALL);
+
+/** Take one notification off the bell. Returns { unreadCount }. */
+export const dismissNotification = (id) =>
+  request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATION(id));
+
+/** Take every notification off the bell. Returns { unreadCount }. */
+export const dismissAllNotifications = () =>
+  request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);

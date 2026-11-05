@@ -1,160 +1,10 @@
 import React, { useState, useEffect } from "react";
-import "@/pages/Profile/modals/Modal.css";
-import {
-  months,
-  years,
-  formatDateFromParts,
-  getDateScore,
-} from "@/pages/Profile/utils";
+import { toast } from "sonner";
+import { formatDateFromParts } from "@/pages/Profile/utils";
+import { validateExperienceRow } from "@/pages/Profile/profileValidation";
 import { Button } from "@/components/ui/button";
-
-/**
- * Form item for editing a single experience entry.
- *
- * @param {Object} props
- * @param {Object} props.item - Experience data.
- * @param {Object<string, string>} props.errors - Validation errors keyed by `${id}-${field}`.
- * @param {(id: string|number, field: string, value: any) => void} props.onChange - Change handler.
- * @param {(id: string|number) => void} props.onDelete - Delete handler.
- */
-const ExperienceFormItem = ({ item, errors, onChange, onDelete }) => {
-  const hasError = (field) => errors[`${item.id}-${field}`];
-
-  return (
-    <div className="edit-item-form">
-      {/* Title */}
-      <div className="form-group">
-        <label>
-          Title <span className="required">*</span>
-        </label>
-        <input
-          type="text"
-          className={hasError("title") ? "input-error" : ""}
-          value={item.title || ""}
-          onChange={(e) => onChange(item.id, "title", e.target.value)}
-        />
-        {hasError("title") && (
-          <span className="error-text">{hasError("title")}</span>
-        )}
-      </div>
-
-      {/* Company or organization */}
-      <div className="form-group">
-        <label>
-          Company or organization <span className="required">*</span>
-        </label>
-        <input
-          type="text"
-          className={hasError("company") ? "input-error" : ""}
-          value={item.company || ""}
-          onChange={(e) => onChange(item.id, "company", e.target.value)}
-        />
-        {hasError("company") && (
-          <span className="error-text">{hasError("company")}</span>
-        )}
-      </div>
-
-      {/* Currently working checkbox */}
-      <div className="form-group-checkbox">
-        <input
-          type="checkbox"
-          id={`current-role-${item.id}`}
-          checked={!!item.isCurrentlyWorking}
-          onChange={(e) =>
-            onChange(item.id, "isCurrentlyWorking", e.target.checked)
-          }
-        />
-        <label htmlFor={`current-role-${item.id}`}>
-          I am currently working in this role
-        </label>
-      </div>
-
-      {/* Start date */}
-      <div className="form-group date-group">
-        <label>
-          Start date <span className="required">*</span>
-        </label>
-        <div className="date-inputs">
-          <select
-            value={item.startMonth || ""}
-            className={hasError("startDate") ? "input-error" : ""}
-            onChange={(e) => onChange(item.id, "startMonth", e.target.value)}
-          >
-            <option value="">Month</option>
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <select
-            value={item.startYear || ""}
-            className={hasError("startDate") ? "input-error" : ""}
-            onChange={(e) => onChange(item.id, "startYear", e.target.value)}
-          >
-            <option value="">Year</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-        {hasError("startDate") && (
-          <span className="error-text">{hasError("startDate")}</span>
-        )}
-      </div>
-
-      {/* End date */}
-      <div className="form-group date-group">
-        <label>
-          End date{" "}
-          {!item.isCurrentlyWorking && <span className="required">*</span>}
-        </label>
-        <div className="date-inputs">
-          <select
-            value={item.endMonth || ""}
-            disabled={item.isCurrentlyWorking}
-            className={hasError("endDate") ? "input-error" : ""}
-            onChange={(e) => onChange(item.id, "endMonth", e.target.value)}
-          >
-            <option value="">Month</option>
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <select
-            value={item.endYear || ""}
-            disabled={item.isCurrentlyWorking}
-            className={hasError("endDate") ? "input-error" : ""}
-            onChange={(e) => onChange(item.id, "endYear", e.target.value)}
-          >
-            <option value="">Year</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-        {hasError("endDate") && (
-          <span className="error-text">{hasError("endDate")}</span>
-        )}
-      </div>
-
-      <Button
-        variant="destructive"
-        size="sm"
-        className="delete-btn"
-        onClick={() => onDelete(item.id)}
-      >
-        -
-      </Button>
-    </div>
-  );
-};
+import ExperienceFormItem from "@/pages/Profile/components/ExperienceFormItem";
+import ClearAllConfirmDialog from "@/pages/Profile/components/ClearAllConfirmDialog";
 
 /**
  * Modal for editing the experience list.
@@ -169,6 +19,10 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [list, setList] = useState([]);
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  // Snapshot taken when the modal opens, so a successful save refreshing
+  // `initialData` cannot change what the user started from.
+  const [hadEntries, setHadEntries] = useState(false);
 
   // Initialize state when modal opens
   useEffect(() => {
@@ -176,6 +30,8 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
       setList(structuredClone(initialData));
       setErrors({});
       setIsSaving(false);
+      setIsConfirmingClear(false);
+      setHadEntries(initialData.length > 0);
     }
   }, [isOpen, initialData]);
 
@@ -261,47 +117,39 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
    */
   const validate = () => {
     const newErrors = {};
+    // One `now` for the whole list, so a validate spanning a month boundary
+    // cannot judge two rows against different months.
     const now = new Date();
-    const currentScore = getDateScore(
-      now.getFullYear(),
-      months[now.getMonth()],
-    );
-
     list.forEach((item) => {
-      const startScore = getDateScore(item.startYear, item.startMonth);
-      if (!item.title?.trim())
-        newErrors[`${item.id}-title`] = "Title is required";
-      if (!item.company?.trim())
-        newErrors[`${item.id}-company`] = "Company is required";
-      if (!item.startMonth || !item.startYear) {
-        newErrors[`${item.id}-startDate`] = "Start date is required";
-      } else {
-        if (startScore > currentScore) {
-          newErrors[`${item.id}-startDate`] =
-            "Start date cannot be in the future";
-        }
-      }
-      if (!item.isCurrentlyWorking) {
-        if (!item.endMonth || !item.endYear) {
-          newErrors[`${item.id}-endDate`] = "End date is required";
-        } else {
-          const endScore = getDateScore(item.endYear, item.endMonth);
-          if (endScore < startScore) {
-            newErrors[`${item.id}-endDate`] =
-              "End date cannot be earlier than start date";
-          }
-        }
-      }
+      Object.entries(validateExperienceRow(item, now)).forEach(
+        ([field, message]) => {
+          newErrors[`${item.id}-${field}`] = message;
+        },
+      );
     });
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   /**
-   * Submit form after validation.
+   * Validate, then either save or ask the user to confirm first.
+   *
+   * Emptying the whole section is confirmed because it is a deletion of
+   * everything stored. Removing some of the rows is not.
    */
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!validate()) return;
+    if (list.length === 0 && hadEntries) {
+      setIsConfirmingClear(true);
+      return;
+    }
+    persist();
+  };
+
+  /**
+   * Send the current list to the server.
+   */
+  const persist = async () => {
     setIsSaving(true);
     try {
       const payload = {
@@ -320,16 +168,18 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
       onClose();
     } catch (e) {
       console.error("Save failed", e);
+      toast.error("Couldn't save your changes. Please try again.");
+      setIsConfirmingClear(false);
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <div className="section-header">
-          <h3>Edit Experience</h3>
+    <div className="fixed inset-0 z-[1000] flex h-full w-full items-center justify-center bg-black/40 backdrop-blur-[4px] animate-in fade-in duration-200">
+      <div className="max-h-[90vh] w-[90%] max-w-[700px] overflow-y-auto rounded-2xl border bg-background p-10 animate-in slide-in-from-bottom-4 duration-300">
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="text-xl font-semibold">Edit Experience</h3>
           <Button size="sm" onClick={handleAdd}>
             +
           </Button>
@@ -347,7 +197,7 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
           ))}
         </div>
 
-        <div className="modal-actions">
+        <div className="mt-10 flex justify-end gap-3 border-t-2 pt-6">
           <Button variant="outline" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
@@ -360,6 +210,14 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
           </Button>
         </div>
       </div>
+
+      <ClearAllConfirmDialog
+        open={isConfirmingClear}
+        sectionName="work experience"
+        isSaving={isSaving}
+        onConfirm={persist}
+        onCancel={() => setIsConfirmingClear(false)}
+      />
     </div>
   );
 };

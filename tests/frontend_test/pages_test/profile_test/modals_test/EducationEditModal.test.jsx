@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
+import { toast } from "sonner";
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 vi.mock("@/pages/Profile/utils", () => ({
   months: ["January", "February", "March"],
@@ -39,6 +48,19 @@ describe("EducationEditModal", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("renders nothing when isOpen is false", () => {
+    const { container } = render(
+      <EducationEditModal
+        isOpen={false}
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    expect(container.firstChild).toBeNull();
   });
 
   it("should render initial data correctly", () => {
@@ -207,5 +229,115 @@ describe("EducationEditModal", () => {
     });
 
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it("asks for confirmation before saving a section the user emptied", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "-" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Remove all education?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This will remove all education entries from your profile. You can add them back anytime.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockOnSave).not.toHaveBeenCalled();
+  });
+
+  it("saves an empty education list once the removal is confirmed", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "-" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Remove all" }));
+
+    await waitFor(() =>
+      expect(mockOnSave).toHaveBeenCalledWith({ education: [] }),
+    );
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it("sends nothing and stays open when the removal is cancelled", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "-" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockOnSave).not.toHaveBeenCalled();
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("does not confirm when the section was already empty", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={[]}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(mockOnSave).toHaveBeenCalledWith({ education: [] }),
+    );
+  });
+
+  it("shows an error toast and stays open when the save fails", async () => {
+    const user = userEvent.setup();
+    mockOnSave.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,844 @@
+import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
+from backend.common.communication_enums import (
+    ContextType,
+    EmailDirection,
+    InboundKind,
+)
+from backend.communication.email_conversation_service import EmailConversationService
+
+SENDER = "recruiting@circlecat.org"
+
+
+class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.gmail = Mock()
+        # Stand-in for the real GmailClient.owns_address: "is this From one of
+        # the addresses this mailbox sends as?". Address normalisation (case,
+        # display names) is the client's job and is tested there; this fake only
+        # has to be faithful enough to drive the direction branch.
+        self.gmail.owns_address.side_effect = (
+            lambda address: SENDER in (address or "").lower()
+        )
+        self.thread_repo = AsyncMock()
+        self.message_repo = AsyncMock()
+        self.session = Mock()
+        self.service = EmailConversationService(
+            gmail_client=self.gmail,
+            thread_repository=self.thread_repo,
+            message_repository=self.message_repo,
+            sender_address=SENDER,
+        )
+        # Default for the sync tests: nothing stored yet. Individual tests
+        # override this. Without it the AsyncMock returns a Mock, and
+        # `gmail_id in known` would blow up.
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=1, sent_by_user_id=3),
+            True,
+        )
+
+    # ---- send: new thread ---------------------------------------------
+
+    async def test_send_new_thread_calls_gmail_then_persists(self):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g1",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r1@mail>",
+        }
+        self.thread_repo.create.return_value = SimpleNamespace(
+            thread_id=10, gmail_thread_id="gt1"
+        )
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=99),
+            True,
+        )
+
+        result = await self.service.send(
+            self.session,
+            user_id=5,
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+            to=["cand@example.com"],
+            subject="Hi",
+            body="<p>hello</p>",
+            sender_user_id=3,
+        )
+
+        # Gmail is called first, as a new thread (no thread_id).
+        self.gmail.send_message.assert_called_once()
+        _, kwargs = self.gmail.send_message.call_args
+        self.assertIsNone(kwargs.get("thread_id"))
+        # This service says which address it sends as; the transport holds no
+        # default, so a missing sender would go out as the mailbox owner.
+        self.assertEqual(kwargs["sender"], SENDER)
+
+        self.thread_repo.create.assert_awaited_once()
+        _, tkw = self.thread_repo.create.call_args
+        self.assertEqual(tkw["user_id"], 5)
+        self.assertEqual(tkw["gmail_thread_id"], "gt1")
+        self.assertEqual(tkw["context_type"], ContextType.APPLICATION)
+        self.assertEqual(tkw["context_id"], 7)
+
+        self.message_repo.insert_or_get.assert_awaited_once()
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["thread_id"], 10)
+        self.assertEqual(mkw["gmail_message_id"], "g1")
+        self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
+        self.assertEqual(mkw["from_address"], SENDER)
+        self.assertEqual(mkw["to_addresses"], "cand@example.com")
+        self.assertEqual(mkw["body_html"], "<p>hello</p>")
+        self.assertEqual(mkw["rfc822_message_id"], "<r1@mail>")
+        self.assertEqual(mkw["sent_by_user_id"], 3)
+
+        self.assertIs(result, self.message_repo.insert_or_get.return_value[0])
+
+    async def test_send_does_not_persist_when_gmail_fails(self):
+        self.gmail.send_message.side_effect = RuntimeError("gmail down")
+        with self.assertRaises(RuntimeError):
+            await self.service.send(
+                self.session,
+                user_id=5,
+                context_type=ContextType.APPLICATION,
+                context_id=7,
+                to=["cand@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender_user_id=3,
+            )
+        self.thread_repo.create.assert_not_awaited()
+        self.message_repo.insert_or_get.assert_not_awaited()
+
+    async def test_send_as_another_address_sends_and_stores_it(self):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g1",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r1@mail>",
+        }
+        self.thread_repo.create.return_value = SimpleNamespace(
+            thread_id=10, gmail_thread_id="gt1"
+        )
+
+        await self.service.send(
+            self.session,
+            user_id=None,
+            context_type=ContextType.MENTORSHIP_INBOX,
+            context_id=None,
+            to=["asker@example.com"],
+            subject="Hi",
+            body="<p>hello</p>",
+            sender_user_id=3,
+            sender_address="mentorship-test@circlecat.org",
+        )
+
+        _, kwargs = self.gmail.send_message.call_args
+        self.assertEqual(kwargs["sender"], "mentorship-test@circlecat.org")
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["from_address"], "mentorship-test@circlecat.org")
+
+    # ---- send: reply --------------------------------------------------
+
+    async def test_send_reply_uses_existing_thread_and_headers(self):
+        self.thread_repo.get.return_value = SimpleNamespace(
+            thread_id=10,
+            gmail_thread_id="gt1",
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+        )
+        self.message_repo.list_by_thread.return_value = [
+            SimpleNamespace(rfc822_message_id="<r1@mail>"),
+            SimpleNamespace(rfc822_message_id="<r2@mail>"),
+        ]
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g3",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r3@mail>",
+        }
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=100),
+            True,
+        )
+
+        await self.service.send(
+            self.session,
+            user_id=5,
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+            to=["cand@example.com"],
+            subject="Re: Hi",
+            body="<p>reply</p>",
+            sender_user_id=3,
+            thread_id=10,
+        )
+
+        _, kwargs = self.gmail.send_message.call_args
+        self.assertEqual(kwargs["thread_id"], "gt1")
+        self.assertEqual(kwargs["in_reply_to"], "<r2@mail>")
+        self.assertEqual(kwargs["references"], "<r1@mail> <r2@mail>")
+        # Existing thread: not re-created.
+        self.thread_repo.create.assert_not_awaited()
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["thread_id"], 10)
+
+    async def test_send_reply_rejects_thread_from_other_context(self):
+        # Replying into a thread that belongs to a different (context_type,
+        # context_id) must be refused — no cross-context leakage, no send.
+        self.thread_repo.get.return_value = SimpleNamespace(
+            thread_id=10,
+            gmail_thread_id="gt1",
+            context_type=ContextType.APPLICATION,
+            context_id=999,
+        )
+        with self.assertRaises(ValueError):
+            await self.service.send(
+                self.session,
+                user_id=5,
+                context_type=ContextType.APPLICATION,
+                context_id=7,
+                to=["cand@example.com"],
+                subject="Re: Hi",
+                body="<p>x</p>",
+                sender_user_id=3,
+                thread_id=10,
+            )
+        self.gmail.send_message.assert_not_called()
+        self.message_repo.insert_or_get.assert_not_awaited()
+
+    async def _send_reply_already_stored(self, stored):
+        self.thread_repo.get.return_value = SimpleNamespace(
+            thread_id=10,
+            gmail_thread_id="gt1",
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+        )
+        self.message_repo.list_by_thread.return_value = []
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g3",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r3@mail>",
+        }
+        self.message_repo.insert_or_get.return_value = (stored, False)
+        return await self.service.send(
+            self.session,
+            user_id=5,
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+            to=["cand@example.com"],
+            subject="Re: Hi",
+            body="<p>reply</p>",
+            sender_user_id=3,
+            thread_id=10,
+        )
+
+    async def test_send_already_stored_by_a_sync_returns_that_row_with_its_sender(
+        self,
+    ):
+        stored = SimpleNamespace(message_id=50, sent_by_user_id=None)
+
+        result = await self._send_reply_already_stored(stored)
+
+        self.assertIs(result, stored)
+        self.assertEqual(stored.sent_by_user_id, 3)
+
+    async def test_send_already_stored_keeps_the_sender_it_has(self):
+        stored = SimpleNamespace(message_id=50, sent_by_user_id=8)
+
+        await self._send_reply_already_stored(stored)
+
+        self.assertEqual(stored.sent_by_user_id, 8)
+
+    # ---- list_conversation --------------------------------------------
+
+    async def test_list_conversation_assembles_threads_with_messages(self):
+        self.thread_repo.list_by_person_context.return_value = [
+            SimpleNamespace(
+                thread_id=10,
+                subject="Hi",
+                synced_at=None,
+                created_at="2026-07-23T00:00:00Z",
+                archived_at=None,
+            ),
+        ]
+        self.message_repo.list_by_thread.return_value = [
+            SimpleNamespace(
+                message_id=1,
+                direction="outbound",
+                from_address="recruiting@circlecat.org",
+                to_addresses="cand@example.com",
+                subject="Hi",
+                body_html="<p>hi</p>",
+                body_text="hi",
+                snippet="hi",
+                sent_by_user_id=3,
+                gmail_internal_date=None,
+                created_at="2026-07-23T00:00:00Z",
+                inbound_kind=None,
+            ),
+        ]
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7, user_id=5
+        )
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(threads[0].thread_id, 10)
+        self.assertEqual(len(threads[0].messages), 1)
+        self.assertEqual(threads[0].messages[0].message_id, 1)
+        self.assertEqual(threads[0].messages[0].direction, "outbound")
+        self.message_repo.list_by_thread.assert_awaited_once_with(self.session, 10)
+
+    def _msg(self, message_id, when, gmail_date=None):
+        return SimpleNamespace(
+            message_id=message_id,
+            direction="inbound",
+            from_address="cand@example.com",
+            to_addresses="recruiting@circlecat.org",
+            subject="Hi",
+            body_html="<p>hi</p>",
+            body_text="hi",
+            snippet="hi",
+            sent_by_user_id=None,
+            gmail_internal_date=gmail_date,
+            created_at=when,
+            inbound_kind=None,
+            failed_recipients=None,
+        )
+
+    def _thread_row(self, thread_id, created_at):
+        return SimpleNamespace(
+            thread_id=thread_id,
+            subject=f"t{thread_id}",
+            synced_at=None,
+            created_at=created_at,
+            archived_at=None,
+        )
+
+    async def _list_one(self, messages, archived_at=None):
+        row = self._thread_row(10, "2026-07-01T00:00:00Z")
+        row.archived_at = archived_at
+        self.thread_repo.list_by_person_context.return_value = [row]
+        self.message_repo.list_by_thread.return_value = messages
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7, user_id=5
+        )
+        return threads[0]
+
+    def _out(self, message_id, when):
+        m = self._msg(message_id, when)
+        m.direction = "outbound"
+        # An earlier sender alias: reply_alias must come from the service.
+        m.from_address = "careers-old@circlecat.org"
+        m.to_addresses = "cand@example.com"
+        return m
+
+    async def test_list_conversation_reports_needs_reply_and_reply_alias(self):
+        t0, t1, t2 = (f"2026-07-0{d}T00:00:00Z" for d in (1, 2, 3))
+        thread = await self._list_one([self._out(1, t0), self._msg(2, t1)])
+        self.assertTrue(thread.needs_reply)
+        self.assertEqual(thread.reply_alias, SENDER)
+        self.assertIsNone(thread.open_bounce)
+
+        thread = await self._list_one([
+            self._out(1, t0),
+            self._msg(2, t1),
+            self._out(3, t2),
+        ])
+        self.assertFalse(thread.needs_reply)
+
+    async def test_list_conversation_needs_reply_matches_inbox_state(self):
+        from backend.communication.inbox_state import needs_reply
+
+        msgs = [
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-02T00:00:00Z"),
+        ]
+        thread = await self._list_one(msgs)
+        self.assertEqual(thread.needs_reply, needs_reply(msgs, None))
+
+    async def test_list_conversation_archived_thread_does_not_need_reply(self):
+        msgs = [
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-02T00:00:00Z"),
+        ]
+        thread = await self._list_one(msgs, archived_at="2026-07-03T00:00:00Z")
+        self.assertFalse(thread.needs_reply)
+
+    async def test_list_conversation_mail_stored_after_our_reply_needs_reply(self):
+        late = self._msg(2, "2026-07-05T00:00:00Z", gmail_date="2026-07-01T00:00:00Z")
+        thread = await self._list_one([self._out(1, "2026-07-03T00:00:00Z"), late])
+        self.assertTrue(thread.needs_reply)
+
+    async def test_list_conversation_mail_stored_after_the_archive_needs_reply(self):
+        late = self._msg(2, "2026-07-05T00:00:00Z", gmail_date="2026-07-01T00:00:00Z")
+        thread = await self._list_one([late], archived_at="2026-07-03T00:00:00Z")
+        self.assertTrue(thread.needs_reply)
+
+    async def test_list_conversation_unclassified_bounce_is_open_not_needing_reply(
+        self,
+    ):
+        bounce = self._msg(2, "2026-07-02T00:00:00Z")
+        bounce.failed_recipients = "typo@example.com"
+        thread = await self._list_one([self._out(1, "2026-07-01T00:00:00Z"), bounce])
+        self.assertFalse(thread.needs_reply)
+        self.assertEqual(thread.open_bounce.bounced_to, "typo@example.com")
+
+    async def test_list_conversation_open_bounce_until_a_later_send(self):
+        bounce = self._msg(2, "2026-07-02T00:00:00Z")
+        bounce.inbound_kind = InboundKind.BOUNCE
+        bounce.failed_recipients = "typo@example.com"
+        first = self._out(1, "2026-07-01T00:00:00Z")
+        thread = await self._list_one([first, bounce])
+        self.assertEqual(thread.open_bounce.bounced_to, "typo@example.com")
+
+        thread = await self._list_one([
+            first,
+            bounce,
+            self._out(3, "2026-07-03T00:00:00Z"),
+        ])
+        self.assertIsNone(thread.open_bounce)
+
+    async def test_list_conversation_exposes_inbound_kind_and_to_addresses(self):
+        auto = self._msg(2, "2026-07-02T00:00:00Z")
+        auto.inbound_kind = InboundKind.AUTO_REPLY
+        thread = await self._list_one([self._out(1, "2026-07-01T00:00:00Z"), auto])
+        newest, oldest = thread.messages
+        self.assertEqual(newest.inbound_kind, InboundKind.AUTO_REPLY)
+        self.assertEqual(newest.to_addresses, SENDER)
+        self.assertIsNone(oldest.inbound_kind)
+        self.assertFalse(thread.needs_reply)
+
+    async def test_list_conversation_orders_messages_newest_first(self):
+        self.thread_repo.list_by_person_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z")
+        ]
+        # The repository hands them over oldest first — that order is what the
+        # reply headers depend on, so the display order is applied here instead.
+        self.message_repo.list_by_thread.return_value = [
+            self._msg(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-05T00:00:00Z"),
+            self._msg(3, "2026-07-09T00:00:00Z"),
+        ]
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7, user_id=5
+        )
+
+        self.assertEqual([m.message_id for m in threads[0].messages], [3, 2, 1])
+
+    async def test_list_conversation_orders_threads_by_latest_activity(self):
+        # Thread 10 started first but 20 has the newer reply, so 20 goes on top —
+        # ordering by the thread's own created_at would have pinned 10 there
+        # forever, however recently it was replied to.
+        self.thread_repo.list_by_person_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z"),
+            self._thread_row(20, "2026-07-02T00:00:00Z"),
+        ]
+        by_thread = {
+            10: [
+                self._msg(1, "2026-07-01T00:00:00Z"),
+                self._msg(2, "2026-07-03T00:00:00Z"),
+            ],
+            20: [
+                self._msg(3, "2026-07-02T00:00:00Z"),
+                self._msg(4, "2026-07-08T00:00:00Z"),
+            ],
+        }
+        self.message_repo.list_by_thread.side_effect = (
+            lambda _session, thread_id: by_thread[thread_id]
+        )
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7, user_id=5
+        )
+
+        self.assertEqual([t.thread_id for t in threads], [20, 10])
+
+    async def test_list_conversation_prefers_the_gmail_timestamp_for_ordering(self):
+        # created_at is our insert time; a synced message's real send time is
+        # the Gmail one, and a backfilled thread can have the two disagree.
+        self.thread_repo.list_by_person_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z"),
+            self._thread_row(20, "2026-07-02T00:00:00Z"),
+        ]
+        by_thread = {
+            10: [
+                self._msg(1, "2026-07-20T00:00:00Z", gmail_date="2026-07-09T00:00:00Z")
+            ],
+            20: [
+                self._msg(2, "2026-07-21T00:00:00Z", gmail_date="2026-07-03T00:00:00Z")
+            ],
+        }
+        self.message_repo.list_by_thread.side_effect = (
+            lambda _session, thread_id: by_thread[thread_id]
+        )
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7, user_id=5
+        )
+
+        self.assertEqual([t.thread_id for t in threads], [10, 20])
+
+    async def test_list_conversation_sorts_an_empty_thread_by_its_own_timestamp(self):
+        self.thread_repo.list_by_person_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z"),
+            self._thread_row(20, "2026-07-10T00:00:00Z"),
+        ]
+        by_thread = {10: [self._msg(1, "2026-07-05T00:00:00Z")], 20: []}
+        self.message_repo.list_by_thread.side_effect = (
+            lambda _session, thread_id: by_thread[thread_id]
+        )
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7, user_id=5
+        )
+
+        self.assertEqual([t.thread_id for t in threads], [20, 10])
+
+    # ---- sync ---------------------------------------------------------
+
+    def _thread(self):
+        return SimpleNamespace(thread_id=10, gmail_thread_id="gt1")
+
+    def _fetched(self, gmail_message_id, from_address):
+        return {
+            "gmail_message_id": gmail_message_id,
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": f"<{gmail_message_id}@mail>",
+            "from_address": from_address,
+            "to_addresses": "someone@example.com",
+            "subject": "Re: Hi",
+            "html": "<p>body</p>",
+            "plain": "body",
+            "snippet": "body",
+            "gmail_internal_date": "1700000000000",
+        }
+
+    async def test_sync_thread_fetches_bodies_only_for_new_messages(self):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g1"}
+        self.gmail.get_messages.return_value = [self._fetched("g2", "cand@example.com")]
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=2),
+            True,
+        )
+
+        created = await self.service.sync_thread(self.session, self._thread())
+
+        self.gmail.list_thread_message_ids.assert_called_once_with("gt1")
+        # The already-stored g1 costs nothing: it is not in the batch, and no
+        # insert follows.
+        self.gmail.get_messages.assert_called_once_with(["g2"])
+        self.message_repo.insert_or_get.assert_awaited_once()
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["thread_id"], 10)
+        self.assertEqual(mkw["gmail_message_id"], "g2")
+        self.assertEqual(mkw["direction"], EmailDirection.INBOUND)
+        self.assertEqual(mkw["from_address"], "cand@example.com")
+        self.assertEqual(mkw["to_addresses"], "someone@example.com")
+        self.assertEqual(mkw["subject"], "Re: Hi")
+        self.assertEqual(mkw["body_html"], "<p>body</p>")
+        self.assertEqual(mkw["body_text"], "body")
+        self.assertEqual(mkw["snippet"], "body")
+        self.assertEqual(mkw["rfc822_message_id"], "<g2@mail>")
+        self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
+        self.assertEqual(len(created), 1)
+        self.assertIs(created[0], self.message_repo.insert_or_get.return_value[0])
+
+    async def test_sync_thread_stores_a_bounce_as_inbound_with_its_failed_recipients(
+        self,
+    ):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        bounce = self._fetched("g1", "mailer-daemon@googlemail.com")
+        bounce["failed_recipients"] = "a@x.com"
+        self.gmail.get_messages.return_value = [
+            bounce,
+            self._fetched("g2", "cand@example.com"),
+        ]
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=1),
+            True,
+        )
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        (_, bounce_kw), (_, reply_kw) = self.message_repo.insert_or_get.call_args_list
+        self.assertEqual(bounce_kw["failed_recipients"], "a@x.com")
+        self.assertEqual(bounce_kw["direction"], EmailDirection.INBOUND)
+        self.assertIsNone(reply_kw["failed_recipients"])
+
+    async def test_sync_thread_records_kind_and_attachments_for_inbound_only(self):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        auto = self._fetched("g1", "cand@example.com")
+        auto["auto_submitted"] = "auto-replied"
+        files = [
+            {
+                "attachment_id": "a1",
+                "filename": "cv.pdf",
+                "mime_type": "application/pdf",
+                "size": 10,
+            }
+        ]
+        auto["attachments"] = files
+        ours = self._fetched("g2", SENDER)
+        self.gmail.get_messages.return_value = [auto, ours]
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=1),
+            True,
+        )
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        (_, in_kw), (_, out_kw) = self.message_repo.insert_or_get.call_args_list
+        self.assertEqual(in_kw["inbound_kind"], InboundKind.AUTO_REPLY)
+        self.assertEqual(in_kw["attachments"], files)
+        self.assertIsNone(out_kw.get("inbound_kind"))
+        self.assertIsNone(out_kw.get("attachments"))
+
+    async def test_sync_thread_steady_state_costs_one_call_each_side(self):
+        # The common case: nothing new. This is the whole point of the change —
+        # a 30-message thread must not fetch 30 bodies to discover 0 new ones.
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2", "g3"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = {
+            "g1",
+            "g2",
+            "g3",
+        }
+
+        created = await self.service.sync_thread(self.session, self._thread())
+
+        self.assertEqual(self.gmail.list_thread_message_ids.call_count, 1)
+        self.gmail.get_messages.assert_not_called()
+        self.message_repo.insert_or_get.assert_not_awaited()
+        self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
+        self.assertEqual(created, [])
+
+    async def test_sync_thread_queries_known_ids_exactly_once(self):
+        # Guards against an N+1 regression: one existence query per THREAD,
+        # never one per message.
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2", "g3"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.gmail.get_messages.return_value = [
+            self._fetched("g1", "cand@example.com"),
+            self._fetched("g2", "cand@example.com"),
+            self._fetched("g3", "cand@example.com"),
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), True),
+            (SimpleNamespace(message_id=2), True),
+            (SimpleNamespace(message_id=3), True),
+        ]
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        self.message_repo.list_gmail_message_ids_by_thread.assert_awaited_once_with(
+            self.session, 10
+        )
+
+    async def test_sync_thread_preserves_gmail_order(self):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2", "g3"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g2"}
+        self.gmail.get_messages.return_value = [
+            self._fetched("g1", "cand@example.com"),
+            self._fetched("g3", "cand@example.com"),
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), True),
+            (SimpleNamespace(message_id=3), True),
+        ]
+
+        created = await self.service.sync_thread(self.session, self._thread())
+
+        # One batch, carrying exactly the missing ids in Gmail's order.
+        self.gmail.get_messages.assert_called_once_with(["g1", "g3"])
+        self.assertEqual([entity.message_id for entity in created], [1, 3])
+
+    async def test_sync_thread_leaves_out_a_message_stored_since_the_listing(self):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        self.gmail.get_messages.return_value = [
+            self._fetched("g1", SENDER),
+            self._fetched("g2", "cand@example.com"),
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), False),
+            (SimpleNamespace(message_id=2), True),
+        ]
+
+        created = await self.service.sync_thread(self.session, self._thread())
+
+        self.assertEqual([entity.message_id for entity in created], [2])
+        self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
+
+    async def test_sync_thread_stores_fetched_messages_without_reading_gmail(self):
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g2"}
+        auto = self._fetched("g1", "cand@example.com")
+        auto["auto_submitted"] = "auto-replied"
+        auto["attachments"] = [{"attachment_id": "a1", "filename": "cv.pdf"}]
+        fetched = [
+            auto,
+            self._fetched("g2", "cand@example.com"),
+            self._fetched("g3", SENDER),
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), True),
+            (SimpleNamespace(message_id=3), True),
+        ]
+
+        created = await self.service.sync_thread(
+            self.session, self._thread(), fetched=fetched
+        )
+
+        self.gmail.list_thread_message_ids.assert_not_called()
+        self.gmail.get_messages.assert_not_called()
+        (_, in_kw), (_, out_kw) = self.message_repo.insert_or_get.call_args_list
+        self.assertEqual(in_kw["gmail_message_id"], "g1")
+        self.assertEqual(in_kw["direction"], EmailDirection.INBOUND)
+        self.assertEqual(in_kw["inbound_kind"], InboundKind.AUTO_REPLY)
+        self.assertEqual(in_kw["attachments"], auto["attachments"])
+        self.assertEqual(out_kw["gmail_message_id"], "g3")
+        self.assertEqual(out_kw["direction"], EmailDirection.OUTBOUND)
+        self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
+        self.assertEqual([entity.message_id for entity in created], [1, 3])
+
+    async def test_sync_thread_classifies_outbound_by_sender_even_with_display_name(
+        self,
+    ):
+        self.gmail.list_thread_message_ids.return_value = ["g9"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.gmail.get_messages.return_value = [
+            self._fetched("g9", f"Circle Cat Recruiting <{SENDER}>")
+        ]
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=3),
+            True,
+        )
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
+        self.assertEqual(mkw["gmail_internal_date"].year, 2023)
+
+    async def test_sync_thread_asks_the_transport_which_addresses_are_ours(self):
+        # Direction must not be a string compare against our own one address:
+        # a second send-as alias on the same mailbox is still us. The transport
+        # owns that question, and this service must take its answer.
+        self.gmail.list_thread_message_ids.return_value = ["g9"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.gmail.get_messages.return_value = [
+            self._fetched("g9", "notification@circlecat.org")
+        ]
+        self.gmail.owns_address.side_effect = None
+        self.gmail.owns_address.return_value = True
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=4),
+            True,
+        )
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        self.gmail.owns_address.assert_called_with("notification@circlecat.org")
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
+
+    async def test_sync_thread_propagates_a_failed_body_fetch(self):
+        # A message deleted between listing and fetching yields a 404 ->
+        # RuntimeError. We deliberately do NOT swallow it: a silent partial
+        # sync ("looked fine, quietly missed a mail") is worse than a failed
+        # Refresh the user can retry, and the retry self-heals because the id
+        # is gone from the next listing.
+        self.gmail.list_thread_message_ids.return_value = ["g1"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.gmail.get_messages.side_effect = RuntimeError("Gmail API error")
+
+        with self.assertRaises(RuntimeError):
+            await self.service.sync_thread(self.session, self._thread())
+
+        self.message_repo.insert_or_get.assert_not_awaited()
+        self.thread_repo.mark_synced.assert_not_awaited()
+
+    async def test_sync_context_syncs_each_thread(self):
+        self.thread_repo.list_by_context.return_value = [
+            SimpleNamespace(thread_id=10, gmail_thread_id="gtA"),
+            SimpleNamespace(thread_id=11, gmail_thread_id="gtB"),
+        ]
+        self.gmail.list_thread_message_ids.side_effect = [["gA1"], ["gB1"]]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.gmail.get_messages.side_effect = [
+            [self._fetched("gA1", "cand-a@example.com")],
+            [self._fetched("gB1", "cand-b@example.com")],
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=201), True),
+            (SimpleNamespace(message_id=202), True),
+        ]
+        result = await self.service.sync_context(
+            self.session, ContextType.APPLICATION, 7
+        )
+        self.assertEqual(self.gmail.list_thread_message_ids.call_count, 2)
+        self.assertEqual(len(result), 2)
+        self.assertEqual({message.message_id for message in result}, {201, 202})
+
+    async def test_sender_address_exposes_company_sender(self):
+        self.assertEqual(self.service.sender_address, SENDER)
+
+    async def test_send_stores_the_plain_text_it_was_given(self):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g1",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r1@mail>",
+        }
+        self.thread_repo.create.return_value = SimpleNamespace(
+            thread_id=10, gmail_thread_id="gt1"
+        )
+
+        await self.service.send(
+            self.session,
+            user_id=5,
+            context_type=ContextType.ACTIVITY,
+            context_id=8,
+            to=["ann@x.com"],
+            subject="Hi",
+            body="Hi<br>\nthere",
+            sender_user_id=3,
+            body_text="Hi\nthere",
+        )
+
+        _, mkw = self.message_repo.insert_or_get.call_args
+        self.assertEqual(mkw["body_html"], "Hi<br>\nthere")
+        self.assertEqual(mkw["body_text"], "Hi\nthere")
+
+    async def test_list_conversation_for_a_person_reads_only_their_threads(self):
+        self.thread_repo.list_by_person_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z")
+        ]
+        self.message_repo.list_by_thread.return_value = [
+            self._msg(1, "2026-07-01T00:01:00Z")
+        ]
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.ACTIVITY, 8, user_id=5
+        )
+
+        self.thread_repo.list_by_person_context.assert_awaited_once_with(
+            self.session, 5, ContextType.ACTIVITY, 8
+        )
+        self.assertEqual([t.thread_id for t in threads], [10])
+
+    async def test_list_conversation_requires_a_person(self):
+        with self.assertRaises(TypeError):
+            await self.service.list_conversation(self.session, ContextType.ACTIVITY, 8)
+
+        self.thread_repo.list_by_person_context.assert_not_awaited()
+
+    async def test_list_conversation_reports_where_a_reply_goes(self):
+        thread = await self._list_one([
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-01T00:05:00Z"),
+        ])
+
+        self.assertEqual(thread.reply_to, "cand@example.com")
+
+
+if __name__ == "__main__":
+    unittest.main()

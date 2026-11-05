@@ -1,0 +1,24 @@
+{
+  "name": "purrf-apply-router",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-07",
+  // Keeps the per-visit log lines, which are how visitors sent to Purrf are
+  // counted against the applications that arrive.
+  "observability": { "enabled": true },
+  // Set with `wrangler secret put --env <env>`, so a deploy never drops them:
+  //   CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET  from the
+  //     apply_router_service_tokens Terraform output
+  //   WORKABLE_BOARD_URL  the Workable job board
+  //   WORKABLE_JOBS       JSON mapping a Purrf job id to its Workable page
+  // Without a Workable page for a request, the visitor goes to Purrf.
+  "env": {
+    "test": {
+      "routes": [{ "pattern": "test-apply.purrf.io/*", "zone_name": "purrf.io" }],
+      "vars": {
+        "API_ORIGIN": "https://test-api.purrf.io",
+        "APP_ORIGIN": "https://test.purrf.io",
+        "PURRF_RATIO": "0.5"
+      }
+    }
+  }
+}

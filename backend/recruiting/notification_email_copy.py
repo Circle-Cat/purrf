@@ -1,0 +1,692 @@
+"""Subject + HTML body for one in-app notification, as an email.
+
+Deliberately a second copy of the wording the bell renders in
+``NotificationBell.describe()``, not a shared source. The two have
+different jobs: the bell renders whenever the user opens the popover --
+possibly days later -- while an email is rendered milliseconds after the
+event, so only the email can safely state point-in-time facts like the
+stage an evaluation was assigned at.
+
+Emails carry no links (decided 2026-07-30), so each body has to stand on
+its own: what happened, who and which posting it concerns, and where in
+Purrf to act on it.
+
+That last part is a promise about the UI, so the destination has to be
+the sidebar label the recipient will actually see -- verbatim, from
+``navItems`` in ``frontend/src/components/layout/Sidebar.jsx``. The
+sidebar is one flat list with no groups, so a body must never spell a
+path like "Recruiting -> Postings": there is nothing called Recruiting to
+open, and a reader who goes looking for it finds no such menu.
+
+``NotificationDto.actor_name`` carries a three-way distinction that must
+not be collapsed by a truthiness check: ``None`` means ``actor_user_id``
+was NULL (the row was written by the system, e.g. a stage's default
+assignee being materialised) -- there is genuinely nobody to name.
+``""`` means there was an actor, but their user row is gone or otherwise
+unresolvable -- claiming the event was automatic would be a lie, so this
+case falls back to ``_MISSING_ACTOR``. A real string names them.
+
+A body is HTML and a subject is not, so the two readings of the same
+field differ: templates read ``dto.job_title`` for the body, which comes
+back HTML-escaped, and ``dto.plain.job_title`` for the subject, which
+does not. Every value here is written by a person -- a blacklist reason
+typed by a recruiter, a name a candidate chose, a posting title -- and
+these bodies are delivered to people who never saw the form it was typed
+into, so an unescaped one would carry that person's markup into their
+mail. See ``_Escaped``.
+"""
+
+import functools
+import html
+from typing import NamedTuple
+
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobReviewKind,
+    RecruitingEvent,
+)
+
+_FOOTER = (
+    "<p>This is an automated message from Purrf. Replies to this address "
+    "aren't monitored.</p>"
+)
+
+_MISSING_ACTOR = "Someone"
+_MISSING_APPLICANT = "A candidate"
+
+
+class _Fields:
+    """The display fields, with the two "nobody to name" fallbacks applied.
+
+    ``actor`` and ``applicant`` are the readings a sentence can be built
+    around; the resolved-to-nothing case is answered once here rather than
+    at the top of every template. Everything else passes straight through
+    to the dto the renderer resolved.
+    """
+
+    def __init__(self, dto):
+        self._dto = dto
+
+    def __getattr__(self, name):
+        return getattr(self._dto, name)
+
+    @property
+    def actor(self) -> str:
+        """Who acted, or ``_MISSING_ACTOR`` when their row no longer resolves."""
+        return self._dto.actor_name or _MISSING_ACTOR
+
+    @property
+    def applicant(self) -> str:
+        """The candidate, or ``_MISSING_APPLICANT`` when nothing resolved."""
+        return self._dto.applicant_name or _MISSING_APPLICANT
+
+
+class _Escaped:
+    """An HTML-safe reading of ``_Fields``: every string comes back escaped.
+
+    This is what a template's ``dto`` is, so a body is safe by
+    construction. The alternative -- one ``html.escape`` call per
+    interpolation, at the 60-odd of them below -- is one omission away
+    from an injection, and the omission is invisible in review because
+    escaped and unescaped sites read almost the same.
+
+    Values that are not strings (a datetime, a round number, a JobKind)
+    pass through untouched, so ``_format_utc`` and ``stage_label`` still
+    receive what they expect.
+
+    ``plain`` reaches the unescaped fields, for the subject line: a mail
+    client renders a subject as text, where "&amp;" would be read out
+    literally instead of as the ampersand somebody typed.
+    """
+
+    def __init__(self, fields: _Fields):
+        self.plain = fields
+
+    def __getattr__(self, name):
+        value = getattr(self.plain, name)
+        return html.escape(value) if isinstance(value, str) else value
+
+
+def _html_body(template):
+    """Hands ``template`` an escaped view of the dto it was called with.
+
+    Callers keep passing the plain dto the renderer resolved, so this is
+    invisible from ``notification_renderers``; inside the template, ``dto``
+    reads escaped and ``dto.plain`` reads raw.
+
+    Args:
+        template (Callable): A ``(dto, stage) -> (subject, body)`` template.
+
+    Returns:
+        Callable: The same, reading its fields through ``_Escaped``.
+    """
+
+    @functools.wraps(template)
+    def render(dto, stage):
+        return template(_Escaped(_Fields(dto)), stage)
+
+    return render
+
+
+def stage_label(stage: ApplicationStage | None, kind: JobKind | None) -> str:
+    """Display label for an application stage, mirroring the frontend.
+
+    Must stay identical to ``stageLabel`` in
+    ``frontend/src/pages/Recruiting/board/stageFormat.js``: underscores to
+    spaces, first letter capitalised, and an activity posting's terminal
+    success stage reading "Admitted" rather than "Hired" (a display-only
+    rename -- the stored value is always ``hired``). An email that invented
+    friendlier labels than the board would leave recipients looking for a
+    stage that does not appear in the UI.
+
+    Args:
+        stage (ApplicationStage | None): The stage, or None when the
+            notification is not application-scoped.
+        kind (JobKind | None): The posting's kind, for the Hired/Admitted
+            rename.
+
+    Returns:
+        str: The label, or "" when stage is None.
+    """
+    if stage is None:
+        return ""
+    if kind == JobKind.ACTIVITY and stage == ApplicationStage.HIRED:
+        return "Admitted"
+    spaced = stage.value.replace("_", " ")
+    return spaced[:1].upper() + spaced[1:]
+
+
+def _round_suffix(round_number: int | None) -> str:
+    """ ", session N" past the first session, "" otherwise (session 1 is noise)."""
+    if round_number is None or round_number <= 1:
+        return ""
+    return f", session {round_number}"
+
+
+def _candidate_line(dto) -> str:
+    """The "Candidate: ..." paragraph, or "" when there is no address.
+
+    A display name is mutable and not unique, so naming the candidate's
+    address gives the reader a handle that survives a rename and can be
+    pasted into the board's search. It is its own paragraph rather than
+    inlined because every body names the candidate possessively
+    ("{applicant}'s interview"), where an inlined address would read
+    "Ada Lovelace (ada@example.com)'s interview".
+
+    Args:
+        dto (_Escaped): The escaped view a template holds, carrying
+            applicant_name and applicant_email. This returns HTML, so it has
+            to be read through that view like any other body site -- both
+            fields are the candidate's own text.
+
+    Returns:
+        str: "<p>Candidate: Name (address)</p>", "<p>Candidate: address</p>"
+            when the name resolved to nothing, or "" when no address is on
+            file -- a name-only line would only repeat the body.
+    """
+    if not dto.applicant_email:
+        return ""
+    if not dto.applicant_name:
+        return f"<p>Candidate: {dto.applicant_email}</p>"
+    return f"<p>Candidate: {dto.applicant_name} ({dto.applicant_email})</p>"
+
+
+@_html_body
+def _assigned_to_evaluate(dto, stage):
+    if dto.actor_name is None:
+        # actor_user_id was NULL: the row was written by the system when a
+        # stage's configured default assignee was materialised, so there is
+        # genuinely nobody to name.
+        opening = (
+            f"You were automatically assigned to evaluate {dto.applicant} for "
+            f"{dto.job_title}, as the posting's default assignee for this stage."
+        )
+        closing = "Open My Interview Evaluations in Purrf to submit your evaluation."
+    else:
+        # Someone did assign it; their name is just unresolvable (a deleted
+        # user row resolves to ""). "Someone" is truer than claiming the
+        # assignment was automatic.
+        # The posting owners get this email as well as the evaluator, and it
+        # is rendered once for all of them, so it names the evaluator instead
+        # of saying "you".
+        evaluator = dto.assignee_name or "someone"
+        opening = (
+            f"{dto.actor} assigned {evaluator} to evaluate {dto.applicant} for "
+            f"{dto.job_title}."
+        )
+        closing = (
+            "If you are the evaluator, open My Interview Evaluations in Purrf "
+            "to submit your evaluation."
+        )
+    return (
+        f"Evaluation assigned: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{opening}</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}"
+        f"{_round_suffix(dto.round)}.</p>"
+        f"<p>{closing}</p>",
+    )
+
+
+@_html_body
+def _mentioned(dto, stage):
+    return (
+        f"{dto.plain.actor} mentioned you: "
+        f"{dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} mentioned you in a comment on {dto.applicant}'s "
+        f"application for {dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the application in Purrf and go to its Comments tab to "
+        "read the thread and reply.</p>",
+    )
+
+
+@_html_body
+def _email_received(dto, stage):
+    # Inbound only means "not from our sender", so the reply may come from
+    # someone on CC rather than the candidate; the From line says who.
+    from_line = f"<p>From: {dto.email_from}</p>" if dto.email_from else ""
+    subject_line = f"<p>Subject: {dto.email_subject}</p>" if dto.email_subject else ""
+    return (
+        f"New email reply: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>A candidate replied to an email about {dto.applicant}'s "
+        f"application for {dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
+        f"{from_line}"
+        f"{subject_line}"
+        "<p>Open the application in Purrf and go to its Emails tab to read "
+        "it and reply.</p>",
+    )
+
+
+@_html_body
+def _email_bounced(dto, stage):
+    # A report can name nobody (no X-Failed-Recipients header); the sentence
+    # still stands without the address list.
+    to_whom = (
+        f" to {dto.email_failed_recipients}" if dto.email_failed_recipients else ""
+    )
+    return (
+        f"Email not delivered: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>An email you sent about {dto.applicant}'s application for "
+        f"{dto.job_title} could not be delivered{to_whom}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the application in Purrf and go to its Emails tab to check "
+        "the address and send it again.</p>",
+    )
+
+
+class _ReviewWording(NamedTuple):
+    """How the posting review templates name one kind of review.
+
+    Each body phrase is the sentence after the actor, with ``{title}`` where
+    the quoted posting title goes; a subject is what precedes ": <title>".
+    """
+
+    requested_subject: str
+    requested: str
+    reassigned: str
+    approved_subject: str
+    approved: str
+    rejected_subject: str
+    rejected: str
+    withdrawn_subject: str
+    withdrawn: str
+
+
+_REVIEW_WORDING = {
+    JobReviewKind.INITIAL: _ReviewWording(
+        requested_subject="Posting review requested",
+        requested='submitted the posting "{title}" for your review',
+        reassigned='moved the review of the posting "{title}" to you',
+        approved_subject="Posting approved",
+        approved='approved your submission for the posting "{title}"',
+        rejected_subject="Posting rejected",
+        rejected='rejected your submission for the posting "{title}"',
+        withdrawn_subject="Posting review withdrawn",
+        withdrawn='withdrew their request to review the posting "{title}"',
+    ),
+    JobReviewKind.REVISION: _ReviewWording(
+        requested_subject="Posting changes to review",
+        requested='submitted changes to "{title}" for your review',
+        reassigned='moved the review of the changes to "{title}" to you',
+        approved_subject="Posting changes approved",
+        approved='approved your changes to "{title}"',
+        rejected_subject="Posting changes rejected",
+        rejected='rejected your changes to "{title}"',
+        withdrawn_subject="Posting changes withdrawn",
+        withdrawn='withdrew the changes to "{title}"',
+    ),
+    JobReviewKind.CLOSE: _ReviewWording(
+        requested_subject="Posting close requested",
+        requested='asked to close "{title}"',
+        reassigned='moved the request to close "{title}" to you',
+        approved_subject="Posting close approved",
+        approved='approved closing "{title}"',
+        rejected_subject="Posting close rejected",
+        rejected='rejected closing "{title}"',
+        withdrawn_subject="Posting close request withdrawn",
+        withdrawn='withdrew the request to close "{title}"',
+    ),
+    JobReviewKind.REOPEN: _ReviewWording(
+        requested_subject="Posting reopen requested",
+        requested='asked to reopen "{title}"',
+        reassigned='moved the request to reopen "{title}" to you',
+        approved_subject="Posting reopen approved",
+        approved='approved reopening "{title}"',
+        rejected_subject="Posting reopen rejected",
+        rejected='rejected reopening "{title}"',
+        withdrawn_subject="Posting reopen request withdrawn",
+        withdrawn='withdrew the request to reopen "{title}"',
+    ),
+}
+
+
+# The phrase a review event's line uses. For every decision the backend
+# writes this picks what the email renderer picks; a decision the map does
+# not name reads as a rejection, so a row is still worded where the email
+# renderer would refuse a missing one.
+_REVIEW_PHRASE_BY_EVENT = {
+    RecruitingEvent.REVIEW_OPENED: "requested",
+    RecruitingEvent.REVIEW_REASSIGNED: "reassigned",
+}
+_REVIEW_PHRASE_BY_DECISION = {"approved": "approved", "withdrawn": "withdrawn"}
+
+
+def review_summary(
+    event_type: str, details: dict | None, actor: str | None, title: str
+) -> str | None:
+    """The one-line, plain-text account of a posting review event, worded as
+    its email is, for the bell.
+
+    Args:
+        event_type (str): The event's type.
+        details (dict | None): The event's details, carrying ``kind`` and, for
+            a decision, ``decision``.
+        actor (str | None): Who acted; blank or None reads as "Someone".
+        title (str): The posting's title, unescaped.
+
+    Returns:
+        str | None: The line, or None when the event is not a posting review.
+    """
+    details = details or {}
+    if event_type == RecruitingEvent.REVIEW_DECIDED:
+        phrase = _REVIEW_PHRASE_BY_DECISION.get(details.get("decision"), "rejected")
+    else:
+        phrase = _REVIEW_PHRASE_BY_EVENT.get(event_type)
+        if phrase is None:
+            return None
+    wording = _REVIEW_WORDING.get(
+        details.get("kind"), _REVIEW_WORDING[JobReviewKind.INITIAL]
+    )
+    return f"{actor or _MISSING_ACTOR} {getattr(wording, phrase).format(title=title)}"
+
+
+def _review_wording(dto) -> _ReviewWording:
+    """The wording for the dto's review kind.
+
+    Events recorded before the kind was carried, or with a kind this module
+    does not know, read as a first publication.
+
+    Args:
+        dto (_Escaped): The escaped view a template holds, carrying
+            review_kind from the event's details.
+
+    Returns:
+        _ReviewWording: The phrases for that kind.
+    """
+    return _REVIEW_WORDING.get(
+        dto.plain.review_kind, _REVIEW_WORDING[JobReviewKind.INITIAL]
+    )
+
+
+@_html_body
+def _job_review_requested(dto, stage):
+    wording = _review_wording(dto)
+    return (
+        f"{wording.requested_subject}: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.requested.format(title=dto.job_title)}. "
+        "It is waiting on your decision.</p>"
+        "<p>Open Job Postings in Purrf to approve or reject it.</p>",
+    )
+
+
+@_html_body
+def _job_review_reassigned(dto, stage):
+    # Not _job_review_requested's line: the recipient never saw the original
+    # request, so "submitted the posting for your review" would be their first
+    # news of something that has been waiting on somebody else. The copy has
+    # to say a handover happened. It does not say why -- the usual reason is
+    # that the previous reviewer's account was turned off, which is not this
+    # recipient's to know.
+    wording = _review_wording(dto)
+    return (
+        f"Posting review reassigned: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.reassigned.format(title=dto.job_title)}. "
+        "It is waiting on your decision.</p>"
+        "<p>Open Job Postings in Purrf to approve or reject it.</p>",
+    )
+
+
+@_html_body
+def _job_review_approved(dto, stage):
+    wording = _review_wording(dto)
+    return (
+        f"{wording.approved_subject}: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.approved.format(title=dto.job_title)}.</p>"
+        "<p>Open Job Postings in Purrf to see its current state.</p>",
+    )
+
+
+@_html_body
+def _job_review_rejected(dto, stage):
+    # A rejection needs a reason, so it is quoted here. Events from before the
+    # reason was carried have none; their copy still points at the posting.
+    wording = _review_wording(dto)
+    subject = f"{wording.rejected_subject}: {dto.plain.job_title}"
+    rejected = f"<p>{dto.actor} {wording.rejected.format(title=dto.job_title)}.</p>"
+    if dto.review_comment:
+        return (
+            subject,
+            rejected + f"<p>Their reason: {dto.review_comment}</p>"
+            "<p>Open Job Postings in Purrf to see the outcome.</p>",
+        )
+    return (
+        subject,
+        rejected + "<p>Open Job Postings in Purrf to see the outcome and any "
+        "comment the reviewer left.</p>",
+    )
+
+
+@_html_body
+def _job_review_withdrawn(dto, stage):
+    # Told to the reviewer the review was waiting on: nothing is left for
+    # them to do.
+    wording = _review_wording(dto)
+    return (
+        f"{wording.withdrawn_subject}: {dto.plain.job_title}",
+        f"<p>{dto.actor} {wording.withdrawn.format(title=dto.job_title)}. "
+        "Nothing is waiting on you any more.</p>",
+    )
+
+
+def unavailable_person_label(user_id: int) -> str:
+    """How copy names a person it must not name: ``User {id} — unavailable``.
+
+    Mirrors ``personLabel.js`` on the frontend (PUR-639): the id alone, with
+    no name and no reason, so the reader learns nothing about why the person
+    dropped out.
+
+    Args:
+        user_id (int): The person's user id.
+
+    Returns:
+        str: The label.
+    """
+    return f"User {user_id} — unavailable"
+
+
+def _default_assignee_line(dto) -> str:
+    """What became of the stage's default interviewer, or "" if none is set.
+
+    Args:
+        dto (_Escaped): The escaped view a template holds, carrying
+            auto_assignee_name (set when the default was assigned) and
+            unavailable_default_assignee_id (set when it could not be).
+
+    Returns:
+        str: One HTML paragraph, or "".
+    """
+    if dto.auto_assignee_name is not None:
+        return (
+            f"<p>It was assigned to {dto.auto_assignee_name} automatically, "
+            "the stage's default interviewer.</p>"
+        )
+    if dto.unavailable_default_assignee_id is not None:
+        label = unavailable_person_label(dto.unavailable_default_assignee_id)
+        return (
+            f"<p>The stage's default interviewer ({label}) can no longer be "
+            "assigned, so it is unassigned. Assign someone from the "
+            "Applications Board, and update the default on the posting so "
+            "later applications are not affected.</p>"
+        )
+    return ""
+
+
+@_html_body
+def _application_submitted(dto, stage):
+    return (
+        f"New application: {dto.plain.applicant} for {dto.plain.job_title}",
+        f"<p>{dto.applicant} applied to {dto.job_title}. The application is "
+        f"waiting for review at the {stage_label(stage, dto.job_kind)} "
+        "stage.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>You're receiving this because you own this posting. Open the "
+        "Applications Board in Purrf to review it.</p>"
+        f"{_default_assignee_line(dto)}",
+    )
+
+
+@_html_body
+def _application_auto_rejected(dto, stage):
+    return (
+        f"Application auto-rejected: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.applicant} applied to {dto.job_title} and was rejected "
+        "automatically, with no human review.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>The reason is recorded on the application's timeline in Purrf. "
+        "No action is needed unless you want to overturn it.</p>",
+    )
+
+
+@_html_body
+def _application_auto_hired(dto, stage):
+    # Same display-only rename as stage_label: an activity posting admits,
+    # it does not hire.
+    verb = "admitted" if dto.job_kind == JobKind.ACTIVITY else "hired"
+    return (
+        f"Application auto-{verb}: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.applicant} applied to {dto.job_title} and was {verb} "
+        "automatically, with no human review.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>The matching screening rule is recorded on the application's "
+        "timeline in Purrf.</p>",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Templates are dispatched by event_type, not from this file -- see
+# backend/recruiting/notification_renderers.py, which builds the ``dto`` each
+# of these takes from EventEntity.details.
+#
+# The 7 existing functions above cover the other 7 notifying event types
+# verbatim (reassigned/auto_assigned share _assigned_to_evaluate;
+# review_decided picks _job_review_approved/_job_review_rejected by
+# ``details["decision"]``) -- untouched, per the standing rule that shipped
+# template English does not change once live.
+# ---------------------------------------------------------------------------
+
+
+def _humanize(value: str) -> str:
+    """ "in_progress" -> "In progress". Mirrors frontend/.../stageFormat.js's ``humanize``.
+
+    Used for sub-status values, which (like stages) are snake_case and have
+    no friendlier rename table of their own.
+    """
+    spaced = value.replace("_", " ")
+    return spaced[:1].upper() + spaced[1:]
+
+
+def _format_utc(instant) -> str:
+    """ "2026-08-12 15:00 UTC" -- a meeting instant, always in UTC.
+
+    Interview times have no stored booking timezone the way an email
+    renderer could safely reuse (see ``ApplicationInterviewEntity``'s own
+    docstring on why): the wall clock a recruiter typed is not necessarily
+    the zone of every owner/assignee this email goes to. UTC is the one
+    reading that is never wrong, at the cost of not being the reader's own
+    time -- the same trade every other surface in this codebase resolves the
+    other way only because it knows who the *viewer* is; a static email body
+    does not.
+
+    Args:
+        instant (datetime): A timezone-aware instant (UTC).
+
+    Returns:
+        str: The formatted instant.
+    """
+    return instant.strftime("%Y-%m-%d %H:%M UTC")
+
+
+@_html_body
+def _blacklisted(dto, stage):
+    return (
+        f"Application blacklisted: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} blacklisted {dto.applicant} and rejected their "
+        f'application for {dto.job_title}, with the reason: "{dto.reason}".</p>'
+        f"{_candidate_line(dto)}",
+    )
+
+
+@_html_body
+def _stage_changed(dto, stage):
+    return (
+        f"Stage changed: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} moved {dto.applicant}'s application for "
+        f"{dto.job_title} to the {stage_label(stage, dto.job_kind)} stage.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+@_html_body
+def _round_advanced(dto, stage):
+    return (
+        f"Round advanced: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} advanced {dto.applicant}'s "
+        f"{stage_label(stage, dto.job_kind)} round for {dto.job_title} to "
+        f"round {dto.round}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+@_html_body
+def _sub_status_changed(dto, stage):
+    return (
+        f"Status changed: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} moved {dto.applicant}'s "
+        f"{stage_label(stage, dto.job_kind)} status for {dto.job_title} to "
+        f"{_humanize(dto.to_sub_status)}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+@_html_body
+def _evaluation_confirmed(dto, stage):
+    return (
+        f"Evaluation submitted: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} submitted their evaluation of {dto.applicant} for "
+        f"{dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to read it.</p>",
+    )
+
+
+@_html_body
+def _interview_scheduled(dto, stage):
+    return (
+        f"Interview scheduled: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} scheduled an interview with {dto.applicant} for "
+        f"{dto.job_title}, on {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+@_html_body
+def _interview_updated(dto, stage):
+    return (
+        f"Interview rescheduled: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} rescheduled {dto.applicant}'s interview for "
+        f"{dto.job_title} to {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+@_html_body
+def _interview_cancelled(dto, stage):
+    return (
+        f"Interview cancelled: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>{dto.actor} cancelled {dto.applicant}'s interview for "
+        f"{dto.job_title}, which was set for {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )

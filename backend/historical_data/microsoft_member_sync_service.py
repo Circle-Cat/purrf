@@ -66,7 +66,7 @@ class MicrosoftMemberSyncService:
             pipe.hgetall(redis_key)
             redis_keys_to_fetch.append((status, group))
 
-        redis_results = self.retry_utils.get_retry_on_transient(pipe.execute)
+        redis_results = self.retry_utils.execute_pipeline(pipe)
 
         all_current_redis_members = {}
 
@@ -242,7 +242,7 @@ class MicrosoftMemberSyncService:
                     self.logger.debug(f"Updated members: {', '.join(updated_members)}")
 
         if changes_made:
-            self.retry_utils.get_retry_on_transient(pipe.execute)
+            self.retry_utils.execute_pipeline(pipe)
             self.logger.info("Redis sync complete.")
         else:
             self.logger.info("Nothing changed in Redis, skipping sync.")

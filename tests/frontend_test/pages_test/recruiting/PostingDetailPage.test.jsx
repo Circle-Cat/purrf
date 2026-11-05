@@ -1,0 +1,1793 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { toast } from "sonner";
+import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
+import * as api from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
+
+vi.mock("@/api/recruitingApi");
+vi.mock("@/utils/dateTime", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveViewerTimezone: () => "Asia/Shanghai",
+}));
+// Bazel-sandbox module resolution: `vi.mock("sonner", factory)` doesn't
+// intercept the module the component resolved at import time. Spy on the
+// real toast instead, matching the rest of the recruiting page tests.
+vi.spyOn(toast, "error").mockImplementation(() => {});
+vi.spyOn(toast, "success").mockImplementation(() => {});
+
+// useAuth() returns { permissions, user: {userId, ...} } (see AuthContext.js).
+// A hoisted mutable holder lets each test flip who's viewing before render,
+// mirroring ApplicationDetailPage.test.jsx's established convention.
+const authState = vi.hoisted(() => ({ userId: 5, permissions: [] }));
+vi.mock("@/context/auth/AuthContext", () => ({
+  useAuth: () => ({
+    user: { userId: authState.userId },
+    permissions: authState.permissions,
+  }),
+}));
+
+const renderAt = (jobId) => {
+  const router = createMemoryRouter(
+    [
+      { path: "/recruiting/postings/:id", element: <PostingDetailPage /> },
+      { path: "/recruiting/postings", element: <div>Postings list</div> },
+    ],
+    { initialEntries: [`/recruiting/postings/${jobId}`] },
+  );
+  const result = render(<RouterProvider router={router} />);
+  return { ...result, router };
+};
+
+describe("PostingDetailPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.userId = 5;
+    authState.permissions = [];
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [] });
+    api.listJobOwners.mockResolvedValue({ data: [] });
+    api.listInterviewPool.mockResolvedValue({ data: [] });
+    api.listJobActivity.mockResolvedValue({ data: [] });
+    api.listMyReviews.mockResolvedValue({ data: [] });
+  });
+
+  // The lifecycle guide belongs wherever the lifecycle actions are, and every
+  // one of them lives on this page rather than on the list it links from.
+  it("shows no How it works button", async () => {
+    renderAt(1);
+    await screen.findByRole("heading", { name: "Backend Engineer" });
+    expect(
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains the missing operate row while an initial review is pending", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: 2,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 2, name: "Bob", email: "bob@x.com" }],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(await screen.findByText("Submitted for review")).toBeInTheDocument();
+    expect(screen.getByText("Waiting on Bob.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Editing is locked until they approve or reject."),
+    ).toBeInTheDocument();
+  });
+
+  it("names the pending action rather than always saying submitted", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_close",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(await screen.findByText("Close requested")).toBeInTheDocument();
+    expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
+  });
+
+  it("does not explain a missing operate row when the row is there", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(await screen.findByText("Operate:")).toBeInTheDocument();
+    expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
+  });
+
+  it("tells a plain draft it is editable", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    (await screen.findByText("Draft")).focus();
+
+    expect(
+      await screen.findByText(
+        "Not published yet, and only you can see it. Edit it as much as you like, then submit it for review when it is ready.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("explains the Draft badge that a pending posting keeps", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    (await screen.findByText("Draft")).focus();
+
+    expect(
+      await screen.findByText(
+        "Still unpublished. It keeps the Draft badge while its review is open, which is why you cannot edit it right now.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says why a published posting has no Delete", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "closed",
+        wasPublished: true,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(
+      await screen.findByText("Published postings cannot be deleted"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Delete with no such note on a never-published closed posting", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "closed",
+        wasPublished: false,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(
+      await screen.findByRole("button", { name: "Delete" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Published postings cannot be deleted"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the Operate block for a canWrite viewer", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Submit for review" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Edit in the Operate row for a draft posting", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument(),
+    );
+  });
+
+  it("hides Edit while a revision is pending re-review", async () => {
+    // published_pending_revision now means a REVISION review is already
+    // open (the flip happens at submit_for_review time, not edit time --
+    // see JobService.update_job/submit_for_review) so there is no
+    // submitter action left to take here, Edit included.
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows 'Revision pending review' badge for published_pending_revision with reviewerId: 9", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: 9,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Revision pending review")).toBeInTheDocument(),
+    );
+  });
+
+  it("renders the applicant-facing question form on Overview", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+        formSchema: {
+          questions: [{ id: "q1", type: "short_text", label: "Why us?" }],
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Why us?")).toBeInTheDocument(),
+    );
+  });
+
+  it("shows an unresolved owner in red with an 'unavailable' suffix", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: { ownerIds: [42] },
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("User 42 — unavailable")).toBeInTheDocument(),
+    );
+  });
+
+  it("hides the Operate block for a read-only viewer", async () => {
+    authState.permissions = ["recruiting.job.read"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Submit for review" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the reject comment in a panel with no click needed, alongside the badges", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "initial",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    // The comment is visible on load -- no popover trigger to click.
+    expect(
+      screen.getByText("Please tighten the screening rules."),
+    ).toBeInTheDocument();
+    // The badge and the panel title share the same reject-kind label.
+    expect(screen.getAllByText("Initial submission rejected")).toHaveLength(2);
+  });
+
+  it("shows the reject panel to a read-only viewer too", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "initial",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.read"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Please tighten the screening rules."),
+      ).toBeInTheDocument(),
+    );
+    // ...even though the Operate block is hidden from them.
+    expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
+  });
+
+  it("warns that a staged edit is not what applicants see", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: { title: "Backend Engineer II" },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Staged edit not submitted for review"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("shows no staged-edit warning on a published posting with nothing staged", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("Staged edit not submitted for review"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the requester's note on the posting while a review is open", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submitMessage: "Please check the pipeline stages.",
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Please check the pipeline stages."),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("renders no note panel when the open review carried none", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submitMessage: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Submitted for review")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Note to the reviewer")).not.toBeInTheDocument();
+  });
+
+  it("renders no reject panel when the latest review was not a rejection", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    expect(screen.queryByText(/rejected|Sent back/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the 'Sent back' label in the panel for an unknown reject kind", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "some_future_kind",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    expect(screen.getAllByText("Sent back")).toHaveLength(2);
+    expect(
+      screen.getByText("Please tighten the screening rules."),
+    ).toBeInTheDocument();
+  });
+
+  describe("the reviewer's card", () => {
+    // Submitted by Dana Wu (5), waiting on the viewer (9).
+    const pendingRevision = (overrides = {}) => ({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submittedBy: 5,
+        submittedByName: "Dana Wu",
+        submitMessage: "Updated the salary range",
+        ...overrides,
+      },
+    });
+    const CARD = "Revision awaiting your decision";
+
+    beforeEach(() => {
+      api.getJob.mockResolvedValue(pendingRevision());
+      api.listMyReviews.mockResolvedValue({
+        data: [
+          {
+            reviewId: 3,
+            jobId: 1,
+            kind: "revision",
+            createdAt: "2026-10-29T07:20:00Z",
+          },
+        ],
+      });
+      api.decideReview.mockResolvedValue({ data: {} });
+      authState.userId = 9;
+      authState.permissions = ["recruiting.job.approve"];
+    });
+
+    it("shows who submitted it, when and their note, with nothing else to fill in", async () => {
+      renderAt(1);
+
+      const card = await screen.findByRole("region", { name: CARD });
+      expect(
+        within(card).getByText(
+          "Submitted by Dana Wu on 2026-10-29 15:20 Asia/Shanghai",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(card).getByText("Updated the salary range"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Note to the reviewer"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText("Rejection comment (required to reject)"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says when the submitter left no note", async () => {
+      api.getJob.mockResolvedValue(pendingRevision({ submitMessage: null }));
+      renderAt(1);
+
+      const card = await screen.findByRole("region", { name: CARD });
+      expect(within(card).getByText("No note given.")).toBeInTheDocument();
+    });
+
+    it("approves after a confirmation that says what approving does", async () => {
+      const user = userEvent.setup();
+      renderAt(1);
+      const card = await screen.findByRole("region", { name: CARD });
+
+      await user.click(within(card).getByRole("button", { name: "Approve" }));
+      const dialog = screen.getByRole("dialog");
+      expect(
+        within(dialog).getByText(/The staged changes go live to applicants/),
+      ).toBeInTheDocument();
+      expect(api.decideReview).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+      await waitFor(() =>
+        expect(api.decideReview).toHaveBeenCalledWith(3, {
+          decision: "approve",
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith("Review approved.");
+    });
+
+    it("rejects with the reason given in the confirmation", async () => {
+      const user = userEvent.setup();
+      renderAt(1);
+      const card = await screen.findByRole("region", { name: CARD });
+
+      await user.click(within(card).getByRole("button", { name: "Reject" }));
+      const dialog = screen.getByRole("dialog");
+      await user.type(
+        within(dialog).getByRole("textbox"),
+        "  Keep the old range  ",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Reject" }));
+
+      await waitFor(() =>
+        expect(api.decideReview).toHaveBeenCalledWith(3, {
+          decision: "reject",
+          comment: "Keep the old range",
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith("Review rejected.");
+    });
+
+    it("leaves the note box for everyone else", async () => {
+      authState.userId = 5;
+      authState.permissions = ["recruiting.job.write"];
+      api.listMyReviews.mockResolvedValue({ data: [] });
+      renderAt(1);
+
+      expect(
+        await screen.findByText("Note to the reviewer"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: CARD }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows Approve/Reject only for the assigned reviewer", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: 9,
+      },
+    });
+    api.listMyReviews.mockResolvedValue({
+      data: [
+        {
+          reviewId: 3,
+          jobId: 1,
+          jobTitle: "Backend Engineer",
+          kind: "initial",
+        },
+      ],
+    });
+    authState.userId = 9;
+    authState.permissions = ["recruiting.job.approve"];
+
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Approve" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show Approve/Reject for a canApprove viewer who isn't the assigned reviewer", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: 9,
+      },
+    });
+    api.listMyReviews.mockResolvedValue({ data: [] });
+    authState.userId = 42;
+    authState.permissions = ["recruiting.job.approve"];
+
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Approve" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the reviewer-picker dialog directly when Request close is clicked, no intermediate confirm dialog", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [{ userId: 9, name: "Bob" }] });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Request close" }));
+
+    expect(
+      screen.queryByText("Request to close this posting?"),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("formats the review history timeline into readable copy, not raw event types", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [
+        { userId: 9, name: "Yanpei Wang" },
+        { userId: 12, name: "Mei Lin" },
+      ],
+    });
+    // The details mirror what JobReviewHandler.event_details and the
+    // approval service write for each event.
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.job_created",
+          details: {},
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:19:32Z",
+        },
+        {
+          id: 2,
+          eventType: "recruiting.review_opened",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 9,
+            requestId: 40,
+            action: "job_review",
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:20:00Z",
+        },
+        {
+          id: 3,
+          eventType: "recruiting.review_reassigned",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            previousReviewerId: 9,
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T10:00:00Z",
+        },
+        {
+          id: 4,
+          eventType: "recruiting.review_decided",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            decision: "rejected",
+            comment: "Fix the title",
+          },
+          actorId: 12,
+          actorName: "Mei Lin",
+          createdAt: "2026-07-11T15:21:39Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Yuanyuan Huang created this posting as a draft/),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(
+        /Yuanyuan Huang submitted for review, assigned to Yanpei Wang/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Yuanyuan Huang reassigned the review from Yanpei Wang to Mei Lin/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Mei Lin rejected the review.*Fix the title.*sent back to draft/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names a reviewer who is no longer an approver by id in the review history", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 12,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 12, name: "Mei Lin" }],
+    });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.review_reassigned",
+          details: {
+            kind: "initial",
+            reviewId: 40,
+            message: null,
+            reviewerId: 12,
+            requestId: 40,
+            action: "job_review",
+            previousReviewerId: 9,
+          },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T10:00:00Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Yuanyuan Huang reassigned the review from Reviewer #9 to Mei Lin/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows each activity entry's timestamp with the viewer's timezone name", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [] });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.job_created",
+          details: {},
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:19:32Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      await screen.findByText("2026-07-11 17:19 Asia/Shanghai"),
+    ).toBeInTheDocument();
+  });
+
+  it("navigates to the postings list after Submit for review succeeds", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        // The submit gate requires >=1 stage and >=1 owner.
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [{ userId: 9, name: "Bob" }] });
+    api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+    authState.permissions = ["recruiting.job.write"];
+    const { router } = renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+      target: { value: "9" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Submit for review" }),
+    );
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTINGS,
+      ),
+    );
+  });
+
+  it.each([
+    ["initial", "Ada Ng withdrew the review — back to draft"],
+    ["revision", "Ada Ng withdrew the revision — posting stays published"],
+    ["close", "Ada Ng withdrew the close request — posting stays published"],
+    ["reopen", "Ada Ng withdrew the reopen request — posting stays closed"],
+  ])(
+    "says in the history that a %s review was withdrawn",
+    async (kind, text) => {
+      api.listJobActivity.mockResolvedValue({
+        data: [
+          {
+            id: 4,
+            eventType: "recruiting.review_decided",
+            details: { kind, decision: "withdrawn", comment: null },
+            actorId: 5,
+            actorName: "Ada Ng",
+            createdAt: "2026-10-07T09:00:00Z",
+          },
+        ],
+      });
+      authState.permissions = ["recruiting.job.write"];
+      renderAt(1);
+
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("tab", { name: "Review history" }),
+      );
+
+      expect(await screen.findByText(new RegExp(text))).toBeInTheDocument();
+    },
+  );
+
+  describe("the submit dialog", () => {
+    const draft = {
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    };
+
+    const openDialog = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Submit for review" }),
+        ).toBeInTheDocument(),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Submit for review" }),
+      );
+      return screen.findByRole("dialog");
+    };
+
+    beforeEach(() => {
+      api.getJob.mockResolvedValue(draft);
+      authState.permissions = ["recruiting.job.write"];
+    });
+
+    it("lists everyone else by name and email, saying the author is not there", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [
+          { userId: 5, name: "Me", email: "me@x.com" },
+          { userId: 9, name: "Bob", email: "bob@x.com" },
+        ],
+      });
+      renderAt(1);
+
+      const dialog = await openDialog();
+
+      expect(
+        within(dialog)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Select a reviewer…", "Bob (bob@x.com)"]);
+      expect(
+        within(dialog).getByText(
+          "You cannot review your own posting, so you are not in this list.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("explains an empty approver pool instead of an empty picker", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 5, name: "Me", email: "me@x.com" }],
+      });
+      renderAt(1);
+
+      const dialog = await openDialog();
+
+      expect(
+        within(dialog).getByText("No one else can approve this posting."),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled();
+    });
+
+    it("sends the reviewer and the trimmed message, or none", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 9, name: "Bob", email: "bob@x.com" }],
+      });
+      api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+      renderAt(1);
+
+      const dialog = await openDialog();
+      fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+        target: { value: "9" },
+      });
+      fireEvent.change(within(dialog).getByLabelText("Message (optional)"), {
+        target: { value: "  Pipeline checked  " },
+      });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Submit for review" }),
+      );
+
+      await waitFor(() =>
+        expect(api.submitForReview).toHaveBeenCalledWith("1", {
+          reviewerId: 9,
+          message: "Pipeline checked",
+        }),
+      );
+    });
+
+    it("sends no message when none was written", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 9, name: "Bob", email: "bob@x.com" }],
+      });
+      api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+      renderAt(1);
+
+      const dialog = await openDialog();
+      fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+        target: { value: "9" },
+      });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Submit for review" }),
+      );
+
+      await waitFor(() =>
+        expect(api.submitForReview).toHaveBeenCalledWith("1", {
+          reviewerId: 9,
+          message: null,
+        }),
+      );
+    });
+  });
+
+  it("disables Submit for review and shows every blocker the server reports", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        submitBlockers: [
+          "Add at least one pipeline stage before submitting for review.",
+          "Add at least one recruiter before submitting for review.",
+        ],
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getByText(
+        "Add at least one pipeline stage before submitting for review.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Add at least one recruiter before submitting for review.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("enables Submit for review when the server reports no blockers", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("shows the blockers on a published posting carrying a staged edit", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: {
+          title: "Senior Backend Engineer",
+          pipelineConfig: { stages: [], ownerIds: [5] },
+        },
+        submitBlockers: [
+          "Add at least one pipeline stage before submitting for review.",
+        ],
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getByText(
+        "Add at least one pipeline stage before submitting for review.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Submit for review and Discard draft (not Request close) for a published posting with a staged edit", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: { title: "Senior Backend Engineer" },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Submit for review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Discard draft" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Request close" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Request close (not Submit for review) for a published posting with no staged edit", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Request close" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Submit for review" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Discard draft" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Discard draft alongside Request reopen for a closed posting with a staged edit", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "closed",
+        wasPublished: true,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: { title: "Senior Backend Engineer" },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Request reopen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Discard draft" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show any submitter action on a published_pending_revision posting", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: { title: "Senior Backend Engineer" },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
+  });
+
+  it("discards the staged edit and reloads when Discard draft is confirmed", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: { title: "Senior Backend Engineer" },
+      },
+    });
+    api.discardPendingEdit.mockResolvedValue({ data: {} });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Discard draft" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm discard" }));
+
+    await waitFor(() =>
+      // `id` comes from useParams (always a string) and every other
+      // action dispatch in this component (submitForReview/requestClose/
+      // requestReopen/deleteJob) forwards it unconverted, so match that
+      // convention here rather than coercing to a number.
+      expect(api.discardPendingEdit).toHaveBeenCalledWith("1"),
+    );
+    expect(api.getJob).toHaveBeenCalledTimes(2); // initial load + reload after discard
+  });
+
+  it("formats a rejected revision as keeping the staged edit, not discarding it", async () => {
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          createdAt: "2026-07-14T00:00:00Z",
+          actorName: "Alex",
+          eventType: "recruiting.review_decided",
+          details: {
+            kind: "revision",
+            decision: "rejected",
+            comment: "fix the title",
+          },
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      screen.getByText(
+        /Alex rejected the revision: "fix the title" — posting stays published/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("formats a discarded staged edit in the activity timeline", async () => {
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          createdAt: "2026-07-14T00:00:00Z",
+          actorName: "Alex",
+          eventType: "recruiting.pending_edit_discarded",
+          details: {},
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      screen.getByText(/Alex discarded a staged edit/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a two-column Current/Proposed comparison in Overview when a pending edit is staged", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "Original description.",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        formSchema: { questions: [] },
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: {
+          title: "Senior Backend Engineer",
+          description: "Updated description.",
+          cooldownDays: null,
+          screenRules: null,
+          formSchema: { questions: [] },
+          pipelineConfig: null,
+          profileConfig: null,
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Current")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
+    expect(screen.getAllByText("Original description.")).toHaveLength(2);
+    expect(screen.getByText("Updated description.")).toBeInTheDocument();
+    expect(screen.getByText("Senior Backend Engineer")).toBeInTheDocument();
+  });
+
+  it("does not show a Current/Proposed comparison when there is no pending edit", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Current")).not.toBeInTheDocument();
+    expect(screen.queryByText("Proposed")).not.toBeInTheDocument();
+  });
+
+  it("shows a two-column Current/Proposed comparison in Configuration when a pending edit is staged", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        cooldownDays: 30,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: {
+          title: "Backend Engineer",
+          description: "desc",
+          cooldownDays: 60,
+          screenRules: null,
+          formSchema: null,
+          pipelineConfig: null,
+          profileConfig: null,
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    const user = userEvent.setup();
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tab", { name: "Configuration" }),
+      ).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("tab", { name: "Configuration" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Cooldown days: 30")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Cooldown days: 60")).toBeInTheDocument();
+  });
+  describe("changing the reviewer", () => {
+    const pendingJob = (submittedBy) => ({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submittedBy,
+      },
+    });
+
+    it("offers the action to the submitter", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      renderAt(1);
+
+      expect(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      ).toBeInTheDocument();
+    });
+
+    it("withholds it from everyone else", async () => {
+      // Reassignment is the submitter's alone -- not the reviewer's, and not
+      // another approver's. A colleague viewing the same posting sees the
+      // assigned reviewer without an action on it.
+      api.getJob.mockResolvedValue(pendingJob(7));
+      renderAt(1);
+
+      await screen.findByText(/Assigned reviewer:/);
+      expect(
+        screen.queryByRole("button", { name: "Change reviewer" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("withholds it when no review is open", async () => {
+      // submittedBy is null unless something is waiting, so a published
+      // posting offers nothing to redirect.
+      api.getJob.mockResolvedValue(pendingJob(null));
+      renderAt(1);
+
+      await screen.findByText(/Assigned reviewer:/);
+      expect(
+        screen.queryByRole("button", { name: "Change reviewer" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends the new reviewer and reloads the posting", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [
+          { userId: 5, name: "Me", email: "me@x.com" },
+          { userId: 9, name: "Gone", email: "gone@x.com" },
+          { userId: 3, name: "Cara", email: "cara@x.com" },
+        ],
+      });
+      api.reassignReviewer.mockResolvedValue({ data: {} });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+      fireEvent.change(await screen.findByLabelText("Reviewer"), {
+        target: { value: "3" },
+      });
+      await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+      await waitFor(() =>
+        expect(api.reassignReviewer).toHaveBeenCalledWith("1", {
+          reviewerId: 3,
+        }),
+      );
+      // Reloaded so the page shows who has it now, rather than the stale name.
+      await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(2));
+    });
+
+    it("leaves out the reviewer who has it and the submitter", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [
+          { userId: 5, name: "Me", email: "me@x.com" },
+          { userId: 9, name: "Gone", email: "gone@x.com" },
+          { userId: 3, name: "Cara", email: "cara@x.com" },
+        ],
+      });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+
+      expect(
+        within(dialog)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Select a reviewer…", "Cara (cara@x.com)"]);
+      expect(
+        within(dialog).getByRole("button", { name: "Reassign" }),
+      ).toBeDisabled();
+    });
+
+    it("explains an empty pool instead of an empty picker", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 9, name: "Gone", email: "gone@x.com" }],
+      });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+
+      expect(
+        await screen.findByText("There is nobody else to review this posting."),
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
+    });
+
+    it("lets the submitter withdraw the review and reloads", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.withdrawReview.mockResolvedValue({ data: {} });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(await screen.findByRole("button", { name: "Withdraw" }));
+
+      await waitFor(() => expect(api.withdrawReview).toHaveBeenCalledWith("1"));
+      await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(2));
+      expect(toast.success).toHaveBeenCalledWith("Review withdrawn.");
+    });
+
+    it("offers Withdraw to nobody but the submitter", async () => {
+      api.getJob.mockResolvedValue(pendingJob(7));
+      renderAt(1);
+
+      await screen.findByText(/Assigned reviewer:/);
+
+      expect(
+        screen.queryByRole("button", { name: "Withdraw" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says why a withdrawal failed", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.withdrawReview.mockRejectedValue(
+        new Error("This request has already been closed."),
+      );
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(await screen.findByRole("button", { name: "Withdraw" }));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "This request has already been closed.",
+        ),
+      );
+    });
+
+    it("keeps the dialog open and reports why when the call fails", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 3, name: "Cara", email: "cara@x.com" }],
+      });
+      api.reassignReviewer.mockRejectedValue(
+        new Error("no longer an approver"),
+      );
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+      fireEvent.change(await screen.findByLabelText("Reviewer"), {
+        target: { value: "3" },
+      });
+      await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith("no longer an approver"),
+      );
+      expect(screen.getByLabelText("Reviewer")).toBeInTheDocument();
+    });
+  });
+});

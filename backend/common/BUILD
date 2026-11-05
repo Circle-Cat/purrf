@@ -13,6 +13,35 @@ py_library(
 )
 
 py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+)
+
+py_library(
+    name = "permissions",
+    srcs = ["permissions.py"],
+)
+
+py_library(
+    name = "permission_descriptions",
+    srcs = ["permission_descriptions.py"],
+    deps = [
+        ":permissions",
+    ],
+)
+
+py_library(
+    name = "auth0_client",
+    srcs = ["auth0_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//pyjwt",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
     name = "logger",
     srcs = ["logger.py"],
     deps = [
@@ -29,7 +58,6 @@ py_library(
     deps = [
         ":constants",
         ":environment_constants",
-        ":logger",
         "@pypi//google_api_python_client",
         "@pypi//google_apps_meet",
         "@pypi//google_auth_oauthlib",
@@ -40,11 +68,28 @@ py_library(
 )
 
 py_library(
+    name = "html_text",
+    srcs = ["html_text.py"],
+)
+
+py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        ":html_text",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
+
+py_library(
     name = "redis_client",
     srcs = ["redis_client.py"],
     deps = [
         ":constants",
-        ":logger",
+        ":environment_constants",
         "@pypi//redis",
         "@pypi//tenacity",
     ],
@@ -66,6 +111,7 @@ py_library(
         "fast_api_error_handler.py",
     ],
     deps = [
+        ":exceptions",
         ":fast_api_response_wrapper",
         ":logger",
     ],
@@ -88,7 +134,7 @@ py_library(
         "jira_client.py",
     ],
     deps = [
-        ":logger",
+        ":environment_constants",
         "@pypi//jira",
         "@pypi//tenacity",
     ],
@@ -113,16 +159,7 @@ py_library(
         "//backend/schemas",
     ],
     deps = [
-        ":logger",
         "@pypi//jsonschema",
-    ],
-)
-
-py_library(
-    name = "asyncio_event_loop_manager",
-    srcs = ["asyncio_event_loop_manager.py"],
-    deps = [
-        ":logger",
     ],
 )
 
@@ -158,14 +195,59 @@ py_library(
 )
 
 py_library(
+    name = "kit_html_checks",
+    srcs = ["kit_html_checks.py"],
+)
+
+py_library(
+    name = "mentorship_email_enums",
+    srcs = ["mentorship_email_enums.py"],
+)
+
+py_library(
     name = "mentorship_enums",
     srcs = ["mentorship_enums.py"],
 )
 
 py_library(
-    name = "user_role",
+    name = "recruiting_enums",
+    srcs = ["recruiting_enums.py"],
+)
+
+py_library(
+    name = "user_enums",
+    srcs = ["user_enums.py"],
+)
+
+py_library(
+    name = "approval_enums",
+    srcs = ["approval_enums.py"],
+)
+
+py_library(
+    name = "ops_enums",
+    srcs = ["ops_enums.py"],
+)
+
+py_library(
+    name = "communication_enums",
+    srcs = ["communication_enums.py"],
+)
+
+py_library(
+    name = "inbox_enums",
+    srcs = ["inbox_enums.py"],
+)
+
+py_library(
+    name = "leave_enums",
+    srcs = ["leave_enums.py"],
+)
+
+py_library(
+    name = "identity_type",
     srcs = [
-        "user_role.py",
+        "identity_type.py",
     ],
 )
 
@@ -175,11 +257,60 @@ py_library(
 )
 
 py_library(
+    name = "name_utils",
+    srcs = ["name_utils.py"],
+)
+
+py_library(
+    name = "wall_clock",
+    srcs = ["wall_clock.py"],
+)
+
+py_library(
     name = "launchdarkly_client",
     srcs = ["launchdarkly_client.py"],
     deps = [
         ":environment_constants",
         "//backend/dto",
         "@pypi//launchdarkly_server_sdk",
+    ],
+)
+
+py_library(
+    name = "trusted_connections",
+    srcs = ["trusted_connections.py"],
+)
+
+py_library(
+    name = "training_links",
+    srcs = ["training_links.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":environment_constants",
+        ":mentorship_enums",
+    ],
+)
+
+py_library(
+    name = "mentorship_survey_codes",
+    srcs = ["mentorship_survey_codes.py"],
+)
+
+py_library(
+    name = "matching_job_client",
+    srcs = ["matching_job_client.py"],
+    deps = [
+        "@pypi//google_auth",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
+    name = "kit_client",
+    srcs = ["kit_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//requests",
     ],
 )

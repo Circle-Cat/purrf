@@ -2,8 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Profile from "@/pages/Profile";
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
+import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
+import { useMyApplications } from "@/hooks/useMyApplications";
 
 vi.mock("@/pages/Profile/hooks/useProfileData");
+
+vi.mock("@/pages/Profile/hooks/useProfileCompletenessReminder", () => ({
+  useProfileCompletenessReminder: vi.fn(),
+}));
+
+vi.mock("@/hooks/useMyApplications", () => ({
+  useMyApplications: vi.fn(),
+}));
 
 vi.mock("@/pages/Profile/components/ProfileHeader", () => ({
   default: ({ onEditClick }) => (
@@ -14,8 +24,12 @@ vi.mock("@/pages/Profile/components/ProfileHeader", () => ({
   ),
 }));
 
-vi.mock("@/pages/Profile/components/ContactSection", () => ({
-  default: () => <div data-testid="contact-section">Contact Section</div>,
+vi.mock("@/pages/Profile/components/LinkedInSection", () => ({
+  default: () => <div data-testid="linkedin-section">LinkedIn Section</div>,
+}));
+
+vi.mock("@/pages/Profile/components/EmailSection", () => ({
+  default: () => <div data-testid="email-section">Email Section</div>,
 }));
 
 vi.mock("@/pages/Profile/components/ExperienceSection", () => ({
@@ -77,14 +91,40 @@ describe("Profile Component", () => {
     personalInfo: { completedTraining: [] },
     experienceList: [],
     educationList: [],
-    canEditTimezone: true,
-    nextEditableDate: null,
     handleUpdateProfile: vi.fn(),
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     useProfileData.mockReturnValue(mockProfileData);
+    useMyApplications.mockReturnValue({ hiredMentorshipRoles: [] });
+  });
+
+  describe("mentorship completeness reminder", () => {
+    const enabledFlag = () =>
+      useProfileCompletenessReminder.mock.calls.at(-1)[0].enabled;
+
+    it("enables the reminder for an admitted mentor", () => {
+      useMyApplications.mockReturnValue({ hiredMentorshipRoles: ["mentor"] });
+
+      render(<Profile />);
+
+      expect(enabledFlag()).toBe(true);
+    });
+
+    it("enables the reminder for an admitted mentee", () => {
+      useMyApplications.mockReturnValue({ hiredMentorshipRoles: ["mentee"] });
+
+      render(<Profile />);
+
+      expect(enabledFlag()).toBe(true);
+    });
+
+    it("leaves it disabled for someone in no mentorship program", () => {
+      render(<Profile />);
+
+      expect(enabledFlag()).toBe(false);
+    });
   });
 
   it("renders the loading state when isLoading is true", () => {
@@ -100,7 +140,8 @@ describe("Profile Component", () => {
 
     expect(screen.queryByText("Loading profile...")).not.toBeInTheDocument();
     expect(screen.getByTestId("profile-header")).toBeInTheDocument();
-    expect(screen.getByTestId("contact-section")).toBeInTheDocument();
+    expect(screen.getByTestId("linkedin-section")).toBeInTheDocument();
+    expect(screen.getByTestId("email-section")).toBeInTheDocument();
     expect(screen.getByTestId("experience-section")).toBeInTheDocument();
     expect(screen.getByTestId("education-section")).toBeInTheDocument();
     expect(screen.getByTestId("training-section")).toBeInTheDocument();

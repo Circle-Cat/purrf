@@ -9,19 +9,19 @@ describe("EnvironmentBanner Component", () => {
     cleanup();
   });
 
-  test("renders staging banner with amber class and label", () => {
+  test("renders staging banner with the staging variant and label", () => {
     render(<EnvironmentBanner env="staging" />);
     const banner = screen.getByTestId("env-banner");
     expect(banner).toHaveTextContent("STAGING ENVIRONMENT");
-    expect(banner).toHaveClass("env-banner", "env-banner--staging");
+    expect(banner).toHaveAttribute("data-variant", "staging");
     expect(banner).toHaveAttribute("role", "status");
   });
 
-  test("renders test banner with indigo class and label", () => {
+  test("renders test banner with the test variant and label", () => {
     render(<EnvironmentBanner env="test" />);
     const banner = screen.getByTestId("env-banner");
     expect(banner).toHaveTextContent("TEST ENVIRONMENT");
-    expect(banner).toHaveClass("env-banner", "env-banner--test");
+    expect(banner).toHaveAttribute("data-variant", "test");
   });
 
   test.each([["prod"], [""], [undefined], ["preview"], ["dev"]])(

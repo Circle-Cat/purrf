@@ -1,14 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
-import { useAuth } from "@/context/auth/AuthContext";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { toast } from "sonner";
 
-vi.mock("@/context/auth/AuthContext", () => ({
-  useAuth: vi.fn(),
-}));
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 vi.mock("@/pages/Profile/utils", () => ({
   CommunicationMethodEnum: {
@@ -20,13 +17,19 @@ vi.mock("@/pages/Profile/utils", () => ({
 
 vi.mock("@/components/common/TimezoneSelector", () => ({
   default: ({ value, onChange, isDisabled }) => (
-    <select
-      value={value}
-      onChange={(e) => onChange({ value: e.target.value })}
-      disabled={isDisabled}
-    >
-      <option value="America/New_York">Eastern Time (US & Canada)</option>
-    </select>
+    <>
+      <select
+        value={value}
+        onChange={(e) => onChange({ value: e.target.value })}
+        disabled={isDisabled}
+      >
+        <option value="America/New_York">Eastern Time (US & Canada)</option>
+      </select>
+      {/* react-select fires onChange(null) when the value is cleared. */}
+      <button type="button" onClick={() => onChange(null)}>
+        clear-timezone
+      </button>
+    </>
   ),
 }));
 
@@ -51,11 +54,6 @@ describe("PersonalEditModal Component", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    useAuth.mockReturnValue({
-      roles: [USER_ROLES.CONTACT_GOOGLE_CHAT],
-      loading: false,
-    });
   });
 
   it("should not render when isOpen is false", () => {
@@ -77,7 +75,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -91,13 +88,30 @@ describe("PersonalEditModal Component", () => {
     expect(
       screen.getByDisplayValue("Eastern Time (US & Canada)"),
     ).toBeInTheDocument();
+  });
 
-    const primaryInput = screen.getByDisplayValue("primary@example.com");
-    expect(primaryInput).toBeDisabled();
-    expect(primaryInput).toHaveAttribute("readonly");
+  it("does not render an email editing section", () => {
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
+      />,
+    );
 
-    const altInput = screen.getByDisplayValue("alt@example.com");
-    expect(altInput).not.toBeDisabled();
+    // Email is managed in Settings now: no email inputs, no "Emails" heading,
+    // and no add-email button in this modal.
+    expect(
+      screen.queryByDisplayValue("primary@example.com"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByDisplayValue("alt@example.com"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /emails/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+" })).not.toBeInTheDocument();
   });
 
   it("should handle input changes and submit updated data", async () => {
@@ -108,7 +122,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -135,6 +148,24 @@ describe("PersonalEditModal Component", () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
+  it("shows an error toast and stays open when the save fails", async () => {
+    const user = userEvent.setup();
+    mockOnSave.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Save/i }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
   it("should validate and show errors when required fields are cleared", async () => {
     const user = userEvent.setup();
     render(
@@ -143,7 +174,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -157,7 +187,7 @@ describe("PersonalEditModal Component", () => {
     expect(mockOnSave).not.toHaveBeenCalled();
   });
 
-  it("should handle adding and removing alternative emails", async () => {
+  it("handles the timezone being cleared (onChange null) without crashing", async () => {
     const user = userEvent.setup();
     render(
       <PersonalEditModal
@@ -168,73 +198,35 @@ describe("PersonalEditModal Component", () => {
       />,
     );
 
-    const addBtn = screen.getByRole("button", { name: "+" });
-    await user.click(addBtn);
+    // Clearing the selector fires onChange(null); the modal must not crash and
+    // should treat the timezone as empty, surfacing the required-field error.
+    await user.click(screen.getByRole("button", { name: "clear-timezone" }));
+    await user.click(screen.getByRole("button", { name: /Save/i }));
 
-    // New email input should be empty; find it by placeholder.
-    const emptyAltInputs = screen.getAllByPlaceholderText("Alternative email");
-    const newInput = emptyAltInputs.find((input) => input.value === "");
-    await user.type(newInput, "new-alt@test.com");
-
-    expect(screen.getByDisplayValue("new-alt@test.com")).toBeInTheDocument();
-
-    // Remove the existing alternative email ("alt@example.com")
-    // Locate the container for "alt@example.com" and click the delete button inside it
-    const altEmailContainer = screen
-      .getByDisplayValue("alt@example.com")
-      .closest(".email-edit-item");
-    const deleteBtn = within(altEmailContainer).getByRole("button", {
-      name: "-",
-    });
-    await user.click(deleteBtn);
-
-    expect(
-      screen.queryByDisplayValue("alt@example.com"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("Timezone is required")).toBeInTheDocument();
+    expect(mockOnSave).not.toHaveBeenCalled();
   });
 
-  it("should disable timezone selector when canEditTimezone is false", () => {
+  it("always renders the timezone selector enabled (no cooldown restriction)", () => {
     render(
       <PersonalEditModal
         isOpen={true}
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={false}
-        nextEditableDate="2025-01-01"
       />,
     );
 
     const timezoneSelect = screen.getByDisplayValue(
       "Eastern Time (US & Canada)",
     );
-    expect(timezoneSelect).toBeDisabled();
-    expect(
-      screen.getByText(/Next editable date: 2025-01-01/),
-    ).toBeInTheDocument();
+    expect(timezoneSelect).not.toBeDisabled();
   });
 
-  it("should show communication methods only if user has correct role", () => {
-    //  Test the case with permissions (already set in beforeEach)
-    const { rerender } = render(
-      <PersonalEditModal
-        isOpen={true}
-        onClose={mockOnClose}
-        initialData={initialData}
-        onSave={mockOnSave}
-      />,
-    );
-    expect(
-      screen.getByText("Preferred Communication Method"),
-    ).toBeInTheDocument();
-
-    // Test the case without permissions
-    useAuth.mockReturnValue({
-      roles: [USER_ROLES.STUDENT],
-      loading: false,
-    });
-
-    rerender(
+  it("does not render the communication method selector", () => {
+    // The Email/Google Chat selector was gated by the old CONTACT_GOOGLE_CHAT
+    // role; it is hidden until its source is reworked off the role system.
+    render(
       <PersonalEditModal
         isOpen={true}
         onClose={mockOnClose}

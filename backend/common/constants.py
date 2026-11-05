@@ -57,10 +57,45 @@ LDAP_KEY_TEMPLATE = "ldap:{account_status}:{group}"
 MICROSOFT_CHAT_MESSAGES_INDEX_KEY = "microsoft:chat:{message_status}:{sender_ldap}"
 MICROSOFT_CHAT_MESSAGES_DETAILS_KEY = "microsoft:messages:{message_id}"
 MICROSOFT_CHAT_TOPICS = "microsoft:chat:topics"
-PUBSUB_PULL_MESSAGES_STATUS_KEY = "pull_status:{subscription_id}"
 
 INTERNAL_MICROSOFT_ACCOUNT_DOMAIN = "@u.circlecat.org"
 INTERNAL_GOOGLE_ACCOUNT_DOMAIN = "@circlecat.org"
+
+
+def is_company_email(email: str) -> bool:
+    """
+    Whether the address belongs to a CircleCat company account.
+
+    Covers both internal domains: '@circlecat.org' (Google Workspace) and
+    '@u.circlecat.org' (Microsoft). Used to classify an identity as INTERNAL
+    rather than the default EXTERNAL.
+    """
+    return email.endswith(INTERNAL_MICROSOFT_ACCOUNT_DOMAIN) or email.endswith(
+        INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+    )
+
+
+def ldap_from_addresses(addresses) -> str | None:
+    """The ldap an account's addresses carry, or None if they carry none.
+
+    The activity data and the directory know people by ldap, and the company
+    address is the whole of the join to an account, so the ldap is read off it
+    rather than stored a second time. Sorted, so that an account somehow holding
+    two company addresses still reads the same way every time -- the directory
+    join says that cannot happen, and if it does the answer must at least not
+    move around between requests.
+
+    Args:
+        addresses: Email addresses, in any order. The caller decides which
+            count, e.g. only confirmed ones.
+
+    Returns:
+        The local part of the company address, or None.
+    """
+    for address in sorted(addresses):
+        if address.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
+            return address.split("@")[0]
+    return None
 
 
 class MicrosoftAccountStatus(str, Enum):
@@ -81,7 +116,19 @@ class MicrosoftAccountStatus(str, Enum):
 
 
 MICROSOFT_USER_INFO_FILTER = "endswith(mail,'circlecat.org')"
-MICROSOFT_USER_INFO_SELECT_FIELDS = ["displayName", "mail", "accountEnabled", "id"]
+MICROSOFT_USER_INFO_SELECT_FIELDS = [
+    "displayName",
+    "mail",
+    "accountEnabled",
+    "id",
+    "jobTitle",
+    "officeLocation",
+    "employeeType",
+    "employeeHireDate",
+    "employeeLeaveDateTime",
+]
+
+MICROSOFT_USER_INFO_EXPAND = ["manager($levels=1;$select=id,mail)"]
 MICROSOFT_CONSISTENCY_HEADER = "ConsistencyLevel"
 MICROSOFT_CONSISTENCY_VALUE = "eventual"
 MICROSOFT_TEAMS_MESSAGES_SORTER = ["createdDateTime desc"]
@@ -126,20 +173,6 @@ class MicrosoftGroups(str, Enum):
     INTERNS = "interns"
     EMPLOYEES = "employees"
     VOLUNTEERS = "volunteers"
-
-
-class PullStatus(Enum):
-    RUNNING = ("running", "Pulling started for {subscription_id}.")
-    FAILED = ("failed", "Pulling failed for {subscription_id}: {error}.")
-    STOPPED = ("stopped", "Pulling explicitly stopped for {subscription_id}.")
-    NOT_STARTED = ("not_started", "Pulling has not started for {subscription_id}.")
-
-    def __init__(self, code, default_message_template):
-        self.code = code
-        self.default_message_template = default_message_template
-
-    def format_message(self, **kwargs) -> str:
-        return self.default_message_template.format(**kwargs)
 
 
 GERRIT_PERSUBMIT_BOT = "CatBot"
@@ -187,6 +220,7 @@ GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
 GERRIT_CHANGE_STATUS_KEY = "gerrit:change_status"
 GERRIT_UNDER_REVIEWED_CL_INDEX_KEY = "gerrit:cl:under_reviewed"
 GERRIT_DEDUPE_REVIEWED_KEY = "gerrit:dedupe:reviewed:{change_number}"
+GERRIT_DEDUPE_MERGED_KEY = "gerrit:dedupe:merged:{change_number}"
 GERRIT_PROJECTS_KEY = "gerrit:projects"
 GERRIT_UNMERGED_CL_KEY_BY_PROJECT = "gerrit:cl:{ldap}:{project}:{cl_status}"
 GERRIT_UNMERGED_CL_KEY_GLOBAL = "gerrit:cl:{ldap}:{cl_status}"

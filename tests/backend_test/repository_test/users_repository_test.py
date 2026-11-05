@@ -4,9 +4,15 @@ from datetime import datetime, timezone
 
 
 from backend.repository.users_repository import UsersRepository
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
+from backend.entity.user_identities_entity import UserIdentitiesEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
+from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -26,10 +32,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -37,11 +41,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="America/New_York",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="bob@example.com",
-                alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -49,10 +50,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -122,57 +121,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(user)
 
-    async def test_get_user_by_subject_identifier(self):
-        """Test retrieving an existing user by subject identifier"""
-        user = await self.repo.get_user_by_subject_identifier(
-            self.session, self.user_entity.subject_identifier
-        )
-
-        self.assertEqual(user, self.user_entity)
-
-    async def test_get_user_by_subject_identifier_not_found(self):
-        """Test retrieving a non-existent subject identifier returns None."""
-        user = await self.repo.get_user_by_subject_identifier(self.session, "Sub1")
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_subject_identifier(
-            self.session, "nonexistent"
-        )
-        self.assertIsNone(user)
-
-    async def test_get_user_by_subject_identifier_is_None(self):
-        """Test passing None as subject identifier returns None."""
-        user = await self.repo.get_user_by_subject_identifier(self.session, None)
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_subject_identifier(self.session, "")
-        self.assertIsNone(user)
-
-    async def test_get_user_by_primary_email(self):
-        """Test retrieving an existing user by primary email"""
-        user = await self.repo.get_user_by_primary_email(
-            self.session, self.user_entity.primary_email
-        )
-
-        self.assertEqual(user, self.user_entity)
-        self.assertEqual(user.primary_email, self.user_entity.primary_email)
-
-    async def test_get_user_by_primary_email_is_None(self):
-        """Test passing None as subject identifier returns None."""
-        user = await self.repo.get_user_by_primary_email(self.session, None)
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_primary_email(self.session, "")
-        self.assertIsNone(user)
-
-    async def test_get_user_by_primary_email_not_found(self):
-        """Test retrieving a non-existent user by email returns None."""
-        user = await self.repo.get_user_by_primary_email(
-            self.session, "non-existent@example.com"
-        )
-
-        self.assertIsNone(user)
-
     async def test_upsert_users_insert_user_entity(self):
         """Test insert a new UserEntity"""
         new_user = UsersEntity(
@@ -181,16 +129,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
             timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel="email",
-            primary_email="dave@example.com",
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
-            subject_identifier="sub4",
         )
-
-        user_in_db = await self.repo.get_user_by_subject_identifier(
-            self.session, new_user.subject_identifier
-        )
-        self.assertIsNone(user_in_db)
 
         inserted_user = await self.repo.upsert_users(self.session, new_user)
 
@@ -205,7 +146,1008 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user = await self.repo.upsert_users(self.session, updated_entity)
 
         self.assertFalse(user.is_active)
-        self.assertEqual(user.subject_identifier, self.user_entity.subject_identifier)
+
+    def _make_user(self, *, first_name="T", last_name=None, email, preferred_name=None):
+        # last_name defaults to the email's local part so tests that isolate
+        # their rows with a token-bearing email still match search=token via
+        # the name leg: the email leg of the search reads user_emails, which
+        # this helper does not populate.
+        return UsersEntity(
+            first_name=first_name,
+            last_name=last_name if last_name is not None else email.split("@")[0],
+            timezone="UTC",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+            preferred_name=preferred_name,
+        )
+
+    async def test_list_users_search_matches_the_preferred_name(self):
+        """The name a person chose is searchable, not just their legal one.
+
+        The list renders all three names, so searching only first_name and
+        last_name leaves a row visible but unfindable by the name it shows.
+        """
+        token = uuid.uuid4().hex[:10]
+        elsewhere = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name="Ann",
+            last_name=elsewhere,
+            email=f"{elsewhere}@example.com",
+            preferred_name=f"Pref{token}",
+        )
+        await self.insert_entities([target])
+
+        rows, total = await self.repo.list_users(self.session, search=token)
+
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
+
+    async def test_list_users_search_matches_and_paginates(self):
+        """A unique token isolates these rows from any pre-existing DB data.
+        The token appears only in user_emails rows — the email leg of the
+        search reads user_emails, not the legacy users.primary_email column."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(first_name="Zoe", email=f"{uuid.uuid4()}@example.com"),
+            self._make_user(first_name="Yan", email=f"{uuid.uuid4()}@example.com"),
+        ]
+        await self.insert_entities(users)
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=users[0].user_id,
+                email=f"zoe-{token}@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=users[1].user_id,
+                email=f"yan-{token}@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+        ])
+
+        page1, total = await self.repo.list_users(
+            self.session, search=token, limit=1, offset=0
+        )
+        self.assertEqual(total, 2)
+        self.assertEqual(len(page1), 1)
+
+        page2, total2 = await self.repo.list_users(
+            self.session, search=token, limit=1, offset=1
+        )
+        self.assertEqual(total2, 2)
+        self.assertEqual(len(page2), 1)
+        self.assertNotEqual(page1[0][0].user_id, page2[0][0].user_id)
+
+    async def test_list_users_search_is_case_insensitive_over_name_and_email(self):
+        token = uuid.uuid4().hex[:10]
+        await self.insert_entities([
+            self._make_user(first_name=f"Name{token}", email="byname@example.com"),
+        ])
+        by_name, total = await self.repo.list_users(self.session, search=token.upper())
+        self.assertEqual(total, 1)
+        self.assertEqual(by_name[0][0].first_name, f"Name{token}")
+
+    async def test_list_users_search_ignores_surrounding_whitespace(self):
+        """Text pasted with a leading space or newline still matches."""
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name=f"Name{token}", email=f"{uuid.uuid4()}@example.com"
+        )
+        target.is_blocked = True
+        target.blocked_reason = f"sa {token}"
+        await self.insert_entities([target])
+
+        rows, total = await self.repo.list_users(self.session, search=f" \n{token}\t ")
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
+
+        rows, _ = await self.repo.list_users(
+            self.session,
+            search=f" \nsa {token}",
+            search_blocked_reason=True,
+            limit=50,
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {target.user_id})
+
+    async def test_list_users_blank_search_lists_everyone(self):
+        _, everyone = await self.repo.list_users(self.session, limit=1)
+        _, blank = await self.repo.list_users(self.session, search=" \n ", limit=1)
+        self.assertEqual(blank, everyone)
+
+    async def test_list_users_user_id_filters_to_exact_match(self):
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name=f"Target{token}", email=f"target-{token}@example.com"
+        )
+        other = self._make_user(
+            first_name=f"Other{token}", email=f"other-{token}@example.com"
+        )
+        await self.insert_entities([target, other])
+
+        rows, total = await self.repo.list_users(self.session, user_id=target.user_id)
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
+
+    async def test_list_users_user_id_combines_with_search(self):
+        token = uuid.uuid4().hex[:10]
+        match = self._make_user(
+            first_name=f"Name{token}", email=f"m-{token}@example.com"
+        )
+        await self.insert_entities([match])
+
+        # user_id matches but search does not -> no rows (filters are ANDed).
+        rows, total = await self.repo.list_users(
+            self.session, user_id=match.user_id, search="no-such-token-xyz"
+        )
+        self.assertEqual(total, 0)
+        self.assertEqual(rows, [])
+
+    async def test_list_users_internal_flag_true_when_is_internal_flag_set(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"internal-{token}@example.com")
+        await self.insert_entities([user])
+        await self.repo.set_internal(self.session, user.user_id)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
+        self.assertEqual(total, 1)
+        entity, is_internal = rows[0]
+        self.assertEqual(entity.user_id, user.user_id)
+        self.assertTrue(is_internal)
+
+    async def test_list_users_internal_flag_false_when_is_internal_flag_unset(self):
+        # A non-internal identity row must not, by itself, make is_internal
+        # True — the flag column is the sole source now.
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"external-{token}@example.com")
+        await self.insert_entities([user])
+        await self.insert_entities([
+            UserIdentitiesEntity(
+                user_id=user.user_id,
+                subject_identifier=f"email|{token}",
+                email_claim=f"external-{token}@gmail.com",
+            )
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
+        self.assertEqual(total, 1)
+        _, is_internal = rows[0]
+        self.assertFalse(is_internal)
+
+    async def test_list_users_internal_flag_false_when_no_identities(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"noident-{token}@example.com")
+        await self.insert_entities([user])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
+        self.assertEqual(total, 1)
+        _, is_internal = rows[0]
+        self.assertFalse(is_internal)
+
+    async def test_list_users_preferred_name_carried_through(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"pref-{token}@example.com")
+        user.preferred_name = "Zoe Preferred"
+        await self.insert_entities([user])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
+        self.assertEqual(total, 1)
+        entity, _ = rows[0]
+        self.assertEqual(entity.preferred_name, "Zoe Preferred")
+
+    async def test_list_users_preferred_name_none(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"nopref-{token}@example.com")
+        # preferred_name not set → defaults to None
+        await self.insert_entities([user])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
+        entity, _ = rows[0]
+        self.assertIsNone(entity.preferred_name)
+
+    async def test_is_internal_true_when_flag_set(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(await self.repo.is_internal(self.session, user_id))
+
+    async def test_is_internal_false_when_flag_unset(self):
+        self.assertFalse(
+            await self.repo.is_internal(self.session, self.users[1].user_id)
+        )
+
+    async def test_exists_active_internal_true_when_active_and_internal(self):
+        user_id = self.users[0].user_id  # is_active=True from setUp
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(await self.repo.exists_active_internal(self.session, user_id))
+
+    async def test_exists_active_internal_false_when_inactive(self):
+        # self.users[2] ("Charlie Inactive") is created with is_active=False
+        # in setUp, following this file's existing pattern for inactive users.
+        user_id = self.users[2].user_id
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(self.users[2].is_active is False)
+        self.assertFalse(await self.repo.exists_active_internal(self.session, user_id))
+
+    async def test_exists_active_internal_false_when_not_internal(self):
+        self.assertFalse(
+            await self.repo.exists_active_internal(self.session, self.users[0].user_id)
+        )
+
+    async def test_set_super_admin_flips_flag(self):
+        token = uuid.uuid4().hex[:10]
+        users = [self._make_user(email=f"sa-{token}@example.com")]
+        await self.insert_entities(users)
+        user_id = users[0].user_id
+
+        updated = await self.repo.set_super_admin(self.session, user_id, True)
+        self.assertEqual(updated, 1)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user_id)
+        self.assertTrue(refetched.is_super_admin)
+
+    async def test_set_super_admin_missing_user_updates_nothing(self):
+        updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
+        self.assertEqual(updated, 0)
+
+    async def test_set_internal_flips_flag(self):
+        user_id = self.users[0].user_id
+        updated = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated, 1)
+        refreshed = await self.repo.get_user_by_user_id(self.session, user_id)
+        self.assertTrue(refreshed.is_internal)
+
+    async def test_set_internal_idempotent_second_call_noops(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        updated_again = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated_again, 0)  # already True -> writes 0 rows
+
+    async def test_set_internal_missing_user_updates_nothing(self):
+        updated = await self.repo.set_internal(self.session, 9_999_999)
+        self.assertEqual(updated, 0)
+
+    async def test_clear_block_resets_all_block_columns(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"clear-{token}@example.com")
+        user.is_blocked = True
+        user.blocked_by = 1
+        user.blocked_at = datetime.now(timezone.utc)
+        user.blocked_reason = "test"
+        await self.insert_entities([user])
+
+        await self.repo.clear_block(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_blocked)
+        self.assertIsNone(refetched.blocked_by)
+        self.assertIsNone(refetched.blocked_at)
+        self.assertIsNone(refetched.blocked_reason)
+
+    async def test_clear_block_on_non_blocked_user_is_a_noop_success(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"already-clean-{token}@example.com")
+        await self.insert_entities([user])
+
+        await self.repo.clear_block(self.session, user.user_id)  # must not raise
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_blocked)
+
+    async def test_clear_block_missing_user_is_a_noop_success(self):
+        await self.repo.clear_block(self.session, 9_999_999)  # must not raise
+
+    async def test_get_users_and_emails_empty_list(self):
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, []
+        )
+        self.assertEqual(users_map, {})
+        self.assertEqual(emails_map, {})
+
+    async def test_get_users_and_emails_unknown_id(self):
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, [999]
+        )
+        self.assertEqual(users_map, {})
+        self.assertEqual(emails_map, {})
+
+    async def test_get_users_and_emails_no_emails(self):
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, [self.users[0].user_id]
+        )
+        self.assertIn(self.users[0].user_id, users_map)
+        self.assertEqual(emails_map[self.users[0].user_id], [])
+
+    async def test_get_users_and_emails_with_email(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.users[0].user_id,
+                email="alice@work.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+        _, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, [self.users[0].user_id]
+        )
+        self.assertEqual(
+            {e.email for e in emails_map[self.users[0].user_id]},
+            {"alice@work.com"},
+        )
+
+    async def test_get_users_and_emails_multiple_users(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.users[0].user_id,
+                email="alice1@work.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+            UserEmailsEntity(
+                user_id=self.users[0].user_id,
+                email="alice2@work.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=self.users[1].user_id,
+                email="bob@work.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+        ])
+        user_ids = [self.users[0].user_id, self.users[1].user_id]
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, user_ids
+        )
+        self.assertEqual(
+            set(users_map.keys()), {self.users[0].user_id, self.users[1].user_id}
+        )
+        self.assertEqual(
+            {e.email for e in emails_map[self.users[0].user_id]},
+            {"alice1@work.com", "alice2@work.com"},
+        )
+        self.assertEqual(
+            {e.email for e in emails_map[self.users[1].user_id]},
+            {"bob@work.com"},
+        )
+
+    # ------------------------------------------------------------------
+    # sort / filter tests
+    # ------------------------------------------------------------------
+
+    async def test_list_users_sort_by_last_name_desc(self):
+        """sort_by='last_name', order='desc' returns users in descending last_name
+        order (with user_id as tiebreaker)."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(last_name=f"Zebra-{token}", email=f"z-{token}@example.com"),
+            self._make_user(last_name=f"Apple-{token}", email=f"a-{token}@example.com"),
+            self._make_user(last_name=f"Mango-{token}", email=f"m-{token}@example.com"),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            sort_by="last_name",
+            order="desc",
+        )
+        self.assertEqual(total, 3)
+        last_names = [r[0].last_name for r in rows]
+        self.assertEqual(
+            last_names,
+            sorted(last_names, reverse=True),
+            msg=f"Expected descending last_name, got {last_names}",
+        )
+
+    async def test_list_users_sort_by_last_name_asc_default(self):
+        """sort_by='last_name' without order defaults to ascending."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(
+                last_name=f"Zebra-{token}", email=f"z2-{token}@example.com"
+            ),
+            self._make_user(
+                last_name=f"Apple-{token}", email=f"a2-{token}@example.com"
+            ),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            sort_by="last_name",
+            order="asc",
+        )
+        self.assertEqual(total, 2)
+        last_names = [r[0].last_name for r in rows]
+        self.assertEqual(last_names, sorted(last_names))
+
+    async def test_list_users_sort_by_last_name_is_case_insensitive(self):
+        """Name sorting is case-insensitive.
+
+        The Neon databases use C.UTF-8 (byte-order) collation, so a bare
+        ORDER BY ranks every uppercase letter before every lowercase one and
+        descending Last Name puts "w" above "Zhu". Sorting on lower() keeps
+        mixed-case surnames interleaved the way a reader expects.
+        """
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(last_name=f"Zhu-{token}", email=f"c1-{token}@example.com"),
+            self._make_user(last_name=f"zhao-{token}", email=f"c2-{token}@example.com"),
+            self._make_user(last_name=f"Wang-{token}", email=f"c3-{token}@example.com"),
+            self._make_user(last_name=f"w-{token}", email=f"c4-{token}@example.com"),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="last_name", order="desc"
+        )
+        self.assertEqual(total, 4)
+        self.assertEqual(
+            [r[0].last_name for r in rows],
+            [f"Zhu-{token}", f"zhao-{token}", f"Wang-{token}", f"w-{token}"],
+        )
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="last_name", order="asc"
+        )
+        self.assertEqual(
+            [r[0].last_name for r in rows],
+            [f"w-{token}", f"Wang-{token}", f"zhao-{token}", f"Zhu-{token}"],
+        )
+
+    async def test_list_users_sort_by_preferred_name_puts_nulls_last(self):
+        """preferred_name is the one nullable sortable name column: rows without
+        one sink to the bottom in both directions instead of riding the top of
+        the descending page, and the non-null rows sort case-insensitively."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n1-{token}",
+                email=f"n1-{token}@example.com",
+            ),
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n2-{token}",
+                email=f"n2-{token}@example.com",
+            ),
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n3-{token}",
+                email=f"n3-{token}@example.com",
+            ),
+        ]
+        users[0].preferred_name = "Bee"
+        users[1].preferred_name = None
+        users[2].preferred_name = "ant"
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="preferred_name", order="asc"
+        )
+        self.assertEqual(total, 3)
+        self.assertEqual([r[0].preferred_name for r in rows], ["ant", "Bee", None])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="preferred_name", order="desc"
+        )
+        self.assertEqual([r[0].preferred_name for r in rows], ["Bee", "ant", None])
+
+    async def test_list_users_default_order_is_by_user_id(self):
+        """No sort_by → deterministic ascending user_id order."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(
+                last_name=f"Zebra-{token}", email=f"d1-{token}@example.com"
+            ),
+            self._make_user(
+                last_name=f"Apple-{token}", email=f"d2-{token}@example.com"
+            ),
+            self._make_user(
+                last_name=f"Mango-{token}", email=f"d3-{token}@example.com"
+            ),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(self.session, search=token)
+        self.assertEqual(total, 3)
+        ids = [r[0].user_id for r in rows]
+        self.assertEqual(
+            ids, sorted(ids), msg="Default order should be ascending user_id"
+        )
+
+    async def test_list_users_unknown_sort_by_falls_back_to_user_id(self):
+        """An unknown sort_by value silently falls back to user_id order."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(email=f"unk1-{token}@example.com"),
+            self._make_user(email=f"unk2-{token}@example.com"),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="nonexistent_column"
+        )
+        self.assertEqual(total, 2)
+        ids = [r[0].user_id for r in rows]
+        self.assertEqual(ids, sorted(ids))
+
+    async def test_list_users_filter_is_super_admin_true(self):
+        """is_super_admin=True returns only super-admins; total reflects the filter."""
+        token = uuid.uuid4().hex[:10]
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        regular_user = self._make_user(email=f"reg-{token}@example.com")
+        await self.insert_entities([super_user, regular_user])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_super_admin=True
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0].user_id, super_user.user_id)
+        self.assertTrue(rows[0][0].is_super_admin)
+
+    async def test_list_users_filter_is_super_admin_false(self):
+        """is_super_admin=False returns only non-super-admins."""
+        token = uuid.uuid4().hex[:10]
+        super_user = self._make_user(email=f"sup2-{token}@example.com")
+        regular_user = self._make_user(email=f"reg2-{token}@example.com")
+        await self.insert_entities([super_user, regular_user])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_super_admin=False
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, regular_user.user_id)
+        self.assertFalse(rows[0][0].is_super_admin)
+
+    async def test_list_users_filter_user_type_internal(self):
+        """user_type='internal' returns only users with the is_internal flag set."""
+        token = uuid.uuid4().hex[:10]
+        internal_user = self._make_user(email=f"int-{token}@example.com")
+        external_user = self._make_user(email=f"ext-{token}@example.com")
+        no_identity_user = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([internal_user, external_user, no_identity_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
+        await self.insert_entities([
+            UserIdentitiesEntity(
+                user_id=external_user.user_id,
+                subject_identifier=f"email|ext-{token}",
+                email_claim=f"ext-{token}@gmail.com",
+            ),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, user_type="internal"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0].user_id, internal_user.user_id)
+        self.assertTrue(rows[0][1])  # is_internal flag
+
+    async def test_list_users_filter_user_type_external(self):
+        """user_type='external' returns only users WITHOUT the is_internal flag set."""
+        token = uuid.uuid4().hex[:10]
+        internal_user = self._make_user(email=f"int2-{token}@example.com")
+        external_user = self._make_user(email=f"ext2-{token}@example.com")
+        no_identity_user = self._make_user(email=f"none2-{token}@example.com")
+        await self.insert_entities([internal_user, external_user, no_identity_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
+        await self.insert_entities([
+            UserIdentitiesEntity(
+                user_id=external_user.user_id,
+                subject_identifier=f"email|ext2-{token}",
+                email_claim=f"ext2-{token}@gmail.com",
+            ),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, user_type="external"
+        )
+        self.assertEqual(total, 2)
+        returned_ids = {r[0].user_id for r in rows}
+        self.assertIn(external_user.user_id, returned_ids)
+        self.assertIn(no_identity_user.user_id, returned_ids)
+        self.assertNotIn(internal_user.user_id, returned_ids)
+        # none of the returned rows should have is_internal=True
+        for row in rows:
+            self.assertFalse(row[1])
+
+    async def test_list_users_sort_by_user_type(self):
+        """sort_by='user_type' orders by the is_internal flag column:
+        ascending lists external (flag unset) before internal (flag set)."""
+        token = uuid.uuid4().hex[:10]
+        internal_user = self._make_user(email=f"sint-{token}@example.com")
+        external_user = self._make_user(email=f"sext-{token}@example.com")
+        await self.insert_entities([internal_user, external_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
+
+        asc_rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="user_type", order="asc"
+        )
+        self.assertEqual(
+            [r[0].user_id for r in asc_rows],
+            [external_user.user_id, internal_user.user_id],
+            msg="asc should list external before internal",
+        )
+
+        desc_rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="user_type", order="desc"
+        )
+        self.assertEqual(
+            [r[0].user_id for r in desc_rows],
+            [internal_user.user_id, external_user.user_id],
+            msg="desc should list internal before external",
+        )
+
+    def _grant_row(self, user_id, name, *, revoked=False, source="admin"):
+        """A grant row for the permission filter's fixtures."""
+        row = UserPermissionsEntity(
+            user_id=user_id,
+            permission_name=name,
+            granted_source=source,
+            granted_by=None,
+        )
+        if revoked:
+            row.revoked_timestamp = datetime.now(timezone.utc)
+        return row
+
+    async def test_list_users_filter_permission_name_keeps_only_holders(self):
+        """PUR-626: the permission is a filter on the user list, not a second view."""
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([holder, other])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [holder.user_id])
+
+    async def test_list_users_filter_permission_name_includes_super_admins(self):
+        """A super admin holds every permission via the flag, with no grant row."""
+        token = uuid.uuid4().hex[:10]
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([super_user, other])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [super_user.user_id])
+
+    async def test_list_users_filter_permission_name_ignores_revoked_grants(self):
+        """A revoked grant is not held. The audit feed is where it still shows."""
+        token = uuid.uuid4().hex[:10]
+        former = self._make_user(email=f"gone-{token}@example.com")
+        await self.insert_entities([former])
+        await self.insert_entities([
+            self._grant_row(former.user_id, "permission.manage", revoked=True)
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 0)
+        self.assertEqual(rows, [])
+
+    async def test_list_users_permission_with_super_admin_false_means_real_grants(self):
+        """The two filters compose into "real holders only" with no special case.
+
+        ``is_super_admin = false AND (is_super_admin OR grant_exists)`` reduces
+        to ``is_super_admin = false AND grant_exists``, which is exactly the
+        question "who was actually granted this" -- the one the old holders view
+        needed a source filter to answer.
+        """
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        await self.insert_entities([holder, super_user])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            permission_name="permission.manage",
+            is_super_admin=False,
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [holder.user_id])
+
+    async def test_list_users_filter_permission_name_dedupes_multiple_grants(self):
+        """Two grant rows for one person is one row on the page, not two.
+
+        This is what an EXISTS buys over a join: a join would multiply the
+        person by their grant rows and break both the page size and the total.
+        """
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        await self.insert_entities([holder])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage"),
+            self._grant_row(
+                holder.user_id, "permission.manage", source="system_internal"
+            ),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+
+    async def test_list_users_filter_permission_name_composes_with_user_type(self):
+        """The combination neither tab could answer: external holders of X."""
+        token = uuid.uuid4().hex[:10]
+        internal_holder = self._make_user(email=f"int-{token}@example.com")
+        external_holder = self._make_user(email=f"ext-{token}@example.com")
+        await self.insert_entities([internal_holder, external_holder])
+        await self.repo.set_internal(self.session, internal_holder.user_id)
+        await self.insert_entities([
+            self._grant_row(internal_holder.user_id, "permission.manage"),
+            self._grant_row(external_holder.user_id, "permission.manage"),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            permission_name="permission.manage",
+            user_type="external",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [external_holder.user_id])
+
+    async def test_list_users_without_permission_filter_is_unchanged(self):
+        """The filter defaults off: a non-holder still appears when it is unset."""
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([holder, other])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        _, total = await self.repo.list_users(self.session, search=token)
+        self.assertEqual(total, 2)
+
+    async def test_list_users_filter_is_blocked_three_ways(self):
+        """True keeps only blocked rows, False only unblocked, None neither.
+
+        Blocking and deactivation are independent: a row that is both must
+        answer the is_blocked question on its block flag alone.
+        """
+        token = uuid.uuid4().hex[:10]
+        clean = self._make_user(email=f"clean-{token}@example.com")
+        blocked = self._make_user(email=f"blocked-{token}@example.com")
+        blocked.is_blocked = True
+        blocked.blocked_reason = "no-show twice"
+        gone = self._make_user(email=f"gone-{token}@example.com")
+        gone.is_active = False
+        both = self._make_user(email=f"both-{token}@example.com")
+        both.is_active = False
+        both.is_blocked = True
+        await self.insert_entities([clean, blocked, gone, both])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, is_blocked=True, limit=50
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {blocked.user_id, both.user_id})
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, is_blocked=False, limit=50
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {clean.user_id, gone.user_id})
+
+        rows, _ = await self.repo.list_users(self.session, search=token, limit=50)
+        self.assertEqual(
+            {u.user_id for u, _ in rows},
+            {clean.user_id, blocked.user_id, gone.user_id, both.user_id},
+        )
+
+    async def test_list_users_filter_is_active(self):
+        """The account console's status filter has to reach SQL: filtering a
+        page in Python would leave both the page size and the total wrong."""
+        token = uuid.uuid4().hex[:10]
+        live = self._make_user(email=f"live-{token}@example.com")
+        gone = self._make_user(email=f"off-{token}@example.com")
+        gone.is_active = False
+        await self.insert_entities([live, gone])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=False, limit=50
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {gone.user_id})
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=True, limit=50
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {live.user_id})
+
+    async def test_list_users_is_active_and_is_blocked_compose(self):
+        """ "Active" on the console means neither deactivated nor blocked, so
+        the two filters have to hold at once."""
+        token = uuid.uuid4().hex[:10]
+        clean = self._make_user(email=f"ok-{token}@example.com")
+        blocked = self._make_user(email=f"bad-{token}@example.com")
+        blocked.is_blocked = True
+        await self.insert_entities([clean, blocked])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=True, is_blocked=False, limit=50
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {clean.user_id})
+
+    async def test_list_users_blocked_reason_search_is_off_by_default(self):
+        """Pins that the existing list endpoint's result set does not change.
+
+        A user whose only match is a word someone else wrote in their block
+        reason must not surface until the caller asks for that leg.
+        """
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(last_name="Bb", email=f"{uuid.uuid4()}@example.com")
+        target.is_blocked = True
+        target.blocked_reason = f"repeated {token} incidents"
+        await self.insert_entities([target])
+
+        rows, _ = await self.repo.list_users(self.session, search=token, limit=50)
+        self.assertNotIn(target.user_id, {u.user_id for u, _ in rows})
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, search_blocked_reason=True, limit=50
+        )
+        self.assertIn(target.user_id, {u.user_id for u, _ in rows})
+
+    async def test_deactivate_sets_all_four_fields(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"deact-{token}@example.com")
+        actor = self._make_user(email=f"actor-{token}@example.com")
+        await self.insert_entities([user, actor])
+
+        await self.repo.deactivate(
+            self.session, user.user_id, actor.user_id, "requested by email"
+        )
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_active)
+        self.assertEqual(refetched.deactivated_by, actor.user_id)
+        self.assertIsNotNone(refetched.deactivated_at)
+        self.assertEqual(refetched.deactivated_reason, "requested by email")
+
+    async def test_reactivate_clears_all_four_fields(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"react-{token}@example.com")
+        actor = self._make_user(email=f"reactor-{token}@example.com")
+        await self.insert_entities([user, actor])
+        await self.repo.deactivate(self.session, user.user_id, actor.user_id, "note")
+
+        await self.repo.reactivate(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertTrue(refetched.is_active)
+        self.assertIsNone(refetched.deactivated_by)
+        self.assertIsNone(refetched.deactivated_at)
+        self.assertIsNone(refetched.deactivated_reason)
+
+    async def test_reactivate_on_active_user_is_a_noop_success(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"already-active-{token}@example.com")
+        await self.insert_entities([user])
+
+        await self.repo.reactivate(self.session, user.user_id)
+        await self.repo.reactivate(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertTrue(refetched.is_active)
+
+    async def test_reactivate_missing_user_is_a_noop_success(self):
+        await self.repo.reactivate(self.session, 9_999_999)  # must not raise
+
+    async def test_filter_reachable_ids_keeps_only_active_unblocked_users(self):
+        """Both flags are read, and they are read independently.
+
+        Blocking never writes ``is_active``, so a blocked account is still
+        active and a filter on activity alone would let it through.
+        """
+        token = uuid.uuid4().hex[:10]
+        reachable = self._make_user(email=f"reachable-{token}@example.com")
+        deactivated = self._make_user(email=f"off-{token}@example.com")
+        deactivated.is_active = False
+        blocked = self._make_user(email=f"blocked-{token}@example.com")
+        blocked.is_blocked = True
+        both = self._make_user(email=f"both-{token}@example.com")
+        both.is_active = False
+        both.is_blocked = True
+        await self.insert_entities([reachable, deactivated, blocked, both])
+
+        result = await self.repo.filter_reachable_ids(
+            self.session,
+            [
+                reachable.user_id,
+                deactivated.user_id,
+                blocked.user_id,
+                both.user_id,
+            ],
+        )
+
+        self.assertEqual(result, {reachable.user_id})
+
+    async def test_filter_reachable_ids_drops_an_id_with_no_user_row(self):
+        """A stored id can outlive the account it names."""
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"present-{token}@example.com")
+        await self.insert_entities([user])
+
+        result = await self.repo.filter_reachable_ids(
+            self.session, [user.user_id, 9_999_999]
+        )
+
+        self.assertEqual(result, {user.user_id})
+
+    async def test_filter_reachable_ids_returns_empty_for_no_ids(self):
+        self.assertEqual(await self.repo.filter_reachable_ids(self.session, []), set())
+
+    async def _application_of(self, user: UsersEntity) -> ApplicationEntity:
+        """One application belonging to ``user``, with the job it needs."""
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        await self.insert_entities([job])
+        application = ApplicationEntity(
+            job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+        )
+        await self.insert_entities([application])
+        return application
+
+    async def test_get_by_application_id_returns_the_applicant(self):
+        """The mentorship copy greets the applicant, who is reached only
+        through the application the event names."""
+        user = self._make_user(
+            first_name="Ada", email=f"{uuid.uuid4().hex[:10]}@example.com"
+        )
+        await self.insert_entities([user])
+        application = await self._application_of(user)
+
+        found = await self.repo.get_by_application_id(
+            self.session, application.application_id
+        )
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.user_id, user.user_id)
+        self.assertEqual(found.first_name, "Ada")
+
+    async def test_get_by_application_id_returns_none_when_there_is_no_application(
+        self,
+    ):
+        """The copy greets without a name rather than failing the send."""
+        self.assertIsNone(await self.repo.get_by_application_id(self.session, 999_999))
 
 
 if __name__ == "__main__":

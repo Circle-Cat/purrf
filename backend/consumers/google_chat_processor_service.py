@@ -1,4 +1,3 @@
-import json
 from backend.common.constants import (
     EXPIRATION_REMINDER_EVENT,
     ALL_GOOGLE_CHAT_EVENT_TYPES,
@@ -12,147 +11,20 @@ class GoogleChatProcessorService:
     Service class responsible for processing Google chat messages.
 
     This class handles:
-    - Pulling messages from Pub/Sub via the provided factory.
     - Processing and transforming Google chat messages using the provided utility.
     - Logging relevant events and errors during message processing.
 
     Attributes:
         logger: A logging instance.
-        pubsub_puller_factory: A PubSubPullerFactory instance.
         google_chat_message_util: A GoogleChatMessageUtil instance.
         google_service: A GoogleService instance.
     """
 
-    def __init__(
-        self, logger, pubsub_puller_factory, google_chat_messages_utils, google_service
-    ):
+    def __init__(self, logger, google_chat_messages_utils, google_service):
         """Initialize the GoogleChatProcessorService."""
         self.logger = logger
-        self.pubsub_puller_factory = pubsub_puller_factory
         self.google_chat_messages_utils = google_chat_messages_utils
         self.google_service = google_service
-
-    def pull_messages(self, project_id, subscription_id):
-        """
-        Listens to the given Pub/Sub subscription and processes incoming events.
-
-        This method initializes a Pub/Sub puller for the given `project_id` and `subscription_id`,
-        and registers the instance's `callback` method as the message handler.
-
-        The message handler (`callback`) will:
-          - Renew expiring Workspace subscription events
-          - Process Google Chat events and store messages in Redis
-
-        Args:
-            project_id (str): The Google Cloud project ID associated with the subscription.
-            subscription_id (str): The Pub/Sub subscription ID to listen on.
-
-        Returns:
-            None: This function runs continuously and does not return until interrupted.
-
-        Raises:
-            ValueError: If any required field (e.g., senderId, spaceName, message) is missing from the payload.
-            googleapiclient.errors.HttpError: If an error occurs during the subscription renewal process
-
-        NOTE:
-            Originally implemented using Pub/Sub streaming pull for high-throughput, low-latency processing.
-            Switched to cron-based pull due to lower traffic and simpler operational needs.
-            Keep this for potential future scaling when traffic increases again.
-        """
-
-        self.logger.info(
-            "Starting pull_messages with project_id: '%s' and subscription_id: '%s'",
-            project_id,
-            subscription_id,
-        )
-
-        if not subscription_id or not project_id:
-            missing = []
-            if not subscription_id:
-                missing.append("subscription_id")
-            if not project_id:
-                missing.append("project_id")
-            if missing:
-                raise ValueError(
-                    f"Missing required field(s) for pull_messages: {', '.join(missing)}"
-                )
-
-        puller = self.pubsub_puller_factory.get_puller_instance(
-            project_id, subscription_id
-        )
-        puller.start_pulling_messages(self.callback)
-
-    def callback(self, message):
-        """
-        Handles individual Pub/Sub messages pulled from a Workspace Chat subscription.
-
-        Depending on the CloudEvent type (`ce-type` attribute), the handler performs one of:
-          - **Subscription Expiration Reminder**:
-                Calls `google_service.renew_subscription()` to renew the expiring subscription.
-          - **Google Chat Events**:
-                Parses the event payload, resolves sender LDAP(s), and stores the messages
-                into Redis via `google_chat_messages_utils.store_messages()`.
-
-        Unsupported event types are negatively acknowledged (nack).
-
-        Args:
-            message (google.cloud.pubsub_v1.subscriber.message.Message):
-                The Pub/Sub message object containing:
-                - `attributes`: includes CloudEvent metadata (e.g. `ce-type`).
-                - `data`: JSON-encoded Workspace or Chat event payload.
-
-        Failure handling: malformed JSON, unsupported events, and processing
-        errors all result in a `nack()` and an early return — exceptions are
-        not propagated to the streaming subscriber.
-
-        Side Effects:
-            - Calls external Google API to renew subscriptions.
-            - Persists parsed messages into Redis.
-            - Acknowledges or nacks Pub/Sub messages depending on processing result.
-
-        Returns:
-            None
-        """
-        self.logger.debug("[GoogleChatProcessorService] Received message: %s", message)
-
-        try:
-            data = json.loads(message.data.decode("utf-8"))
-            self.logger.debug(
-                "[GoogleChatProcessorService] Decoded message data: %s", data
-            )
-        except (UnicodeDecodeError, json.JSONDecodeError) as err:
-            self.logger.error(
-                "[GoogleChatProcessorService] Failed to decode/parse message data: %s",
-                err,
-            )
-            message.nack()
-            return
-
-        # Pre-filter unsupported events here so process_event's ValueError path is
-        # only taken in the sync-pull flow. The streaming subscriber treats a
-        # raised callback exception as a worker fault, so we keep this branch quiet.
-        message_type_full = message.attributes.get("ce-type")
-        if (
-            EXPIRATION_REMINDER_EVENT != message_type_full
-            and message_type_full not in ALL_GOOGLE_CHAT_EVENT_TYPES
-        ):
-            message.nack()
-            self.logger.info(
-                "[GoogleChatProcessorService] Received unsupporited Google Chat event: %s",
-                message_type_full,
-            )
-            return
-
-        try:
-            self.process_event(data, message.attributes)
-        except ValueError as err:
-            self.logger.error(
-                "[GoogleChatProcessorService] Failed to process event: %s", err
-            )
-            message.nack()
-            return
-
-        message.ack()
 
     def process_event(self, data: dict, attributes: dict):
         """
