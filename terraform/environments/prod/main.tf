@@ -41,9 +41,6 @@ module "purrf_instance" {
   auth0_google_client_id     = var.auth0_google_client_id
   auth0_google_client_secret = var.auth0_google_client_secret
 
-  # Kept off until candidates are sent to Purrf to apply.
-  auth0_email_disable_signup = true
-
   mentorship_calendar_id = "c_6bbe09d44422476be341543a5b8dc6bd486d9240f3e16c3041a164c02feb0374@group.calendar.google.com"
   interview_calendar_id  = "c_dd6d2e0b4944352349fd0170493c38ffb437036c1a0dc756b6743db9f88e5502@group.calendar.google.com"
 
