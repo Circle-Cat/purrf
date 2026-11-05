@@ -20,7 +20,7 @@ class NotificationEntity(Base):
     older than the ack deadline may be retaken, since a process that died
     mid-send would otherwise strand the row. ``dismissed_at`` marks a row as
     gone from the bell rather than deleting it, because that delivery state
-    lives here too. ``read_at`` marks a row the user has seen in the bell; it
+    lives here too. ``read_at`` marks a row the user has clicked in the bell; it
     stays listed, and only the unread ones count toward the badge.
     """
 

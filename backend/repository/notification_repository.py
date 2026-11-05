@@ -37,7 +37,12 @@ class NotificationRepository:
         limit: int = 20,
         offset: int = 0,
     ) -> list[NotificationEntity]:
-        """List one user's undismissed notifications, newest first."""
+        """List one user's undismissed notifications, unread first, each newest first.
+
+        Unread rows come first so that every one of them can be seen on the
+        first page: read rows stay listed, and ordering by time alone would
+        let them push older unread rows out of reach.
+        """
         result = await session.execute(
             select(NotificationEntity)
             .where(
@@ -45,6 +50,7 @@ class NotificationRepository:
                 NotificationEntity.dismissed_at.is_(None),
             )
             .order_by(
+                NotificationEntity.read_at.is_not(None),
                 NotificationEntity.created_at.desc(),
                 NotificationEntity.notification_id.desc(),
             )
@@ -87,6 +93,26 @@ class NotificationRepository:
             .where(
                 NotificationEntity.notification_id.in_(notification_ids),
                 NotificationEntity.user_id == user_id,
+                NotificationEntity.read_at.is_(None),
+            )
+            .values(read_at=func.now())
+        )
+        await session.flush()
+
+    async def mark_all_read(self, session: AsyncSession, user_id: int) -> None:
+        """Mark every one of user_id's undismissed, unread notifications read.
+
+        Covers rows beyond the bell's first page too: the user asked for all.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The caller, whose rows alone are touched.
+        """
+        await session.execute(
+            update(NotificationEntity)
+            .where(
+                NotificationEntity.user_id == user_id,
+                NotificationEntity.dismissed_at.is_(None),
                 NotificationEntity.read_at.is_(None),
             )
             .values(read_at=func.now())
