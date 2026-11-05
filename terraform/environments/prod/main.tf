@@ -64,6 +64,10 @@ module "purrf_instance" {
   gmail_watch_topic_owner = false
   gmail_inbox_enabled     = true
 
+  # The backend no longer pulls these subscriptions, so without push their
+  # events wait in Pub/Sub until the seven-day retention drops them.
+  pubsub_event_push_enabled = true
+
   # The image staging runs, calling the real LLM. Its key is added by hand to
   # the matcher LLM key secret before the job can be created; see the module.
   enable_matcher    = true
