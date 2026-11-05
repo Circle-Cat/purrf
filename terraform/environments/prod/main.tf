@@ -38,6 +38,9 @@ module "purrf_instance" {
   ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["production"]
   tailscale_proxy             = "http://outbound.tailscale.svc.cluster.local:1055"
 
+  auth0_google_client_id     = var.auth0_google_client_id
+  auth0_google_client_secret = var.auth0_google_client_secret
+
   mentorship_calendar_id = "c_6bbe09d44422476be341543a5b8dc6bd486d9240f3e16c3041a164c02feb0374@group.calendar.google.com"
   interview_calendar_id  = "c_dd6d2e0b4944352349fd0170493c38ffb437036c1a0dc756b6743db9f88e5502@group.calendar.google.com"
 
@@ -47,4 +50,14 @@ module "purrf_instance" {
   kit_api_key               = var.kit_api_key
   gmail_sender_recruiting   = "recruiting@circlecat.org"
   gmail_sender_notification = "notification@circlecat.org"
+  gmail_sender_mentorship   = "mentorship@circlecat.org"
+  gmail_sender_inquiries    = "contact@circlecat.org"
+
+  # The mailbox is the one test and staging use, and a mailbox holds a single
+  # watch, so prod subscribes to test's topic: a topic of its own would take
+  # the watch away from them on every renewal. Claiming does not collide,
+  # because the non-prod environments claim only the -test aliases.
+  gmail_watch_topic_name  = "purrf-gmail-nonprod"
+  gmail_watch_topic_owner = false
+  gmail_inbox_enabled     = true
 }
