@@ -63,4 +63,9 @@ module "purrf_instance" {
   gmail_watch_topic_name  = "purrf-gmail-nonprod"
   gmail_watch_topic_owner = false
   gmail_inbox_enabled     = true
+
+  # The image staging runs, calling the real LLM. Its key is added by hand to
+  # the matcher LLM key secret before the job can be created; see the module.
+  enable_matcher    = true
+  matcher_image_tag = "a88afa5237a2aabfba6887ad025a33ceee54887b"
 }
