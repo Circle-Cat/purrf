@@ -8,7 +8,7 @@ image:
   # CI-built image, promoted from staging (prod never rebuilds; the tag below
   # is pinned by the prod promotion to the staging-tested build).
   repository: ghcr.io/circle-cat/purrf
-  tag: "f7b9b8d51ed3f64bbb97ac9e7fa509162bc9da33"
+  tag: "9c14c7b245e8ea6f1c3dad6e710a48134e3613ec"
 envFrom:
   - secretRef:
       name: purrf-prod
@@ -16,7 +16,18 @@ ingress:
   enabled: true
   className: cloudflare2-tunnel
   hosts:
+    # SCORM course files, same pods as api. Not covered by any Cloudflare
+    # Access application, so every request carries a signed path token.
+    - host: training-content.purrf.io
+      paths:
+        - path: /
+          pathType: Prefix
     - host: api.purrf.io
       paths:
         - path: /
           pathType: Prefix
+# Run `alembic upgrade head` as an ArgoCD PreSync hook before every prod
+# deploy. A failed migration fails the sync and leaves the running
+# Deployment untouched. Lives on the prod branch only, like staging's.
+migrate:
+  enabled: true
