@@ -655,10 +655,16 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_prod
       "profile",
     ]
 
+    # The backend reads these from the Access token's custom claims; without
+    # email_verified every login is refused as untrusted. Same set as staging.
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
+      "picture",
     ]
 
     email_claim_name = "aud"
