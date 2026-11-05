@@ -8,6 +8,7 @@ from backend.dto.notification_dto import (
     UnreadCountDto,
 )
 from backend.recruiting.candidate_names import candidate_names
+from backend.recruiting.notification_email_copy import review_summary
 
 
 async def _by_id(load, session, ids, key):
@@ -126,6 +127,16 @@ class RecruitingNotificationService:
             actor_name=actor_name,
             created_at=row.created_at,
             is_read=row.read_at is not None,
+            summary=(
+                review_summary(
+                    event.event_type,
+                    event.details,
+                    actor_name,
+                    job.title if job is not None else "",
+                )
+                if event is not None
+                else None
+            ),
         )
 
     async def _load_page(self, session: AsyncSession, rows):
