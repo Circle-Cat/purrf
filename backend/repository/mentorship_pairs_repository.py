@@ -1,8 +1,8 @@
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select, or_, case, update, func, cast, type_coerce, literal, text
+from sqlalchemy import select, or_, case, distinct, exists, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import JSONB, array
 from backend.common.mentorship_enums import PairStatus
 
 
@@ -11,8 +11,64 @@ class MentorshipPairsRepository:
     Repository for handling database operations related to MentorshipPairsEntity.
     """
 
+    async def get_pair_stats(self, session: AsyncSession) -> dict[int, dict]:
+        """
+        Retrieve matched participant count and completed meeting count per round,
+        considering only active pairs.
+
+        Returns:
+            dict[int, dict]: Mapping of round_id to
+                {"active_pairs": int, "matched_participants": int, "total_completed_meetings": int}.
+        """
+        # Completed meetings are counted from the meeting rows rather than
+        # summed off mentorship_pairs.completed_count, which is on its way out
+        # (PUR-608). LEGACY rows count: historical rounds have nothing else,
+        # so filtering them would report 0 meetings for every pre-Purrf round.
+        # Grouped into a subquery first so the outer join adds at most one row
+        # per pair -- joining the meeting rows directly would multiply the
+        # pair rows and inflate active_pairs.
+        completed_per_pair = (
+            select(
+                MentorshipMeetingEntity.pair_id.label("pair_id"),
+                func.count().label("completed"),
+            )
+            .where(MentorshipMeetingEntity.is_completed.is_(True))
+            .group_by(MentorshipMeetingEntity.pair_id)
+            .subquery()
+        )
+        result = await session.execute(
+            select(
+                MentorshipPairsEntity.round_id,
+                func.count().label("active_pairs"),
+                (
+                    func.count(func.distinct(MentorshipPairsEntity.mentor_id))
+                    + func.count(func.distinct(MentorshipPairsEntity.mentee_id))
+                ).label("matched_participants"),
+                func.sum(func.coalesce(completed_per_pair.c.completed, 0)).label(
+                    "total_completed_meetings"
+                ),
+            )
+            .outerjoin(
+                completed_per_pair,
+                completed_per_pair.c.pair_id == MentorshipPairsEntity.pair_id,
+            )
+            .where(MentorshipPairsEntity.status == PairStatus.ACTIVE)
+            .group_by(MentorshipPairsEntity.round_id)
+        )
+        return {
+            row.round_id: {
+                "active_pairs": row.active_pairs,
+                "matched_participants": row.matched_participants,
+                "total_completed_meetings": row.total_completed_meetings or 0,
+            }
+            for row in result.all()
+        }
+
     async def get_all_partner_ids(
-        self, session: AsyncSession, user_id: int
+        self,
+        session: AsyncSession,
+        user_id: int,
+        exclude_round_ids: list[int] | None = None,
     ) -> list[int]:
         """
         Retrieve a list of unique partner IDs (mentors or mentees) for a given user ID.
@@ -24,6 +80,7 @@ class MentorshipPairsRepository:
         Args:
             session (AsyncSession): The active async database session.
             user_id (int): The ID of the user whose partners are being retrieved.
+            exclude_round_ids (list[int] | None): Rounds whose pairs are left out.
 
         Returns:
             list[int]: A list of unique partner IDs. Returns an empty list if
@@ -40,61 +97,15 @@ class MentorshipPairsRepository:
             else_=MentorshipPairsEntity.mentor_id,
         ).label("partner_id")
 
-        result = await session.execute(
-            select(partner_id_case)
-            .where(
-                or_(
-                    MentorshipPairsEntity.mentor_id == user_id,
-                    MentorshipPairsEntity.mentee_id == user_id,
-                )
-            )
-            .distinct()
-        )
-
-        return result.scalars().all()
-
-    async def get_partner_ids_by_user_and_round(
-        self, session: AsyncSession, user_id: int, round_id: int
-    ) -> list[int]:
-        """
-        Retrieve a list of unique partner IDs (mentors or mentees) for a given user ID
-        within a specific mentorship round.
-
-        This method identifies the user's role in each relationship for the given round:
-        - If the user is the mentor, it returns the associated mentee's ID.
-        - If the user is the mentee, it returns the associated mentor's ID.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): The ID of the user whose partners are being retrieved.
-            round_id (int): The ID of the mentorship round to filter by.
-
-        Returns:
-            list[int]: A list of unique partner IDs whthin the specific round. Returns
-                    an empty list if no partners are found or user_id/round_id is invalid.
-        """
-        if not user_id or not round_id:
-            return []
-
-        partner_id_case = case(
-            (
+        stmt = select(partner_id_case).where(
+            or_(
                 MentorshipPairsEntity.mentor_id == user_id,
-                MentorshipPairsEntity.mentee_id,
-            ),
-            else_=MentorshipPairsEntity.mentor_id,
-        ).label("partner_id")
-
-        result = await session.execute(
-            select(partner_id_case)
-            .where(
-                or_(
-                    MentorshipPairsEntity.mentor_id == user_id,
-                    MentorshipPairsEntity.mentee_id == user_id,
-                ),
-                MentorshipPairsEntity.round_id == round_id,
+                MentorshipPairsEntity.mentee_id == user_id,
             )
-            .distinct()
         )
+        if exclude_round_ids:
+            stmt = stmt.where(MentorshipPairsEntity.round_id.not_in(exclude_round_ids))
+        result = await session.execute(stmt.distinct())
 
         return result.scalars().all()
 
@@ -134,7 +145,10 @@ class MentorshipPairsRepository:
         return merged
 
     async def get_pairs_with_partner_info(
-        self, session: AsyncSession, user_id: int, round_id: int
+        self,
+        session: AsyncSession,
+        user_id: int,
+        round_id: int,
     ) -> list[tuple[MentorshipPairsEntity, UsersEntity]]:
         """
         Retrieve all mentorship pairs for a given user in a specific round,
@@ -143,6 +157,12 @@ class MentorshipPairsRepository:
         This query returns each mentorship pair where the given user participates
         either as a mentor or a mentee, and joins the UsersEntity table to fetch
         the *other* participant (i.e., the partner) in the pair.
+
+        A user can hold both an ended and a live pair in one round -- the
+        mentor changed mid-round, or the counterpart quit. Both come back, and
+        each pair carries its own status for the caller to tell them apart.
+        Live pairs are ordered first, then by pair id, so a list that mixes
+        them reads current-first and keeps its order between requests.
 
         Args:
             session (AsyncSession): The SQLAlchemy async session used to execute the query.
@@ -155,6 +175,9 @@ class MentorshipPairsRepository:
                 - The first element is a MentorshipPairsEntity representing the pairing.
                 - The second element is a UsersEntity representing the partner user.
         """
+        live_pairs_first = case(
+            (MentorshipPairsEntity.status == PairStatus.ACTIVE, 0), else_=1
+        )
         stmt = (
             select(MentorshipPairsEntity, UsersEntity)
             .join(
@@ -174,7 +197,9 @@ class MentorshipPairsRepository:
                     MentorshipPairsEntity.mentee_id == user_id,
                 ),
             )
+            .order_by(live_pairs_first, MentorshipPairsEntity.pair_id)
         )
+
         result = await session.execute(stmt)
         return result.all()
 
@@ -196,84 +221,68 @@ class MentorshipPairsRepository:
 
         return result.scalars().all()
 
-    async def get_pair_by_mentee_and_round(
-        self, session: AsyncSession, mentee_id: int, round_id: int
+    async def get_pair_by_id(
+        self, session: AsyncSession, pair_id: int, *, with_lock: bool = False
     ) -> MentorshipPairsEntity | None:
+        """
+        Fetch a mentorship pair by its pair ID.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair_id (int): ID of the mentorship pair.
+            with_lock (bool): If True, acquires a FOR UPDATE row lock to
+                serialize concurrent admin writes to this pair.
+
+        Returns:
+            MentorshipPairsEntity | None: The matching pair, or None if not found.
+        """
+        stmt = select(MentorshipPairsEntity).where(
+            MentorshipPairsEntity.pair_id == pair_id
+        )
+        if with_lock:
+            stmt = stmt.with_for_update(of=MentorshipPairsEntity)
+        result = await session.execute(stmt)
+        return result.scalars().one_or_none()
+
+    async def get_active_pair_by_mentee_and_mentor(
+        self,
+        session: AsyncSession,
+        mentee_id: int,
+        mentor_id: int,
+        round_id: int,
+    ) -> MentorshipPairsEntity | None:
+        """
+        Fetch the active pair joining a specific mentee and mentor in a round.
+
+        Naming the mentor is what makes this lookup single-valued: a mentee
+        may hold several pairs in one round -- when the mentor changes
+        mid-round the earlier pair stays behind as INACTIVE -- so filtering
+        on (mentee, round) alone can match more than one row. All three of
+        `round_id`, `mentor_id` and `mentee_id` together are the table's
+        unique key, so at most one row can match and `one_or_none()` cannot
+        raise.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            mentee_id (int): ID of the user holding the mentee side.
+            mentor_id (int): ID of the user holding the mentor side.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            MentorshipPairsEntity | None: The active pair, or None when these
+                two users have no active pair in this round -- including when
+                the only pair between them has ended.
+        """
         result = await session.execute(
             select(MentorshipPairsEntity).where(
                 MentorshipPairsEntity.round_id == round_id,
                 MentorshipPairsEntity.mentee_id == mentee_id,
+                MentorshipPairsEntity.mentor_id == mentor_id,
+                MentorshipPairsEntity.status == PairStatus.ACTIVE,
             )
         )
 
         return result.scalars().one_or_none()
-
-    async def remove_meeting_from_log(
-        self, session: AsyncSession, user_id: int, meeting_id: str
-    ) -> bool:
-        """
-        Remove a meeting entry from the meeting_log JSONB field for a mentorship pair
-        associated with the given user.
-
-        Note:
-            This method performs a direct database update. If callers need to access the
-            latest pair data afterward from an already-loaded ORM object, they should call
-            `session.refresh(...)` to ensure the entity reflects the updated state.
-
-        Args:
-            session (AsyncSession): Active async database session.
-            user_id (int): Current user ID. Must match mentor_id or mentee_id.
-            meeting_id (str): The meeting ID to remove.
-
-        Returns:
-            bool: True if a meeting was removed, otherwise False.
-        """
-        meeting_elements = (
-            func.jsonb_array_elements(
-                MentorshipPairsEntity.meeting_log["google_meetings"]
-            )
-            .table_valued("value")
-            .alias("meeting_elements")
-        )
-
-        filtered_meeting_list = (
-            select(
-                func.coalesce(
-                    func.jsonb_agg(meeting_elements.c.value),
-                    type_coerce([], JSONB),
-                )
-            )
-            .select_from(meeting_elements)
-            .where(
-                cast(meeting_elements.c.value, JSONB)["meeting_id"].astext != meeting_id
-            )
-            .scalar_subquery()
-        )
-
-        target_meeting_json = {"google_meetings": [{"meeting_id": meeting_id}]}
-
-        stmt = (
-            update(MentorshipPairsEntity)
-            .where(
-                or_(
-                    MentorshipPairsEntity.mentor_id == user_id,
-                    MentorshipPairsEntity.mentee_id == user_id,
-                ),
-                MentorshipPairsEntity.meeting_log.contains(target_meeting_json),
-            )
-            .values(
-                meeting_log=func.jsonb_set(
-                    MentorshipPairsEntity.meeting_log,
-                    array(["google_meetings"]),
-                    filtered_meeting_list,
-                    False,
-                )
-            )
-            .returning(MentorshipPairsEntity.pair_id)
-        )
-
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none() is not None
 
     async def get_pair_with_partner_by_round_and_users_and_status(
         self,
@@ -338,6 +347,26 @@ class MentorshipPairsRepository:
         result = await session.execute(stmt)
         return result.one_or_none()
 
+    async def list_pairs_by_round(
+        self, session: AsyncSession, round_id: int
+    ) -> list[MentorshipPairsEntity]:
+        """
+        Every pair in a round, active or not.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            list[MentorshipPairsEntity]: The round's pairs, in pair id order.
+        """
+        result = await session.execute(
+            select(MentorshipPairsEntity)
+            .where(MentorshipPairsEntity.round_id == round_id)
+            .order_by(MentorshipPairsEntity.pair_id)
+        )
+        return list(result.scalars().all())
+
     async def get_active_pairs_by_round(
         self, session: AsyncSession, round_id: int
     ) -> list[MentorshipPairsEntity]:
@@ -360,275 +389,108 @@ class MentorshipPairsRepository:
 
         return result.scalars().all()
 
-    async def clear_google_meetings_by_user_pair_and_round(
-        self,
-        session: AsyncSession,
-        current_user_id: int,
-        partner_id: int,
-        round_id: int,
-    ) -> bool:
-        """
-        Clear the google_meetings list in meeting_log for a mentorship pair
-        identified by two users within a given round.
+    async def count_completed_rounds(
+        self, session: AsyncSession, user_ids: list[int], exclude_round_id: int
+    ) -> dict[int, int]:
+        """Count past rounds each person was paired in that went anywhere.
 
-        Note:
-            This method performs a direct database update. If callers need to access the
-            latest pair data afterward from an already-loaded ORM object, they should call
-            `session.refresh(...)` to ensure the entity reflects the updated state.
+        A round counts when at least one of its meetings took place. Being
+        paired is not the same as having mentored: a mentee who never answered
+        leaves a pair behind and nothing else, and a rationale that calls that
+        experience is wrong.
 
-        Args:
-            session (AsyncSession): Active async database session.
-            current_user_id (int): One user in the pair.
-            partner_id (int): The other user in the pair.
-            round_id (int): The mentorship round ID.
+        Either side of a pair counts, so someone who mentored two rounds ago and
+        is a mentee now is not reported as having never met anybody. What the
+        matcher asks of this number is whether a round went somewhere, which the
+        role the person was in at the time does not change.
 
-        Returns:
-            bool: True if a pair was updated, otherwise False.
-        """
-        if not current_user_id or not partner_id or not round_id:
-            raise ValueError("Invalid input parameters")
-
-        stmt = (
-            update(MentorshipPairsEntity)
-            .where(
-                MentorshipPairsEntity.round_id == round_id,
-                MentorshipPairsEntity.mentor_id.in_([current_user_id, partner_id]),
-                MentorshipPairsEntity.mentee_id.in_([current_user_id, partner_id]),
-                MentorshipPairsEntity.mentor_id != MentorshipPairsEntity.mentee_id,
-            )
-            .values(
-                meeting_log=func.jsonb_set(
-                    func.coalesce(
-                        func.nullif(
-                            MentorshipPairsEntity.meeting_log,
-                            cast(literal("null"), JSONB),
-                        ),
-                        type_coerce({}, JSONB),
-                    ),
-                    array(["google_meetings"]),
-                    type_coerce([], JSONB),
-                    True,
-                )
-            )
-            .returning(MentorshipPairsEntity.pair_id)
-        )
-
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none() is not None
-
-    async def append_google_meeting(
-        self,
-        session: AsyncSession,
-        pair_id: int,
-        meeting_entry: dict,
-    ) -> None:
-        """
-        Append a Google Meet entry to the `meeting_log.google_meetings` array for a given pair.
-
-        This method performs an atomic in-database update using PostgreSQL `jsonb_set`
-        and concatenation (`||`) to safely append a new meeting record without triggering
-        read-modify-write race conditions.
-
-        If `meeting_log` or `google_meetings` does not exist, they will be initialized
-        automatically.
+        Counted from meeting rows rather than ``mentorship_pairs.completed_count``,
+        which is a derived column on its way out. Historical rounds that recorded
+        only a total have one LEGACY meeting row per completed meeting, so they
+        count correctly here too.
 
         Args:
-            session (AsyncSession):
-                The SQLAlchemy async database session used to execute the update.
-
-            pair_id (int):
-                The unique identifier of the mentorship pair whose meeting log
-                should be updated.
-
-            meeting_entry (dict):
-                A JSON-serializable dictionary representing a Google Meet record.
-                This will be appended as a new element in the `google_meetings` array.
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): People to count for, mentors and mentees alike.
+            exclude_round_id (int): Round to leave out, being the one now matched.
 
         Returns:
-            None
-
-        Raises:
-            sqlalchemy.exc.SQLAlchemyError:
-                If the database operation fails.
-
-        Notes:
-            - This operation is fully atomic at the database level and safe under concurrency.
-            - Uses `jsonb_set` + `coalesce` to ensure missing fields are initialized.
-            - Avoids loading the existing JSON into application memory.
+            dict[int, int]: user_id -> rounds with a meeting. People with no
+                past pairs are absent.
         """
-        stmt = (
-            update(MentorshipPairsEntity)
-            .where(MentorshipPairsEntity.pair_id == pair_id)
-            .values(
-                meeting_log=func.jsonb_set(
-                    func.coalesce(
-                        func.nullif(
-                            MentorshipPairsEntity.meeting_log,
-                            text("'null'::jsonb"),
-                        ),
-                        type_coerce({}, JSONB),
-                    ),
-                    array(["google_meetings"]),
-                    func.coalesce(
-                        MentorshipPairsEntity.meeting_log["google_meetings"],
-                        type_coerce([], JSONB),
-                    ).op("||")(
-                        func.jsonb_build_array(type_coerce(meeting_entry, JSONB))
-                    ),
-                )
-            )
-        )
-        await session.execute(stmt)
+        if not user_ids:
+            return {}
 
-    async def do_google_meetings_exist_in_log(
-        self,
-        session: AsyncSession,
-        user_id: int,
-        round_id: int,
-        partner_id: int,
-        meeting_ids: list[str],
-    ) -> bool:
-        """
-        Check whether all given Google meeting IDs exist in meeting_log for the
-        specified mentorship pair.
-
-        Args:
-            session (AsyncSession): Active async database session.
-            user_id (int): Current user ID.
-            round_id (int): The mentorship round ID.
-            partner_id (int): The partner user's ID.
-            meeting_ids (list[str]): Google Calendar event IDs to check.
-
-        Returns:
-            bool: True if all meeting IDs exist for the pair, otherwise False.
-        """
-        if not user_id or not round_id or not partner_id or not meeting_ids:
-            return False
-
-        cleaned_meeting_ids = sorted({str(mid) for mid in meeting_ids if mid})
-        if not cleaned_meeting_ids:
-            return False
-
-        meeting_elements = (
-            func.jsonb_array_elements(
-                func.coalesce(
-                    MentorshipPairsEntity.meeting_log["google_meetings"],
-                    type_coerce([], JSONB),
-                )
-            )
-            .table_valued("value")
-            .alias("meeting_elements")
+        went_somewhere = exists().where(
+            MentorshipMeetingEntity.pair_id == MentorshipPairsEntity.pair_id,
+            MentorshipMeetingEntity.is_completed.is_(True),
         )
 
-        stmt = (
+        def side(column):
+            return select(
+                column.label("user_id"),
+                MentorshipPairsEntity.round_id.label("round_id"),
+                went_somewhere.label("went_somewhere"),
+            ).where(
+                column.in_(user_ids),
+                MentorshipPairsEntity.round_id != exclude_round_id,
+            )
+
+        # One row per pair per side. A mentor carrying two mentees in a round
+        # contributes two rows for that round, which is why the count below is
+        # over distinct rounds rather than rows.
+        pairs = (
+            side(MentorshipPairsEntity.mentor_id)
+            .union_all(side(MentorshipPairsEntity.mentee_id))
+            .subquery()
+        )
+        result = await session.execute(
             select(
-                func.count(
-                    func.distinct(
-                        cast(meeting_elements.c.value, JSONB)["meeting_id"].astext
-                    )
-                )
-            )
-            .select_from(MentorshipPairsEntity)
-            .select_from(meeting_elements)
-            .where(
-                MentorshipPairsEntity.round_id == round_id,
-                or_(
-                    (MentorshipPairsEntity.mentor_id == user_id)
-                    & (MentorshipPairsEntity.mentee_id == partner_id),
-                    (MentorshipPairsEntity.mentor_id == partner_id)
-                    & (MentorshipPairsEntity.mentee_id == user_id),
-                ),
-                cast(meeting_elements.c.value, JSONB)["meeting_id"].astext.in_(
-                    cleaned_meeting_ids
-                ),
-            )
+                pairs.c.user_id,
+                func.count(distinct(case((pairs.c.went_somewhere, pairs.c.round_id)))),
+            ).group_by(pairs.c.user_id)
         )
+        return {user_id: completed for user_id, completed in result.all()}
 
-        result = await session.execute(stmt)
-        found_count = result.scalar_one()
+    async def list_pairs_with_meeting_counts(
+        self, session: AsyncSession, round_ids: list[int], user_ids: list[int]
+    ) -> list[tuple[MentorshipPairsEntity, int]]:
+        """Every pair in the given rounds with either side among the given
+        people, whatever its status, each with its completed meeting count.
 
-        return found_count == len(cleaned_meeting_ids)
+        Counted from meeting rows, as ``count_completed_rounds`` does, rather
+        than from ``completed_count``.
 
-    async def remove_meetings_from_log(
-        self,
-        session: AsyncSession,
-        user_id: int,
-        meeting_ids: list[str],
-    ) -> list[int]:
-        """
-        Remove Google meeting entries from meeting_log JSONB for pairs associated
-        with the current user.
+        Args:
+            session (AsyncSession): The active async database session.
+            round_ids (list[int]): Rounds to look in.
+            user_ids (list[int]): People to look for, as mentor or mentee.
 
         Returns:
-            list[int]: Affected pair IDs.
+            list[tuple[MentorshipPairsEntity, int]]: (pair, completed
+                meetings), in pair_id order. Empty for empty input, without
+                touching the database.
         """
-        if not user_id or not meeting_ids:
+        if not round_ids or not user_ids:
             return []
 
-        cleaned_meeting_ids = sorted({str(mid) for mid in meeting_ids if mid})
-        if not cleaned_meeting_ids:
-            return []
-
-        meeting_elements = (
-            func.jsonb_array_elements(
-                func.coalesce(
-                    MentorshipPairsEntity.meeting_log["google_meetings"],
-                    type_coerce([], JSONB),
-                )
-            )
-            .table_valued("value")
-            .alias("meeting_elements")
-        )
-
-        exists_condition = (
-            select(1)
-            .select_from(meeting_elements)
+        completed = (
+            select(func.count(MentorshipMeetingEntity.meeting_id))
             .where(
-                cast(meeting_elements.c.value, JSONB)["meeting_id"].astext.in_(
-                    cleaned_meeting_ids
-                )
+                MentorshipMeetingEntity.pair_id == MentorshipPairsEntity.pair_id,
+                MentorshipMeetingEntity.is_completed.is_(True),
             )
-            .correlate(MentorshipPairsEntity)
-            .exists()
+            .scalar_subquery()
         )
-
-        filtered_meeting_list = func.coalesce(
-            select(func.jsonb_agg(meeting_elements.c.value))
-            .select_from(meeting_elements)
+        result = await session.execute(
+            select(MentorshipPairsEntity, completed)
             .where(
-                ~cast(meeting_elements.c.value, JSONB)["meeting_id"].astext.in_(
-                    cleaned_meeting_ids
-                )
-            )
-            .scalar_subquery(),
-            type_coerce([], JSONB),
-        )
-
-        stmt = (
-            update(MentorshipPairsEntity)
-            .where(
+                MentorshipPairsEntity.round_id.in_(round_ids),
                 or_(
-                    MentorshipPairsEntity.mentor_id == user_id,
-                    MentorshipPairsEntity.mentee_id == user_id,
+                    MentorshipPairsEntity.mentor_id.in_(user_ids),
+                    MentorshipPairsEntity.mentee_id.in_(user_ids),
                 ),
-                exists_condition,
             )
-            .values(
-                meeting_log=func.jsonb_set(
-                    func.coalesce(
-                        func.nullif(
-                            MentorshipPairsEntity.meeting_log,
-                            text("'null'::jsonb"),
-                        ),
-                        type_coerce({}, JSONB),
-                    ),
-                    array(["google_meetings"]),
-                    filtered_meeting_list,
-                    True,
-                )
-            )
-            .returning(MentorshipPairsEntity.pair_id)
+            .order_by(MentorshipPairsEntity.pair_id)
         )
-
-        result = await session.execute(stmt)
-        return [row[0] for row in result.fetchall()]
+        return [(pair, count) for pair, count in result.all()]

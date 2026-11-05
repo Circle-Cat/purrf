@@ -1,6 +1,6 @@
 import unittest
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.users_entity import UsersEntity
@@ -9,6 +9,7 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
 from backend.common.mentorship_enums import (
+    MeetingSource,
     PairStatus,
     CommunicationMethod,
     MentorActionStatus,
@@ -31,10 +32,8 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -42,10 +41,8 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 timezone="America/New_York",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -53,10 +50,8 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -66,14 +61,17 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             MentorshipRoundEntity(
                 name="2025-spring",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2025, 2, 15, tzinfo=timezone.utc),
             ),
             MentorshipRoundEntity(
                 name="2025-fall",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2025, 8, 15, tzinfo=timezone.utc),
             ),
             MentorshipRoundEntity(
                 name="2026-spring",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2026, 2, 15, tzinfo=timezone.utc),
             ),
         ]
 
@@ -149,52 +147,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         await self.insert_entities(self.pairs)
 
-        self.user_mentor = UsersEntity(
-            first_name="M",
-            last_name="Mentor",
-            timezone="Asia/Shanghai",
-            timezone_updated_at=self.now,
-            communication_channel=CommunicationMethod.EMAIL,
-            primary_email="mentor@example.com",
-            is_active=True,
-            updated_timestamp=self.now,
-            subject_identifier="mentor-subject",
-        )
-        self.user_partner = UsersEntity(
-            first_name="P",
-            last_name="Partner",
-            timezone="America/New_York",
-            timezone_updated_at=self.now,
-            communication_channel=CommunicationMethod.EMAIL,
-            primary_email="partner@example.com",
-            is_active=True,
-            updated_timestamp=self.now,
-            subject_identifier="partner-subject",
-        )
-
-        self.round = MentorshipRoundEntity(
-            name="test-round",
-            required_meetings=5,
-        )
-
-        await self.insert_entities([self.user_mentor, self.user_partner, self.round])
-
-    async def _create_pair(self, meeting_log=None) -> MentorshipPairsEntity:
-        """Helper to create a standard mentorship pair with custom meeting logs."""
-        pair = MentorshipPairsEntity(
-            round_id=self.round.round_id,
-            mentor_id=self.user_mentor.user_id,
-            mentee_id=self.user_partner.user_id,
-            completed_count=0,
-            status=PairStatus.ACTIVE,
-            mentor_action_status=MentorActionStatus.CONFIRMED,
-            mentee_action_status=MenteeActionStatus.CONFIRMED,
-            recommendation_reason="",
-            meeting_log=meeting_log,
-        )
-        await self.insert_entities([pair])
-        return pair
-
     async def test_get_pairs_by_user_id_existing(self):
         """Test passing a valid user ID returns unique partner IDs."""
         result = await self.repo.get_all_partner_ids(
@@ -206,38 +158,20 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertIn(self.users[1].user_id, result)
         self.assertIn(self.users[2].user_id, result)
 
+    async def test_get_all_partner_ids_leaves_out_excluded_rounds(self):
+        """A partner met only in excluded rounds drops out; one also met in a
+        kept round stays."""
+        result = await self.repo.get_all_partner_ids(
+            self.session,
+            self.users[0].user_id,
+            exclude_round_ids=[self.rounds[0].round_id, self.rounds[2].round_id],
+        )
+
+        self.assertEqual(result, [self.users[1].user_id])
+
     async def test_get_pairs_by_user_non_existent(self):
         """Test passing a non-existent user ID returns an empty collection."""
         result = await self.repo.get_all_partner_ids(self.session, 9999)
-
-        self.assertIsNotNone(result)
-        self.assertEqual(result, [])
-
-    async def test_get_partner_ids_by_user_and_round(self):
-        """Test passing both user_id and round_id returns the unique partner IDs."""
-        result = await self.repo.get_partner_ids_by_user_and_round(
-            self.session, self.users[0].user_id, self.rounds[0].round_id
-        )
-
-        self.assertIsNotNone(result)
-        self.assertEqual(len(result), 2)
-        self.assertIn(self.users[1].user_id, result)
-        self.assertIn(self.users[2].user_id, result)
-
-    async def test_get_partner_ids_by_user_and_round_by_user_non_existent(self):
-        """Test passing non-existent user ID and valid rounds ID returns an empty collection."""
-        result = await self.repo.get_partner_ids_by_user_and_round(
-            self.session, 9999, self.rounds[0].round_id
-        )
-
-        self.assertIsNotNone(result)
-        self.assertEqual(result, [])
-
-    async def test_get_partner_ids_by_user_and_round_by_round_non_existent(self):
-        """Test passing valid user ID and non-existent rounds ID returns an empty collection."""
-        result = await self.repo.get_partner_ids_by_user_and_round(
-            self.session, self.users[0].user_id, 9999
-        )
 
         self.assertIsNotNone(result)
         self.assertEqual(result, [])
@@ -337,62 +271,169 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
-    async def test_remove_meeting_from_log_success(self):
-        """Test successfully removing a meeting from meeting_log using index 3."""
-        pair = self.pairs[3]
-
-        result = await self.repo.remove_meeting_from_log(
-            self.session,
-            user_id=pair.mentor_id,
-            meeting_id="123",
+    async def test_get_pairs_with_partner_info_returns_ended_pairs_too(self):
+        """Test that a pair which has ended still comes back, carrying its status."""
+        # Alice (users[0]) has two pairs in round[0]: mentor to Bob (ACTIVE)
+        # and mentee to Charlie (INACTIVE). An ended pairing is still her
+        # participation in that round, so both are reported.
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[0].user_id, self.rounds[0].round_id
         )
-        await self.session.commit()
 
-        self.assertTrue(result)
-
-        # Verify that the meeting was actually removed from the database
-        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        # Ensure we get the latest data from the database
-        await self.session.refresh(refreshed, ["meeting_log"])
-
-        meeting_ids = [
-            m["meeting_id"] for m in refreshed.meeting_log["google_meetings"]
-        ]
-        self.assertNotIn("123", meeting_ids)
-        self.assertIn("456", meeting_ids)
-
-    async def test_remove_meeting_from_log_not_found(self):
-        """Test that removing a non-existent meeting_id returns False."""
-        # Use the pair at index 4 which only contains meeting_id "456"
-        pair = self.pairs[4]
-
-        result = await self.repo.remove_meeting_from_log(
-            self.session,
-            user_id=pair.mentor_id,
-            meeting_id="999",
+        self.assertEqual(len(result), 2)
+        self.assertEqual(
+            {(pair.status, partner.user_id) for pair, partner in result},
+            {
+                (PairStatus.ACTIVE, self.users[1].user_id),
+                (PairStatus.INACTIVE, self.users[2].user_id),
+            },
         )
-        self.assertFalse(result)
 
-    async def test_remove_meeting_from_log_invalid_user(self):
-        """Test that removing a meeting with an unauthorized user_id returns False."""
+    async def test_get_pairs_with_partner_info_orders_live_pairs_first(self):
+        """Test that a round mixing an ended and a live pair reads current-first.
 
-        result = await self.repo.remove_meeting_from_log(
-            self.session,
-            user_id=9999,
-            meeting_id="123",
+        The ended pair is inserted first and so holds the lower pair id:
+        ordering by id alone would put the partner who is gone above the
+        current one.
+        """
+        later_round = MentorshipRoundEntity(
+            name="2026-fall",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
         )
-        self.assertFalse(result)
-
-    async def test_remove_meeting_from_log_null_log(self):
-        """Test removing a meeting when the log itself is None."""
-        pair = self.pairs[5]
-
-        result = await self.repo.remove_meeting_from_log(
-            self.session,
-            user_id=pair.mentor_id,
-            meeting_id="123",
+        await self.insert_entities([later_round])
+        ended = MentorshipPairsEntity(
+            round_id=later_round.round_id,
+            mentor_id=self.users[2].user_id,
+            mentee_id=self.users[1].user_id,
+            completed_count=1,
+            status=PairStatus.INACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
         )
-        self.assertFalse(result)
+        live = MentorshipPairsEntity(
+            round_id=later_round.round_id,
+            mentor_id=self.users[0].user_id,
+            mentee_id=self.users[1].user_id,
+            completed_count=0,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+        )
+        await self.insert_entities([ended, live])
+        self.assertLess(ended.pair_id, live.pair_id)
+
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[1].user_id, later_round.round_id
+        )
+
+        self.assertEqual(
+            [(pair.pair_id, partner.user_id) for pair, partner in result],
+            [
+                (live.pair_id, self.users[0].user_id),
+                (ended.pair_id, self.users[2].user_id),
+            ],
+        )
+
+    async def test_get_active_pair_by_mentee_and_mentor_picks_the_named_mentor(self):
+        """Test that a mentee holding two pairs in one round resolves per mentor."""
+        # Bob (users[1]) is the mentee of both Alice (users[0]) and Charlie
+        # (users[2]) in round[2]. Filtering on (mentee, round) alone would
+        # match both rows; naming the mentor is what makes each lookup
+        # single-valued.
+        with_alice = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[0].user_id,
+            round_id=self.rounds[2].round_id,
+        )
+        with_charlie = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[2].user_id,
+            round_id=self.rounds[2].round_id,
+        )
+
+        self.assertIsNotNone(with_alice)
+        self.assertIsNotNone(with_charlie)
+        self.assertNotEqual(with_alice.pair_id, with_charlie.pair_id)
+        self.assertEqual(with_alice.mentor_id, self.users[0].user_id)
+        self.assertEqual(with_charlie.mentor_id, self.users[2].user_id)
+
+    async def test_get_active_pair_by_mentee_and_mentor_after_mentor_change(self):
+        """Test a mid-round mentor change: the ended pair is not returned."""
+        # Bob (users[1]) is already Alice's (users[0]) mentee in round[1].
+        # Add the pair he holds with the mentor he had before the change,
+        # which is left behind as INACTIVE.
+        previous_pair = MentorshipPairsEntity(
+            round_id=self.rounds[1].round_id,
+            mentor_id=self.users[2].user_id,
+            mentee_id=self.users[1].user_id,
+            completed_count=1,
+            status=PairStatus.INACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+        )
+        await self.insert_entities([previous_pair])
+
+        current = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[0].user_id,
+            round_id=self.rounds[1].round_id,
+        )
+        previous = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[2].user_id,
+            round_id=self.rounds[1].round_id,
+        )
+
+        self.assertIsNotNone(current)
+        self.assertEqual(current.mentor_id, self.users[0].user_id)
+        self.assertEqual(current.status, PairStatus.ACTIVE)
+        self.assertIsNone(previous)
+
+    async def test_get_active_pair_by_mentee_and_mentor_skips_inactive(self):
+        """Test that an inactive pair is not returned even when it is the only one."""
+        # Alice (users[0]) is Charlie's (users[2]) mentee in round[0], INACTIVE.
+        result = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[0].user_id,
+            mentor_id=self.users[2].user_id,
+            round_id=self.rounds[0].round_id,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_active_pair_by_mentee_and_mentor_is_side_specific(self):
+        """Test that the two user IDs are not interchangeable."""
+        # pairs[0]: Alice (users[0]) mentors Bob (users[1]) in round[0]. Asking
+        # for it with the sides swapped must not match -- callers use this to
+        # require that the current user holds the mentee side.
+        pair = self.pairs[0]
+        result = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=pair.mentor_id,
+            mentor_id=pair.mentee_id,
+            round_id=pair.round_id,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_active_pair_by_mentee_and_mentor_no_pair(self):
+        """Test that two users with no pair in the round return None."""
+        result = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[0].user_id,
+            round_id=9999,
+        )
+
+        self.assertIsNone(result)
 
     async def test_get_pair_with_partner_by_round_and_users_and_status_as_mentor(self):
         """Test retrieving a active pair and partner when user is the mentor."""
@@ -579,6 +620,21 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertTrue(all(p.status == PairStatus.ACTIVE for p in result))
         self.assertTrue(all(p.round_id == self.rounds[0].round_id for p in result))
 
+    async def test_list_pairs_by_round_includes_inactive_pairs(self):
+        """Every pair in the round, whatever its status, and only that round."""
+        result = await self.repo.list_pairs_by_round(
+            session=self.session,
+            round_id=self.rounds[0].round_id,
+        )
+
+        self.assertEqual(
+            [p.pair_id for p in result],
+            sorted([self.pairs[0].pair_id, self.pairs[2].pair_id]),
+        )
+        self.assertEqual(
+            {p.status for p in result}, {PairStatus.ACTIVE, PairStatus.INACTIVE}
+        )
+
     async def test_get_active_pairs_by_round_no_result(self):
         """Test no pairs returned for non-existing round."""
         result = await self.repo.get_active_pairs_by_round(
@@ -587,136 +643,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(result, [])
-
-    async def test_clear_google_meetings_invalid_input(self):
-        """Test invalid input raises ValueError."""
-        with self.assertRaises(ValueError):
-            await self.repo.clear_google_meetings_by_user_pair_and_round(
-                self.session,
-                current_user_id=None,
-                partner_id=1,
-                round_id=1,
-            )
-
-    async def test_clear_google_meetings_by_user_pair_and_round_success(self):
-        """Test clearing google meetings for a matched user pair in a given round."""
-        pair = self.pairs[3]
-
-        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
-            self.session,
-            current_user_id=pair.mentor_id,
-            partner_id=pair.mentee_id,
-            round_id=pair.round_id,
-        )
-        await self.session.commit()
-
-        self.assertTrue(result)
-
-        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(refreshed, ["meeting_log"])
-
-        self.assertEqual(refreshed.meeting_log["google_meetings"], [])
-
-    async def test_clear_google_meetings_by_user_pair_and_round_reverse_order(self):
-        """Test clearing google meetings works regardless of user order."""
-        pair = self.pairs[4]
-
-        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
-            self.session,
-            current_user_id=pair.mentee_id,
-            partner_id=pair.mentor_id,
-            round_id=pair.round_id,
-        )
-        await self.session.commit()
-
-        self.assertTrue(result)
-
-        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(refreshed, ["meeting_log"])
-
-        self.assertEqual(refreshed.meeting_log["google_meetings"], [])
-
-    async def test_clear_google_meetings_by_user_pair_and_round_not_found(self):
-        """Test clearing google meetings returns False when no pair matches."""
-        pair = self.pairs[3]
-
-        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
-            self.session,
-            current_user_id=pair.mentor_id,
-            partner_id=9999,
-            round_id=pair.round_id,
-        )
-
-        self.assertFalse(result)
-
-    async def test_clear_google_meetings_by_user_pair_and_round_null_log(self):
-        """Test clearing google meetings initializes google_meetings when meeting_log is None."""
-        pair = self.pairs[5]
-
-        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
-            self.session,
-            current_user_id=pair.mentor_id,
-            partner_id=pair.mentee_id,
-            round_id=pair.round_id,
-        )
-        await self.session.commit()
-
-        self.assertTrue(result)
-
-        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(refreshed, ["meeting_log"])
-
-        self.assertEqual(refreshed.meeting_log, {"google_meetings": []})
-
-    async def test_append_google_meeting_to_existing_list(self):
-        """Appending to an existing list preserves old entries and adds the new one."""
-        pair = self.pairs[3]  # has google_meetings: [123, 456]
-        new_entry = {
-            "meeting_id": "789",
-            "meet_link": "https://meet.google.com/new",
-            "is_completed": False,
-        }
-
-        await self.repo.append_google_meeting(
-            session=self.session,
-            pair_id=pair.pair_id,
-            meeting_entry=new_entry,
-        )
-        await self.session.commit()
-
-        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(refreshed, ["meeting_log"])
-
-        meetings = refreshed.meeting_log["google_meetings"]
-        self.assertEqual(len(meetings), 3)
-        meeting_ids = [m["meeting_id"] for m in meetings]
-        self.assertIn("123", meeting_ids)
-        self.assertIn("456", meeting_ids)
-        self.assertIn("789", meeting_ids)
-
-    async def test_append_google_meeting_to_null_log(self):
-        """Appending when meeting_log is NULL creates the structure from scratch."""
-        pair = self.pairs[5]  # meeting_log=None
-        new_entry = {
-            "meeting_id": "first",
-            "meet_link": "https://meet.google.com/first",
-            "is_completed": False,
-        }
-
-        await self.repo.append_google_meeting(
-            session=self.session,
-            pair_id=pair.pair_id,
-            meeting_entry=new_entry,
-        )
-        await self.session.commit()
-
-        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(refreshed, ["meeting_log"])
-
-        self.assertIsNotNone(refreshed.meeting_log)
-        meetings = refreshed.meeting_log["google_meetings"]
-        self.assertEqual(len(meetings), 1)
-        self.assertEqual(meetings[0]["meeting_id"], "first")
 
     async def test_upsert_pairs_batch_updates_multiple_pairs(self):
         """Updates a field on multiple existing pairs in a single batch call."""
@@ -768,157 +694,155 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertIsInstance(results[0], MentorshipPairsEntity)
         self.assertEqual(results[0].pair_id, self.pairs[0].pair_id)
 
-    async def test_append_google_meeting_preserves_other_log_keys(self):
-        """Appending when meeting_log has no google_meetings key creates it without losing other keys."""
-        pair = MentorshipPairsEntity(
-            round_id=self.rounds[0].round_id,
-            mentor_id=self.users[1].user_id,
-            mentee_id=self.users[2].user_id,
-            completed_count=0,
-            status=PairStatus.ACTIVE,
-            mentor_action_status=MentorActionStatus.CONFIRMED,
-            mentee_action_status=MenteeActionStatus.CONFIRMED,
-            recommendation_reason="",
-            meeting_log={"other_key": "value"},
+    async def test_get_pair_stats(self):
+        """Should only include active pairs and deduplicate matched_participants across pairs in the same round."""
+        result = await self.repo.get_pair_stats(self.session)
+
+        self.assertIsInstance(result, dict)
+
+        # rounds[0]: pairs[2] is INACTIVE and excluded; only pairs[0] counts
+        self.assertEqual(result[self.rounds[0].round_id]["active_pairs"], 1)
+        self.assertEqual(result[self.rounds[0].round_id]["matched_participants"], 2)
+        # The shared fixture seeds no meeting rows, and the count comes from
+        # those rather than from mentorship_pairs.completed_count -- which
+        # this fixture still sets to 5. The number itself is exercised by
+        # test_get_pair_stats_counts_completed_meetings_from_meeting_rows;
+        # this test is about which pairs are counted, not how many meetings.
+        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 0)
+
+        # rounds[2]: users[0] appears as mentor in pairs[3] and pairs[4] → deduped to 1
+        self.assertEqual(result[self.rounds[2].round_id]["active_pairs"], 3)
+        self.assertEqual(result[self.rounds[2].round_id]["matched_participants"], 4)
+        self.assertEqual(result[self.rounds[2].round_id]["total_completed_meetings"], 0)
+
+    async def test_get_pair_stats_empty(self):
+        """Returns an empty dict when there are no active pairs for a round."""
+        empty_round = MentorshipRoundEntity(
+            name="empty-round",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
         )
-        created = await self.repo.upsert_pairs(self.session, pair)
+        await self.insert_entities([empty_round])
 
-        new_entry = {
-            "meeting_id": "only",
-            "meet_link": "https://meet.google.com/only",
-            "is_completed": False,
-        }
-        await self.repo.append_google_meeting(
-            session=self.session,
-            pair_id=created.pair_id,
-            meeting_entry=new_entry,
-        )
-        await self.session.commit()
+        result = await self.repo.get_pair_stats(self.session)
 
-        refreshed = await self.session.get(MentorshipPairsEntity, created.pair_id)
-        await self.session.refresh(refreshed, ["meeting_log"])
+        self.assertNotIn(empty_round.round_id, result)
 
-        meetings = refreshed.meeting_log["google_meetings"]
-        self.assertEqual(len(meetings), 1)
-        self.assertEqual(meetings[0]["meeting_id"], "only")
-        self.assertEqual(refreshed.meeting_log["other_key"], "value")
+    async def test_get_pair_by_id_existing(self):
+        """Test that an existing pair_id returns the matching pair."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_by_id(self.session, pair.pair_id)
 
-    async def test_google_meetings_exist_all_true(self):
-        """Returns True when all meeting_ids exist in the pair log."""
-        await self._create_pair(
-            meeting_log={
-                "google_meetings": [
-                    {"meeting_id": "m1"},
-                    {"meeting_id": "m2"},
-                ]
-            }
-        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pair_id, pair.pair_id)
 
-        result = await self.repo.do_google_meetings_exist_in_log(
-            session=self.session,
-            user_id=self.user_mentor.user_id,
-            round_id=self.round.round_id,
-            partner_id=self.user_partner.user_id,
-            meeting_ids=["m1", "m2"],
-        )
+    async def test_get_pair_by_id_non_existent(self):
+        """Test that a non-existent pair_id returns None."""
+        result = await self.repo.get_pair_by_id(self.session, 999)
 
-        self.assertTrue(result)
+        self.assertIsNone(result)
 
-    async def test_google_meetings_exist_partial_false(self):
-        """Returns False if any meeting_id does not exist in the pair log."""
-        await self._create_pair(
-            meeting_log={
-                "google_meetings": [
-                    {"meeting_id": "m1"},
-                ]
-            }
+    async def test_get_pair_by_id_with_lock_returns_same_row(self):
+        """Test that with_lock=True returns the same pair."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_by_id(
+            self.session, pair.pair_id, with_lock=True
         )
 
-        result = await self.repo.do_google_meetings_exist_in_log(
-            session=self.session,
-            user_id=self.user_mentor.user_id,
-            round_id=self.round.round_id,
-            partner_id=self.user_partner.user_id,
-            meeting_ids=["m1", "m2"],
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pair_id, pair.pair_id)
+
+    async def test_get_pair_stats_counts_completed_meetings_from_meeting_rows(self):
+        """total_completed_meetings comes from the meeting rows, not from the
+        denormalised mentorship_pairs.completed_count. Seeded so the two
+        disagree: the stale column says 5, the rows say 3 (one of them LEGACY,
+        which historical rounds have nothing but)."""
+        pair = self.pairs[0]
+        start = datetime.now(timezone.utc)
+        await self.insert_entities([
+            MentorshipMeetingEntity(
+                meeting_id="stats-done-1",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=True,
+                created_datetime=start,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="stats-done-2",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=True,
+                created_datetime=start,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="stats-legacy",
+                pair_id=pair.pair_id,
+                source=MeetingSource.LEGACY,
+                is_completed=True,
+                created_datetime=start,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="stats-pending",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=False,
+                created_datetime=start,
+            ),
+        ])
+
+        result = await self.repo.get_pair_stats(self.session)
+
+        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 3)
+
+    async def test_list_pairs_with_meeting_counts_reads_either_side_and_any_status(
+        self,
+    ):
+        first_round = self.rounds[0].round_id
+        start = self.now - timedelta(days=3)
+
+        def meeting(meeting_id, pair, *, completed):
+            return MentorshipMeetingEntity(
+                meeting_id=meeting_id,
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=completed,
+                created_datetime=start,
+            )
+
+        await self.insert_entities([
+            meeting("eligibility-done-1", self.pairs[0], completed=True),
+            meeting("eligibility-done-2", self.pairs[0], completed=True),
+            meeting("eligibility-missed", self.pairs[0], completed=False),
+        ])
+
+        # users[0] mentors pair 0 and is the mentee of the ended pair 2.
+        rows = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [first_round], [self.users[0].user_id]
         )
-
-        self.assertFalse(result)
-
-    async def test_google_meetings_exist_user_not_match(self):
-        """Returns False if the user is not part of the pair."""
-        await self._create_pair(
-            meeting_log={
-                "google_meetings": [
-                    {"meeting_id": "m1"},
-                ]
-            }
-        )
-
-        result = await self.repo.do_google_meetings_exist_in_log(
-            session=self.session,
-            user_id=999,
-            round_id=self.round.round_id,
-            partner_id=self.user_partner.user_id,
-            meeting_ids=["m1"],
-        )
-
-        self.assertFalse(result)
-
-    async def test_remove_meetings_success(self):
-        """Removes specified meeting_ids and keeps the remaining ones."""
-        log = {
-            "google_meetings": [
-                {"meeting_id": "m1"},
-                {"meeting_id": "m2"},
-            ]
-        }
-        pair = await self._create_pair(meeting_log=log)
-
-        result = await self.repo.remove_meetings_from_log(
-            session=self.session,
-            user_id=self.user_mentor.user_id,
-            meeting_ids=["m1"],
-        )
-
-        self.assertEqual(result, [pair.pair_id])
-
-        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(updated, ["meeting_log"])
-
-        self.assertEqual(updated.meeting_log["google_meetings"], [{"meeting_id": "m2"}])
-
-    async def test_remove_meetings_not_exist(self):
-        """Does not update the pair if none of the meeting_ids exist in the log."""
-        pair = await self._create_pair(
-            meeting_log={"google_meetings": [{"meeting_id": "real"}]}
-        )
-
-        result = await self.repo.remove_meetings_from_log(
-            session=self.session,
-            user_id=self.user_mentor.user_id,
-            meeting_ids=["fake"],
-        )
-
-        self.assertEqual(result, [])
-
-        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
-        await self.session.refresh(updated, ["meeting_log"])
 
         self.assertEqual(
-            updated.meeting_log["google_meetings"], [{"meeting_id": "real"}]
+            [(pair.pair_id, count) for pair, count in rows],
+            [(self.pairs[0].pair_id, 2), (self.pairs[2].pair_id, 0)],
         )
 
-    async def test_remove_meetings_user_not_match(self):
-        """Does not update any pair if the user is not part of the pair."""
-        await self._create_pair(meeting_log={"google_meetings": [{"meeting_id": "m1"}]})
-
-        result = await self.repo.remove_meetings_from_log(
-            session=self.session,
-            user_id=999,
-            meeting_ids=["m1"],
+    async def test_list_pairs_with_meeting_counts_keeps_to_the_rounds_given(self):
+        rows = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [self.rounds[1].round_id], [self.users[1].user_id]
+        )
+        empty = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [], [self.users[1].user_id]
         )
 
-        self.assertEqual(result, [])
+        self.assertEqual([pair.pair_id for pair, _ in rows], [self.pairs[1].pair_id])
+        self.assertEqual(empty, [])
 
 
 if __name__ == "__main__":

@@ -14,20 +14,45 @@ js_library(
     srcs = glob([
         "**/*test.js",
         "**/*test.jsx",
+        "**/*.helper.js",
     ]),
 )
 
-vitest_bin.vitest_test(
+_SHARD_COUNT = 10
+
+[
+    vitest_bin.vitest_test(
+        name = "frontend_unit_tests_%d" % i,
+        size = "large",
+        args = [
+            "run",
+            "--reporter=verbose",
+            "--shard=%d/%d" % (i, _SHARD_COUNT),
+        ],
+        chdir = package_name(),
+        data = [
+            ":frontend_unit_test_files",
+            ":vitest_config",
+            "//:npm_deps",
+            "//frontend:all_srcs",
+            "//tests/shared:application_lock_reasons_vector_js",
+            "//tests/shared:application_stages_vector_js",
+            "//tests/shared:bell_event_types_vector_js",
+            "//tests/shared:form_visibility_vectors_js",
+            "//tests/shared:job_statuses_vector_js",
+        ],
+        flaky = True,
+    )
+    for i in range(
+        1,
+        _SHARD_COUNT + 1,
+    )
+]
+
+test_suite(
     name = "frontend_unit_tests",
-    args = [
-        "run",
-        "--reporter=verbose",
-    ],
-    chdir = package_name(),
-    data = [
-        ":frontend_unit_test_files",
-        ":vitest_config",
-        "//:npm_deps",
-        "//frontend:all_srcs",
-    ],
+    tests = [":frontend_unit_tests_%d" % i for i in range(
+        1,
+        _SHARD_COUNT + 1,
+    )],
 )

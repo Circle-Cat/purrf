@@ -1,9 +1,9 @@
 name: Deploy Staging
 
 # Continuous deploy to the staging environment. On every push to staging that
-# touches the backend image, this builds the image FROM THE STAGING BRANCH,
-# pushes it to GHCR, then opens a PR pinning the new tag into
-# helm/purrf/values-staging.yaml.
+# touches the backend image or the migration image (backend/tools code, or the
+# alembic chain), this builds both images FROM THE STAGING BRANCH, pushes them
+# to GHCR, then opens a PR pinning the new tag into helm/purrf/values-staging.yaml.
 #
 # Why build from the branch (not build-once from main): main->staging is a
 # selective cherry-pick, so staging's tree is a subset of main. An image built
@@ -21,6 +21,9 @@ on:
     branches: [staging]
     paths:
       - 'backend/**'
+      - 'tools/**'
+      - 'alembic_setup/**'
+      - 'alembic.ini'
       - 'requirements.txt'
       - 'MODULE.bazel'
       - 'MODULE.bazel.lock'
@@ -73,6 +76,15 @@ jobs:
         run: >-
           bazel --max_idle_secs=10 run //:purrf_image_push_dynamic
           --action_env=BE_REPO=ghcr.io/circle-cat/purrf
+          --action_env=TAG_1=staging
+          --action_env=TAG_2=${{ github.sha }}
+
+      - name: Build and push migration image
+        # TAG_1=staging mirrors the backend image's mutable pointer; TAG_2 is the
+        # immutable per-build tag that prod later reuses verbatim.
+        run: >-
+          bazel --max_idle_secs=10 run //:purrf_migrate_image_push_dynamic
+          --action_env=MIGRATE_REPO=ghcr.io/circle-cat/purrf-migrate
           --action_env=TAG_1=staging
           --action_env=TAG_2=${{ github.sha }}
 

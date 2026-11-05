@@ -1,0 +1,874 @@
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { PERMISSIONS } from "@/constants/Permissions";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { useAuth } from "@/context/auth/AuthContext";
+import {
+  getJob,
+  listApprovers,
+  listJobOwners,
+  listInterviewPool,
+  listJobActivity,
+  listMyReviews,
+  reassignReviewer,
+  withdrawReview,
+  submitForReview,
+  requestClose,
+  requestReopen,
+  discardPendingEdit,
+  deleteJob,
+  decideReview,
+} from "@/api/recruitingApi";
+import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
+import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
+import AwaitingDecisionCard from "@/components/approval/AwaitingDecisionCard";
+import EmptyState from "@/pages/Recruiting/components/EmptyState";
+import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
+import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
+import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
+import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
+import { unavailablePersonLabel } from "@/pages/Recruiting/components/personLabel";
+import {
+  OPERABLE_STATUSES,
+  PENDING_HEADLINE,
+} from "@/pages/Recruiting/components/jobStatus";
+import {
+  formatDateTimeWithZone,
+  resolveViewerTimezone,
+} from "@/utils/dateTime";
+
+/** Title and dispatch fn per review action kind. */
+const REVIEW_ACTION = {
+  submit: {
+    title: "Submit for review",
+    dispatch: (jobId, body) => submitForReview(jobId, body),
+    successMsg: "Submitted for review.",
+  },
+  close: {
+    title: "Request close",
+    dispatch: (jobId, body) => requestClose(jobId, body),
+    successMsg: "Close requested.",
+  },
+  reopen: {
+    title: "Request reopen",
+    dispatch: (jobId, body) => requestReopen(jobId, body),
+    successMsg: "Reopen requested.",
+  },
+};
+
+/**
+ * Unified job posting detail page at `/recruiting/postings/:id`. Visibility
+ * is permission-driven, not mode-driven: Overview/Configuration/Review
+ * history are shown to every viewer holding any of
+ * RECRUITING_JOB_WRITE/RECRUITING_JOB_APPROVE/RECRUITING_JOB_READ. Overview
+ * renders the same applicant-facing view used on the live posting
+ * (description + profile requirements + question form); Configuration is
+ * staff-only rules (pipeline/screening/profile). The write-action
+ * "Operate:" block only renders for canWrite (and only when the current
+ * status has an available action); within it, "Edit" only
+ * shows for the statuses `update_job` actually accepts (DRAFT/PUBLISHED/
+ * CLOSED — not PUBLISHED_PENDING_REVISION, which already has a staged
+ * edit awaiting its own review). Approve/Reject only for the review's
+ * actual assigned reviewer.
+ * When the posting's most recent review was a rejection, the reviewer's
+ * comment gets its own panel under the header -- this page is the only place
+ * that shows the comment text, since the status badge is plain, unclickable
+ * text everywhere. It's shown to every viewer of this page, exactly like the
+ * badge and the Review history tab already are.
+ */
+/** An approver as the reviewer pickers show them: name and email. */
+const approverLabel = (a) => `${a.name} (${a.email})`;
+
+// What waits on the reviewer, by review kind, and what approving it does.
+const REVIEW_KIND = {
+  initial: {
+    label: "Posting review",
+    approves:
+      "The posting is published and starts taking applications at once.",
+  },
+  revision: {
+    label: "Revision",
+    approves: "The staged changes go live to applicants at once.",
+  },
+  close: {
+    label: "Close request",
+    approves: "The posting closes and takes no more applications.",
+  },
+  reopen: {
+    label: "Reopen request",
+    approves:
+      "The posting opens again and takes applications, with any staged changes live.",
+  },
+};
+
+const PostingDetailPage = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user, permissions = [] } = useAuth();
+  const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
+  const canApprove = permissions.includes(PERMISSIONS.RECRUITING_JOB_APPROVE);
+
+  const [job, setJob] = useState(null);
+  const [approversById, setApproversById] = useState({});
+  const [ownersById, setOwnersById] = useState({});
+  const [jobOwners, setJobOwners] = useState([]);
+  const [interviewPool, setInterviewPool] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [myOpenReview, setMyOpenReview] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+
+  const [reviewAction, setReviewAction] = useState(null); // "submit" | "close" | "reopen"
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [approvers, setApprovers] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  // "approve" | "reject" while the reviewer confirms, else null.
+  const [decision, setDecision] = useState(null);
+  const [deciding, setDeciding] = useState(false);
+
+  const load = useCallback(() => {
+    setLoadError(false);
+    // listMyReviews requires RECRUITING_JOB_APPROVE -- the backend route
+    // 403s for anyone without it, so only fetch it for a canApprove viewer.
+    // It's how this page learns the *actual* review_id to decide on: JobDto
+    // only exposes reviewerId (the assigned user), never the review cycle's
+    // own id, and only the assigned reviewer's own listMyReviews() call can
+    // see it (the same self-scoped fetch as the postings page's review card).
+    Promise.all([
+      getJob(id),
+      listApprovers(),
+      listJobOwners(),
+      listInterviewPool(),
+      listJobActivity(id),
+      canApprove ? listMyReviews() : Promise.resolve({ data: [] }),
+    ])
+      .then(
+        ([
+          jobRes,
+          approversRes,
+          ownersRes,
+          interviewPoolRes,
+          activityRes,
+          myReviewsRes,
+        ]) => {
+          setJob(jobRes.data);
+          setApproversById(
+            Object.fromEntries(
+              (approversRes.data ?? []).map((a) => [a.userId, a.name]),
+            ),
+          );
+          setOwnersById(
+            Object.fromEntries(
+              (ownersRes.data ?? []).map((o) => [o.userId, o.name]),
+            ),
+          );
+          setJobOwners(ownersRes.data ?? []);
+          setInterviewPool(interviewPoolRes.data ?? []);
+          setActivity(activityRes.data ?? []);
+          setMyOpenReview(
+            (myReviewsRes.data ?? []).find((r) => r.jobId === Number(id)) ??
+              null,
+          );
+        },
+      )
+      .catch((e) => {
+        setLoadError(true);
+        toast.error(e.message);
+      });
+  }, [id, canApprove]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!job) {
+    return (
+      <LoadGate
+        error={loadError}
+        errorMessage="Couldn't load this posting."
+        onRetry={load}
+      />
+    );
+  }
+
+  const isDraft = job.status === "draft";
+  const isPublished = job.status === "published";
+  const isClosed = job.status === "closed";
+  // From the shared status map, so a status added on the backend cannot land
+  // in the gap between "has an action" and "has a headline" (jobStatus.test.js
+  // pins that it cannot).
+  const hasOperateAction = OPERABLE_STATUSES.includes(job.status);
+  // Mirrors JobService.update_job's allowed_from check on the backend:
+  // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
+  // PUBLISHED_PENDING_REVISION (a revision is already staged and pending
+  // its own review).
+  const canEditConfig = canWrite && (isDraft || isPublished || isClosed);
+  const isAssignedReviewer =
+    canApprove && myOpenReview != null && job.reviewerId === user?.userId;
+  const reviewerName = job.reviewerId
+    ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
+    : null;
+  // Only the submitter may move their own open review, so only they are
+  // offered the action. submittedBy is null unless a review is open, which
+  // makes this false everywhere else without a status check of its own.
+  const canReassignReviewer =
+    job.submittedBy != null && job.submittedBy === user?.userId;
+  const ownerIds = job.pipelineConfig?.ownerIds ?? [];
+  /** The staged edit merged onto the live job, or null when nothing is staged. */
+  const proposedJob = job.pendingPayload
+    ? { ...job, ...job.pendingPayload }
+    : null;
+  // The publish gate is JobService._revalidate_job_config's, evaluated server
+  // side and carried here whole, so the reason the button is disabled and the
+  // reason the API would refuse cannot drift apart.
+  const submitBlockers = job.submitBlockers ?? [];
+
+  const formatActivity = (entry) => {
+    const { eventType, actorName, details = {} } = entry;
+    // Null actorName means the rules did it, not a person.
+    const who = actorName ?? "Automatically";
+    const nameOfReviewer = (reviewerId) =>
+      reviewerId != null
+        ? (approversById[reviewerId] ?? `Reviewer #${reviewerId}`)
+        : null;
+    const reviewerName = nameOfReviewer(details.reviewerId);
+    if (eventType === "recruiting.job_created") {
+      return `${who} created this posting as a draft`;
+    }
+    if (eventType === "recruiting.review_opened") {
+      const verb =
+        {
+          initial: "submitted for review",
+          revision: "submitted a revision for review",
+          close: "requested to close",
+          reopen: "requested to reopen",
+        }[details.kind] ?? "submitted for review";
+      return reviewerName
+        ? `${who} ${verb}, assigned to ${reviewerName}`
+        : `${who} ${verb}`;
+    }
+    if (eventType === "recruiting.review_reassigned") {
+      const previousName = nameOfReviewer(details.previousReviewerId);
+      return `${who} reassigned the review${
+        previousName ? ` from ${previousName}` : ""
+      }${reviewerName ? ` to ${reviewerName}` : ""}`;
+    }
+    if (eventType === "recruiting.review_decided") {
+      const templates = {
+        initial: {
+          approved: `${who} approved the review — posting published`,
+          rejected: `${who} rejected the review: "${details.comment}" — sent back to draft`,
+          withdrawn: `${who} withdrew the review — back to draft`,
+        },
+        revision: {
+          approved: `${who} approved the revision — changes published`,
+          rejected: `${who} rejected the revision: "${details.comment}" — posting stays published`,
+          withdrawn: `${who} withdrew the revision — posting stays published`,
+        },
+        close: {
+          approved: `${who} approved the close request — posting closed`,
+          rejected: `${who} rejected the close request: "${details.comment}" — posting stays published`,
+          withdrawn: `${who} withdrew the close request — posting stays published`,
+        },
+        reopen: {
+          approved: `${who} approved the reopen request — posting republished`,
+          rejected: `${who} rejected the reopen request: "${details.comment}" — posting stays closed`,
+          withdrawn: `${who} withdrew the reopen request — posting stays closed`,
+        },
+      };
+      return (
+        templates[details.kind]?.[details.decision] ??
+        `${who} ${eventType.replace(/^[^.]+\./, "")}`
+      );
+    }
+    if (eventType === "recruiting.pending_edit_discarded") {
+      return `${who} discarded a staged edit`;
+    }
+    return `${who} ${eventType.replace(/^[^.]+\./, "")}`;
+  };
+
+  const openReview = async (kind) => {
+    try {
+      const { data } = await listApprovers();
+      setApprovers(data ?? []);
+      setReviewAction(kind);
+      setSubmitOpen(true);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  // Fetched on open, the same as openReview does, rather than read from the
+  // page load: the pool excludes deactivated and blocked accounts, and an
+  // account being turned off is the whole reason this action exists, so a
+  // list read at page load is exactly the one that can be stale. Without the
+  // fetch the dialog opens on an empty pool and reports that there is nobody
+  // to move the review to.
+  const openReassign = async () => {
+    try {
+      const { data } = await listApprovers();
+      setApprovers(data ?? []);
+      setReassignOpen(true);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleReviewSubmit = async (body) => {
+    if (submitting || !reviewAction) return;
+    const action = REVIEW_ACTION[reviewAction];
+    setSubmitting(true);
+    try {
+      await action.dispatch(id, body);
+      toast.success(action.successMsg);
+      navigate(ROUTE_PATHS.RECRUITING_POSTINGS);
+    } catch (e) {
+      toast.error(e.message);
+      setSubmitting(false);
+    }
+  };
+
+  const handleReassign = async (reviewerId) => {
+    if (reassigning) return;
+    setReassigning(true);
+    try {
+      await reassignReviewer(id, { reviewerId });
+      toast.success("Reviewer changed.");
+      setReassignOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setReassigning(false);
+    }
+  };
+
+  // The submitter takes their review back; the posting returns to where it
+  // was, the same as on a rejection, and the reviewer is told.
+  const handleWithdraw = async () => {
+    if (withdrawing) return;
+    setWithdrawing(true);
+    try {
+      await withdrawReview(id);
+      toast.success("Review withdrawn.");
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await deleteJob(id);
+      toast.success("Posting deleted.");
+      window.location.assign(ROUTE_PATHS.RECRUITING_POSTINGS);
+    } catch (e) {
+      toast.error(e.message);
+      setDeleting(false);
+    }
+  };
+
+  const handleDiscard = async () => {
+    if (discarding) return;
+    setDiscarding(true);
+    try {
+      await discardPendingEdit(id);
+      toast.success("Staged edit discarded.");
+      setDiscardConfirmOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
+  /** Send the confirmed decision; the dialog stays open if it fails. */
+  const handleDecide = async (comment) => {
+    if (deciding || !myOpenReview) return;
+    setDeciding(true);
+    try {
+      await decideReview(
+        myOpenReview.reviewId,
+        decision === "reject"
+          ? { decision: "reject", comment }
+          : { decision: "approve" },
+      );
+      toast.success(
+        decision === "reject" ? "Review rejected." : "Review approved.",
+      );
+      setDecision(null);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setDeciding(false);
+    }
+  };
+  const reviewKind = REVIEW_KIND[myOpenReview?.kind] ?? REVIEW_KIND.initial;
+
+  return (
+    <div className="space-y-6 p-6">
+      {isAssignedReviewer && (
+        <AwaitingDecisionCard
+          title={`${reviewKind.label} awaiting your decision`}
+          meta={[
+            `Submitted by ${job.submittedByName ?? `User ${job.submittedBy}`}${
+              myOpenReview.createdAt
+                ? ` on ${formatDateTimeWithZone(
+                    myOpenReview.createdAt,
+                    resolveViewerTimezone(),
+                  )}`
+                : ""
+            }`,
+          ]}
+          reason={job.submitMessage}
+          emptyReason="No note given."
+        >
+          <Button disabled={deciding} onClick={() => setDecision("approve")}>
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            disabled={deciding}
+            onClick={() => setDecision("reject")}
+          >
+            Reject
+          </Button>
+          <ApprovalDecisionDialog
+            open={decision !== null}
+            onOpenChange={(open) => !open && !deciding && setDecision(null)}
+            decision={decision ?? "approve"}
+            title={`${decision === "reject" ? "Reject" : "Approve"}: ${
+              reviewKind.label
+            } — ${job.title}`}
+            description={
+              decision === "reject"
+                ? "Your reason is shown to the person who submitted it."
+                : reviewKind.approves
+            }
+            onConfirm={handleDecide}
+            submitting={deciding}
+          />
+        </AwaitingDecisionCard>
+      )}
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
+          <PostingStatusBadges job={job} explain />
+          <div className="ml-auto"></div>
+        </div>
+        <p className="text-sm text-slate-600">{job.description}</p>
+        {ownerIds.length > 0 && (
+          <p className="text-sm text-slate-500">
+            Recruiter:
+            {ownerIds.map((oid, i) => (
+              <Fragment key={oid}>
+                {i === 0 ? " " : ", "}
+                {ownersById[oid] == null ? (
+                  <span className="text-red-600">
+                    {unavailablePersonLabel(oid)}
+                  </span>
+                ) : (
+                  ownersById[oid]
+                )}
+              </Fragment>
+            ))}
+          </p>
+        )}
+        {reviewerName && (
+          <p className="text-sm text-slate-500">
+            Assigned reviewer: {reviewerName}
+            {canReassignReviewer && (
+              <>
+                <Button
+                  variant="link"
+                  className="h-auto p-0 pl-2 text-sm"
+                  onClick={openReassign}
+                >
+                  Change reviewer
+                </Button>
+                <Button
+                  variant="link"
+                  className="h-auto p-0 pl-2 text-sm"
+                  onClick={handleWithdraw}
+                  disabled={withdrawing}
+                >
+                  Withdraw
+                </Button>
+              </>
+            )}
+          </p>
+        )}
+      </div>
+
+      {/* A staged edit is invisible to applicants until a reviewer approves
+          it, and the Overview tab's Current/Proposed pair shows the two
+          versions without saying which one is live. Said here, above the
+          Submit for review button that resolves it. */}
+      {isPublished && job.pendingPayload != null && (
+        <div className="space-y-1 rounded border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-800">
+            Staged edit not submitted for review
+          </p>
+          <p className="text-sm text-amber-700">
+            Applicants still see the published version. Submit it for review to
+            make your changes live.
+          </p>
+        </div>
+      )}
+
+      {/* Only ever set while a review cycle is open, so this disappears on its
+          own once the reviewer decides -- no status check needed here. The
+          reviewer reads it on their card instead. */}
+      {job.submitMessage && !isAssignedReviewer && (
+        <div className="space-y-1 rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="text-sm font-medium text-slate-700">
+            Note to the reviewer
+          </p>
+          <p className="text-sm whitespace-pre-line text-slate-600">
+            {job.submitMessage}
+          </p>
+        </div>
+      )}
+
+      {job.lastRejectComment && (
+        <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
+          <p className="text-sm font-medium text-red-800">
+            {GLOSSARY[rejectTermId(job.lastRejectKind)].label}
+          </p>
+          <p className="text-sm whitespace-pre-line text-red-700">
+            {job.lastRejectComment}
+          </p>
+        </div>
+      )}
+
+      {canWrite && hasOperateAction && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">Operate:</span>
+          {canEditConfig && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                window.location.assign(ROUTE_PATHS.RECRUITING_POSTING_EDIT(id))
+              }
+            >
+              Edit
+            </Button>
+          )}
+          {isDraft && (
+            <>
+              <Button
+                size="sm"
+                disabled={submitBlockers.length > 0}
+                onClick={() => openReview("submit")}
+              >
+                Submit for review
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Delete
+              </Button>
+            </>
+          )}
+          {isPublished && job.pendingPayload == null && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openReview("close")}
+            >
+              Request close
+            </Button>
+          )}
+          {isPublished && job.pendingPayload != null && (
+            <>
+              <Button
+                size="sm"
+                disabled={submitBlockers.length > 0}
+                onClick={() => openReview("submit")}
+              >
+                Submit for review
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDiscardConfirmOpen(true)}
+              >
+                Discard draft
+              </Button>
+            </>
+          )}
+          {isClosed && job.wasPublished && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openReview("reopen")}
+            >
+              Request reopen
+            </Button>
+          )}
+          {isClosed && job.wasPublished && job.pendingPayload != null && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDiscardConfirmOpen(true)}
+            >
+              Discard draft
+            </Button>
+          )}
+          {isClosed && !job.wasPublished && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              Delete
+            </Button>
+          )}
+          {job.wasPublished && (
+            <span
+              className="text-xs text-slate-500"
+              title={GLOSSARY["posting.undeletable"].hint}
+            >
+              Published postings cannot be deleted
+            </span>
+          )}
+          {submitBlockers.length > 0 &&
+            (isDraft || (isPublished && job.pendingPayload != null)) &&
+            submitBlockers.map((blocker) => (
+              <span key={blocker} className="text-xs text-amber-600">
+                {blocker}
+              </span>
+            ))}
+        </div>
+      )}
+
+      {canWrite && !hasOperateAction && (
+        <PendingNotice
+          headline={PENDING_HEADLINE[job.status]}
+          waitingOn={reviewerName}
+          detail="Editing is locked until they approve or reject."
+        />
+      )}
+
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="configuration">Configuration</TabsTrigger>
+          <TabsTrigger value="history">Review history</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          {proposedJob ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Current</h3>
+                <PostingApplicantView
+                  title={job.title}
+                  description={job.description}
+                  questions={job.formSchema?.questions ?? []}
+                  profileConfig={job.profileConfig}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Proposed</h3>
+                <PostingApplicantView
+                  title={proposedJob.title}
+                  description={proposedJob.description}
+                  questions={proposedJob.formSchema?.questions ?? []}
+                  profileConfig={proposedJob.profileConfig}
+                />
+              </div>
+            </div>
+          ) : (
+            <PostingApplicantView
+              description={job.description}
+              questions={job.formSchema?.questions ?? []}
+              profileConfig={job.profileConfig}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="configuration">
+          {proposedJob ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Current</h3>
+                <PostingConfigSummary
+                  job={job}
+                  interviewPool={interviewPool}
+                  jobOwners={jobOwners}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Proposed</h3>
+                <PostingConfigSummary
+                  job={proposedJob}
+                  interviewPool={interviewPool}
+                  jobOwners={jobOwners}
+                />
+              </div>
+            </div>
+          ) : (
+            <PostingConfigSummary
+              job={job}
+              interviewPool={interviewPool}
+              jobOwners={jobOwners}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="history">
+          {activity.length === 0 ? (
+            <p className="text-sm text-slate-400">No activity yet.</p>
+          ) : (
+            <ul className="space-y-1">
+              {activity.map((entry) => (
+                <li key={entry.id} className="text-sm text-slate-700">
+                  <span className="text-slate-500">
+                    {formatDateTimeWithZone(
+                      entry.createdAt,
+                      resolveViewerTimezone(),
+                    )}
+                  </span>{" "}
+                  — {formatActivity(entry)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <ApprovalRequestDialog
+        open={reassignOpen}
+        onOpenChange={setReassignOpen}
+        title="Change reviewer"
+        description="Only the new reviewer is told. The posting stays where it is."
+        reviewers={approvers}
+        excludeUserIds={[job.reviewerId, user?.userId]}
+        reviewerHint="The reviewer who has it now, and you, are both left out of this list."
+        optionLabel={approverLabel}
+        emptyContent={
+          <EmptyState
+            what="There is nobody else to review this posting."
+            how="Reassignment needs another colleague with posting-approval access, and you can't review your own posting."
+            who="Ask an admin to grant someone that access."
+          />
+        }
+        confirmLabel="Reassign"
+        submitting={reassigning}
+        onConfirm={({ reviewerId }) => handleReassign(reviewerId)}
+      />
+
+      <ApprovalRequestDialog
+        open={submitOpen}
+        onOpenChange={setSubmitOpen}
+        title={
+          reviewAction ? REVIEW_ACTION[reviewAction].title : "Submit for review"
+        }
+        description="The reviewer you pick decides; you can change the reviewer or withdraw while it waits."
+        reviewers={approvers}
+        excludeUserIds={[user?.userId]}
+        reviewerHint="You cannot review your own posting, so you are not in this list."
+        optionLabel={approverLabel}
+        emptyContent={
+          <EmptyState
+            what="No one else can approve this posting."
+            how="Approval needs a colleague with posting-approval access, and you can't approve your own posting."
+            who="Ask an admin to grant someone that access."
+          />
+        }
+        askReason
+        reasonLabel="Message (optional)"
+        confirmLabel={
+          reviewAction ? REVIEW_ACTION[reviewAction].title : "Submit for review"
+        }
+        submitting={submitting}
+        onConfirm={({ reviewerId, reason }) =>
+          handleReviewSubmit({ reviewerId, message: reason || null })
+        }
+      />
+
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={(o) => !o && setDeleteConfirmOpen(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this posting?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">This cannot be undone.</p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={discardConfirmOpen}
+        onOpenChange={(o) => !o && setDiscardConfirmOpen(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard your staged edit?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            This discards your staged edit; the live posting is unaffected.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDiscardConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={discarding}
+              onClick={handleDiscard}
+            >
+              Confirm discard
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default PostingDetailPage;

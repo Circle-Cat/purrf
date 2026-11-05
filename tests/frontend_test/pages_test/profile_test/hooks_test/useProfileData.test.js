@@ -7,7 +7,6 @@ import {
   sortExperienceOrEducationList,
   DegreeEnum,
 } from "@/pages/Profile/utils";
-import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 
 vi.mock("@/api/profileApi", () => ({
   getMyProfile: vi.fn(),
@@ -23,14 +22,6 @@ vi.mock("@/pages/Profile/utils", async (importOriginal) => {
   };
 });
 
-vi.mock("@/utils/dateTime", async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    getDaysSince: vi.fn(),
-  };
-});
-
 describe("useProfileData Hook", () => {
   /**
    * Mocked backend profile response used across test cases.
@@ -42,7 +33,6 @@ describe("useProfileData Hook", () => {
         firstName: "John",
         lastName: "Doe",
         primaryEmail: "john@primary.com",
-        alternativeEmails: ["john@alt.com"],
         communicationMethod: "google_chat",
         timezone: "America/Los_Angeles",
         timezoneUpdatedAt: "2023-01-01T00:00:00Z",
@@ -92,7 +82,6 @@ describe("useProfileData Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     parseDateParts.mockReturnValue({ month: "01", year: "2020" });
-    getDaysSince.mockReturnValue(0);
     sortExperienceOrEducationList.mockReturnValue(0);
   });
 
@@ -123,17 +112,14 @@ describe("useProfileData Hook", () => {
     expect(personalInfo.title).toBe("Senior Dev");
 
     /**
-     * Verify email merging logic (primary + alternative).
+     * Verify email list holds only the primary email; alternative emails are
+     * no longer surfaced on the profile.
      */
-    expect(personalInfo.emails).toHaveLength(2);
+    expect(personalInfo.emails).toHaveLength(1);
     expect(personalInfo.emails[0]).toEqual({
       id: "primary",
       email: "john@primary.com",
       isPrimary: true,
-    });
-    expect(personalInfo.emails[1]).toMatchObject({
-      email: "john@alt.com",
-      isPrimary: false,
     });
 
     /**
@@ -171,13 +157,16 @@ describe("useProfileData Hook", () => {
     expect(sortExperienceOrEducationList).toHaveBeenCalled();
   });
 
-  it("should map training records keyed on category (not name)", async () => {
+  it("should map a training record onto the course it points at", async () => {
     const profileWithTraining = {
       profile: {
         ...mockProfileResponse.profile,
         training: [
           {
             id: 32,
+            courseId: 7,
+            name: "Mentee Onboarding",
+            isHosted: true,
             category: "mentorship_mentee_onboarding",
             completedTimestamp: "1970-01-01T00:00:00Z",
             status: "to_do",
@@ -197,15 +186,48 @@ describe("useProfileData Hook", () => {
     expect(training.category).toBe("mentorship_mentee_onboarding");
     expect(training.status).toBe("to_do");
     expect(training.link).toBeNull();
-    // The pre-fix mapping read t.name (which the API never returns), so the
-    // mapped object had `name: undefined`. Lock the rename in.
-    expect(training).not.toHaveProperty("name");
+    // The course names the row and says whether it can be opened in the app.
+    // Both have to survive the whitelist below or the row renders nameless.
+    expect(training.courseId).toBe(7);
+    expect(training.name).toBe("Mentee Onboarding");
+    // isHosted gates the in-app Start/Continue/Review link -- it is the
+    // learner's only way into a hosted course, so it must survive the
+    // whitelist just like courseId above.
+    expect(training.isHosted).toBe(true);
     // Raw API timestamps pass through unchanged so TrainingSection can
     // format the actual day, not just month/year.
     expect(training.completedTimestamp).toBe("1970-01-01T00:00:00Z");
     expect(training.deadline).toBe("2026-05-18T06:59:00Z");
     expect(training).not.toHaveProperty("completionMonth");
     expect(training).not.toHaveProperty("dueMonth");
+  });
+
+  it("maps a row the catalogue holds no course for without inventing one", async () => {
+    const profileWithTraining = {
+      profile: {
+        ...mockProfileResponse.profile,
+        training: [
+          {
+            id: 33,
+            courseId: null,
+            name: null,
+            category: "corporate_culture_course",
+            completedTimestamp: "1970-01-01T00:00:00Z",
+            status: "to_do",
+            deadline: null,
+            link: null,
+          },
+        ],
+      },
+    };
+    getMyProfile.mockResolvedValue({ data: profileWithTraining });
+
+    const { result } = renderHook(() => useProfileData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const [training] = result.current.personalInfo.completedTraining;
+    expect(training.courseId).toBeNull();
+    expect(training.name).toBeNull();
   });
 
   it("should handle API errors gracefully", async () => {
@@ -222,6 +244,34 @@ describe("useProfileData Hook", () => {
      */
     expect(result.current.personalInfo.id).toBeUndefined();
 
+    consoleSpy.mockRestore();
+  });
+
+  it("exposes loadError when the initial fetch fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getMyProfile.mockRejectedValue(new Error("Network Error"));
+
+    const { result } = renderHook(() => useProfileData());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.loadError).toBe(true);
+
+    consoleSpy.mockRestore();
+  });
+
+  it("clears loadError on a successful retry", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getMyProfile.mockRejectedValueOnce(new Error("Network Error"));
+    getMyProfile.mockResolvedValue({ data: mockProfileResponse });
+
+    const { result } = renderHook(() => useProfileData());
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.loadError).toBe(false);
     consoleSpy.mockRestore();
   });
 
@@ -252,73 +302,6 @@ describe("useProfileData Hook", () => {
         firstName: "Jane",
       });
       expect(result.current.personalInfo.firstName).toBe("Jane");
-    });
-  });
-
-  describe("Computed Property: canEditTimezone", () => {
-    it("should allow edit if timezoneUpdatedAt is null", async () => {
-      const noTimeProfile = {
-        profile: {
-          ...mockProfileResponse.profile,
-          user: {
-            ...mockProfileResponse.profile.user,
-            timezoneUpdatedAt: null,
-          },
-        },
-      };
-      getMyProfile.mockResolvedValue({ data: noTimeProfile });
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      expect(result.current.canEditTimezone).toBe(true);
-    });
-
-    it("should NOT allow edit if less than 30 days since update", async () => {
-      getMyProfile.mockResolvedValue({ data: mockProfileResponse });
-
-      /**
-       * Mock a recent update (10 days ago).
-       */
-      getDaysSince.mockReturnValue(10);
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      expect(result.current.canEditTimezone).toBe(false);
-      expect(getDaysSince).toHaveBeenCalledWith(
-        mockProfileResponse.profile.user.timezoneUpdatedAt,
-      );
-    });
-
-    it("should allow edit if 30 days or more since update", async () => {
-      getMyProfile.mockResolvedValue({ data: mockProfileResponse });
-
-      /**
-       * Mock exactly 30 days since last update.
-       */
-      getDaysSince.mockReturnValue(30);
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      expect(result.current.canEditTimezone).toBe(true);
-    });
-  });
-
-  describe("Computed Property: nextEditableDate", () => {
-    it("should return a formatted date 30 days from timezoneUpdatedAt", async () => {
-      getMyProfile.mockResolvedValue({ data: mockProfileResponse });
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      const expectedDate = new Date("2023-01-01T00:00:00Z");
-      expectedDate.setDate(expectedDate.getDate() + 30);
-
-      expect(result.current.nextEditableDate).toBe(
-        formatLocalYmd(expectedDate),
-      );
     });
   });
 });

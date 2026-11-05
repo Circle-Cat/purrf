@@ -1,3 +1,7 @@
+# The backend sets no CORS headers, so this ruleset and the Access
+# applications below are the whole of purrf's CORS policy. Never add a
+# training-content host: it runs third-party course JavaScript, which must not
+# be able to read API responses.
 resource "cloudflare_ruleset" "cors_headers" {
   zone_id = local.zone_id
   name    = "default"
@@ -69,6 +73,14 @@ data "google_project" "circlecat_prod_iad_project_data" {
   project_id = var.circlecat_prod_iad_project_id
 }
 
+# Gmail's OAuth client lives in this project, because users.watch only accepts
+# a topic in the project of the client that issued the token. Enabled here
+# rather than in purrf_instance so that one state owns it, not one per
+# environment.
+resource "google_project_service" "gmail" {
+  project = var.main_gcp_project_id
+  service = "gmail.googleapis.com"
+}
 
 # Define an Access Context Manager policy for VPC Service Controls perimeter
 resource "google_access_context_manager_access_policy" "purrf_internal" {
@@ -408,7 +420,9 @@ resource "cloudflare_dns_record" "login_test" {
   name    = "test-login"
   type    = "CNAME"
   content = data.terraform_remote_state.test_env.outputs.auth0_custom_domain_cname
-  proxied = false
+  # Proxied since 2026-05-23 (dashboard change); codified to match the live
+  # record. Note prod/staging login records are DNS-only.
+  proxied = true
   ttl     = 1
   lifecycle {
     ignore_changes = [
@@ -464,6 +478,33 @@ resource "cloudflare_dns_record" "root_test" {
   name    = "test"
   type    = "CNAME"
   content = "main.purrf.pages.dev"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+# SCORM course files, test only for now. Same tunnel and backend as test-api;
+# only the hostname makes it a separate origin.
+#
+# This host must stay out of the Access application below and out of the CORS
+# ruleset at the top of this file. Access cookies are host-only and readable
+# from JavaScript (http_only_cookie_attribute = false), so an Access
+# application here would hand every course package a valid identity token.
+# Requests carry a signed path token instead
+# (random_password.training_token_signing_key in the purrf_instance module).
+#
+# staging and prod get the same record by hand when the feature promotes.
+resource "cloudflare_dns_record" "training_content_test" {
+  zone_id = local.zone_id
+  name    = "test-training-content"
+  type    = "CNAME"
+  # The test cluster's cloudflare-tunnel ingress controller, same tunnel as
+  # api_test above. staging and prod ride c65a2ea6 (cloudflare2-tunnel).
+  content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
   proxied = true
   ttl     = 1
   lifecycle {
@@ -540,6 +581,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
   name       = "purrf"
   domain     = local.environments.prod.origin_web
   type       = "self_hosted"
+  # Never add a training-content host: Access cookies are host-only and
+  # JS-readable, so an application here would give course JavaScript a valid
+  # identity token. See cloudflare_dns_record.training_content_test.
   destinations = [
     { type = "public", uri = local.environments.prod.origin_web },
     { type = "public", uri = local.environments.prod.api_host },
@@ -567,6 +611,10 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
     { # Auth0
       id         = "791a5e24-4a75-4d7e-9f7d-5fafd25a1602"
       precedence = 2
+    },
+    { # Uptime Kuma health checks (see the uptime_kuma policy resource).
+      id         = cloudflare_zero_trust_access_policy.uptime_kuma.id
+      precedence = 3
     },
   ]
 }
@@ -617,10 +665,17 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test
       "profile",
     ]
 
+    # Matches the live IdP: the extra identity/diagnostic claims were added
+    # in the dashboard while debugging test logins (login_diag) and
+    # phone_number was dropped; codified as-is.
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
+      "picture",
     ]
 
     email_claim_name = "aud"
@@ -648,13 +703,33 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_stag
 
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
+      "picture",
     ]
 
     email_claim_name = "aud"
     pkce_enabled     = true
   }
+}
+
+# Lets Uptime Kuma probe prod through CF Access: a service token presented
+# from the Gerrit host's IP, no user identity. Replaces the app-scoped policy
+# that was hand-created in the dashboard (id 03ae6b7f…), which Terraform
+# could neither reference nor preserve.
+resource "cloudflare_zero_trust_access_policy" "uptime_kuma" {
+  account_id = local.cloudflare_account_id
+  name       = "Uptime Kuma"
+  decision   = "non_identity"
+  include = [{
+    service_token = { token_id = "3bb268f0-15bc-4626-9d18-e34eb46ef15b" }
+  }]
+  require = [{
+    ip = { ip = "140.83.87.89/32" }
+  }]
 }
 
 resource "cloudflare_zero_trust_access_policy" "purrf_auth0_test" {
@@ -684,6 +759,8 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
   name       = "purrf_test"
   domain     = local.environments.test.origin_web
   type       = "self_hosted"
+  # test-training-content.purrf.io is deliberately absent: an Access
+  # application here would give course JavaScript a readable identity token.
   destinations = [
     { type = "public", uri = local.environments.test.origin_web },
     { type = "public", uri = local.environments.test.api_host },
@@ -724,19 +801,22 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   name       = "purrf_staging"
   domain     = local.environments.staging.origin_web
   type       = "self_hosted"
+  # Never add a training-content host: Access cookies are host-only and
+  # JS-readable, so an application here would give course JavaScript a valid
+  # identity token. See cloudflare_dns_record.training_content_test.
   destinations = [
     { type = "public", uri = local.environments.staging.origin_web },
     { type = "public", uri = local.environments.staging.api_host },
     { type = "public", uri = "staging.purrf.pages.dev" },
   ]
-  allowed_idps = [
-    "762bbddc-6753-4c4b-898e-89e18ecc410c",
-    cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id,
-  ]
+  # Single IdP + auto-redirect: like test, CF Access skips its own login
+  # chooser and sends visitors straight to the Auth0 page. (Prod keeps the
+  # two-IdP chooser; staging deliberately trades that fidelity away.)
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true
@@ -759,4 +839,208 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
       precedence = 2
     },
   ]
+}
+
+# Notification push gateway. Prod gets its own set once staging has run for
+# real; every environment needs a full set of its own, because the Worker
+# reaching one backend must not hold a credential the others honour.
+#
+# <env>-hook.purrf.io is answered entirely by a Worker. The AAAA record points
+# at the reserved discard address and is proxied, so the name resolves and
+# Cloudflare terminates it, but there is no origin behind it. The route that
+# actually serves the hostname is declared in
+# workers/pubsub-gateway/wrangler.jsonc.
+
+
+resource "cloudflare_dns_record" "hook_test" {
+  zone_id = local.zone_id
+  name    = "test-hook"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+# The gateway Worker reaches the backend with an Access service token, which
+# is the Worker's entire reason for existing: Pub/Sub cannot send one itself.
+# client_id and client_secret are computed here and applied to the Worker out
+# of band -- provider v5 has no Worker-secret resource, and the script is
+# owned by its own deploy rather than by Terraform. See the runbook.
+
+resource "cloudflare_zero_trust_access_service_token" "notification_gateway_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-gateway-test"
+  # Non-expiring. An expiry would be silent from the outside: Access starts
+  # refusing the gateway, delivery reads that as a transient failure, and the
+  # messages retry until they dead-letter, with nothing raised. Rotation is a
+  # deliberate act instead -- see outputs.tf.
+  duration = "forever"
+}
+
+
+# A path-scoped Access application, deliberately separate from the host-wide
+# purrf application rather than another policy on it: Cloudflare matches the
+# most specific application, so this one governs the delivery route alone and
+# leaves the application covering the rest of the host untouched.
+#
+# Every backend path in the gateway Worker's route table has to be listed here.
+# One that is not falls to the host-wide application, which answers the service
+# token with a redirect to a login page; the Worker refuses to follow it and
+# reports a 502.
+
+resource "cloudflare_zero_trust_access_application" "notification_delivery_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-delivery-test"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.test.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/gerrit" },
+  ]
+  # A machine endpoint: nobody should find it in the App Launcher.
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.notification_delivery_test.id
+      precedence = 1
+    },
+  ]
+}
+
+
+# Only the gateway Worker's service token gets through. non_identity because
+# there is no human on this path -- a browser reaching it should be rejected,
+# not shown a login.
+
+resource "cloudflare_zero_trust_access_policy" "notification_delivery_test" {
+  account_id = local.cloudflare_account_id
+  name       = "gateway-worker-only-test"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.notification_gateway_test.id
+    }
+  }]
+}
+
+
+# Apply router: public entry for candidates, answered by a Worker. Keep it out
+# of every Access application -- its visitors have not signed in.
+
+resource "cloudflare_dns_record" "apply_test" {
+  zone_id = local.zone_id
+  name    = "test-apply"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+resource "cloudflare_zero_trust_access_service_token" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-apply-router-test"
+  duration   = "forever"
+}
+
+
+# The backend serves this path without a session; this application is what
+# keeps it closed to everyone but the router.
+
+resource "cloudflare_zero_trust_access_application" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-apply-router-test"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.test.api_host}/api/recruiting/anonymous/jobs" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.apply_router_test.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "apply_router_test" {
+  account_id = local.cloudflare_account_id
+  name       = "apply-router-only-test"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.apply_router_test.id
+    }
+  }]
+}
+
+
+# The staging set. Everything above about why each of these four exists holds
+# here unchanged; only the environment differs.
+
+resource "cloudflare_dns_record" "hook_staging" {
+  zone_id = local.zone_id
+  name    = "staging-hook"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+resource "cloudflare_zero_trust_access_service_token" "notification_gateway_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-gateway-staging"
+  duration   = "forever"
+}
+
+
+resource "cloudflare_zero_trust_access_application" "notification_delivery_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-delivery-staging"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.staging.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.staging.api_host}/api/pubsub/push/gerrit" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.notification_delivery_staging.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "notification_delivery_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "gateway-worker-only-staging"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.notification_gateway_staging.id
+    }
+  }]
 }

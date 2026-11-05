@@ -1,0 +1,12 @@
+{
+  "name": "purrf-pubsub-gateway",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Public front door for Pub/Sub push: verifies Google's OIDC token and forwards to the backend carrying the CF Access service token Pub/Sub cannot send.",
+  "scripts": {
+    "test": "pnpm dlx vitest@2 run",
+    "deploy": "pnpm dlx wrangler@4 deploy",
+    "tail": "pnpm dlx wrangler@4 tail",
+    "destroy": "pnpm dlx wrangler@4 delete"
+  }
+}

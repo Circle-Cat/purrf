@@ -20,6 +20,9 @@ class TestMicrosoftMeetingChatTopicCacheService(IsolatedAsyncioTestCase):
         self.mock_retry_utils.get_retry_on_transient.side_effect = (
             lambda func, *args, **kwargs: func(*args, **kwargs)
         )
+        self.mock_retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         self.microsoft_meeting_chat_topic_cache_service = (
             MicrosoftMeetingChatTopicCacheService(

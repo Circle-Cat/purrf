@@ -1,0 +1,157 @@
+import unittest
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from backend.dto.user_context_dto import UserContextDto
+from backend.recruiting.application_controller import ApplicationController
+
+
+class TestApplicationController(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.session = AsyncMock()
+        self.database = MagicMock()
+        self.database.session.return_value.__aenter__.return_value = self.session
+        self.database.session.return_value.__aexit__.return_value = None
+
+        self.app_service = MagicMock()
+        self.app_service.submit = AsyncMock(return_value={"id": 100})
+        self.app_service.edit = AsyncMock(return_value={"id": 100})
+        self.app_service.get_mine = AsyncMock(return_value=None)
+        self.app_service.get_job_for_applicant = AsyncMock(return_value={"id": 1})
+
+        self.job_service = MagicMock()
+
+        self.resume_storage = MagicMock()
+        self.resume_storage.put = MagicMock(return_value=("abc", "resumes/abc.pdf"))
+
+        self.controller = ApplicationController(
+            self.app_service, self.job_service, self.resume_storage, self.database
+        )
+
+        self.patcher = patch("backend.recruiting.application_controller.api_response")
+        self.mock_api_response = self.patcher.start()
+        self.mock_api_response.side_effect = (
+            lambda message, data=None, status_code=HTTPStatus.OK, success=True: {
+                "message": message,
+                "data": data,
+            }
+        )
+        self.addCleanup(self.patcher.stop)
+
+        self.ctx = UserContextDto(sub="s", primary_email="a@b.com", user_id=2)
+
+    async def test_get_public_job_delegates_with_the_caller(self):
+        """The caller is part of the lookup: an applicant may read back a
+        posting that has since stopped being live, a stranger may not."""
+        resp = await self.controller.get_public_job(self.ctx, 1)
+        self.app_service.get_job_for_applicant.assert_awaited_once_with(
+            self.session, self.ctx, 1
+        )
+        self.assertEqual(resp["data"], {"id": 1})
+
+    async def test_upload_resume_returns_object_key(self):
+        upload = MagicMock()
+        upload.read = AsyncMock(return_value=b"%PDF-1.4")
+        resp = await self.controller.upload_resume(self.ctx, upload)
+        self.resume_storage.put.assert_called_once_with(b"%PDF-1.4")
+        self.assertEqual(
+            resp["data"], {"sha256": "abc", "objectKey": "resumes/abc.pdf"}
+        )
+
+    async def test_submit_delegates_current_user(self):
+        from backend.dto.application_dto import ApplicationSubmitDto
+
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        resp = await self.controller.submit_application(self.ctx, dto)
+        self.app_service.submit.assert_awaited_once_with(self.session, self.ctx, dto)
+        self.assertEqual(resp["data"], {"id": 100})
+
+    async def test_edit_application_delegates(self):
+        from backend.dto.application_dto import ApplicationEditDto
+
+        dto = ApplicationEditDto.model_validate({})
+        resp = await self.controller.edit_application(self.ctx, 5, dto)
+        self.app_service.edit.assert_awaited_once_with(self.session, self.ctx, 5, dto)
+        self.assertEqual(resp["data"], {"id": 100})
+
+    async def test_list_public_jobs_delegates(self):
+        from backend.dto.job_dto import PublicJobSummaryDto
+        from backend.common.recruiting_enums import JobKind
+
+        summaries = [
+            PublicJobSummaryDto(
+                id=1, title="Mentee", kind=JobKind.ACTIVITY, description=None
+            )
+        ]
+        self.job_service.list_publicly_visible = AsyncMock(return_value=summaries)
+        resp = await self.controller.list_public_jobs(self.ctx)
+        self.job_service.list_publicly_visible.assert_awaited_once_with(self.session)
+        self.assertEqual(resp["data"][0].title, "Mentee")
+
+    async def test_list_anonymous_jobs_returns_the_candidate_summaries(self):
+        from backend.dto.job_dto import PublicJobSummaryDto
+        from backend.common.recruiting_enums import JobKind
+
+        summaries = [
+            PublicJobSummaryDto(
+                id=1, title="Mentee", kind=JobKind.ACTIVITY, description="About"
+            )
+        ]
+        self.job_service.list_publicly_visible = AsyncMock(return_value=summaries)
+        resp = await self.controller.list_anonymous_jobs()
+        self.job_service.list_publicly_visible.assert_awaited_once_with(self.session)
+        self.assertEqual(resp["data"], summaries)
+
+    def test_anonymous_job_list_route_is_not_wrapped_by_authenticate(self):
+        """authenticate() stamps __wrapped__ via functools.wraps; the anonymous
+        route must be the bare method so it needs no current_user."""
+        route = next(
+            r
+            for r in self.controller.router.routes
+            if r.path == "/recruiting/anonymous/jobs"
+        )
+        self.assertFalse(hasattr(route.endpoint, "__wrapped__"))
+        self.assertEqual(route.methods, {"GET"})
+
+    def test_every_other_route_still_authenticates(self):
+        """Only the anonymous list is open; a new route left unwrapped by
+        mistake would fail here."""
+        for route in self.controller.router.routes:
+            if route.path == "/recruiting/anonymous/jobs":
+                continue
+            with self.subTest(path=route.path):
+                self.assertTrue(hasattr(route.endpoint, "__wrapped__"))
+
+    async def test_get_my_application_uses_job_id_query_param(self):
+        resp = await self.controller.get_my_application(self.ctx, job_id=7)
+        self.app_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 7)
+        self.assertIsNone(resp["data"])
+
+    async def test_list_my_applications_delegates(self):
+        payload = {
+            "applications": [{"applicationId": 10}],
+            "mentorshipRoles": ["mentor"],
+        }
+        self.app_service.list_mine = AsyncMock(return_value=payload)
+        resp = await self.controller.list_my_applications(self.ctx)
+        self.app_service.list_mine.assert_awaited_once_with(self.session, self.ctx)
+        self.assertEqual(resp["data"], payload)
+        self.assertEqual(["mentor"], resp["data"]["mentorshipRoles"])
+        self.assertNotIn("lastMentorshipRole", resp["data"])
+
+    async def test_get_my_latest_profile_delegates_and_passes_no_id(self):
+        """There is no id to pass, so no application but the caller's own can
+        be reached through this route."""
+        blocks = {"personal": {"firstName": "Cand"}, "education": [], "experience": []}
+        self.app_service.get_my_latest_profile = AsyncMock(return_value=blocks)
+
+        resp = await self.controller.get_my_latest_profile(self.ctx)
+
+        self.app_service.get_my_latest_profile.assert_awaited_once_with(
+            self.session, self.ctx
+        )
+        self.assertEqual(resp["data"], blocks)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,56 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Cross-language test fixtures. Each is consumed by a py_test and a
+# vitest_test so one file defines the behaviour both implementations of a
+# mirrored rule must satisfy.
+filegroup(
+    name = "form_visibility_vectors",
+    srcs = ["form_visibility_vectors.json"],
+)
+
+js_library(
+    name = "form_visibility_vectors_js",
+    srcs = ["form_visibility_vectors.json"],
+)
+
+filegroup(
+    name = "application_stages_vector",
+    srcs = ["application_stages.json"],
+)
+
+js_library(
+    name = "application_stages_vector_js",
+    srcs = ["application_stages.json"],
+)
+
+filegroup(
+    name = "application_lock_reasons_vector",
+    srcs = ["application_lock_reasons.json"],
+)
+
+js_library(
+    name = "application_lock_reasons_vector_js",
+    srcs = ["application_lock_reasons.json"],
+)
+
+filegroup(
+    name = "job_statuses_vector",
+    srcs = ["job_statuses.json"],
+)
+
+js_library(
+    name = "job_statuses_vector_js",
+    srcs = ["job_statuses.json"],
+)
+
+filegroup(
+    name = "bell_event_types_vector",
+    srcs = ["bell_event_types.json"],
+)
+
+js_library(
+    name = "bell_event_types_vector_js",
+    srcs = ["bell_event_types.json"],
+)

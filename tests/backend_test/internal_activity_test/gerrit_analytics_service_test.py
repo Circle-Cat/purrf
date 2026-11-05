@@ -1,6 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
 from datetime import date, datetime, timezone
+from backend.common.exceptions import ActivityDataUnavailableError
+from backend.internal_activity_service.activity_query_cache import (
+    ActivityQueryCache,
+)
 from backend.internal_activity_service.gerrit_analytics_service import (
     GerritAnalyticsService,
 )
@@ -39,6 +43,9 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.retry_utils.get_retry_on_transient.side_effect = (
             lambda func, *args, **kwargs: func(*args, **kwargs)
         )
+        self.retry_utils.execute_pipeline.side_effect = (
+            lambda pipeline: pipeline.execute()
+        )
 
         self.service = GerritAnalyticsService(
             logger=self.logger,
@@ -47,6 +54,7 @@ class TestGerritAnalyticsService(unittest.TestCase):
             ldap_service=self.ldap_service,
             date_time_util=self.date_time_util,
             gerrit_client=self.gerrit_client,
+            activity_query_cache=ActivityQueryCache(logger=MagicMock()),
         )
 
         self.mock_pipeline = MagicMock()
@@ -343,6 +351,99 @@ class TestGerritAnalyticsService(unittest.TestCase):
 
         self.assertEqual(result, {})
         self.ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
+
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
+    def test_repeated_query_reads_redis_once(self, mock_dt):
+        mock_dt.now.return_value.date.return_value = date(2025, 10, 29)
+        self.mock_pipeline.execute.return_value = [
+            self.default_hgetall_data,
+            self.default_hgetall_data,
+            self.default_hgetall_data,
+            self.default_hgetall_data,
+        ]
+
+        first = self.service.get_gerrit_stats(
+            ldap_list=["user1", "user2"],
+            start_date_str="2025-10-21",
+            end_date_str="2025-10-28",
+        )
+        second = self.service.get_gerrit_stats(
+            ldap_list=["user2", "user1"],
+            start_date_str="2025-10-21",
+            end_date_str="2025-10-28",
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(second["user1"][GERRIT_CL_MERGED_FIELD], 20)
+        self.mock_pipeline.execute.assert_called_once()
+
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
+    def test_full_and_brief_stats_do_not_share_a_result(self, mock_dt):
+        mock_dt.now.return_value.date.return_value = date(2025, 10, 29)
+        self.mock_pipeline.execute.side_effect = [
+            [self.default_hgetall_data, self.default_hgetall_data],
+            [self.default_hgetall_data, self.default_hgetall_data, 4],
+        ]
+
+        brief = self.service.get_gerrit_stats(ldap_list=["user1"])
+        full = self.service.get_gerrit_stats(
+            ldap_list=["user1"], include_full_stats=True
+        )
+
+        self.assertEqual(brief["user1"][GERRIT_CL_ABANDONED_FIELD], 0)
+        self.assertEqual(full["user1"][GERRIT_CL_ABANDONED_FIELD], 4)
+
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
+    def test_same_range_before_and_after_midnight_does_not_share_a_result(
+        self, mock_dt
+    ):
+        # Before midnight the range ends today and counts under-review CLs;
+        # after it, the same request no longer does.
+        mock_dt.now.return_value.date.side_effect = [
+            date(2025, 10, 28),
+            date(2025, 10, 29),
+        ]
+        self.mock_pipeline.execute.side_effect = [
+            [self.default_hgetall_data, self.default_hgetall_data, 2, 3],
+            [self.default_hgetall_data, self.default_hgetall_data, 2],
+        ]
+
+        before = self.service.get_gerrit_stats(
+            ldap_list=["user1"],
+            start_date_str="2025-10-21",
+            end_date_str="2025-10-28",
+            include_full_stats=True,
+        )
+        after = self.service.get_gerrit_stats(
+            ldap_list=["user1"],
+            start_date_str="2025-10-21",
+            end_date_str="2025-10-28",
+            include_full_stats=True,
+        )
+
+        self.assertEqual(before["user1"][GERRIT_CL_UNDER_REVIEW_FIELD], 3)
+        self.assertIsNone(after["user1"][GERRIT_CL_UNDER_REVIEW_FIELD])
+        self.assertEqual(self.mock_pipeline.execute.call_count, 2)
+
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
+    def test_short_pipeline_result_raises(self, mock_dt):
+        mock_dt.now.return_value.date.return_value = date(2025, 10, 29)
+        # Two weekly buckets queued, one answered: this used to be an IndexError.
+        self.mock_pipeline.execute.return_value = [self.default_hgetall_data]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.get_gerrit_stats(ldap_list=["user1"])
+
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
+    def test_error_in_pipeline_results_raises(self, mock_dt):
+        mock_dt.now.return_value.date.return_value = date(2025, 10, 29)
+        self.mock_pipeline.execute.return_value = [
+            self.default_hgetall_data,
+            Exception("WRONGTYPE"),
+        ]
+
+        with self.assertRaises(ActivityDataUnavailableError):
+            self.service.get_gerrit_stats(ldap_list=["user1"])
 
 
 if __name__ == "__main__":

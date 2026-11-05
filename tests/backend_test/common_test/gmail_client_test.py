@@ -1,0 +1,1098 @@
+import base64
+import email
+import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from unittest import TestCase, main
+from unittest.mock import Mock, patch
+
+from google.auth.exceptions import RefreshError
+from googleapiclient.errors import HttpError
+
+from backend.common.exceptions import (
+    GmailUnavailableError,
+    HistoryExpiredError,
+    RateLimitedError,
+)
+from backend.common.gmail_client import GmailClient
+
+TEST_CLIENT_ID = "test-client-id"
+TEST_CLIENT_SECRET = "test-client-secret"
+TEST_REFRESH_TOKEN = "test-refresh-token"
+TEST_SENDER = "recruiting@circlecat.org"
+OTHER_SENDER = "notification@circlecat.org"
+
+_ENV = {
+    "GMAIL_CLIENT_ID": TEST_CLIENT_ID,
+    "GMAIL_CLIENT_SECRET": TEST_CLIENT_SECRET,
+    "GMAIL_REFRESH_TOKEN": TEST_REFRESH_TOKEN,
+}
+
+
+def _http_error(status: int, content: bytes = b"{}") -> HttpError:
+    """Build a googleapiclient HttpError carrying the given HTTP status."""
+    resp = Mock()
+    resp.status = status
+    return HttpError(resp=resp, content=content)
+
+
+# The body Gmail sent back when the watch topic was in another project.
+_INVALID_TOPIC_BODY = (
+    b'{"error": {"code": 400, "message": "Invalid topicName does not match '
+    b'projects/purrf-auth/topics/*", "errors": [{"message": "Invalid topicName '
+    b'does not match projects/purrf-auth/topics/*", "domain": "global", '
+    b'"reason": "invalidArgument"}], "status": "INVALID_ARGUMENT"}}'
+)
+
+
+class _FakeBatch:
+    """Stand-in for googleapiclient's BatchHttpRequest.
+
+    Replays a canned outcome per request id through the callback. Deliberately
+    in REVERSE insertion order: Gmail documents that a batch's calls may run in
+    any order, so a test that only passes when the client re-sorts its results
+    is the one worth having.
+    """
+
+    def __init__(self, callback, outcomes, on_execute=None):
+        self._callback = callback
+        self._outcomes = outcomes
+        self._on_execute = on_execute
+        self.request_ids = []
+
+    def add(self, request, request_id):
+        self.request_ids.append(request_id)
+
+    def execute(self):
+        if self._on_execute is not None:
+            raise self._on_execute
+        for request_id in reversed(self.request_ids):
+            outcome = self._outcomes[request_id]
+            if isinstance(outcome, Exception):
+                self._callback(request_id, None, outcome)
+            else:
+                self._callback(request_id, outcome, None)
+
+
+def _message(message_id: str, sender: str = "alice@example.com") -> dict:
+    """A minimal Gmail Message resource, enough for _parse_message."""
+    return {
+        "id": message_id,
+        "threadId": "THREAD",
+        "snippet": message_id,
+        "internalDate": "1700000000000",
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [
+                {"name": "From", "value": sender},
+                {"name": "Subject", "value": f"Subject {message_id}"},
+            ],
+            "body": {"data": _b64(f"body {message_id}")},
+        },
+    }
+
+
+def _b64(text: str) -> str:
+    """URL-safe base64 encode a body part the way the Gmail API returns it."""
+    return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii")
+
+
+class _ConcurrencyProbeService:
+    """A fake Gmail service that reports being used by two threads at once.
+
+    A real service owns one ``httplib2`` connection, which two threads cannot
+    share: they write into the same socket and read each other's replies. This
+    stands in for that connection — it records a conflict whenever a second
+    thread enters ``execute`` while another is still inside, and holds each
+    call long enough for an overlap to be observable.
+
+    Each instance represents one service, so a caller that hands the same
+    instance to several threads records conflicts and one that gives each
+    thread its own records none.
+    """
+
+    def __init__(self, conflicts, hold_seconds=0.05):
+        self._conflicts = conflicts
+        self._hold_seconds = hold_seconds
+        self._in_flight = 0
+        self._lock = threading.Lock()
+
+    def users(self):
+        return self
+
+    def messages(self):
+        return self
+
+    def send(self, **_kwargs):
+        return self
+
+    def execute(self):
+        with self._lock:
+            self._in_flight += 1
+            overlapping = self._in_flight
+        if overlapping > 1:
+            self._conflicts.append(overlapping)
+        time.sleep(self._hold_seconds)
+        with self._lock:
+            self._in_flight -= 1
+        return {"id": "m1", "threadId": "t1"}
+
+
+class TestGmailClient(TestCase):
+    def setUp(self):
+        self.env_patcher = patch.dict(os.environ, _ENV, clear=False)
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
+
+        self.logger = Mock()
+
+        # retry_utils.get_retry_on_transient(fn) simply runs fn (no retries).
+        self.retry_utils = Mock()
+        self.retry_utils.get_retry_on_transient.side_effect = lambda fn: fn()
+
+        # Patch the Gmail service builder so no network / discovery happens.
+        self.build_patcher = patch("backend.common.gmail_client.build")
+        self.mock_build = self.build_patcher.start()
+        self.addCleanup(self.build_patcher.stop)
+        self.mock_service = Mock()
+        self.mock_build.return_value = self.mock_service
+
+        # Patch Credentials so we can assert how it is constructed.
+        self.creds_patcher = patch("backend.common.gmail_client.Credentials")
+        self.mock_credentials = self.creds_patcher.start()
+        self.addCleanup(self.creds_patcher.stop)
+
+        self.client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[TEST_SENDER],
+        )
+
+    # ---- construction / env validation --------------------------------
+
+    def test_missing_env_var_raises_value_error(self):
+        with patch.dict(os.environ, {"GMAIL_REFRESH_TOKEN": ""}, clear=False):
+            with self.assertRaises(ValueError):
+                GmailClient(
+                    logger=self.logger,
+                    retry_utils=self.retry_utils,
+                    sender_addresses=[TEST_SENDER],
+                )
+
+    def test_no_sender_address_raises_value_error(self):
+        # A mailbox with no configured From is unusable: every send would have
+        # to invent one.
+        for empty in ([], None, [""]):
+            with self.subTest(sender_addresses=empty):
+                with self.assertRaises(ValueError):
+                    GmailClient(
+                        logger=self.logger,
+                        retry_utils=self.retry_utils,
+                        sender_addresses=empty,
+                    )
+
+    def test_constructor_makes_no_network_call(self):
+        # Building the client alone must not build the Gmail service.
+        self.mock_build.assert_not_called()
+
+    # ---- send_message -------------------------------------------------
+
+    def _sent_mime(self):
+        """Decode the raw MIME message passed to messages().send()."""
+        send = self.mock_service.users().messages().send
+        raw = send.call_args.kwargs["body"]["raw"]
+        return email.message_from_bytes(base64.urlsafe_b64decode(raw))
+
+    def _plain_part(self):
+        """Decode the text/plain alternative of the sent message."""
+        for part in self._sent_mime().walk():
+            if part.get_content_type() == "text/plain":
+                return part.get_payload(decode=True).decode("utf-8")
+        self.fail("message has no text/plain alternative")
+
+    def _stub_send_result(self, message_id="m1", thread_id="t1"):
+        self.mock_service.users().messages().send().execute.return_value = {
+            "id": message_id,
+            "threadId": thread_id,
+        }
+
+    def test_send_message_builds_multipart_alternative(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["alice@example.com"],
+            subject="Hi",
+            body="<p>Hello</p>",
+            sender=TEST_SENDER,
+        )
+        mime = self._sent_mime()
+        self.assertEqual(mime["From"], TEST_SENDER)
+        self.assertEqual(mime["To"], "alice@example.com")
+        self.assertEqual(mime["Subject"], "Hi")
+        self.assertTrue(mime["Message-ID"])
+        self.assertEqual(mime.get_content_type(), "multipart/alternative")
+        parts = {
+            p.get_content_type(): p.get_payload(decode=True).decode("utf-8")
+            for p in mime.walk()
+            if not p.is_multipart()
+        }
+        self.assertIn("<p>Hello</p>", parts["text/html"])
+        self.assertIn("Hello", parts["text/plain"])
+        self.assertNotIn("<p>", parts["text/plain"])
+
+    def _send_body(self, body):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["alice@example.com"], subject="Hi", body=body, sender=TEST_SENDER
+        )
+
+    def test_plain_part_keeps_the_url_of_a_link(self):
+        url = "https://docs.google.com/forms/d/e/1FAIpQLS/viewform"
+        self._send_body(f'<p>Please fill out <a href="{url}">this form</a>.</p>')
+        self.assertEqual(
+            self._plain_part().strip(), f"Please fill out this form ({url})."
+        )
+
+    def test_plain_part_strips_markup_inside_the_link_label(self):
+        self._send_body(
+            '<a href="https://x.test" target="_blank">click <b>here</b></a>'
+        )
+        self.assertEqual(self._plain_part().strip(), "click here (https://x.test)")
+
+    def test_plain_part_does_not_repeat_a_url_that_is_its_own_label(self):
+        self._send_body('<a href="https://x.test/a">https://x.test/a</a>')
+        self.assertEqual(self._plain_part().strip(), "https://x.test/a")
+
+    def test_plain_part_hides_the_mailto_scheme_when_the_label_is_the_address(self):
+        self._send_body('<a href="mailto:hr@circlecat.org">hr@circlecat.org</a>')
+        self.assertEqual(self._plain_part().strip(), "hr@circlecat.org")
+
+    def test_plain_part_leaves_an_anchor_without_href_alone(self):
+        self._send_body('<a name="top">Back to top</a>')
+        self.assertEqual(self._plain_part().strip(), "Back to top")
+
+    def test_send_message_without_a_sender_is_a_type_error(self):
+        # ``sender`` has no default on purpose. Gmail does not reject an
+        # unowned From, it silently rewrites it to the mailbox owner, so a
+        # caller that forgets to say who it is must fail here instead.
+        self._stub_send_result()
+        with self.assertRaises(TypeError):
+            self.client.send_message(
+                to=["a@example.com"], subject="Hi", body="<p>x</p>"
+            )
+
+    def test_send_message_uses_the_given_sender_as_from(self):
+        client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[TEST_SENDER, OTHER_SENDER],
+        )
+        self._stub_send_result()
+        client.send_message(
+            to=["a@example.com"],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=OTHER_SENDER,
+        )
+        self.assertEqual(self._sent_mime()["From"], OTHER_SENDER)
+
+    def test_send_message_keeps_a_display_name_in_from(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["a@example.com"],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=f"Circle Cat Recruiting <{TEST_SENDER}>",
+        )
+        mime = self._sent_mime()
+        self.assertEqual(mime["From"], f"Circle Cat Recruiting <{TEST_SENDER}>")
+        # The Message-ID domain comes from the address, not the display name.
+        self.assertTrue(mime["Message-ID"].endswith("@circlecat.org>"))
+
+    def test_send_message_rejects_a_sender_the_mailbox_does_not_own(self):
+        with self.assertRaises(ValueError):
+            self.client.send_message(
+                to=["a@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender="someone-else@example.com",
+            )
+        # Rejected before any Gmail service is built, so nothing went out.
+        self.mock_build.assert_not_called()
+
+    def test_owns_address_ignores_case_and_reads_a_display_name_header(self):
+        self.assertTrue(self.client.owns_address(TEST_SENDER))
+        self.assertTrue(self.client.owns_address(TEST_SENDER.upper()))
+        self.assertTrue(
+            self.client.owns_address(f"Circle Cat Recruiting <{TEST_SENDER}>")
+        )
+
+    def test_owns_address_rejects_other_addresses_and_blanks(self):
+        for value in ("cand@example.com", "recruiting@example.com", "", None):
+            with self.subTest(value=value):
+                self.assertFalse(self.client.owns_address(value))
+
+    def test_send_message_returns_ids(self):
+        self._stub_send_result(message_id="MID", thread_id="TID")
+        result = self.client.send_message(
+            to=["a@example.com"],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
+        )
+        self.assertEqual(result["gmail_message_id"], "MID")
+        self.assertEqual(result["gmail_thread_id"], "TID")
+        self.assertTrue(result["rfc822_message_id"])
+        # Minted under the sender's domain, not the mailbox owner's.
+        self.assertTrue(result["rfc822_message_id"].endswith("@circlecat.org>"))
+        # The returned rfc822 id is the one we put on the wire.
+        self.assertEqual(result["rfc822_message_id"], self._sent_mime()["Message-ID"])
+
+    def test_new_message_omits_thread_id(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["a@example.com"],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
+        )
+        body = self.mock_service.users().messages().send.call_args.kwargs["body"]
+        self.assertNotIn("threadId", body)
+
+    def test_reply_sets_thread_id_and_headers(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["a@example.com"],
+            subject="Re: Hi",
+            body="<p>reply</p>",
+            sender=TEST_SENDER,
+            thread_id="THREAD",
+            in_reply_to="<m0@mail>",
+            references="<m0@mail>",
+        )
+        body = self.mock_service.users().messages().send.call_args.kwargs["body"]
+        self.assertEqual(body["threadId"], "THREAD")
+        mime = self._sent_mime()
+        self.assertEqual(mime["In-Reply-To"], "<m0@mail>")
+        self.assertEqual(mime["References"], "<m0@mail>")
+
+    def test_send_message_rate_limited(self):
+        self.mock_service.users().messages().send().execute.side_effect = _http_error(
+            429
+        )
+        with self.assertRaises(RateLimitedError):
+            self.client.send_message(
+                to=["a@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+
+    def test_send_message_server_error(self):
+        self.mock_service.users().messages().send().execute.side_effect = _http_error(
+            500
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.send_message(
+                to=["a@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+
+    def test_send_message_refresh_error_translated(self):
+        # A revoked/expired refresh token surfaces as RefreshError from inside
+        # execute(); the transport must translate it to a clean RuntimeError
+        # rather than leaking the raw google-auth exception.
+        self.mock_service.users().messages().send().execute.side_effect = RefreshError(
+            "invalid_grant"
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.send_message(
+                to=["a@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+
+    def test_service_built_once_across_calls(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["a@example.com"],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
+        )
+        self.client.send_message(
+            to=["a@example.com"],
+            subject="Hi again",
+            body="<p>y</p>",
+            sender=TEST_SENDER,
+        )
+        self.assertEqual(self.mock_build.call_count, 1)
+
+    # ---- concurrency ---------------------------------------------------
+
+    _THREAD_COUNT = 10
+
+    def _send_from_threads(self, conflicts):
+        """Warm the client, then send from several threads at once.
+
+        The warm-up send happens first and on this thread, so the client has
+        already resolved a service by the time the threads start — production
+        sends through a client that has been alive for a while, not a cold one.
+
+        Every thread waits on a barrier before sending, so the sends genuinely
+        overlap rather than trickling through a pool that never grows.
+
+        Args:
+            conflicts (list): Collects one entry per overlapping ``execute``.
+
+        Returns:
+            list[dict]: Each thread's ``send_message`` result.
+        """
+        self.mock_build.side_effect = lambda *_args, **_kwargs: (
+            _ConcurrencyProbeService(conflicts)
+        )
+        self._send("warm up")
+
+        barrier = threading.Barrier(self._THREAD_COUNT)
+
+        def send(index):
+            barrier.wait(timeout=10)
+            return self._send(f"Hi {index}")
+
+        with ThreadPoolExecutor(max_workers=self._THREAD_COUNT) as pool:
+            return list(pool.map(send, range(self._THREAD_COUNT)))
+
+    def _send(self, subject):
+        return self.client.send_message(
+            to=["a@example.com"],
+            subject=subject,
+            body="<p>x</p>",
+            sender=TEST_SENDER,
+        )
+
+    def test_concurrent_sends_never_enter_one_service_together(self):
+        conflicts = []
+
+        results = self._send_from_threads(conflicts)
+
+        self.assertEqual(conflicts, [])
+        self.assertEqual(len(results), self._THREAD_COUNT)
+
+    def test_each_sending_thread_builds_its_own_service(self):
+        self._send_from_threads([])
+
+        # One per sending thread, plus the warm-up on this thread.
+        self.assertEqual(self.mock_build.call_count, self._THREAD_COUNT + 1)
+
+    def test_each_sending_thread_builds_its_own_credentials(self):
+        self._send_from_threads([])
+
+        # A Credentials object holds a mutable access token and expiry, so
+        # threads refreshing one shared instance race.
+        self.assertEqual(self.mock_credentials.call_count, self._THREAD_COUNT + 1)
+
+    def test_credentials_built_from_refresh_token(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["a@example.com"],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
+        )
+        kwargs = self.mock_credentials.call_args.kwargs
+        self.assertEqual(kwargs["refresh_token"], TEST_REFRESH_TOKEN)
+        self.assertEqual(kwargs["client_id"], TEST_CLIENT_ID)
+        self.assertEqual(kwargs["client_secret"], TEST_CLIENT_SECRET)
+        # google-auth needs the token endpoint to refresh on its own.
+        self.assertTrue(kwargs["token_uri"])
+        # Scopes must NOT be sent on a refresh-token grant: Google rejects any
+        # scope that is not a subset of what the token was granted.
+        self.assertNotIn("scopes", kwargs)
+
+    # ---- list_thread_message_ids --------------------------------------
+
+    def _stub_thread_ids(self, messages):
+        """Stub threads().get() for the metadata-only id listing."""
+        self.mock_service.users().threads().get().execute.return_value = {
+            "id": "THREAD",
+            "messages": messages,
+        }
+
+    def test_list_thread_message_ids_returns_ids_in_gmail_order(self):
+        self._stub_thread_ids([{"id": "g1"}, {"id": "g2"}, {"id": "g3"}])
+        self.assertEqual(
+            self.client.list_thread_message_ids("THREAD"), ["g1", "g2", "g3"]
+        )
+
+    def test_list_thread_message_ids_requests_metadata_only(self):
+        # The whole point of the split: never pull bodies just to learn ids.
+        self._stub_thread_ids([])
+        self.client.list_thread_message_ids("THREAD")
+        kwargs = self.mock_service.users().threads().get.call_args.kwargs
+        self.assertEqual(kwargs["id"], "THREAD")
+        self.assertEqual(kwargs["format"], "metadata")
+        self.assertEqual(kwargs["fields"], "messages(id)")
+
+    def test_list_thread_message_ids_empty_thread(self):
+        self.mock_service.users().threads().get().execute.return_value = {"id": "T"}
+        self.assertEqual(self.client.list_thread_message_ids("THREAD"), [])
+
+    def test_list_thread_message_ids_rate_limited(self):
+        self.mock_service.users().threads().get().execute.side_effect = _http_error(429)
+        with self.assertRaises(RateLimitedError):
+            self.client.list_thread_message_ids("THREAD")
+
+    # ---- get_message ---------------------------------------------------
+
+    def _stub_message(self, message):
+        self.mock_service.users().messages().get().execute.return_value = message
+
+    def test_get_message_parses_headers_and_bodies(self):
+        self._stub_message({
+            "id": "g1",
+            "threadId": "THREAD",
+            "snippet": "hello there",
+            "internalDate": "1700000000000",
+            "payload": {
+                "mimeType": "multipart/alternative",
+                "headers": [
+                    {"name": "From", "value": TEST_SENDER},
+                    {"name": "To", "value": "alice@example.com"},
+                    {"name": "Cc", "value": "bob@example.com"},
+                    {"name": "Subject", "value": "Hi"},
+                    {"name": "Message-ID", "value": "<g1@mail>"},
+                ],
+                "parts": [
+                    {"mimeType": "text/plain", "body": {"data": _b64("Hello there")}},
+                    {
+                        "mimeType": "text/html",
+                        "body": {"data": _b64("<p>Hello there</p>")},
+                    },
+                ],
+            },
+        })
+        message = self.client.get_message("g1")
+        self.assertEqual(message["gmail_message_id"], "g1")
+        self.assertEqual(message["gmail_thread_id"], "THREAD")
+        self.assertEqual(message["rfc822_message_id"], "<g1@mail>")
+        self.assertEqual(message["from_address"], TEST_SENDER)
+        self.assertEqual(message["to_addresses"], "alice@example.com")
+        self.assertEqual(message["subject"], "Hi")
+        self.assertEqual(message["html"], "<p>Hello there</p>")
+        self.assertEqual(message["plain"], "Hello there")
+        self.assertEqual(message["snippet"], "hello there")
+        self.assertEqual(message["gmail_internal_date"], "1700000000000")
+
+    def test_get_message_handles_single_part_plain_body(self):
+        self._stub_message({
+            "id": "g2",
+            "threadId": "THREAD",
+            "snippet": "a reply",
+            "internalDate": "1700000100000",
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "From", "value": "alice@example.com"},
+                    {"name": "Subject", "value": "Re: Hi"},
+                ],
+                "body": {"data": _b64("a reply")},
+            },
+        })
+        message = self.client.get_message("g2")
+        self.assertEqual(message["from_address"], "alice@example.com")
+        self.assertEqual(message["plain"], "a reply")
+        self.assertIsNone(message["html"])
+
+    def _parsed_with_headers(self, mime_type, headers):
+        self._stub_message({
+            "id": "g9",
+            "threadId": "THREAD",
+            "payload": {
+                "mimeType": mime_type,
+                "headers": [{"name": k, "value": v} for k, v in headers],
+                "body": {"data": _b64("text")},
+            },
+        })
+        return self.client.get_message("g9")
+
+    def test_a_delivery_report_carries_its_failed_recipients(self):
+        # The headers of the real Gmail bounce seen on test.
+        message = self._parsed_with_headers(
+            "multipart/report",
+            [
+                ("From", "Mail Delivery Subsystem <mailer-daemon@googlemail.com>"),
+                (
+                    "Content-Type",
+                    'multipart/report; boundary="b"; report-type=delivery-status',
+                ),
+                ("Auto-Submitted", "auto-replied"),
+                ("X-Failed-Recipients", "a@x.com"),
+            ],
+        )
+        self.assertEqual(message["failed_recipients"], "a@x.com")
+
+    def test_a_delivery_report_without_x_failed_recipients_is_still_a_bounce(self):
+        message = self._parsed_with_headers(
+            "multipart/report",
+            [
+                (
+                    "Content-Type",
+                    'Multipart/Report; Report-Type="Delivery-Status"; boundary=b',
+                )
+            ],
+        )
+        self.assertEqual(message["failed_recipients"], "")
+
+    def test_an_out_of_office_reply_is_not_a_bounce(self):
+        # Auto-Submitted is on bounces too, so it cannot be what decides.
+        message = self._parsed_with_headers(
+            "multipart/alternative",
+            [
+                ("From", "alice@example.com"),
+                ("Content-Type", 'multipart/alternative; boundary="b"'),
+                ("Auto-Submitted", "auto-replied"),
+            ],
+        )
+        self.assertIsNone(message["failed_recipients"])
+
+    def test_a_reply_from_a_postmaster_address_is_not_a_bounce(self):
+        message = self._parsed_with_headers(
+            "text/plain",
+            [("From", "postmaster@x.com"), ("Content-Type", "text/plain")],
+        )
+        self.assertIsNone(message["failed_recipients"])
+
+    def test_get_message_requests_full_format(self):
+        self._stub_message({"id": "g1", "payload": {}})
+        self.client.get_message("g1")
+        kwargs = self.mock_service.users().messages().get.call_args.kwargs
+        self.assertEqual(kwargs["id"], "g1")
+        self.assertEqual(kwargs["format"], "full")
+
+    def test_get_message_rate_limited(self):
+        self.mock_service.users().messages().get().execute.side_effect = _http_error(
+            429
+        )
+        with self.assertRaises(RateLimitedError):
+            self.client.get_message("g1")
+
+    def test_get_message_not_found_raises_runtime_error(self):
+        # A message deleted between listing ids and fetching it -> 404. The
+        # transport must surface it as a clean RuntimeError; the service layer
+        # deliberately lets it propagate (see Task 3).
+        self.mock_service.users().messages().get().execute.side_effect = _http_error(
+            404
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.get_message("gone")
+
+    # ---- get_messages (batched) ----------------------------------------
+
+    def _stub_batches(self, outcomes, on_execute=None):
+        """Hand back a fresh _FakeBatch per new_batch_http_request call."""
+        self.batches = []
+
+        def _new_batch(callback):
+            batch = _FakeBatch(callback, outcomes, on_execute)
+            self.batches.append(batch)
+            return batch
+
+        self.mock_service.new_batch_http_request.side_effect = _new_batch
+
+    def test_get_messages_empty_input_never_touches_gmail(self):
+        self._stub_batches({})
+        self.assertEqual(self.client.get_messages([]), [])
+        self.mock_service.new_batch_http_request.assert_not_called()
+
+    def test_get_messages_returns_input_order_not_batch_order(self):
+        # The fake replays callbacks in reverse, mirroring Gmail's "any order".
+        ids = ["g1", "g2", "g3"]
+        self._stub_batches({i: _message(i) for i in ids})
+
+        messages = self.client.get_messages(ids)
+
+        self.assertEqual([m["gmail_message_id"] for m in messages], ids)
+
+    def test_get_messages_parses_each_message(self):
+        self._stub_batches({"g1": _message("g1", "cand@example.com")})
+
+        message = self.client.get_messages(["g1"])[0]
+
+        self.assertEqual(message["gmail_message_id"], "g1")
+        self.assertEqual(message["gmail_thread_id"], "THREAD")
+        self.assertEqual(message["from_address"], "cand@example.com")
+        self.assertEqual(message["subject"], "Subject g1")
+        self.assertEqual(message["plain"], "body g1")
+
+    def test_get_messages_sends_one_request_for_the_whole_batch(self):
+        ids = [f"g{n}" for n in range(10)]
+        self._stub_batches({i: _message(i) for i in ids})
+
+        self.client.get_messages(ids)
+
+        # The point of the change: ten messages, one HTTP request.
+        self.assertEqual(self.mock_service.new_batch_http_request.call_count, 1)
+        self.assertEqual(self.batches[0].request_ids, ids)
+
+    def test_get_messages_chunks_at_fifty(self):
+        # 50 is Google's recommended ceiling; past it, batches are what trips
+        # rate limiting.
+        ids = [f"g{n}" for n in range(51)]
+        self._stub_batches({i: _message(i) for i in ids})
+
+        messages = self.client.get_messages(ids)
+
+        self.assertEqual(self.mock_service.new_batch_http_request.call_count, 2)
+        self.assertEqual(len(self.batches[0].request_ids), 50)
+        self.assertEqual(len(self.batches[1].request_ids), 1)
+        self.assertEqual([m["gmail_message_id"] for m in messages], ids)
+
+    def test_get_messages_requests_full_format_per_id(self):
+        self._stub_batches({"g1": _message("g1")})
+
+        self.client.get_messages(["g1"])
+
+        kwargs = self.mock_service.users().messages().get.call_args.kwargs
+        self.assertEqual(kwargs["id"], "g1")
+        self.assertEqual(kwargs["format"], "full")
+
+    def test_get_messages_inner_rate_limit_raises_rate_limited(self):
+        # An inner call's error never reaches _execute — it arrives through the
+        # callback — so the 429 translation has to be applied there too, or the
+        # caller loses its retry.
+        self._stub_batches({"g1": _message("g1"), "g2": _http_error(429)})
+
+        with self.assertRaises(RateLimitedError):
+            self.client.get_messages(["g1", "g2"])
+
+    def test_get_messages_inner_not_found_raises_runtime_error(self):
+        # A message deleted between listing and fetching: same outcome as the
+        # single-message path, so sync_thread's behaviour is unchanged.
+        self._stub_batches({"g1": _http_error(404)})
+
+        with self.assertRaises(RuntimeError) as caught:
+            self.client.get_messages(["g1"])
+        self.assertNotIsInstance(caught.exception, RateLimitedError)
+
+    def test_get_messages_batch_level_rate_limit_raises_rate_limited(self):
+        # The batch request itself being throttled, as opposed to one of its
+        # inner calls.
+        self._stub_batches({}, on_execute=_http_error(429))
+
+        with self.assertRaises(RateLimitedError):
+            self.client.get_messages(["g1"])
+
+    def test_get_messages_stops_at_the_failing_chunk(self):
+        ids = [f"g{n}" for n in range(51)]
+        outcomes = {i: _message(i) for i in ids}
+        outcomes["g0"] = _http_error(500)
+        self._stub_batches(outcomes)
+
+        with self.assertRaises(RuntimeError):
+            self.client.get_messages(ids)
+
+        # The second chunk is never sent: no point paying for it once the
+        # caller is going to see a failure anyway.
+        self.assertEqual(self.mock_service.new_batch_http_request.call_count, 1)
+
+    # ---- watch / history ------------------------------------------------
+
+    def test_get_profile_returns_address_and_int_history_id(self):
+        self.mock_service.users.return_value.getProfile.return_value.execute.return_value = {
+            "emailAddress": "purrf@example.com",
+            "historyId": "12345",
+        }
+        self.assertEqual(
+            self.client.get_profile(),
+            {"email_address": "purrf@example.com", "history_id": 12345},
+        )
+
+    def test_watch_filters_to_inbox_and_parses_expiration(self):
+        watch = self.mock_service.users.return_value.watch
+        watch.return_value.execute.return_value = {
+            "historyId": "77",
+            "expiration": "1790000000000",
+        }
+        result = self.client.watch("projects/p/topics/t")
+        watch.assert_called_once_with(
+            userId="me",
+            body={
+                "topicName": "projects/p/topics/t",
+                "labelIds": ["INBOX"],
+                "labelFilterBehavior": "include",
+            },
+        )
+        self.assertEqual(result["history_id"], 77)
+        self.assertEqual(
+            result["expiration"], datetime.fromtimestamp(1790000000, tz=timezone.utc)
+        )
+
+    def test_list_history_collects_thread_ids_across_pages(self):
+        hist = self.mock_service.users.return_value.history.return_value.list
+        hist.return_value.execute.side_effect = [
+            {
+                "history": [
+                    {"messagesAdded": [{"message": {"id": "m1", "threadId": "t1"}}]}
+                ],
+                "historyId": "90",
+                "nextPageToken": "p2",
+            },
+            {
+                "history": [
+                    {
+                        "messagesAdded": [
+                            {"message": {"id": "m2", "threadId": "t2"}},
+                            {"message": {"id": "m3", "threadId": "t1"}},
+                        ]
+                    },
+                    {"labelsAdded": [{"message": {"id": "m9", "threadId": "t9"}}]},
+                ],
+                "historyId": "95",
+            },
+        ]
+        result = self.client.list_history(50)
+        self.assertEqual(result["history_id"], 95)
+        self.assertEqual(result["thread_ids"], {"t1", "t2"})
+        first_call = hist.call_args_list[0].kwargs
+        self.assertEqual(first_call["startHistoryId"], "50")
+        self.assertEqual(first_call["historyTypes"], ["messageAdded"])
+        self.assertNotIn(
+            "labelId", first_call
+        )  # unfiltered: SENT from the Gmail UI is caught too
+
+    def test_list_history_with_no_changes_still_returns_the_mailbox_history_id(self):
+        self.mock_service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+            "historyId": "60"
+        }
+        self.assertEqual(
+            self.client.list_history(60),
+            {"history_id": 60, "thread_ids": set(), "sent_only_thread_ids": set()},
+        )
+
+    def test_list_history_names_threads_whose_new_messages_are_all_sent(self):
+        def added(message_id, thread_id, labels):
+            message = {"id": message_id, "threadId": thread_id}
+            if labels is not None:
+                message["labelIds"] = labels
+            return {"message": message}
+
+        self.mock_service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+            "history": [
+                {
+                    "messagesAdded": [
+                        added("m1", "t-sent", ["SENT"]),
+                        added("m2", "t-mixed", ["SENT"]),
+                        added("m3", "t-inbox", ["INBOX", "UNREAD"]),
+                        added("m4", "t-unlabelled", None),
+                        added("m5", "t-self", ["SENT", "INBOX"]),
+                    ]
+                },
+                {"messagesAdded": [added("m6", "t-mixed", ["INBOX"])]},
+            ],
+            "historyId": "70",
+        }
+        result = self.client.list_history(60)
+        self.assertEqual(
+            result["thread_ids"],
+            {"t-sent", "t-mixed", "t-inbox", "t-unlabelled", "t-self"},
+        )
+        self.assertEqual(result["sent_only_thread_ids"], {"t-sent", "t-self"})
+
+    def test_list_history_404_means_the_cursor_expired(self):
+        self.mock_service.users.return_value.history.return_value.list.return_value.execute.side_effect = _http_error(
+            404
+        )
+        with self.assertRaises(HistoryExpiredError):
+            self.client.list_history(1)
+
+    def test_5xx_is_unavailable_and_still_a_runtime_error(self):
+        self.mock_service.users.return_value.getProfile.return_value.execute.side_effect = _http_error(
+            503
+        )
+        with self.assertRaises(GmailUnavailableError) as ctx:
+            self.client.get_profile()
+        self.assertIsInstance(ctx.exception, RuntimeError)
+
+    def test_api_error_carries_googles_reason(self):
+        self.mock_service.users.return_value.watch.return_value.execute.side_effect = (
+            _http_error(400, _INVALID_TOPIC_BODY)
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.watch("projects/purrf-452300/topics/t")
+
+        expected = (
+            "Invalid topicName does not match projects/purrf-auth/topics/* "
+            "(invalidArgument)"
+        )
+        self.assertEqual(
+            str(ctx.exception), f"Gmail API error during watch: {expected}"
+        )
+        logged = self.logger.error.call_args
+        self.assertIn(expected, logged.args[0] % logged.args[1:])
+
+    def test_api_error_without_a_body_keeps_the_plain_message(self):
+        self.mock_service.users.return_value.watch.return_value.execute.side_effect = (
+            _http_error(400, b"")
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.watch("projects/p/topics/t")
+        self.assertEqual(str(ctx.exception), "Gmail API error during watch")
+
+    def test_batch_inner_error_carries_googles_reason(self):
+        self._stub_batches({"g1": _http_error(400, _INVALID_TOPIC_BODY)})
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.get_messages(["g1"])
+        self.assertIn("(invalidArgument)", str(ctx.exception))
+
+    def test_existing_callers_see_404_as_runtime_error(self):
+        self.mock_service.users.return_value.threads.return_value.get.return_value.execute.side_effect = _http_error(
+            404
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.list_thread_message_ids("gone")
+
+    def _raw_message(self, headers, parts=None):
+        message = _message("m-1")
+        message["payload"]["headers"] = [
+            {"name": name, "value": value} for name, value in headers
+        ]
+        if parts is not None:
+            message["payload"] = {
+                "mimeType": "multipart/mixed",
+                "headers": message["payload"]["headers"],
+                "parts": parts,
+            }
+        return message
+
+    def test_parse_collects_every_recipient_header(self):
+        parsed = self.client._parse_message(
+            self._raw_message([
+                ("To", '"Mentorship" <Mentorship-Test@circlecat.org>, a@example.com'),
+                ("Cc", "inquiries-test@circlecat.org"),
+                ("Delivered-To", "purrf@circlecat.org"),
+                ("Delivered-To", "mentorship-test@circlecat.org"),
+            ])
+        )
+        self.assertEqual(
+            parsed["recipients"],
+            [
+                "mentorship-test@circlecat.org",
+                "a@example.com",
+                "inquiries-test@circlecat.org",
+                "purrf@circlecat.org",
+            ],
+        )
+
+    def test_parse_reads_auto_reply_headers(self):
+        parsed = self.client._parse_message(
+            self._raw_message([
+                ("Auto-Submitted", "auto-replied"),
+                ("Precedence", "bulk"),
+            ])
+        )
+        self.assertEqual(parsed["auto_submitted"], "auto-replied")
+        self.assertEqual(parsed["precedence"], "bulk")
+        plain = self.client._parse_message(self._raw_message([]))
+        self.assertIsNone(plain["auto_submitted"])
+        self.assertIsNone(plain["precedence"])
+
+    def test_parse_lists_attachments_without_their_bytes(self):
+        parsed = self.client._parse_message(
+            self._raw_message(
+                [],
+                parts=[
+                    {"mimeType": "text/plain", "body": {"data": _b64("hi")}},
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "cv.pdf",
+                        "body": {"attachmentId": "att-1", "size": 2048},
+                    },
+                    {
+                        "mimeType": "text/html",
+                        "filename": "",
+                        "body": {"attachmentId": "x"},
+                    },
+                ],
+            )
+        )
+        self.assertEqual(
+            parsed["attachments"],
+            [{"name": "cv.pdf", "size": 2048, "gmailAttachmentId": "att-1"}],
+        )
+
+    def test_parse_keeps_the_content_id_of_an_inline_image(self):
+        parsed = self.client._parse_message(
+            self._raw_message(
+                [],
+                parts=[
+                    {"mimeType": "text/html", "body": {"data": _b64("<p>x</p>")}},
+                    {
+                        "mimeType": "image/png",
+                        "filename": "image.png",
+                        "headers": [{"name": "Content-ID", "value": "<ii_mvk1>"}],
+                        "body": {"attachmentId": "att-1", "size": 40},
+                    },
+                    {
+                        "mimeType": "image/gif",
+                        "filename": "",
+                        "headers": [{"name": "content-id", "value": " <logo@x> "}],
+                        "body": {"attachmentId": "att-2", "size": 9},
+                    },
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "cv.pdf",
+                        "body": {"attachmentId": "att-3", "size": 2},
+                    },
+                ],
+            )
+        )
+        self.assertEqual(
+            parsed["attachments"],
+            [
+                {
+                    "name": "image.png",
+                    "size": 40,
+                    "gmailAttachmentId": "att-1",
+                    "contentId": "ii_mvk1",
+                },
+                {
+                    "name": "image",
+                    "size": 9,
+                    "gmailAttachmentId": "att-2",
+                    "contentId": "logo@x",
+                },
+                {"name": "cv.pdf", "size": 2, "gmailAttachmentId": "att-3"},
+            ],
+        )
+
+    def test_get_attachment_decodes_base64url(self):
+        users = self.mock_service.users.return_value
+        users.messages.return_value.attachments.return_value.get.return_value.execute.return_value = {
+            "data": base64.urlsafe_b64encode(b"%PDF").decode()
+        }
+        self.assertEqual(self.client.get_attachment("m-1", "att-1"), b"%PDF")
+        users.messages.return_value.attachments.return_value.get.assert_called_once_with(
+            userId="me", messageId="m-1", id="att-1"
+        )
+
+    def test_list_send_as_addresses_lowercases(self):
+        users = self.mock_service.users.return_value
+        users.settings.return_value.sendAs.return_value.list.return_value.execute.return_value = {
+            "sendAs": [
+                {"sendAsEmail": "Purrf@circlecat.org"},
+                {"sendAsEmail": "mentorship-test@circlecat.org"},
+            ]
+        }
+        self.assertEqual(
+            self.client.list_send_as_addresses(),
+            {"purrf@circlecat.org", "mentorship-test@circlecat.org"},
+        )
+
+
+if __name__ == "__main__":
+    main()

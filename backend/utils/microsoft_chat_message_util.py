@@ -474,7 +474,7 @@ class MicrosoftChatMessageUtil:
             self._handle_update_message(message, sender_ldap, pipeline)
 
         try:
-            self.retry_utils.get_retry_on_transient(pipeline.execute)
+            self.retry_utils.execute_pipeline(pipeline)
         except Exception as e:
             self.logger.error(
                 "[MicrosoftChatMessageUtil] Failed to execute Redis pipeline for near real-time sync message_id=%s: %s",
@@ -560,7 +560,7 @@ class MicrosoftChatMessageUtil:
             self._handle_created_messages(message, sender_ldap, pipe)
             total_processed += 1
 
-        self.retry_utils.get_retry_on_transient(pipe.execute)
+        self.retry_utils.execute_pipeline(pipe)
 
         self.logger.debug(
             "[MicrosoftChatMessageUtil] Total %d Microsoft chat messages processed, %d messages skipped.",

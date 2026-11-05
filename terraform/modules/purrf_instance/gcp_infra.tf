@@ -33,6 +33,28 @@ resource "google_pubsub_subscription" "subscriptions" {
     dead_letter_topic     = google_pubsub_topic.dlq[each.key].id
     max_delivery_attempts = each.value.max_delivery_attempts
   }
+
+  # Signs as the notification pusher, like the Gmail push subscription, so the
+  # gateway Worker's ALLOWED_SUBS and the backend's NOTIFICATION_PUSHER_SUBS
+  # already admit it.
+  dynamic "push_config" {
+    for_each = each.value.push_path == null ? [] : [each.value.push_path]
+    content {
+      push_endpoint = "https://${local.domains.hook}${push_config.value}"
+      oidc_token {
+        service_account_email = google_service_account.notification_pusher.email
+        audience              = "purrf"
+      }
+    }
+  }
+
+  dynamic "retry_policy" {
+    for_each = each.value.push_path == null ? [] : [each.value.push_path]
+    content {
+      minimum_backoff = "10s"
+      maximum_backoff = "600s"
+    }
+  }
 }
 
 # Subscribe to all DLQ topics for easier failure message inspection
@@ -60,14 +82,21 @@ resource "google_project_iam_member" "pubsub_auto_sub" {
   member  = "serviceAccount:service-${data.google_project.main_gcp_project_data.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }
 
+# Both APIs are left on when an environment is removed. Every environment
+# enables them on the same project, purrf-452300, so the default
+# disable_on_destroy would let tearing down one environment turn them off for
+# the others.
+
 # Enable the Cloud Functions API
 resource "google_project_service" "cloud_functions" {
-  service = "cloudfunctions.googleapis.com"
+  service            = "cloudfunctions.googleapis.com"
+  disable_on_destroy = false
 }
 
 # Enable Access Context Manager API
 resource "google_project_service" "access_context_manager" {
-  service = "accesscontextmanager.googleapis.com"
+  service            = "accesscontextmanager.googleapis.com"
+  disable_on_destroy = false
 }
 
 # Create a storage bucket to hold the packaged function code

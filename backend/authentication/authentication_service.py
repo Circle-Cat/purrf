@@ -12,9 +12,11 @@ from backend.common.environment_constants import (
     CF_TEAM_DOMAIN,
     CF_AUD_TAG,
     GOOGLE_AUDIENCE,
+    GOOGLE_SERVICE_ACCOUNT_SUBS,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole, SUPER_ADMIN_ROLES
+from backend.common.constants import is_company_email
+from backend.common.identity_type import IdentityType
 
 
 class AuthenticationService:
@@ -99,22 +101,70 @@ class AuthenticationService:
 
         return self._build_context(payload, source="cloudflare")
 
+    def verify_google_token(self, token: str) -> dict[str, Any]:
+        """
+        Verify a Google identity token and return its claims.
+
+        For callers that assert on the claims themselves rather than acting as
+        a user -- the notification delivery route checks `sub` against the
+        pusher accounts this deployment provisioned and builds no user context.
+
+        Args:
+            token (str): Google Identity token.
+
+        Returns:
+            dict[str, Any]: The verified claims.
+
+        Raises:
+            ValueError: The token is not a valid Google token for this
+                audience.
+        """
+        try:
+            return id_token.verify_token(
+                token, self.google_request, audience=GOOGLE_AUDIENCE
+            )
+        except ValueError as e:
+            raise ValueError(f"Google Token Invalid: {str(e)}")
+
     def _verify_google(self, token: str) -> UserContextDto:
         """
         Verify a Google identity token and construct the user context.
+
+        The `sub` assertion cannot move up into verify_google_token: the
+        notification delivery route shares it and checks its own pusher
+        allowlist, so this check one level higher would reject every push.
 
         Args:
             token (str): Google Identity token.
 
         Returns:
             UserContextDto: User information including roles.
+
+        Raises:
+            ValueError: The token is not a valid Google token for this
+                audience, or it was minted by a service account that is not
+                allowlisted.
         """
-        try:
-            payload = id_token.verify_token(
-                token, self.google_request, audience=GOOGLE_AUDIENCE
+        payload = self.verify_google_token(token)
+
+        if not GOOGLE_SERVICE_ACCOUNT_SUBS:
+            self.logger.error(
+                "[AuthenticationService] GOOGLE_SERVICE_ACCOUNT_SUBS is empty, "
+                "rejecting every Google token. Set it on the environment's secret."
             )
-        except ValueError as e:
-            raise ValueError(f"Google Token Invalid: {str(e)}")
+            raise ValueError("Google Token Invalid: caller not allowed")
+
+        # Omitted from the raised message so a caller probing the endpoint
+        # learns nothing about the expected value.
+        sub = payload.get("sub")
+        if sub not in GOOGLE_SERVICE_ACCOUNT_SUBS:
+            self.logger.warning(
+                "[AuthenticationService] Rejected Google token from "
+                "non-allowlisted service account: sub=%s email=%s",
+                sub,
+                payload.get("email"),
+            )
+            raise ValueError("Google Token Invalid: caller not allowed")
 
         return self._build_context(payload, source="google")
 
@@ -165,66 +215,55 @@ class AuthenticationService:
 
     def _build_context(self, payload: dict[str, Any], source: str) -> UserContextDto:
         """
-        Build the UserContextDto from token payload based on the source.
+        Build the UserContextDto from a token payload.
+
+        Sets only the identity-layer fields the auth layer can know from the
+        token: sub, email, identity_type, and is_service_account. Permissions
+        and is_super_admin are resolved later (DB-backed) by the middleware's
+        resolve_permissions step.
 
         Args:
             payload (dict): Decoded JWT payload.
             source (str): Source of the token, either "google" or "cloudflare".
-
-        Returns:
-            UserContextDto: Contains sub, primary_email, and roles.
         """
-        roles = []
         email = ""
         sub = ""
+        last_login_at = None
+        first_name = ""
+        last_name = ""
+        identity_type = IdentityType.EXTERNAL
+        is_service_account = False
+        email_verified = False
 
         if "google" == source:
-            # Google CronJob / Service Account
-            roles.append(UserRole.CRON_RUNNER)
+            # Google CronJob / service account.
+            is_service_account = True
+            identity_type = IdentityType.CRONJOB
             email = payload.get("email")
             sub = payload.get("sub")
+            last_login_at = payload.get("iat")
 
         elif "cloudflare" == source:
-            # Cloudflare User
             custom_claims = payload.get("custom", {})
             email = custom_claims.get("email", "")
-            raw_sub = custom_claims.get("sub", "")
-            upn = custom_claims.get("upn", "")
-            raw_role_claim = custom_claims.get("extn.purrf_role", [])
-            role_claim = raw_role_claim
-            # Azure directory extensions only support string values, so roles are stored as a
-            # JSON-encoded string (e.g. '["admin","manager"]'). Cloudflare wraps it in an array,
-            # resulting in ['["admin","manager"]']. Parse the inner string back into a list.
-            if len(raw_role_claim) == 1 and isinstance(raw_role_claim[0], str):
-                try:
-                    parsed = json.loads(raw_role_claim[0])
-                    if isinstance(parsed, list):
-                        role_claim = parsed
-                except json.JSONDecodeError:
-                    pass
-
-            if "superAdmin" in role_claim:
-                roles.extend(SUPER_ADMIN_ROLES)
-            else:
-                if "infraAdmin" in role_claim:
-                    roles.append(UserRole.INFRA_ADMIN)
-                if "manager" in role_claim:
-                    roles.append(UserRole.MANAGER)
-                if "mentorshipAdmin" in role_claim:
-                    roles.append(UserRole.MENTORSHIP_ADMIN)
-
-            if upn.endswith("@u.circlecat.org"):
-                roles.append(UserRole.CC_INTERNAL)
-                sub = f"azure|{raw_sub}"
-                email = upn
-            elif raw_sub.startswith("google-oauth2|") and email.endswith("@google.com"):
-                roles.append(UserRole.CONTACT_GOOGLE_CHAT)
-                sub = f"auth0|{raw_sub}"
-            else:
-                sub = f"auth0|{raw_sub}"
-
-            roles.append(UserRole.MENTORSHIP)
+            sub = custom_claims.get("sub", "")
+            last_login_at = custom_claims.get("iat")
+            first_name = custom_claims.get("given_name", "")
+            last_name = custom_claims.get("family_name", "")
+            email_verified = custom_claims.get("email_verified", False)
+            # Internal is keyed off the company email domain, not the login
+            # connection, Require email_verified so a connection that lets
+            # a user self-assert an unverified address cannot claim a company domain.
+            if email_verified and is_company_email(email):
+                identity_type = IdentityType.INTERNAL
 
         return UserContextDto(
-            sub=sub, primary_email=email, roles=list(dict.fromkeys(roles))
+            sub=sub,
+            primary_email=email,
+            identity_type=identity_type,
+            is_service_account=is_service_account,
+            last_login_at=last_login_at,
+            first_name=first_name,
+            last_name=last_name,
+            email_verified=email_verified,
         )

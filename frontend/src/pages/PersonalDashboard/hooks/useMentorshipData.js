@@ -1,21 +1,22 @@
 import {
   getAllMentorshipRounds,
+  getMentorshipRoundSlots,
   getMyMentorshipPartners,
   getMyMentorshipRegistration,
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
   getMyMentorshipMeetingLog,
-  getMyMentorshipMeetingsV2,
 } from "@/api/mentorshipApi";
+import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
+import { getMyProfile } from "@/api/profileApi";
 
-import {
-  calculateMentorshipSlots,
-  calculateRoundStatus,
-} from "@/pages/PersonalDashboard/utils/mentorshipRounds";
-import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+
+// Default profile timezone for newly created users.
+const DEFAULT_TIMEZONE = "America/Los_Angeles";
 
 /**
  * React hook for loading and managing mentorship-related data
@@ -32,43 +33,80 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  * - which round is currently actionable
  * - whether registration or feedback actions are enabled
  *
+ * @param {{enabled?: boolean, hiredMentorshipRoles?: Array<"mentor"|"mentee">}} params -
+ *   `hiredMentorshipRoles` lists every role the user's admissions qualify
+ *   them to register under. Every role's registration closes at the round's
+ *   onboarding deadline.
  * @returns {{
  *   regRoundId: string | null,
- *   feedbackRoundId: string | null,
+ *   regRoundName: string,
+ *   registrationEntries: Array<{role: string, deadlineAt: string|null, isOpen: boolean}>,
+ *   registeredRole: "mentor" | "mentee" | null,
  *   isRegistrationOpen: boolean,
+ *   registrationDeadlineAt: string | null,
  *   isFeedbackEnabled: boolean,
  *   registration: Object | null,
+ *   loadRegistrationForRole: (role: string) => Promise<Object | null>,
  *   saveRegistration: (data: Object) => Promise<any> | undefined,
  *   isLoading: boolean,
  *   isPartnersLoading: boolean,
  *   loadPastPartners: () => Promise<void>,
- *   userTimezone: string | null
+ *   userTimezone: string
  * }}
  */
-export const useMentorshipData = () => {
+export const useMentorshipData = ({
+  enabled = true,
+  hiredMentorshipRoles = [],
+} = {}) => {
   const flags = useFeatureFlags();
   const useV2Meetings = !!flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
 
   const [roundStatus, setRoundStatus] = useState({
     regRoundId: null,
-    feedbackRoundId: null,
     isFeedbackEnabled: false,
     matchResultRoundName: "",
     canViewMatch: false,
   });
-  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  // One entry per role the user may register under. They share the round's
+  // registration deadline, but the role a registration settles is kept.
+  const [roleEntries, setRoleEntries] = useState([]);
+  const [regRoundName, setRegRoundName] = useState("");
   const [matchResult, setMatchResult] = useState(null);
   // Current user's registration data for the active round
   const [registration, setRegistration] = useState(null);
 
-  // Loading state for initial mentorship data
-  const [isLoading, setIsLoading] = useState(true);
+  // Loading state for initial mentorship data, derived during render
+  // rather than set from the effect. Which fetch the data in state
+  // belongs to is what actually decides it, so being enabled -- or
+  // handed a different set of roles -- reports loading on the very render
+  // that does it. Raising the flag from the effect instead is one commit too
+  // late: sibling hooks in the same commit have already read the stale
+  // `false` and taken the empty initial state, no open round and no
+  // deadline, for a finished answer.
+  //
+  // The parent may hand over a fresh array on every render, so the fetch
+  // is keyed on what the roles are, not on which array object carries
+  // them.
+  const rolesKey = hiredMentorshipRoles.join(",");
+  const eligibleRoles = useMemo(
+    () => (rolesKey ? rolesKey.split(",") : []),
+    [rolesKey],
+  );
+  const requestKey = enabled ? `roles:${rolesKey}` : null;
+  const [fetchState, setFetchState] = useState({
+    key: requestKey,
+    isSettled: false,
+  });
+  if (fetchState.key !== requestKey) {
+    setFetchState({ key: requestKey, isSettled: false });
+  }
+  const isLoading = enabled && !fetchState.isSettled;
 
   // Cached list of past mentorship partners
   const [pastPartners, setPastPartners] = useState([]);
 
   // Loading state for user profile timezone
-  const [userTimezone, setUserTimezone] = useState(null);
+  const [userTimezone, setUserTimezone] = useState(DEFAULT_TIMEZONE);
 
   // Loading state for partners data
   const [isPartnersLoading, setIsPartnersLoading] = useState(false);
@@ -88,17 +126,8 @@ export const useMentorshipData = () => {
   const [isMeetingsLoading, setIsMeetingsLoading] = useState(false);
   // Cache for partners data per round, reset on page mount
   const partnersCacheRef = useRef({});
-  // Monotonic id per refreshMeetings call. A response only writes state when its
-  // id is still the latest, so a slow earlier round can't clobber a newer one
-  // (e.g. fast round switching).
-  const requestSeqRef = useRef(0);
-  // Guards against state updates after the component unmounts.
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
+  // Guards refreshMeetings against stale-round responses and unmount updates.
+  const { begin, isCurrent } = useRequestGuard();
 
   /**
    * refreshRegistration
@@ -126,36 +155,49 @@ export const useMentorshipData = () => {
    *
    * This effect is run once when the component is mounted. It fetches the available mentorship rounds, calculates
    * the mentorship slot status, and then fetches the user's registration data for the active round (if any).
-   * The loading state (`isLoading`) is set to `false` once the data has been fetched (or an error has occurred).
+   * It marks the request settled once the data has been fetched (or an error has occurred), which is what
+   * resolves `isLoading` to `false`.
    *
    * @returns {void}
    */
   useEffect(() => {
+    if (!enabled) return;
+
     const fetchData = async () => {
       try {
-        const now = new Date().toISOString();
-        const { data: rounds } = await getAllMentorshipRounds();
+        // The server decides which round is current and whether it is
+        // open, on its own clock; the round list only supplies the rounds
+        // to show, already ordered and carrying their status.
+        const [{ data: rounds }, { data: slots }] = await Promise.all([
+          getAllMentorshipRounds(),
+          getMentorshipRoundSlots(),
+        ]);
 
-        const status = calculateMentorshipSlots(rounds);
+        const status = {
+          regRoundId: slots?.registrationRoundId ?? null,
+          isFeedbackEnabled: Boolean(slots?.isFeedbackEnabled),
+          matchResultRoundName: slots?.registrationRoundName ?? "",
+          canViewMatch: Boolean(slots?.canViewMatch),
+        };
         setRoundStatus(status);
 
         // If there is an actionable round, fetch the user's registration data
         // Note: registration data is fetched based on the registration slot first
         if (status.regRoundId) {
+          // Role-less: answers "am I registered for this round, and as
+          // what". The per-role form prefill is fetched when a dialog
+          // opens, by loadRegistrationForRole.
           const { data: regData } = await getMyMentorshipRegistration(
             status.regRoundId,
           );
           setRegistration(regData);
 
-          const participantRole = regData?.roundPreferences?.participantRole;
-          const deadlineKey =
-            participantRole === MentorshipParticipantRoles.MENTOR
-              ? "mentorApplicationDeadlineAt"
-              : "menteeApplicationDeadlineAt";
-          const regRound = rounds.find(
-            (r) => r.id?.toString() === status.regRoundId?.toString(),
+          setRegRoundName(slots.registrationRoundName ?? "");
+          const deadlineAt = slots.registrationDeadlineAt ?? null;
+          const isOpen = Boolean(slots.isRegistrationOpen);
+          setRoleEntries(
+            eligibleRoles.map((role) => ({ role, deadlineAt, isOpen })),
           );
-          setIsRegistrationOpen(now < regRound?.timeline?.[deadlineKey]);
 
           if (regData && regData.isRegistered) {
             try {
@@ -171,7 +213,10 @@ export const useMentorshipData = () => {
           }
         }
 
-        const selectionData = calculateRoundStatus(rounds);
+        const selectionData = {
+          sortedRounds: rounds ?? [],
+          activeRoundId: slots?.activeRoundId ?? null,
+        };
         setRoundSelectionData(selectionData);
 
         if (selectionData.activeRoundId) {
@@ -181,12 +226,83 @@ export const useMentorshipData = () => {
       } catch (err) {
         console.error("Failed to fetch mentorship data", err);
       } finally {
-        setIsLoading(false);
+        // Tagged with the request it answers: a response that arrives
+        // after the roles changed settles nothing, and the next render
+        // notices the mismatch and goes back to loading.
+        setFetchState({ key: requestKey, isSettled: true });
       }
     };
 
     fetchData();
-  }, []);
+  }, [enabled, eligibleRoles, requestKey]);
+
+  // A registration settles the round's role, so the role it names is the
+  // only entry left to act on -- read-only once its window has shut. The
+  // fallback keeps that read-only view reachable even when the settled role
+  // is not among the roles the user's admissions list.
+  const registeredRole = registration?.isRegistered
+    ? (registration?.roundPreferences?.participantRole ?? null)
+    : null;
+  const registrationEntries = registeredRole
+    ? [
+        roleEntries.find((entry) => entry.role === registeredRole) ?? {
+          role: registeredRole,
+          deadlineAt: null,
+          isOpen: false,
+        },
+      ]
+    : roleEntries;
+
+  const activeEntry =
+    registrationEntries.find((entry) => entry.isOpen) ??
+    registrationEntries[0] ??
+    null;
+  const registrationDeadlineAt = activeEntry?.deadlineAt ?? null;
+  const isRegistrationOpen = Boolean(activeEntry?.isOpen);
+
+  /**
+   * Fetch the registration form for one role, used when a registration
+   * dialog opens for a user who has not registered yet.
+   *
+   * Its identity is held stable across renders: the dialog re-seeds every
+   * field of its form when this changes, which would overwrite whatever
+   * the user has typed.
+   *
+   * @param {"mentor"|"mentee"} role - Role whose form to prefill.
+   * @returns {Promise<Object|null>} The RegistrationDto, or null when no
+   *   round is taking registrations.
+   */
+  const loadRegistrationForRole = useCallback(
+    async (role) => {
+      if (!roundStatus.regRoundId) return null;
+      const { data } = await getMyMentorshipRegistration(
+        roundStatus.regRoundId,
+        role,
+      );
+      return data;
+    },
+    [roundStatus.regRoundId],
+  );
+
+  // Fetch the profile timezone independently so it's available on mount.
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+
+    getMyProfile()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const timezone = data?.profile?.user?.timezone;
+        if (timezone) setUserTimezone(timezone);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch profile timezone", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
 
   /**
    * Lazily load the user's past mentorship partners.
@@ -210,15 +326,29 @@ export const useMentorshipData = () => {
    *
    * This operation is only allowed when:
    * - a valid registration round exists
-   * - registration for that round is currently open
+   * - the window of the role the payload names is currently open
+   *
+   * A successful save is adopted as the current registration.
    *
    * @param {Object} data - Registration payload submitted by the user.
    * @returns {Promise<any> | undefined} API response when saved, or undefined if not allowed.
    */
   const saveRegistration = async (data) => {
-    // Only allow saving when registration is open and a valid round exists
-    if (!roundStatus.regRoundId || !isRegistrationOpen) return;
-    return postMyMentorshipRegistration(roundStatus.regRoundId, data);
+    // Gated on the entry of the role being registered: a role the user
+    // holds no admission for has none.
+    const role = data?.roundPreferences?.participantRole;
+    const entry = registrationEntries.find((e) => e.role === role);
+    if (!roundStatus.regRoundId || !entry?.isOpen) return;
+    const response = await postMyMentorshipRegistration(
+      roundStatus.regRoundId,
+      data,
+    );
+    // The POST answers with the saved registration. Adopting it settles
+    // the round's role here and now, so the other role's entry point
+    // stops being offered the moment the save lands -- pressing it would
+    // otherwise unmount the dialog it just opened.
+    if (response?.data) setRegistration(response.data);
+    return response;
   };
 
   const handleRoundChange = useCallback(
@@ -238,7 +368,7 @@ export const useMentorshipData = () => {
 
   const refreshMeetings = useCallback(async () => {
     if (!selectedRoundId) return;
-    const seq = ++requestSeqRef.current;
+    const seq = begin();
     setIsMeetingsLoading(true);
 
     try {
@@ -256,10 +386,9 @@ export const useMentorshipData = () => {
 
       // A newer round was selected while this request was in flight — drop the
       // stale response so it can't overwrite the current round's data.
-      if (!isMountedRef.current || seq !== requestSeqRef.current) return;
+      if (!isCurrent(seq)) return;
 
       partnersCacheRef.current[selectedRoundId] ??= partnersInfo;
-      setUserTimezone((prev) => prev ?? meetingLog?.userTimezone ?? null);
 
       const currentRound = roundSelectionData.sortedRounds.find(
         (r) => r.id.toString() === selectedRoundId.toString(),
@@ -292,11 +421,15 @@ export const useMentorshipData = () => {
         return {
           partnerId: partner.id,
           preferredName: partner.preferredName,
+          firstName: partner.firstName,
+          lastName: partner.lastName,
+          partnerEmail: partner.primaryEmail,
           requiredMeetings,
           completedCount,
           completedRate,
           meetingTimeList: info?.meetingTimeList || [],
           participantRole: info?.participantRole,
+          isActive: partner.isActive,
         };
       });
 
@@ -312,7 +445,7 @@ export const useMentorshipData = () => {
       console.error("Failed to fetch meeting log", MeetingErr);
     } finally {
       // Only the latest in-flight request controls the loading flag.
-      if (isMountedRef.current && seq === requestSeqRef.current) {
+      if (isCurrent(seq)) {
         setIsMeetingsLoading(false);
       }
     }
@@ -338,8 +471,13 @@ export const useMentorshipData = () => {
   return {
     ...roundStatus,
     isRegistrationOpen,
+    registrationDeadlineAt,
+    regRoundName,
     // registration
     registration,
+    registrationEntries,
+    registeredRole,
+    loadRegistrationForRole,
     saveRegistration,
     refreshRegistration,
     // loading states

@@ -17,6 +17,7 @@ py_library(
     srcs = ["jira_search_service.py"],
     deps = [
         "//backend/common:constants",
+        "//backend/common:jira_client",
         "//backend/utils:retry_utils",
         "@pypi//jira",
     ],
@@ -26,7 +27,9 @@ py_library(
     name = "google_service",
     srcs = ["google_service.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/utils:retry_utils",
+        "@pypi//google_api_python_client",
         "@pypi//google_apps_meet",
         "@pypi//protobuf",
     ],

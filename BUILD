@@ -24,10 +24,13 @@ exports_files(
 
 filegroup(
     name = "alembic_files",
-    srcs = glob([
-        "alembic_setup/**",
-        "alembic.ini",
-    ]),
+    srcs = glob(
+        [
+            "alembic_setup/**",
+            "alembic.ini",
+        ],
+        exclude = ["alembic_setup/**/__pycache__/**"],
+    ),
 )
 
 js_library(
@@ -67,6 +70,15 @@ py_oci_image(
         "/backend/uvicorn",
         "backend.prod_runner:asgi_app",
     ],
+)
+
+# Migration image: the same alembic chain the backend expects, packaged on its
+# own so the deploy hook can run it before the new backend rolls out.
+py_oci_image(
+    name = "purrf_migrate_image",
+    base = "@python_base",
+    binary = "//tools/migrate_db",
+    entrypoint = ["/tools/migrate_db/migrate_db"],
 )
 
 # This rule packages the frontend Vite build output into a tarball for use in the Nginx image.
@@ -129,6 +141,15 @@ platform_transition_filegroup(
     }),
 )
 
+platform_transition_filegroup(
+    name = "platform_migrate_image",
+    srcs = [":purrf_migrate_image"],
+    target_platform = select({
+        "@platforms//cpu:arm64": ":aarch64_linux",
+        "@platforms//cpu:x86_64": ":x86_64_linux",
+    }),
+)
+
 # (auto) generate REPO,TAG files for dynamic oci_push
 genrule(
     name = "dynamic_backend_repository",
@@ -144,6 +165,15 @@ genrule(
     outs = ["final_frontend_repository.txt"],
     cmd = """
     REPO=$${FE_REPO:-index.docker.io/alice/repo}  # nonexistent REPO; please pass in real REPO through environment parameters
+    echo "$$REPO" > $@
+    """,
+)
+
+genrule(
+    name = "dynamic_migrate_repository",
+    outs = ["final_migrate_repository.txt"],
+    cmd = """
+    REPO=$${MIGRATE_REPO:-index.docker.io/alice/repo}  # nonexistent REPO; please pass in real REPO through environment parameters
     echo "$$REPO" > $@
     """,
 )
@@ -174,4 +204,12 @@ oci_push(
     image = ":platform_frontend_image",
     remote_tags = ":dynamic_tags",
     repository_file = ":dynamic_frontend_repository",
+)
+
+# dynamic migration image oci_push
+oci_push(
+    name = "purrf_migrate_image_push_dynamic",
+    image = ":platform_migrate_image",
+    remote_tags = ":dynamic_tags",
+    repository_file = ":dynamic_migrate_repository",
 )

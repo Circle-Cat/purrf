@@ -5,6 +5,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from backend.common.exceptions import (
+    ActivityDataUnavailableError,
+    ConflictError,
+    NotFoundError,
+    RateLimitedError,
+)
 from backend.common.fast_api_error_handler import register_exception_handlers
 
 # Constant definitions
@@ -12,6 +18,8 @@ VALUE_ERROR_MSG = "Invalid input"
 PERMISSION_ERROR_MSG = (
     "This feature is not yet available. Only internal users can access this feature."
 )
+CONFLICT_ERROR_MSG = "Email already verified by another account"
+RATE_LIMITED_ERROR_MSG = "Too many OTP attempts; try again later"
 RUNTIME_ERROR_MSG = "Service unavailable"
 UNEXPECTED_ERROR_MSG = "Unexpected fatal error"
 GENERIC_SERVER_ERROR_MSG = "Internal Server Error. Please contact support."
@@ -100,6 +108,76 @@ class TestFastAPIExceptionHandler(TestCase):
         self.mock_logger.warning.assert_called_once()
         self.mock_logger.error.assert_not_called()
 
+    def test_handle_conflict_error(self):
+        """409 Conflict: the raw error message should be shown and logged as warning."""
+        route = "/api/auth/conflict"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ConflictError(CONFLICT_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
+        self.assertEqual(response.json().get(ERROR_KEY), CONFLICT_ERROR_MSG)
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
+
+    def test_handle_not_found_error(self):
+        """404 Not Found: the raw error message should be shown and logged as warning."""
+        route = "/api/mentorship/not_found"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise NotFoundError("User 42 does not exist.")
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+        self.assertEqual(response.json().get(ERROR_KEY), "User 42 does not exist.")
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
+
+    def test_a_conflict_with_a_code_carries_it_in_data(self):
+        """The message is prose for a person; the code is what a page branches on."""
+        route = "/api/training/conflict_code"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ConflictError(CONFLICT_ERROR_MSG, code="some_conflict")
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
+        self.assertEqual(response.json().get(ERROR_KEY), CONFLICT_ERROR_MSG)
+        self.assertEqual(response.json().get("data"), {"code": "some_conflict"})
+
+    def test_a_conflict_without_a_code_carries_no_data(self):
+        route = "/api/auth/conflict_no_code"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ConflictError(CONFLICT_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertIsNone(response.json().get("data"))
+
+    def test_handle_rate_limited_error(self):
+        """429 Too Many Requests: the raw error message should be shown and logged as warning."""
+        route = "/api/auth/rate_limited"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise RateLimitedError(RATE_LIMITED_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.TOO_MANY_REQUESTS)
+        self.assertEqual(response.json().get(ERROR_KEY), RATE_LIMITED_ERROR_MSG)
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
+
     def test_handle_runtime_error(self):
         """503 Service Unavailable: error message should be masked; log should be error level."""
         route = "/api/chat/pull"
@@ -162,6 +240,25 @@ class TestFastAPIExceptionHandler(TestCase):
 
         # Platform should be "unknown"
         self.assertIn("unknown", args)
+
+    def test_handle_activity_data_unavailable(self):
+        """503 with a message the page can show; the detail is only logged."""
+        route = "/api/summary"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ActivityDataUnavailableError("pipeline returned 2 of 3")
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json().get(ERROR_KEY),
+            "Activity data is temporarily unavailable.",
+        )
+        self.mock_logger.error.assert_called_once()
+        args, _ = self.mock_logger.error.call_args
+        self.assertIn("pipeline returned 2 of 3", args)
 
 
 if __name__ == "__main__":

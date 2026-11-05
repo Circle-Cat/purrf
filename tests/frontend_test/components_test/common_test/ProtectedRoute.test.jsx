@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "@/components/common/ProtectedRoute";
 import { useAuth } from "@/context/auth";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/context/auth", () => ({
@@ -21,25 +21,25 @@ describe("ProtectedRoute Component", () => {
    *
    * @param {Object} options - Configuration for rendering.
    * @param {React.ReactNode} options.ui - The component or JSX to render inside the ProtectedRoute.
-   * @param {string[]} [options.userRoles=[]] - The roles assigned to the current mocked user.
-   * @param {string[]} options.requiredRoles - The roles required to access the ProtectedRoute.
+   * @param {string[]} [options.userPermissions=[]] - The permissions assigned to the current mocked user.
+   * @param {string[]} options.requiredPermissions - The permissions required to access the ProtectedRoute.
    * @param {boolean} [options.loading=false] - The loading state of the authentication context.
    * @returns {Object} Result from React Testing Library's `render` function, including `container`, `debug`, etc.
    */
   const renderWithRouter = ({
     ui,
-    userRoles = [],
-    requiredRoles,
+    userPermissions = [],
+    requiredPermissions,
     loading = false,
   }) => {
-    useAuth.mockReturnValue({ loading, roles: userRoles });
+    useAuth.mockReturnValue({ loading, permissions: userPermissions });
     return render(
       <MemoryRouter initialEntries={[ROUTE_PATHS.DASHBOARD]}>
         <Routes>
           <Route
             path={ROUTE_PATHS.DASHBOARD}
             element={
-              <ProtectedRoute requiredRoles={requiredRoles}>
+              <ProtectedRoute requiredPermissions={requiredPermissions}>
                 {ui}
               </ProtectedRoute>
             }
@@ -56,67 +56,91 @@ describe("ProtectedRoute Component", () => {
   test("renders nothing while loading is true", () => {
     const { container } = renderWithRouter({
       ui: <div>Dashboard Page</div>,
-      userRoles: [],
-      requiredRoles: [USER_ROLES.CC_INTERNAL],
+      userPermissions: [],
+      requiredPermissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
       loading: true,
     });
 
     expect(container).toBeEmptyDOMElement();
   });
 
-  test("renders access denied if user lacks mentorship role", () => {
+  test("renders access denied if user lacks the required permission", () => {
     renderWithRouter({
-      ui: <div>Personal Dashboard Page</div>,
-      userRoles: [],
-      requiredRoles: [USER_ROLES.MENTORSHIP],
+      ui: <div>Datasearch Page</div>,
+      userPermissions: [],
+      requiredPermissions: [PERMISSIONS.INTERNAL_ACTIVITY_READ],
     });
 
-    expect(
-      screen.queryByText("Personal Dashboard Page"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Datasearch Page")).not.toBeInTheDocument();
     expect(screen.getByText("Access Denied Page")).toBeInTheDocument();
   });
 
-  test("datasearch page allows manager user access", () => {
+  test("datasearch page allows user with internal_activity.read", () => {
     renderWithRouter({
       ui: <div>Datasearch Page</div>,
-      userRoles: [USER_ROLES.MANAGER],
-      requiredRoles: [USER_ROLES.MANAGER],
+      userPermissions: [PERMISSIONS.INTERNAL_ACTIVITY_READ],
+      requiredPermissions: [PERMISSIONS.INTERNAL_ACTIVITY_READ],
     });
 
     expect(screen.getByText("Datasearch Page")).toBeInTheDocument();
   });
 
-  test("datasearch page denies cc_internal and mentorship user access", () => {
+  test("datasearch page denies user with only dashboard summary read", () => {
     renderWithRouter({
       ui: <div>Datasearch Page</div>,
-      userRoles: [USER_ROLES.MENTORSHIP, USER_ROLES.CC_INTERNAL],
-      requiredRoles: [USER_ROLES.MANAGER],
+      userPermissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
+      requiredPermissions: [PERMISSIONS.INTERNAL_ACTIVITY_READ],
     });
 
     expect(screen.getByText("Access Denied Page")).toBeInTheDocument();
     expect(screen.queryByText("Datasearch Page")).not.toBeInTheDocument();
   });
 
-  test("dashboard page allows manager user access", () => {
+  test("dashboard page allows user with dashboard summary read", () => {
     renderWithRouter({
       ui: <div>Dashboard Page</div>,
-      userRoles: [USER_ROLES.MANAGER],
-      requiredRoles: [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL],
+      userPermissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
+      requiredPermissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
     });
 
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
     expect(screen.queryByText("Access Denied Page")).not.toBeInTheDocument();
   });
 
-  test("dashboard page allows cc_internal user access", () => {
+  const BOARD_PERMISSIONS = [
+    PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+    PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+  ];
+
+  test("applications board admits a read.all holder who cannot advance", () => {
     renderWithRouter({
-      ui: <div>Dashboard Page</div>,
-      userRoles: [USER_ROLES.CC_INTERNAL],
-      requiredRoles: [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL],
+      ui: <div>Board Page</div>,
+      userPermissions: ["recruiting.application.read.all"],
+      requiredPermissions: BOARD_PERMISSIONS,
     });
 
-    expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
+    expect(screen.getByText("Board Page")).toBeInTheDocument();
     expect(screen.queryByText("Access Denied Page")).not.toBeInTheDocument();
+  });
+
+  test("applications board admits recruiting.application.advance alone", () => {
+    renderWithRouter({
+      ui: <div>Board Page</div>,
+      userPermissions: ["recruiting.application.advance"],
+      requiredPermissions: BOARD_PERMISSIONS,
+    });
+
+    expect(screen.getByText("Board Page")).toBeInTheDocument();
+  });
+
+  test("applications board refuses a user with neither advance nor read.all", () => {
+    renderWithRouter({
+      ui: <div>Board Page</div>,
+      userPermissions: [PERMISSIONS.RECRUITING_JOB_READ],
+      requiredPermissions: BOARD_PERMISSIONS,
+    });
+
+    expect(screen.getByText("Access Denied Page")).toBeInTheDocument();
+    expect(screen.queryByText("Board Page")).not.toBeInTheDocument();
   });
 });

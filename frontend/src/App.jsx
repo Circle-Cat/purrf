@@ -5,20 +5,47 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import "@/App.css";
 import Header from "@/components/layout/Header";
 import EnvironmentBanner from "@/components/layout/EnvironmentBanner";
 import { isBannerEnv } from "@/utils/deployEnv";
 import Sidebar from "@/components/layout/Sidebar";
 import ProtectedRoute from "@/components/common/ProtectedRoute";
+import HardWallGate from "@/components/common/HardWallGate";
 import Dashboard from "@/pages/Dashboard";
 import DataSearch from "@/pages/DataSearch";
 import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
+import MentorshipManagement from "@/pages/MentorshipManagement";
+import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
+import MatchingResultsPage from "@/pages/MentorshipManagement/MatchingResultsPage";
+import ParticipantDetailPage from "@/pages/MentorshipManagement/ParticipantDetailPage";
+import VerifyRequired from "@/pages/VerifyRequired";
+import SignInSecurity from "@/pages/SignInSecurity";
+import AdminPermissions from "@/pages/AdminPermissions";
+import AdminAccounts from "@/pages/AdminAccounts";
+import Postings from "@/pages/Recruiting/Postings";
+import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
+import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
+import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
+import MyApplication from "@/pages/Recruiting/MyApplication";
+import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
+import BoardPage from "@/pages/Recruiting/board/BoardPage";
+import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
+import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
+import Audit from "@/pages/Recruiting/audit/Audit";
+import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
+import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
+import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
+import LeaveAdminPage from "@/pages/Leave/AdminPage";
+import TrainingCourse from "@/pages/TrainingCourse";
+import TrainingTrial from "@/pages/TrainingTrial";
+import TrainingPreview from "@/pages/TrainingPreview";
+import AdminTraining from "@/pages/AdminTraining";
+import InboxPage from "@/pages/Inbox";
 import { AuthProvider } from "@/context/auth";
-import { FlagsProvider, LDIdentifier } from "@/context/flags";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { FlagsProvider, LDIdentifier, LDUserProvider } from "@/context/flags";
+import { PERMISSIONS, INBOX_PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -28,74 +55,333 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const showEnvBanner = isBannerEnv(deployEnv);
-  const containerClassName = `app-container legacy-styles${
-    showEnvBanner ? " has-env-banner" : ""
-  }${sidebarCollapsed ? " sidebar-collapsed" : ""}`;
   return (
     <FlagsProvider>
       <AuthProvider>
-        <LDIdentifier />
+        <LDUserProvider>
+          <LDIdentifier />
+        </LDUserProvider>
         <Router>
-          <div className={containerClassName}>
+          <div
+            className="group flex flex-col"
+            data-env-banner={showEnvBanner ? "true" : "false"}
+            data-collapsed={sidebarCollapsed ? "true" : "false"}
+          >
             <Header
               onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
               sidebarCollapsed={sidebarCollapsed}
             />
             {showEnvBanner && <EnvironmentBanner env={deployEnv} />}
-            <div className="app-body">
+            <div className="flex flex-1">
               <Sidebar />
-              <main className="main-content">
-                <Routes>
-                  <Route
-                    path={ROUTE_PATHS.DASHBOARD}
-                    element={
-                      <ProtectedRoute
-                        requiredRoles={[
-                          USER_ROLES.MANAGER,
-                          USER_ROLES.CC_INTERNAL,
-                        ]}
-                      >
-                        <Dashboard />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path={ROUTE_PATHS.DATASEARCH}
-                    element={
-                      <ProtectedRoute requiredRoles={[USER_ROLES.MANAGER]}>
-                        <DataSearch />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path={ROUTE_PATHS.PROFILE}
-                    element={
-                      <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                        <Profile />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path={ROUTE_PATHS.PERSONAL_DASHBOARD}
-                    element={
-                      <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                        <PersonalDashboard />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path={ROUTE_PATHS.ACCESS_DENIED}
-                    element={<AccessDenied />}
-                  />
-                  <Route
-                    path={ROUTE_PATHS.ROOT}
-                    element={
-                      <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                        <Navigate to={ROUTE_PATHS.PROFILE} replace />
-                      </ProtectedRoute>
-                    }
-                  />
-                </Routes>
+              <main className="ml-64 mt-16 flex min-h-[calc(100vh-64px)] flex-1 flex-col overflow-y-auto p-[30px] transition-[margin] duration-200 group-data-[collapsed=true]:ml-0 group-data-[env-banner=true]:mt-[104px] group-data-[env-banner=true]:min-h-[calc(100vh-104px)]">
+                <HardWallGate>
+                  <Routes>
+                    <Route
+                      path={ROUTE_PATHS.VERIFY_REQUIRED}
+                      element={<VerifyRequired />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.DASHBOARD}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+                          ]}
+                        >
+                          <Dashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.DATASEARCH}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.INTERNAL_ACTIVITY_READ,
+                          ]}
+                        >
+                          <DataSearch />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route path={ROUTE_PATHS.PROFILE} element={<Profile />} />
+                    <Route
+                      path={ROUTE_PATHS.SIGN_IN_SECURITY}
+                      element={<SignInSecurity />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.PERSONAL_DASHBOARD}
+                      element={<PersonalDashboard />}
+                    />
+                    {/* No permission gate: approving leave is not a
+                        permission -- the manager relationship comes from Azure
+                        and no role is built from it. The page shows only what
+                        was filed against the caller, so somebody who approves
+                        for nobody sees an empty page. */}
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_APPROVALS}
+                      element={<LeaveApprovalsPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_BALANCE_HISTORY}
+                      element={<BalanceHistoryPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_REQUESTS}
+                      element={<LeaveRequestsPage />}
+                    />
+                    {/* Unlike the employee-facing leave routes, entering
+                        the calendar is a real permission: it decides what
+                        every leave request in a year is measured against. */}
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_ADMIN}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.LEAVE_ADMIN]}
+                        >
+                          <LeaveAdminPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_MANAGEMENT}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                            PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
+                          ]}
+                        >
+                          <MentorshipManagement />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_ROUND_FEEDBACK(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <RoundFeedbackPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_MATCHING(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <MatchingResultsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_PARTICIPANT(":userId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <ParticipantDetailPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_USERS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.PERMISSION_MANAGE]}
+                        >
+                          <AdminPermissions />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_ACCOUNTS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.USER_ADMIN]}
+                        >
+                          <AdminAccounts />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTINGS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                            PERMISSIONS.RECRUITING_JOB_READ,
+                            PERMISSIONS.RECRUITING_JOB_APPROVE,
+                          ]}
+                        >
+                          <Postings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTING_DETAIL(":id")}
+                      element={<PostingDetailPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTING_NEW}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
+                        >
+                          <PostingEditor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/recruiting/postings/:id/edit"
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
+                        >
+                          <PostingEditor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.INBOX}
+                      element={
+                        <ProtectedRoute requiredPermissions={INBOX_PERMISSIONS}>
+                          <InboxPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_AUDIT}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_AUDIT_READ,
+                          ]}
+                        >
+                          <Audit />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_JOBS_BROWSE}
+                      element={<JobsBrowse />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_BOARD}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+                            PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+                          ]}
+                        >
+                          <BoardPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(
+                        ":applicationId",
+                      )}
+                      element={<ApplicationDetailPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_MY_EVALUATIONS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_INTERVIEW_EVALUATE,
+                          ]}
+                        >
+                          <MyEvaluations />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId"
+                      element={<JobDetailPage />}
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId/apply"
+                      element={<JobDetailPage />}
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId/application"
+                      element={<MyApplication />}
+                    />
+                    {/* No permission gate: a training assignment is the
+                        caller's own, enforced by the backend session
+                        endpoint, not by a role. */}
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_COURSE(":trainingId")}
+                      element={<TrainingCourse />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_TRIAL(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_WRITE,
+                          ]}
+                        >
+                          <TrainingTrial />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Read-only, so the read grant -- the same one the
+                        catalogue this link lives on already requires. */}
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_PREVIEW(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_READ,
+                          ]}
+                        >
+                          <TrainingPreview />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Reading the catalogue is a narrower grant than
+                        changing it -- each write action's own button falls
+                        back on the backend's 403. */}
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_TRAINING}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_READ,
+                          ]}
+                        >
+                          <AdminTraining />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ACCESS_DENIED}
+                      element={<AccessDenied />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ROOT}
+                      element={
+                        <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />
+                      }
+                    />
+                  </Routes>
+                </HardWallGate>
               </main>
             </div>
           </div>

@@ -1,4 +1,6 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { toast } from "sonner";
+import { deleteMeeting, rescheduleMeeting } from "@/api/meetingApi";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -11,19 +13,79 @@ vi.mock("@/hooks/useFeatureFlags", () => ({
   useFeatureFlags: mockUseFlags,
 }));
 
-vi.mock("@/pages/PersonalDashboard/components/MeetingSubmissionModal", () => ({
-  default: ({ open, onSuccess, userTimezone }) =>
-    open ? (
-      <div data-testid="meeting-modal" data-user-timezone={userTimezone}>
-        <button onClick={onSuccess}>mock-success</button>
-      </div>
-    ) : null,
+vi.mock("@/api/meetingApi", () => ({
+  deleteMeeting: vi.fn(),
+  rescheduleMeeting: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
+  default: ({
+    roundId,
+    canSchedule,
+    scheduleUnavailableReason,
+    canLogPast,
+    logPartnerId,
+    logExistingMeetings,
+    logUnavailableReason,
+    userTimezone,
+    onLogged,
+  }) => (
+    <div
+      data-testid="meeting-dialog"
+      data-round-id={String(roundId)}
+      data-can-schedule={String(canSchedule)}
+      data-schedule-unavailable={scheduleUnavailableReason ?? ""}
+      data-can-log-past={String(canLogPast)}
+      data-log-partner-id={String(logPartnerId)}
+      data-log-meeting-ids={(logExistingMeetings || [])
+        .map((m) => m.meetingId)
+        .join(",")}
+      data-log-unavailable={logUnavailableReason ?? ""}
+      data-user-timezone={userTimezone}
+    >
+      <button onClick={onLogged}>mock-logged</button>
+    </div>
+  ),
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingOverviewCard", () => ({
-  default: ({ overview }) => (
-    <div data-testid={`overview-${overview.partnerId}`} />
+  default: ({
+    overview,
+    canManageMeetings,
+    onDeleteMeeting,
+    onRescheduleMeeting,
+  }) => (
+    <div
+      data-testid={`overview-${overview.partnerId}`}
+      data-can-manage={String(canManageMeetings)}
+    >
+      <button
+        onClick={() => onDeleteMeeting({ meetingId: "m-1" })}
+      >{`mock-cancel-${overview.partnerId}`}</button>
+      <button
+        onClick={() => onRescheduleMeeting({ meetingId: "m-1" })}
+      >{`mock-reschedule-${overview.partnerId}`}</button>
+    </div>
   ),
+}));
+
+// The dialog has its own suite; here only the slot it hands back matters.
+vi.mock("@/pages/PersonalDashboard/components/MeetingRescheduleDialog", () => ({
+  default: ({ open, onSubmit }) =>
+    open ? (
+      <button
+        onClick={() =>
+          onSubmit({
+            date: "2026-06-08",
+            startTime: "09:30",
+            durationMinutes: 60,
+            timezone: "Asia/Shanghai",
+          })
+        }
+      >
+        mock-reschedule-submit
+      </button>
+    ) : null,
 }));
 
 vi.mock(
@@ -56,6 +118,11 @@ const baseProps = {
         matchNotificationAt: "2026-02-10T07:59:59Z",
         meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
       },
+      isMeetingLogOpen: true,
+      isFeedbackOpen: false,
+      isFeedbackEditable: false,
+      feedbackOpensAt: null,
+      feedbackClosesAt: null,
     },
     partnerMeetingOverview: [
       {
@@ -66,6 +133,7 @@ const baseProps = {
         completedRate: 33,
         meetingTimeList: [],
         participantRole: "mentee",
+        isActive: true,
       },
     ],
     participantRole: "mentee",
@@ -82,7 +150,10 @@ describe("MentorshipParticipantsCard", () => {
     // meetingsCompletionDeadlineAt and hide the meeting modal.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-01T00:00:00Z"));
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": true });
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": true,
+      "create-google-meeting": true,
+    });
   });
 
   afterEach(() => {
@@ -132,14 +203,15 @@ describe("MentorshipParticipantsCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("should show the submit meeting button for mentees", () => {
+  it("should offer logging a past meeting to mentees", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-log-past",
+      "true",
+    );
   });
 
-  it("should NOT show the submit meeting button for mentors", () => {
+  it("should NOT offer logging to mentors", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -149,9 +221,10 @@ describe("MentorshipParticipantsCard", () => {
         }}
       />,
     );
-    expect(
-      screen.queryByRole("button", { name: /Submit Meeting Info/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-log-past",
+      "false",
+    );
   });
 
   it("should display 'Mentor:' when the user is a mentee", () => {
@@ -165,14 +238,164 @@ describe("MentorshipParticipantsCard", () => {
     expect(roleLabel.closest("p")).toHaveTextContent("Role: Mentee");
   });
 
-  it("should pass userTimezone from the first partner to the modal", () => {
+  it("should pass the viewer's timezone to the meeting dialog", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    );
-    expect(screen.getByTestId("meeting-modal")).toHaveAttribute(
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
       "data-user-timezone",
       "Asia/Shanghai",
+    );
+  });
+
+  it("should pass the partner to log against", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-partner-id",
+      "1",
+    );
+  });
+
+  it("should pass the selected round to the meeting dialog", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-round-id",
+      "1",
+    );
+  });
+
+  it("should withhold logging while more than one partner is shown", () => {
+    // The log form is one per round, so it can only name a partner while there
+    // is exactly one to name. Two would leave the target pair ambiguous, and
+    // submitting against the wrong one is worse than not submitting.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            {
+              partnerId: 2,
+              preferredName: "Bob",
+              requiredMeetings: 3,
+              completedCount: 0,
+              completedRate: 0,
+              meetingTimeList: [],
+              participantRole: "mentee",
+              isActive: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "No single active pairing to log a meeting against.",
+    );
+  });
+
+  const endedPairing = {
+    partnerId: 2,
+    preferredName: "Bob",
+    requiredMeetings: 3,
+    completedCount: 3,
+    completedRate: 100,
+    meetingTimeList: [],
+    participantRole: "mentee",
+    isActive: false,
+  };
+
+  it("should label a pairing that has ended", () => {
+    // The partner left the round. The meetings held with them are still this
+    // user's participation, so the row stays and says why it is not current.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [endedPairing],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText("Ended")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/have not participated/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should not label a live pairing", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(screen.queryByText("Ended")).not.toBeInTheDocument();
+  });
+
+  it("should withhold logging when the only pairing has ended", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [endedPairing],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "No single active pairing to log a meeting against.",
+    );
+  });
+
+  it("should log against the live pairing when an ended one is also shown", () => {
+    // Changing mentor mid-round leaves both pairings on the card. Only one of
+    // them is current, so the target is not ambiguous and submitting stays
+    // available.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            endedPairing,
+          ],
+        }}
+      />,
+    );
+
+    const dialog = screen.getByTestId("meeting-dialog");
+    expect(dialog).toHaveAttribute("data-log-unavailable", "");
+    expect(dialog).toHaveAttribute("data-log-partner-id", "1");
+  });
+
+  it("should check a new log against the live pairing's meetings only", () => {
+    const meeting = (meetingId) => ({
+      meetingId,
+      startDatetime: "2026-03-01T02:00:00Z",
+      endDatetime: "2026-03-01T03:00:00Z",
+      meetLink: null,
+    });
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            {
+              ...baseProps.participantDetails.partnerMeetingOverview[0],
+              meetingTimeList: [meeting("live-1")],
+            },
+            { ...endedPairing, meetingTimeList: [meeting("ended-1")] },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-meeting-ids",
+      "live-1",
     );
   });
 
@@ -181,15 +404,193 @@ describe("MentorshipParticipantsCard", () => {
     expect(screen.getByTestId("overview-1")).toBeInTheDocument();
   });
 
-  it("should open the meeting modal when the submit button is clicked", () => {
+  it("should offer cancelling on the same flag that gates booking", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    expect(screen.getByTestId("overview-1")).toHaveAttribute(
+      "data-can-manage",
+      "true",
     );
-    expect(screen.getByTestId("meeting-modal")).toBeInTheDocument();
   });
 
-  it("should call refreshMeetings after successful meeting submission", () => {
+  it("should NOT offer cancelling when the google meeting flag is off", () => {
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": true,
+      "create-google-meeting": false,
+    });
+
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    expect(screen.getByTestId("overview-1")).toHaveAttribute(
+      "data-can-manage",
+      "false",
+    );
+  });
+
+  it("should cancel against the selected round and that partner, then refresh", async () => {
+    const refreshMeetings = vi.fn();
+    deleteMeeting.mockResolvedValue({});
+    const successToast = vi
+      .spyOn(toast, "success")
+      .mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "mock-cancel-1" }));
+    });
+
+    expect(deleteMeeting).toHaveBeenCalledWith("m-1", "1", 1);
+    expect(refreshMeetings).toHaveBeenCalled();
+    expect(successToast).toHaveBeenCalled();
+    successToast.mockRestore();
+  });
+
+  it("should surface a failed cancellation and leave the list alone", async () => {
+    const refreshMeetings = vi.fn();
+    deleteMeeting.mockRejectedValue(new Error("boom"));
+    const errorToast = vi.spyOn(toast, "error").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "mock-cancel-1" }));
+    });
+
+    expect(errorToast).toHaveBeenCalled();
+    expect(refreshMeetings).not.toHaveBeenCalled();
+    errorToast.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it("should open the reschedule dialog without calling the API", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(
+      screen.queryByRole("button", { name: "mock-reschedule-submit" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-1" }));
+
+    expect(
+      screen.getByRole("button", { name: "mock-reschedule-submit" }),
+    ).toBeInTheDocument();
+    expect(rescheduleMeeting).not.toHaveBeenCalled();
+  });
+
+  it("should reschedule against the selected round and that partner, then refresh", async () => {
+    const refreshMeetings = vi.fn();
+    rescheduleMeeting.mockResolvedValue({});
+    const successToast = vi
+      .spyOn(toast, "success")
+      .mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-1" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    // `round_id` is passed through as the prop's own type; the DTO coerces.
+    expect(rescheduleMeeting).toHaveBeenCalledWith("m-1", {
+      round_id: "1",
+      partner_id: 1,
+      timezone: "Asia/Shanghai",
+      start_date: "2026-06-08",
+      start_time: "09:30",
+      duration_minutes: 60,
+    });
+    expect(refreshMeetings).toHaveBeenCalled();
+    expect(successToast).toHaveBeenCalled();
+    successToast.mockRestore();
+  });
+
+  it("should surface a failed reschedule and leave the list alone", async () => {
+    const refreshMeetings = vi.fn();
+    rescheduleMeeting.mockRejectedValue(new Error("boom"));
+    const errorToast = vi.spyOn(toast, "error").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-1" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    expect(errorToast).toHaveBeenCalled();
+    expect(refreshMeetings).not.toHaveBeenCalled();
+    errorToast.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it("should reschedule against the partner whose row the control came from, not just the first partner", async () => {
+    // With a single partner, threading the wrong (e.g. loop-stale) partner id
+    // through would still pass every other reschedule test. A second partner
+    // is what makes that mistake observable.
+    const secondPartner = {
+      partnerId: 2,
+      preferredName: "Bob",
+      requiredMeetings: 3,
+      completedCount: 0,
+      completedRate: 0,
+      meetingTimeList: [],
+      participantRole: "mentee",
+      isActive: true,
+    };
+    rescheduleMeeting.mockResolvedValue({});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            secondPartner,
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-2" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    expect(rescheduleMeeting).toHaveBeenCalledWith(
+      "m-1",
+      expect.objectContaining({ partner_id: 2 }),
+    );
+  });
+
+  it("should call refreshMeetings after a meeting is logged", () => {
     const refreshMeetings = vi.fn();
 
     render(
@@ -199,51 +600,94 @@ describe("MentorshipParticipantsCard", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    );
-    expect(screen.getByTestId("meeting-modal")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "mock-success" }));
+    fireEvent.click(screen.getByRole("button", { name: "mock-logged" }));
     expect(refreshMeetings).toHaveBeenCalled();
   });
 
-  it("should NOT show submit button when flag is off", () => {
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": false });
+  it("should NOT offer logging when the manual submit flag is off", () => {
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": false,
+      "create-google-meeting": true,
+    });
     render(<MentorshipParticipantsCard {...baseProps} />);
 
-    expect(
-      screen.queryByRole("button", { name: /Submit Meeting Info/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-log-past",
+      "false",
+    );
   });
 
-  it("should show submit button when flag is on", () => {
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": true });
+  it("should offer scheduling when the google meeting flag is on", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
 
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeInTheDocument();
+    const dialog = screen.getByTestId("meeting-dialog");
+    expect(dialog).toHaveAttribute("data-can-schedule", "true");
+    expect(dialog).toHaveAttribute("data-schedule-unavailable", "");
   });
 
-  it("should not render meeting modal when user cannot submit", () => {
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": false });
+  it("should NOT offer scheduling when the google meeting flag is off", () => {
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": true,
+      "create-google-meeting": false,
+    });
     render(<MentorshipParticipantsCard {...baseProps} />);
 
-    expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-schedule",
+      "false",
+    );
   });
 
-  it("should display duration as date only", () => {
+  it("should match the selected round regardless of whether the id is a string or a number", () => {
+    // The round selector hands back a string; the round list carries numbers.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        selectedRoundId="20"
+        roundSelectionData={{
+          sortedRounds: [
+            { id: 10, name: "2025 Fall", status: "completed" },
+            { id: 20, name: "2026 Spring", status: "active" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-schedule-unavailable",
+      "",
+    );
+  });
+
+  it("should say why scheduling is unavailable when the selected round is not active", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        roundSelectionData={{
+          sortedRounds: [{ id: "1", name: "2026 Spring", status: "completed" }],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-schedule-unavailable",
+      "No active mentorship round",
+    );
+  });
+
+  it("should display duration as date only, labelled with the viewer's timezone", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
     const durationEl = screen
       .getByText("Duration:", { selector: "span" })
       .closest("p");
     expect(durationEl).toHaveTextContent(
-      /\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}/,
+      /\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2} Asia\/Shanghai/,
     );
   });
 
-  it("should keep submit enabled when deadline is in the future", () => {
+  // The server decides the logging window; the round's dates below point
+  // the other way on purpose, so only reading its verdict passes.
+  const renderWithLogging = (isMeetingLogOpen, meetingsCompletionDeadlineAt) =>
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -252,38 +696,63 @@ describe("MentorshipParticipantsCard", () => {
           roundInfo: {
             ...baseProps.participantDetails.roundInfo,
             status: MentorshipRoundStatus.ACTIVE,
-            timeline: { meetingsCompletionDeadlineAt: "2099-12-31T00:00:00Z" },
+            timeline: { meetingsCompletionDeadlineAt },
+            isMeetingLogOpen,
           },
         }}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).not.toBeDisabled();
+
+  it("should keep logging available while the server reports it open", () => {
+    renderWithLogging(true, "2020-01-01T00:00:00Z");
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "",
+    );
   });
 
-  it("should disable submit when deadline is well in the past", () => {
+  it("should close logging when the server reports it closed", () => {
+    renderWithLogging(false, "2099-12-31T00:00:00Z");
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "Logging meetings for this round has closed.",
+    );
+  });
+
+  // A round list without the verdicts (a backend deployed behind this
+  // frontend) must not lock anyone out; the server still refuses what it
+  // should.
+  it("should neither close logging nor hide feedback when the verdicts are missing", () => {
+    const { name, status, timeline } = baseProps.participantDetails.roundInfo;
+    const roundWithoutVerdicts = { name, status, timeline };
     render(
       <MentorshipParticipantsCard
         {...baseProps}
         participantDetails={{
           ...baseProps.participantDetails,
-          roundInfo: {
-            ...baseProps.participantDetails.roundInfo,
-            status: MentorshipRoundStatus.ACTIVE,
-            timeline: { meetingsCompletionDeadlineAt: "2020-01-01T00:00:00Z" },
-          },
+          roundInfo: roundWithoutVerdicts,
         }}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeDisabled();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "",
+    );
+    expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
+      "data-editable",
+      "true",
+    );
   });
 
-  // "now" is pinned to 2026-03-01T00:00:00Z by the beforeEach above.
   describe("feedback dialog", () => {
-    const renderWithTimeline = (timeline) =>
+    // The round's dates contradict the server's verdict, so only a card that
+    // reads the verdict passes.
+    const CONTRADICTING_TIMELINE = {
+      meetingLogReminderAt: "2099-01-01T00:00:00Z",
+      meetingsCompletionDeadlineAt: "2099-02-01T00:00:00Z",
+      feedbackDeadlineAt: "2020-01-01T00:00:00Z",
+    };
+    const renderWithWindow = (window) =>
       render(
         <MentorshipParticipantsCard
           {...baseProps}
@@ -291,26 +760,23 @@ describe("MentorshipParticipantsCard", () => {
             ...baseProps.participantDetails,
             roundInfo: {
               ...baseProps.participantDetails.roundInfo,
-              timeline,
+              timeline: CONTRADICTING_TIMELINE,
+              ...window,
             },
           }}
         />,
       );
 
     it("should not render the dialog before the feedback window opens", () => {
-      renderWithTimeline({
-        meetingLogReminderAt: "2026-04-02T06:59:59Z",
-        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
-        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
-      });
+      renderWithWindow({ isFeedbackOpen: false, isFeedbackEditable: false });
       expect(screen.queryByTestId("feedback-dialog")).not.toBeInTheDocument();
     });
 
-    it("should render an editable dialog once the mid-term reminder date has passed", () => {
-      renderWithTimeline({
-        meetingLogReminderAt: "2026-02-15T06:59:59Z",
-        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
-        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+    it("should render an editable dialog while the window is open", () => {
+      renderWithWindow({
+        isFeedbackOpen: true,
+        isFeedbackEditable: true,
+        feedbackClosesAt: "2026-05-09T15:59:59Z",
       });
       expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
         "data-editable",
@@ -319,38 +785,17 @@ describe("MentorshipParticipantsCard", () => {
     });
 
     it("should pass the selected round id and name to the dialog", () => {
-      renderWithTimeline({
-        meetingLogReminderAt: "2026-02-15T06:59:59Z",
-        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
-      });
+      renderWithWindow({ isFeedbackOpen: true, isFeedbackEditable: true });
       const dialog = screen.getByTestId("feedback-dialog");
       expect(dialog).toHaveAttribute("data-round-id", "1");
       expect(dialog).toHaveAttribute("data-round-name", "2026 Spring");
     });
 
-    it("should open one month before the meetings deadline when no mid-term reminder is set", () => {
-      // Meetings end 2026-03-15, so the window opens 2026-02-15 — already past.
-      renderWithTimeline({
-        meetingsCompletionDeadlineAt: "2026-03-15T06:59:59Z",
-        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
-      });
-      expect(screen.getByTestId("feedback-dialog")).toBeInTheDocument();
-    });
-
-    it("should stay closed when the derived open date is still in the future", () => {
-      // Meetings end 2026-04-30, so the window opens 2026-03-30 — not yet.
-      renderWithTimeline({
-        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
-        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
-      });
-      expect(screen.queryByTestId("feedback-dialog")).not.toBeInTheDocument();
-    });
-
-    it("should render a read-only dialog after the feedback deadline", () => {
-      renderWithTimeline({
-        meetingLogReminderAt: "2026-01-01T00:00:00Z",
-        meetingsCompletionDeadlineAt: "2026-01-20T00:00:00Z",
-        feedbackDeadlineAt: "2026-02-01T00:00:00Z",
+    it("should render a read-only dialog after the window closes", () => {
+      renderWithWindow({
+        isFeedbackOpen: true,
+        isFeedbackEditable: false,
+        feedbackClosesAt: "2026-02-01T00:00:00Z",
       });
       expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
         "data-editable",
@@ -358,28 +803,15 @@ describe("MentorshipParticipantsCard", () => {
       );
     });
 
-    it("should close one month after the meetings deadline when no feedback deadline is set", () => {
-      // Meetings end 2026-02-10, so the window closes 2026-03-10 — still open.
-      renderWithTimeline({
-        meetingLogReminderAt: "2026-01-01T00:00:00Z",
-        meetingsCompletionDeadlineAt: "2026-02-10T06:59:59Z",
-      });
-      const dialog = screen.getByTestId("feedback-dialog");
-      expect(dialog).toHaveAttribute("data-editable", "true");
-      expect(dialog).toHaveAttribute(
-        "data-deadline",
-        "Mar 10, 2026 14:59 Asia/Shanghai",
-      );
-    });
-
-    it("should show the deadline in the user's timezone", () => {
-      renderWithTimeline({
-        meetingLogReminderAt: "2026-02-15T06:59:59Z",
-        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+    it("should show the server's closing time in the user's timezone", () => {
+      renderWithWindow({
+        isFeedbackOpen: true,
+        isFeedbackEditable: true,
+        feedbackClosesAt: "2026-05-09T15:59:59Z",
       });
       expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
         "data-deadline",
-        "May 9, 2026 23:59 Asia/Shanghai",
+        "2026-05-09 23:59 Asia/Shanghai",
       );
     });
 
@@ -390,7 +822,8 @@ describe("MentorshipParticipantsCard", () => {
           participantDetails={{
             roundInfo: {
               ...baseProps.participantDetails.roundInfo,
-              timeline: { meetingLogReminderAt: "2026-01-01T00:00:00Z" },
+              isFeedbackOpen: true,
+              isFeedbackEditable: true,
             },
             partnerMeetingOverview: [],
             participantRole: null,
@@ -401,23 +834,186 @@ describe("MentorshipParticipantsCard", () => {
     });
   });
 
-  it("should disable submit when round is completed without deadline", () => {
-    render(
-      <MentorshipParticipantsCard
-        {...baseProps}
-        participantDetails={{
-          ...baseProps.participantDetails,
-          roundInfo: {
-            ...baseProps.participantDetails.roundInfo,
-            status: MentorshipRoundStatus.COMPLETED,
-            timeline: { meetingsCompletionDeadlineAt: undefined },
-          },
-        }}
-      />,
+  describe("pairing state", () => {
+    const ENDED_LINE = "Your pairing for this round has ended.";
+    const NO_PAIRING = "No active pairing this round.";
+
+    // The overview's `participantRole` is the viewer's role in that pair.
+    const pairing = (partnerId, preferredName, viewerRole, isActive) => ({
+      partnerId,
+      preferredName,
+      requiredMeetings: 3,
+      completedCount: 0,
+      completedRate: 0,
+      meetingTimeList: [],
+      participantRole: viewerRole,
+      isActive,
+    });
+
+    const renderCard = ({ roundStatus = "active", viewerRole, pairings }) =>
+      render(
+        <MentorshipParticipantsCard
+          {...baseProps}
+          roundSelectionData={{
+            sortedRounds: [
+              { id: "1", name: "2026 Spring", status: roundStatus },
+            ],
+          }}
+          participantDetails={{
+            ...baseProps.participantDetails,
+            roundInfo: {
+              ...baseProps.participantDetails.roundInfo,
+              status: roundStatus,
+            },
+            partnerMeetingOverview: pairings,
+            participantRole: viewerRole,
+          }}
+        />,
+      );
+
+    const endedBadges = () => screen.queryAllByText("Ended");
+
+    describe("Manage Meetings", () => {
+      it("stays available to a mentor with two live pairings and one ended", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(11, "Carol", "mentor", true),
+            pairing(12, "Dave", "mentor", true),
+            pairing(13, "Erin", "mentor", false),
+          ],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", "");
+        expect(dialog).toHaveAttribute("data-can-log-past", "false");
+      });
+
+      it("is unavailable to a mentor whose pairings have all ended", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(21, "Frank", "mentor", false),
+            pairing(22, "Grace", "mentor", false),
+          ],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", NO_PAIRING);
+        expect(dialog).toHaveAttribute("data-can-log-past", "false");
+      });
+
+      it("offers scheduling and logging to a mentee with one live pairing", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(31, "Heidi", "mentee", true)],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", "");
+        expect(dialog).toHaveAttribute("data-log-unavailable", "");
+        expect(dialog).toHaveAttribute("data-log-partner-id", "31");
+      });
+
+      it("is unavailable to a mentee whose pairing has ended", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(41, "Ivan", "mentee", false)],
+        });
+
+        // The dialog greys its trigger when every tab has a reason, and
+        // lists each tab's reason as the tooltip.
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute("data-schedule-unavailable", NO_PAIRING);
+        expect(dialog.getAttribute("data-log-unavailable")).not.toBe("");
+      });
+
+      it("names the closed round rather than the pairing once the round is completed", () => {
+        renderCard({
+          roundStatus: "completed",
+          viewerRole: "mentee",
+          pairings: [pairing(51, "Judy", "mentee", true)],
+        });
+
+        const dialog = screen.getByTestId("meeting-dialog");
+        expect(dialog).toHaveAttribute(
+          "data-schedule-unavailable",
+          "No active mentorship round",
+        );
+      });
+    });
+
+    it.each(["active", "completed"])(
+      "shows no round status badge for a %s round",
+      (roundStatus) => {
+        renderCard({
+          roundStatus,
+          viewerRole: "mentee",
+          pairings: [pairing(61, "Mallory", "mentee", true)],
+        });
+
+        expect(screen.queryByText("Active")).not.toBeInTheDocument();
+        expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+      },
     );
 
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeDisabled();
+    describe("ended pairings", () => {
+      it("marks nothing while the only pairing is live", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(71, "Niaj", "mentee", true)],
+        });
+
+        expect(screen.queryByText(ENDED_LINE)).not.toBeInTheDocument();
+        expect(endedBadges()).toHaveLength(0);
+      });
+
+      it("marks only the ended row when a live pairing remains", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(81, "Olivia", "mentor", true),
+            pairing(82, "Peggy", "mentor", false),
+          ],
+        });
+
+        expect(screen.queryByText(ENDED_LINE)).not.toBeInTheDocument();
+        const badges = endedBadges();
+        expect(badges).toHaveLength(1);
+        expect(badges[0].closest("p")).toHaveTextContent("Peggy");
+        expect(badges[0]).toHaveClass("text-amber-600");
+      });
+
+      it("says the pairing has ended when the only pairing has ended", () => {
+        renderCard({
+          viewerRole: "mentee",
+          pairings: [pairing(91, "Rupert", "mentee", false)],
+        });
+
+        expect(screen.getByText(ENDED_LINE)).toHaveClass("text-amber-600");
+        const badges = endedBadges();
+        expect(badges).toHaveLength(1);
+        expect(badges[0].closest("p")).toHaveTextContent("Rupert");
+        expect(badges[0]).toHaveClass("text-amber-600");
+      });
+
+      it("says it once when every pairing has ended", () => {
+        renderCard({
+          viewerRole: "mentor",
+          pairings: [
+            pairing(101, "Sybil", "mentor", false),
+            pairing(102, "Trent", "mentor", false),
+          ],
+        });
+
+        expect(screen.getAllByText(ENDED_LINE)).toHaveLength(1);
+        const badges = endedBadges();
+        expect(badges.map((badge) => badge.closest("p").textContent)).toEqual([
+          expect.stringContaining("Sybil"),
+          expect.stringContaining("Trent"),
+        ]);
+        badges.forEach((badge) => expect(badge).toHaveClass("text-amber-600"));
+      });
+    });
   });
 });

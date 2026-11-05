@@ -1,0 +1,1121 @@
+from backend.common.approval_enums import ApprovalRequestStatus
+from backend.entity.job_entity import JobEntity
+from backend.notification_management.event_recorder import record_event
+from backend.repository.job_repository import JobRepository
+from backend.repository.user_permissions_repository import UserPermissionsRepository
+from backend.repository.users_repository import UsersRepository
+from backend.recruiting.job_blockers import submit_blockers
+from backend.recruiting.job_review_handler import (
+    JOB_REVIEW,
+    JOB_SUBJECT,
+    review_kind,
+    revalidate_job_config,
+)
+from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.dto.job_activity_dto import JobActivityDto
+from backend.dto.job_config_dto import question_seq_floor
+from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobSummaryDto
+from backend.dto.job_review_dto import ApproverDto, JobReviewDto
+from backend.common.name_utils import display_name_or_id
+from backend.common.permissions import Permission
+from backend.common.recruiting_enums import (
+    JobReviewKind,
+    JobStatus,
+    PUBLICLY_VISIBLE_JOB_STATUSES,
+    RecruitingEvent,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class JobService:
+    """Manages recruiting postings (create/edit/close + review gate)."""
+
+    def __init__(
+        self,
+        job_repository: JobRepository,
+        recruiting_mapper: RecruitingMapper,
+        user_permissions_repository: UserPermissionsRepository,
+        notification_repository,
+        users_repository: UsersRepository,
+        user_emails_repository,
+        event_repository,
+        approval_service,
+    ):
+        """
+        Initialise the service with its repositories and mapper.
+
+        Args:
+            job_repository (JobRepository): Data-access layer for JobEntity.
+            recruiting_mapper (RecruitingMapper): Entity-to-DTO converter.
+            user_permissions_repository (UserPermissionsRepository): Used to
+                resolve who may approve postings.
+            notification_repository (NotificationRepository): Retained until
+                the legacy notification rows are dropped; what happens here is
+                recorded through ``record_event``, which writes the event and
+                the notification rows for whoever its resolver returns.
+            users_repository (UsersRepository): Actor-name resolution for the
+                audit timeline.
+            event_repository (EventRepository): Reads the event log behind
+                the posting's history panel.
+            user_emails_repository (UserEmailsRepository): Contact-email
+                resolution for approver/evaluator/owner pickers.
+            approval_service (ApprovalService): Raises, reassigns, decides
+                and withdraws reviews; the job review handler holds what a
+                review does to the posting.
+        """
+        self.job_repository = job_repository
+        self.recruiting_mapper = recruiting_mapper
+        self.user_permissions_repository = user_permissions_repository
+        self.notification_repository = notification_repository
+        self.users_repository = users_repository
+        self.user_emails_repository = user_emails_repository
+        self.event_repository = event_repository
+        self.approval_service = approval_service
+
+    async def _to_approver_dtos(
+        self, session: AsyncSession, users: list
+    ) -> list[ApproverDto]:
+        """Map user rows to ApproverDtos with their user_emails contact address.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            users (list[UsersEntity]): The users to project.
+
+        Returns:
+            list[ApproverDto]: One entry per user, in input order.
+        """
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [u.user_id for u in users]
+            )
+        )
+        return [
+            self.recruiting_mapper.to_approver_dto(
+                u, contact_by_user_id.get(u.user_id, "")
+            )
+            for u in users
+        ]
+
+    async def list_active_approvers(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users who may approve postings (hold job.approve).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: One entry per active approver.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_JOB_APPROVE.value
+        )
+        return await self._to_approver_dtos(session, users)
+
+    async def list_interview_pool(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users assignable as Screening/Behavioral/Tech evaluators.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: Holders of recruiting.interview.evaluate.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+        return await self._to_approver_dtos(session, users)
+
+    async def list_job_owners(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users eligible to own a posting (advance applications).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: Holders of recruiting.application.advance.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+        )
+        return await self._to_approver_dtos(session, users)
+
+    @staticmethod
+    def _serialize(model) -> dict | None:
+        """Dump a config sub-DTO to a camelCase JSONB dict, or None.
+
+        Args:
+            model: A BaseRequestDto config model (or None).
+
+        Returns:
+            dict | None: camelCase dict with unset optionals omitted, or None.
+        """
+        if model is None:
+            return None
+        return model.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    @staticmethod
+    def _with_monotonic_next_seq(
+        new_form: dict | None, stored_form: dict | None
+    ) -> dict | None:
+        """Resolve a form schema's question counter so it can only move forward.
+
+        ``nextSeq`` is what stops a delete-then-add from handing a recycled id
+        to a new question. ``_serialize`` drops it when the request omits it
+        (``exclude_none=True``), and a request can omit it for real: a browser
+        still running a pre-counter bundle rebuilds ``formSchema`` as
+        ``{questions}`` alone. Writing that through would erase the stored
+        counter, after which floor derivation resumes recycling ids on the
+        next delete-then-add. ``FormSchemaDto`` only rejects a value *below*
+        the floor; it cannot see an absent one, nor the stored value.
+
+        So the effective counter is the highest of the incoming value, the
+        value already on the posting, and the floor derived from the ids in
+        the incoming form.
+
+        Args:
+            new_form (dict | None): The incoming camelCase form schema, or
+                None when the request did not send one.
+            stored_form (dict | None): The posting's current form schema, or
+                None on create / a posting that never had one.
+
+        Returns:
+            dict | None: ``new_form`` carrying a non-recycling ``nextSeq``, or
+            None when ``new_form`` is None (the caller then falls back to the
+            stored schema, counter included).
+        """
+        if new_form is None:
+            return None
+        questions = new_form.get("questions") or []
+        floor = question_seq_floor(
+            q.get("id") for q in questions if isinstance(q, dict)
+        )
+        incoming = new_form.get("nextSeq") or 0
+        stored = (stored_form or {}).get("nextSeq") or 0
+        return {**new_form, "nextSeq": max(incoming, stored, floor)}
+
+    @staticmethod
+    def _build_pending_payload(job: "JobEntity", dto: JobCreateDto) -> dict:
+        """Merge an edit dto onto a posting's current live values.
+
+        Optional config fields (screen_rules, form_schema, pipeline_config,
+        profile_config) fall back to the posting's current live value when the
+        dto sends None, so a field the submitter didn't touch is never blanked
+        out when this payload is later applied. title and cooldown_days are
+        carried through as-is: title is required non-null on the dto, and
+        cooldown_days's None is an explicit clear (existing behavior), not
+        "leave unchanged".
+
+        Args:
+            job (JobEntity): The posting being edited.
+            dto (JobCreateDto): The incoming edit payload.
+
+        Returns:
+            dict: A complete camelCase draft snapshot of all seven editable
+            fields, ready to store as pending_payload and later apply verbatim.
+        """
+        new_form = JobService._with_monotonic_next_seq(
+            JobService._serialize(dto.form_schema), job.form_schema
+        )
+        new_pipeline = JobService._serialize(dto.pipeline_config)
+        new_screen = JobService._serialize(dto.screen_rules)
+        new_profile = JobService._serialize(dto.profile_config)
+        return {
+            "title": dto.title,
+            "description": dto.description,
+            "cooldownDays": dto.cooldown_days,
+            "screenRules": new_screen if new_screen is not None else job.screen_rules,
+            "formSchema": new_form if new_form is not None else job.form_schema,
+            "pipelineConfig": (
+                new_pipeline if new_pipeline is not None else job.pipeline_config
+            ),
+            "profileConfig": (
+                new_profile if new_profile is not None else job.profile_config
+            ),
+        }
+
+    async def _validate_assignees_and_owner(
+        self, session: AsyncSession, dto: JobCreateDto
+    ) -> None:
+        """Validate pre-configured assignees/owners hold the required permission.
+
+        Each stage ``default_assignee_id`` must be an active holder of
+        ``recruiting.interview.evaluate``; every id in ``owner_ids`` must be an
+        active holder of ``recruiting.application.advance``. No-op when
+        pipeline_config is unset.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            dto (JobCreateDto): The posting payload.
+
+        Raises:
+            ValueError: If any assignee/owner lacks the required permission.
+        """
+        if dto.pipeline_config is None:
+            return
+        assignee_ids = {
+            s.default_assignee_id
+            for s in dto.pipeline_config.stages
+            if s.default_assignee_id is not None
+        }
+        if assignee_ids:
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+                )
+            )
+            valid = {u.user_id for u in pool}
+            missing = assignee_ids - valid
+            if missing:
+                raise ValueError(
+                    f"default_assignee_id {sorted(missing)} are not active interview evaluators"
+                )
+        owner_ids = dto.pipeline_config.owner_ids
+        if owner_ids:
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+                )
+            )
+            valid = {u.user_id for u in pool}
+            missing = [o for o in owner_ids if o not in valid]
+            if missing:
+                raise ValueError(
+                    f"owner_ids {sorted(missing)} cannot advance applications"
+                )
+
+    async def _revalidate_job_config(
+        self, session: AsyncSession, job: "JobEntity"
+    ) -> None:
+        """Re-check the pipeline that would go live; see
+        ``job_review_handler.revalidate_job_config``.
+
+        Raises:
+            ValueError: If the effective config has no stage or no owner, or
+                a stored assignee/owner no longer holds its permission.
+        """
+        await revalidate_job_config(session, job, self.user_permissions_repository)
+
+    async def create_job(
+        self, session: AsyncSession, dto: JobCreateDto, created_by: int
+    ) -> JobDto:
+        """Create a DRAFT posting from a JobCreateDto.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            dto (JobCreateDto): Payload with posting fields and config.
+            created_by (int): The authenticated user creating the posting,
+                logged as the ``job_created`` audit entry's actor.
+
+        Returns:
+            JobDto: The newly created posting, including its assigned id.
+
+        Raises:
+            ValueError: If a pre-configured assignee/owner lacks its permission.
+        """
+        await self._validate_assignees_and_owner(session, dto)
+        job = JobEntity(
+            kind=dto.kind,
+            mentorship_role=dto.mentorship_role,
+            status=JobStatus.DRAFT,
+            title=dto.title,
+            description=dto.description,
+            form_schema=self._with_monotonic_next_seq(
+                self._serialize(dto.form_schema), None
+            ),
+            pipeline_config=self._serialize(dto.pipeline_config),
+            screen_rules=self._serialize(dto.screen_rules),
+            profile_config=self._serialize(dto.profile_config),
+            cooldown_days=dto.cooldown_days,
+        )
+        job = await self.job_repository.create_job(session, job)
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=created_by,
+            event_type=RecruitingEvent.JOB_CREATED,
+        )
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(job)
+
+    async def update_job(
+        self, session: AsyncSession, job_id: int, dto: JobCreateDto
+    ) -> JobDto:
+        """Update a posting's editable fields.
+
+        Only DRAFT, PUBLISHED, and CLOSED postings are editable:
+        - DRAFT: every field (title, description, kind, mentorship_role,
+          form_schema, pipeline_config, screen_rules, profile_config,
+          cooldown_days) is written live directly.
+        - PUBLISHED: any edit — every field, no exceptions — is packed into
+          pending_payload. Status is unchanged (mirrors CLOSED below); use
+          submit_for_review separately to open a REVISION review. The live
+          version stays public and unchanged until the revision is approved.
+          kind/mentorship_role are not editable once published — the UI
+          disables both fields, and a differing value here raises rather
+          than being silently dropped.
+        - CLOSED: same rule as PUBLISHED — any edit parks into pending_payload;
+          status is unchanged (still CLOSED). Use request_reopen separately to
+          submit the posting (with or without this edit) for a REOPEN review.
+          A CLOSED posting that was never published cannot be edited — there
+          is no review path that would ever apply a staged edit on it, so it
+          is rejected outright (delete_job instead).
+
+        Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
+        PENDING_CLOSE, PENDING_REOPEN) raises ValueError immediately
+        without touching the entity.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Identifier of the posting to update.
+            dto (JobCreateDto): New values for editable fields.
+
+        Returns:
+            JobDto: The updated posting.
+
+        Raises:
+            ValueError: If no posting with the given id exists, the posting's
+                current status is not DRAFT, PUBLISHED, or CLOSED (i.e. it is
+                PENDING_REVIEW, PUBLISHED_PENDING_REVISION, PENDING_CLOSE, or
+                PENDING_REOPEN), the posting is CLOSED but was never
+                published, a PUBLISHED/CLOSED edit tries to change kind or
+                mentorship_role, or a pre-configured assignee/owner lacks its
+                required permission.
+        """
+        job = await self._require_job(session, job_id)
+        await self._validate_assignees_and_owner(session, dto)
+        new_form = self._with_monotonic_next_seq(
+            self._serialize(dto.form_schema), job.form_schema
+        )
+        new_pipeline = self._serialize(dto.pipeline_config)
+        new_screen = self._serialize(dto.screen_rules)
+        new_profile = self._serialize(dto.profile_config)
+
+        if job.status == JobStatus.DRAFT:
+            job.title = dto.title
+            job.description = dto.description
+            job.kind = dto.kind
+            job.mentorship_role = dto.mentorship_role
+            job.form_schema = new_form
+            job.pipeline_config = new_pipeline
+            job.screen_rules = new_screen
+            job.profile_config = new_profile
+            job.cooldown_days = dto.cooldown_days
+        elif job.status == JobStatus.PUBLISHED:
+            self._require_unchanged_kind(job_id, job, dto)
+            job.pending_payload = self._build_pending_payload(job, dto)
+            # status stays PUBLISHED — mirrors the CLOSED branch below;
+            # the submitter calls submit_for_review separately to open
+            # the actual REVISION review.
+        elif job.status == JobStatus.CLOSED:
+            if not job.was_published:
+                raise ValueError(
+                    f"Job {job_id} was never published; delete it instead of editing"
+                )
+            self._require_unchanged_kind(job_id, job, dto)
+            job.pending_payload = self._build_pending_payload(job, dto)
+        else:
+            raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
+        job = await self.job_repository.update_job(session, job)
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(job)
+
+    async def discard_pending_edit(
+        self, session: AsyncSession, job_id: int, acting_user_id: int
+    ) -> JobDto:
+        """Discard a posting's staged edit without changing its status.
+
+        Only PUBLISHED and CLOSED postings can carry a staged edit outside
+        of an open review. Clears pending_payload; the live fields and
+        status are untouched.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting whose staged edit is being discarded.
+            acting_user_id (int): User discarding the edit, for the audit log.
+
+        Returns:
+            JobDto: The posting after the staged edit was cleared.
+
+        Raises:
+            ValueError: If the posting is not PUBLISHED/CLOSED, or has no
+                staged edit to discard.
+        """
+        job = await self._require_job(session, job_id)
+        if job.status not in (JobStatus.PUBLISHED, JobStatus.CLOSED):
+            raise ValueError(
+                f"Job {job_id} cannot discard a pending edit from {job.status}"
+            )
+        if job.pending_payload is None:
+            raise ValueError(f"Job {job_id} has nothing staged to discard")
+        job.pending_payload = None
+        job = await self.job_repository.update_job(session, job)
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=acting_user_id,
+            event_type=RecruitingEvent.PENDING_EDIT_DISCARDED,
+        )
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(job)
+
+    @staticmethod
+    def _require_unchanged_kind(
+        job_id: int, job: "JobEntity", dto: JobCreateDto
+    ) -> None:
+        """Reject an edit that changes kind or mentorship_role once a posting
+        has left DRAFT — both fields are locked from that point on. The UI
+        disables them; this is the backend's defense in depth for a caller
+        that bypasses it.
+
+        Args:
+            job_id (int): The posting being edited, for the error message.
+            job (JobEntity): The posting's current, live values.
+            dto (JobCreateDto): The incoming edit payload.
+
+        Raises:
+            ValueError: If dto.kind or dto.mentorship_role differs from the
+                posting's current value.
+        """
+        if dto.kind != job.kind or dto.mentorship_role != job.mentorship_role:
+            raise ValueError(
+                f"Job {job_id} cannot change kind or mentorship role once it "
+                "has left draft"
+            )
+
+    async def _open_review(
+        self,
+        session: AsyncSession,
+        job: "JobEntity",
+        kind: JobReviewKind,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+    ) -> JobDto:
+        """Open a review of ``kind`` through the approval flow. Commits.
+
+        The approval service checks the reviewer (an active approver, not the
+        submitter), the job review handler checks the posting is in the status
+        ``kind`` opens from and moves it to its pending status, and a second
+        open review on the posting is refused.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job (JobEntity): The posting being submitted for review.
+            kind (JobReviewKind): INITIAL, REVISION, CLOSE or REOPEN.
+            reviewer_id (int): User who will review the posting.
+            submitted_by (int): User opening the review.
+            message (str | None): Optional note to the reviewer.
+
+        Returns:
+            JobDto: The posting after the review was opened.
+
+        Raises:
+            ValueError: The posting is not in the status ``kind`` opens from,
+                the submitter picks themselves, or the reviewer is not an
+                active approver.
+            ConflictError: The posting already has an open review.
+        """
+        await self.approval_service.raise_request(
+            session,
+            action=JOB_REVIEW,
+            raised_by=submitted_by,
+            target_id=str(job.job_id),
+            payload={"kind": kind.value},
+            reason=message,
+            reviewer_id=reviewer_id,
+        )
+        job = await self._require_job(session, job.job_id)
+        return self.recruiting_mapper.to_job_dto(
+            job,
+            reviewer_id=reviewer_id,
+            submitted_by=submitted_by,
+            submitted_by_name=await self._name_of(session, submitted_by),
+            submit_message=(message or "").strip() or None,
+            submit_blockers=submit_blockers(job),
+        )
+
+    async def submit_for_review(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+    ) -> JobDto:
+        """Submit a posting for review, opening a pending review cycle.
+
+        A DRAFT submission is an INITIAL review and moves the posting to
+        PENDING_REVIEW. Submitting a PUBLISHED posting with a staged edit is a
+        REVISION review and moves the posting to PUBLISHED_PENDING_REVISION (the
+        live version stays public until approval).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting being submitted.
+            reviewer_id (int): Chosen approver; must hold the approve permission
+                and differ from the submitter.
+            submitted_by (int): User submitting the posting.
+            message (str | None): Optional note to the reviewer.
+
+        Returns:
+            JobDto: The posting after submission.
+
+        Raises:
+            ValueError: If the posting cannot be submitted from its current
+                status, the submitter picks themselves, or the reviewer is
+                not an active approver.
+        """
+        job = await self._require_job(session, job_id)
+        await self._revalidate_job_config(session, job)
+        if job.status == JobStatus.DRAFT:
+            kind = JobReviewKind.INITIAL
+        elif job.status == JobStatus.PUBLISHED and job.pending_payload is not None:
+            kind = JobReviewKind.REVISION
+        elif job.status == JobStatus.PUBLISHED:
+            raise ValueError(f"Job {job_id} has nothing staged to submit for review")
+        else:
+            raise ValueError(f"Job {job_id} cannot be submitted from {job.status}")
+        return await self._open_review(
+            session,
+            job,
+            kind,
+            reviewer_id,
+            submitted_by,
+            message,
+        )
+
+    async def request_close(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+    ) -> JobDto:
+        """Open a close-review for a PUBLISHED posting.
+
+        The posting moves to PENDING_CLOSE while the review is pending. Only a
+        PUBLISHED posting may be closed via review; drafts may instead be
+        deleted directly via ``delete_job``.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting to close.
+            reviewer_id (int): Chosen approver; must hold the approve permission
+                and differ from the submitter.
+            submitted_by (int): User requesting the close.
+            message (str | None): Optional note to the reviewer.
+
+        Returns:
+            JobDto: The posting with status PENDING_CLOSE.
+
+        Raises:
+            ValueError: If the posting is not PUBLISHED, the submitter picks
+                themselves, or the reviewer is not an active approver.
+        """
+        job = await self._require_job(session, job_id)
+        return await self._open_review(
+            session,
+            job,
+            JobReviewKind.CLOSE,
+            reviewer_id,
+            submitted_by,
+            message,
+        )
+
+    async def request_reopen(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+    ) -> JobDto:
+        """Open a reopen-review for a CLOSED posting.
+
+        The posting moves to PENDING_REOPEN while the review is pending. On
+        approval it becomes PUBLISHED; on rejection it stays CLOSED.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting to reopen.
+            reviewer_id (int): Chosen approver; must hold the approve permission
+                and differ from the submitter.
+            submitted_by (int): User requesting the reopen.
+            message (str | None): Optional note to the reviewer.
+
+        Returns:
+            JobDto: The posting with status PENDING_REOPEN.
+
+        Raises:
+            ValueError: If the posting is not CLOSED, was never published
+                (use delete_job instead), the config that would go live has
+                no stage or no owner or names an assignee/owner who no longer
+                holds its permission, the submitter picks themselves, or the
+                reviewer is not an active approver.
+        """
+        job = await self._require_job(session, job_id)
+        if not job.was_published:
+            raise ValueError(
+                f"Job {job_id} was never published; delete it instead of reopening"
+            )
+        await self._revalidate_job_config(session, job)
+        return await self._open_review(
+            session,
+            job,
+            JobReviewKind.REOPEN,
+            reviewer_id,
+            submitted_by,
+            message,
+        )
+
+    async def approve(
+        self, session: AsyncSession, review_id: int, acting_user_id: int
+    ) -> JobDto:
+        """Approve a pending review, advancing the posting to its next state.
+        Commits.
+
+        What approval does to the posting by kind (INITIAL and REOPEN publish
+        it, REVISION applies the staged edit, CLOSE closes it) is the job
+        review handler's; for every kind but CLOSE the config that would go
+        live is re-checked first, and a failed check refuses the approval and
+        leaves the review pending.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            review_id (int): The review to approve (an approval request id).
+            acting_user_id (int): Must be the review's assigned reviewer.
+
+        Returns:
+            JobDto: The posting after approval.
+
+        Raises:
+            ValueError: If the review is missing.
+            PermissionError: If the acting user is not the assigned reviewer.
+            ConflictError: If the review is not pending, or the config would
+                no longer go live.
+        """
+        request = await self._job_review(session, review_id)
+        await self.approval_service.decide(
+            session,
+            request_id=review_id,
+            actor_id=acting_user_id,
+            approve=True,
+            comment=None,
+        )
+        return self.recruiting_mapper.to_job_dto(
+            await self._require_job(session, int(request.target_id))
+        )
+
+    async def reject(
+        self, session: AsyncSession, review_id: int, comment: str, acting_user_id: int
+    ) -> JobDto:
+        """Reject a pending review, putting the posting back. Commits.
+
+        INITIAL returns to DRAFT; REVISION stays PUBLISHED and keeps its
+        staged edit so the submitter can address the feedback and resubmit;
+        CLOSE returns to PUBLISHED; REOPEN stays CLOSED.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            review_id (int): The review to reject (an approval request id).
+            comment (str): Required reviewer feedback.
+            acting_user_id (int): Must be the review's assigned reviewer.
+
+        Returns:
+            JobDto: The posting after rejection.
+
+        Raises:
+            ValueError: If the review is missing or the comment is empty.
+            PermissionError: If the acting user is not the assigned reviewer.
+            ConflictError: If the review is not pending.
+        """
+        request = await self._job_review(session, review_id)
+        await self.approval_service.decide(
+            session,
+            request_id=review_id,
+            actor_id=acting_user_id,
+            approve=False,
+            comment=comment,
+        )
+        return self.recruiting_mapper.to_job_dto(
+            await self._require_job(session, int(request.target_id))
+        )
+
+    async def reassign_review(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        *,
+        acting_user_id: int,
+        reviewer_id: int,
+    ) -> JobDto:
+        """Hand a posting's open review to a different approver. Commits.
+
+        Done by the submitter, not by the reviewer: this is redirecting a
+        question you asked, not handing off a duty you were given. Without it
+        a posting whose reviewer is later deactivated or blocked could never
+        leave its gate, since only the assigned reviewer may decide. The
+        posting's status is untouched.
+
+        Addressed by job rather than by review id, matching
+        ``submit_for_review`` and ``request_close``.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting whose open review is being moved.
+            acting_user_id (int): Must be the review's submitter.
+            reviewer_id (int): The approver to move it to.
+
+        Returns:
+            JobDto: The posting, now naming the new reviewer.
+
+        Raises:
+            ValueError: If the posting has no open review, the new reviewer is
+                the one it already has, the submitter picked themselves, the
+                new reviewer is not an active approver, or, for any kind but
+                CLOSE, the config approval would publish no longer holds.
+            PermissionError: If the caller did not submit the review.
+        """
+        request = await self.approval_service.get_pending_for_target(
+            session, JOB_REVIEW, str(job_id)
+        )
+        if request is None:
+            raise ValueError(f"Job {job_id} has no open review to reassign")
+        if request.raised_by != acting_user_id:
+            raise PermissionError(
+                f"Only the submitter may reassign job {job_id}'s review"
+            )
+        job = await self._require_job(session, job_id)
+        # Handing over a review that can no longer pass would only move the
+        # dead end to somebody else.
+        if review_kind(request) != JobReviewKind.CLOSE:
+            await self._revalidate_job_config(session, job)
+        moved = await self.approval_service.reassign(
+            session,
+            request_id=request.request_id,
+            actor_id=acting_user_id,
+            reviewer_id=reviewer_id,
+        )
+        return self.recruiting_mapper.to_job_dto(
+            job,
+            reviewer_id=moved.reviewer_id,
+            submitted_by=moved.raised_by,
+            submitted_by_name=await self._name_of(session, moved.raised_by),
+            submit_message=moved.reason,
+            submit_blockers=submit_blockers(job),
+        )
+
+    async def withdraw_review(
+        self, session: AsyncSession, job_id: int, *, acting_user_id: int
+    ) -> JobDto:
+        """Take back a posting's open review; the posting returns to where it
+        was, as on a rejection. Commits.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting whose open review is withdrawn.
+            acting_user_id (int): Must be the review's submitter.
+
+        Returns:
+            JobDto: The posting after the withdrawal.
+
+        Raises:
+            ValueError: If the posting has no open review.
+            PermissionError: If the caller did not submit the review.
+        """
+        request = await self.approval_service.get_pending_for_target(
+            session, JOB_REVIEW, str(job_id)
+        )
+        if request is None:
+            raise ValueError(f"Job {job_id} has no open review to withdraw")
+        await self.approval_service.withdraw(
+            session, request_id=request.request_id, actor_id=acting_user_id
+        )
+        return self.recruiting_mapper.to_job_dto(
+            await self._require_job(session, job_id)
+        )
+
+    async def _job_review(self, session: AsyncSession, review_id: int):
+        """The approval request of a job review, by id.
+
+        Raises:
+            ValueError: No such request, or one that is not a job review --
+                a review endpoint has no business deciding anything else.
+        """
+        request = await self.approval_service.get_request(session, review_id)
+        if request.action != JOB_REVIEW:
+            raise ValueError(f"Review {review_id} not found")
+        return request
+
+    async def delete_job(self, session: AsyncSession, job_id: int) -> None:
+        """Delete a posting that was never published, or a DRAFT.
+
+        Allowed when the posting is a DRAFT, or is CLOSED and was never
+        published (``was_published`` is ``False``). Once a posting has ever
+        been published it cannot be deleted regardless of its current status.
+
+        Its reviews and its events go with it, and the notifications about
+        those events with them. Nothing references a posting by foreign key
+        (the request and event tables are generic), so left behind they would
+        point at nothing; a posting that never went public has no history
+        worth that. None of its reviews can be pending: submitting moves a
+        draft to PENDING_REVIEW, which is not deletable.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Identifier of the posting to delete.
+
+        Raises:
+            ValueError: If the posting does not exist, or is neither a DRAFT
+                nor a never-published CLOSED posting.
+        """
+        job = await self._require_job(session, job_id)
+        is_deletable_draft = job.status == JobStatus.DRAFT
+        is_deletable_closed = job.status == JobStatus.CLOSED and not job.was_published
+        if not (is_deletable_draft or is_deletable_closed):
+            raise ValueError(
+                f"Job {job_id} cannot be deleted: only a draft or a "
+                "never-published closed posting may be deleted"
+            )
+        await self.approval_service.delete_for_target(session, JOB_REVIEW, str(job_id))
+        await self.event_repository.delete_by_subject(session, JOB_SUBJECT, job_id)
+        await self.job_repository.delete_job(session, job)
+        await session.commit()
+
+    async def list_publicly_visible(
+        self, session: AsyncSession
+    ) -> list[PublicJobSummaryDto]:
+        """List every candidate-visible posting as a candidate-safe card summary.
+
+        Serves the logged-in jobs-browse page; the projection deliberately
+        carries no form/config/internal fields. A posting mid revision-review
+        or close-review is still live (see ``PUBLICLY_VISIBLE_JOB_STATUSES``)
+        and so still listed.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[PublicJobSummaryDto]: One summary per candidate-visible posting.
+        """
+        jobs = await self.job_repository.list_publicly_visible(session)
+        return [self.recruiting_mapper.to_public_job_summary_dto(j) for j in jobs]
+
+    @staticmethod
+    def _reject_info(latest, job: JobEntity) -> tuple[str | None, str | None]:
+        """Return (reject_comment, kind) if latest is a rejected review.
+
+        A rejected revision only stands while its staged edit does: once the
+        author discards the edit there is nothing left to resubmit or fix.
+
+        Args:
+            latest (ApprovalRequestEntity | None): The job's most-recent
+                review, or None if it has never had one.
+            job (JobEntity): The posting the review is about.
+
+        Returns:
+            tuple[str | None, str | None]: (comment, kind) when latest is a
+            rejected review that still stands, otherwise (None, None).
+        """
+        if latest is None or latest.status != ApprovalRequestStatus.REJECTED:
+            return None, None
+        kind = latest.payload["kind"]
+        if kind == JobReviewKind.REVISION and job.pending_payload is None:
+            return None, None
+        return latest.decision_comment, kind
+
+    async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
+        """List postings of every status (internal/admin view).
+
+        Each posting is annotated with the reject comment from its most-recent
+        review when that review was a rejection, so the creator can see the
+        posting was sent back and why. It's also annotated with that same
+        review's reviewer_id when the review is still pending, so the creator
+        can see who it's currently assigned to. Both fields self-clear once a
+        newer review becomes the latest (or the prior one is decided).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[JobDto]: All postings regardless of status, each carrying
+            ``last_reject_comment`` if the posting's latest review was a
+            rejection, and ``reviewer_id`` if the posting's latest review is
+            still open, otherwise ``None`` for either.
+        """
+        jobs = await self.job_repository.list_all(session)
+        latest_reviews = await self.approval_service.latest_for_targets(
+            session, JOB_REVIEW, [str(j.job_id) for j in jobs]
+        )
+        dtos = []
+        for j in jobs:
+            latest = latest_reviews.get(str(j.job_id))
+            comment, kind = self._reject_info(latest, j)
+            reviewer_id = (
+                latest.reviewer_id
+                if latest is not None and latest.status == ApprovalRequestStatus.PENDING
+                else None
+            )
+            dtos.append(
+                self.recruiting_mapper.to_job_dto(
+                    j,
+                    last_reject_comment=comment,
+                    last_reject_kind=kind,
+                    reviewer_id=reviewer_id,
+                )
+            )
+        return dtos
+
+    async def list_reviews_for_reviewer(
+        self, session: AsyncSession, reviewer_id: int
+    ) -> list[JobReviewDto]:
+        """List a reviewer's still-pending review requests, each with its job title.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            reviewer_id (int): The reviewer whose queue to fetch.
+
+        Returns:
+            list[JobReviewDto]: The reviewer's pending reviews. Each entry
+            includes ``job_title`` sourced from the associated posting so the
+            UI can display the title without a second request.
+        """
+        requests = await self.approval_service.list_pending_for_reviewer(
+            session, reviewer_id, [JOB_REVIEW]
+        )
+        jobs = await self.job_repository.get_by_job_ids(
+            session, [int(r.target_id) for r in requests]
+        )
+        titles = {job.job_id: job.title for job in jobs}
+        return [
+            self.recruiting_mapper.to_job_review_dto(
+                r, job_title=titles.get(int(r.target_id))
+            )
+            for r in requests
+        ]
+
+    async def get_job(self, session: AsyncSession, job_id: int) -> JobDto:
+        """Fetch one posting by id.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Identifier of the posting to retrieve.
+
+        Returns:
+            JobDto: The requested posting, with ``reviewer_id``,
+            ``submitted_by`` and ``submit_message`` set from its open review
+            when one exists, and ``last_reject_comment``/``last_reject_kind``
+            set from its most-recent review when that review was a rejection,
+            otherwise ``None`` for all five.
+
+        Raises:
+            ValueError: If no posting with the given id exists.
+        """
+        job = await self._require_job(session, job_id)
+        open_review = await self.approval_service.get_pending_for_target(
+            session, JOB_REVIEW, str(job_id)
+        )
+        latest_reviews = await self.approval_service.latest_for_targets(
+            session, JOB_REVIEW, [str(job_id)]
+        )
+        comment, kind = self._reject_info(latest_reviews.get(str(job_id)), job)
+        return self.recruiting_mapper.to_job_dto(
+            job,
+            last_reject_comment=comment,
+            last_reject_kind=kind,
+            reviewer_id=open_review.reviewer_id if open_review else None,
+            submitted_by=open_review.raised_by if open_review else None,
+            submitted_by_name=(
+                await self._name_of(session, open_review.raised_by)
+                if open_review
+                else None
+            ),
+            submit_message=open_review.reason if open_review else None,
+            submit_blockers=submit_blockers(job),
+        )
+
+    async def _name_of(self, session: AsyncSession, user_id: int) -> str:
+        """A person's display name, or ``User <id>`` when their row is gone.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The person.
+
+        Returns:
+            str: The name to show.
+        """
+        users = await self.users_repository.get_all_by_ids(session, [user_id])
+        return display_name_or_id(users[0]) if users else f"User {user_id}"
+
+    async def get_job_activity(
+        self, session: AsyncSession, job_id: int
+    ) -> list[JobActivityDto]:
+        """Return a job posting's audit timeline, newest first.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting to fetch history for.
+
+        Returns:
+            list[JobActivityDto]: Newest first, each with the actor's
+                resolved display name. An actor no longer resolvable falls
+                back to ``f"User {id}"``.
+        """
+        rows = await self.event_repository.list_by_subject(session, "job", job_id)
+        actor_ids = {row.actor_id for row in rows if row.actor_id is not None}
+        users = await self.users_repository.get_all_by_ids(session, list(actor_ids))
+        names_by_id = {u.user_id: display_name_or_id(u) for u in users}
+        return [
+            JobActivityDto(
+                id=row.event_id,
+                event_type=row.event_type,
+                details=row.details,
+                actor_id=row.actor_id,
+                actor_name=(
+                    None
+                    if row.actor_id is None
+                    else names_by_id.get(row.actor_id, f"User {row.actor_id}")
+                ),
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    async def _require_job(self, session: AsyncSession, job_id: int) -> JobEntity:
+        """Return the JobEntity for job_id, or raise ValueError if absent.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Identifier to look up.
+
+        Returns:
+            JobEntity: The found entity.
+
+        Raises:
+            ValueError: If the job does not exist.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is None:
+            raise ValueError(f"Job {job_id} not found")
+        return job
+
+    async def get_published_job(self, session: AsyncSession, job_id: int) -> JobDto:
+        """Return a posting only when it is live to candidates.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting id.
+
+        Returns:
+            JobDto: The live posting.
+
+        Raises:
+            ValueError: If the posting is missing or its status is outside
+                ``PUBLICLY_VISIBLE_JOB_STATUSES``.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
+            raise ValueError(f"Published job {job_id} not found")
+        return self.recruiting_mapper.to_job_dto(job)

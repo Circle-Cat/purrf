@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.internal_activity_summary_request_dto import MySummaryRequest
 
@@ -13,7 +13,7 @@ from backend.common.constants import (
     MicrosoftGroups,
     JiraIssueStatus,
 )
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
     MICROSOFT_LDAPS_ENDPOINT,
@@ -76,7 +76,7 @@ class GoogleChatCountRequest(BaseModel):
 class SummaryRequest(BaseModel):
     startDate: str | None = None
     endDate: str | None = None
-    groups: list[str]
+    groups: list[str] = Field(min_length=1)
     includeTerminated: bool | None = False
 
 
@@ -93,6 +93,7 @@ class InternalActivityController:
         gerrit_analytics_service,
         summary_service,
         launchdarkly_service,
+        database,
     ):
         """
         Initialize the InternalActivityController with required dependencies.
@@ -107,6 +108,7 @@ class InternalActivityController:
             gerrit_analytics_service: GerritAnalyticsService instance.
             summary_service: SummaryService instance.
             launchdarkly_service: LaunchDarklyService instance.
+            database: Async session provider.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -120,89 +122,106 @@ class InternalActivityController:
         self.gerrit_analytics_service = gerrit_analytics_service
         self.summary_service = summary_service
         self.launchdarkly_service = launchdarkly_service
+        self.database = database
 
         self.router = APIRouter(tags=["internal_activity"])
 
         self.router.add_api_route(
             MICROSOFT_LDAPS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
                 self.get_ldaps_and_names
             ),
             methods=["GET"],
         )
         self.router.add_api_route(
             MICROSOFT_CHAT_COUNT_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
                 self.count_microsoft_chat_messages
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             MICROSOFT_CHAT_TOPICS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
                 self.all_microsoft_chat_topics
             ),
             methods=["GET"],
         )
         self.router.add_api_route(
             JIRA_PROJECTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
                 self.get_all_jira_projects_api
             ),
             methods=["GET"],
         )
         self.router.add_api_route(
             GOOGLE_CALENDAR_LIST_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_all_calendars_api),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_all_calendars_api
+            ),
             methods=["GET"],
         )
         self.router.add_api_route(
             GOOGLE_CALENDAR_EVENTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_all_events_api),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_all_events_api
+            ),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_BRIEF_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_jira_brief),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_jira_brief
+            ),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_DETAIL_BATCH_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
                 self.get_issue_detail_batch
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GERRIT_STATS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_gerrit_stats),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_gerrit_stats
+            ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GERRIT_PROJECTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_gerrit_projects),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_gerrit_projects
+            ),
             methods=["GET"],
         )
         self.router.add_api_route(
             GOOGLE_CHAT_COUNT_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
                 self.get_google_chat_messages_count
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GOOGLE_CHAT_SPACES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_chat_spaces_route),
+            endpoint=authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])(
+                self.get_chat_spaces_route
+            ),
             methods=["GET"],
         )
         self.router.add_api_route(
             SUMMARY_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(self.get_summary),
+            endpoint=authenticate(
+                permissions=[Permission.DASHBOARD_ACTIVITY_SUMMARY_READ]
+            )(self.get_summary),
             methods=["POST"],
         )
         self.router.add_api_route(
             MY_SUMMARY_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(self.get_my_summary),
+            endpoint=authenticate(
+                permissions=[Permission.DASHBOARD_ACTIVITY_SUMMARY_READ]
+            )(self.get_my_summary),
             methods=["POST"],
         )
 
@@ -415,11 +434,13 @@ class InternalActivityController:
             PermissionError: When the view_personal_summary LaunchDarkly flag is disabled for the user.
         """
         if self.launchdarkly_service.is_view_personal_summary_enabled(current_user):
-            summary_data = self.summary_service.get_my_summary(
-                user=current_user,
-                start_date=body.start_date,
-                end_date=body.end_date,
-            )
+            async with self.database.session() as session:
+                summary_data = await self.summary_service.get_my_summary(
+                    session,
+                    user=current_user,
+                    start_date=body.start_date,
+                    end_date=body.end_date,
+                )
             return api_response(
                 success=True,
                 message="My summary fetched successfully",

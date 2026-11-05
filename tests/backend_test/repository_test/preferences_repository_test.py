@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 
 from backend.repository.preferences_repository import PreferencesRepository
@@ -25,8 +24,6 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="alice@example.com",
-                subject_identifier=str(uuid.uuid4()),
                 is_active=True,
                 updated_timestamp=self.now,
             ),
@@ -36,8 +33,6 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
                 timezone="America/New_York",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="bob@example.com",
-                subject_identifier=str(uuid.uuid4()),
                 is_active=True,
                 updated_timestamp=self.now,
             ),

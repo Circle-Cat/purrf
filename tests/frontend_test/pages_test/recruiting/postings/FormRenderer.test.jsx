@@ -1,0 +1,687 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import FormRenderer from "@/pages/Recruiting/postings/FormRenderer";
+
+const QS = [
+  { id: "q1", type: "single_choice", label: "Fluent?", options: ["Yes", "No"] },
+  {
+    id: "q2",
+    type: "short_text",
+    label: "Explain",
+    showWhen: { questionId: "q1", equals: "No" },
+  },
+];
+
+describe("FormRenderer", () => {
+  it("renders a labelled control per question", () => {
+    render(
+      <FormRenderer questions={QS} answers={{}} onAnswerChange={() => {}} />,
+    );
+    expect(screen.getByText("Fluent?")).toBeInTheDocument();
+  });
+
+  it("renders a question's description as help text, and omits it when absent", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "short_text",
+            label: "Name",
+            description: "Your legal name",
+          },
+          { id: "q2", type: "short_text", label: "Age" },
+        ]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Your legal name")).toBeInTheDocument();
+    // The description-less question renders only its label.
+    expect(screen.getByText("Age")).toBeInTheDocument();
+  });
+
+  it("hides a showWhen question until the dependency matches", () => {
+    const { rerender } = render(
+      <FormRenderer questions={QS} answers={{}} onAnswerChange={() => {}} />,
+    );
+    expect(screen.queryByText("Explain")).not.toBeInTheDocument();
+    rerender(
+      <FormRenderer
+        questions={QS}
+        answers={{ q1: "No" }}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Explain")).toBeInTheDocument();
+  });
+
+  // Each rule names one option, so a question can offer a follow-up per
+  // option, and a multi_choice answer showing several of them at once.
+  it("shows the follow-up of every selected option, one per option", () => {
+    const questions = [
+      {
+        id: "q1",
+        type: "multi_choice",
+        label: "Sources",
+        options: ["Friend", "Other", "Referral"],
+      },
+      {
+        id: "q2",
+        type: "short_text",
+        label: "Which other source?",
+        showWhen: { questionId: "q1", equals: "Other" },
+      },
+      {
+        id: "q3",
+        type: "short_text",
+        label: "Who referred you?",
+        showWhen: { questionId: "q1", equals: "Referral" },
+      },
+    ];
+    const { rerender } = render(
+      <FormRenderer
+        questions={questions}
+        answers={{ q1: ["Other"] }}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Which other source?")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Who referred you?"),
+    ).not.toBeInTheDocument();
+    rerender(
+      <FormRenderer
+        questions={questions}
+        answers={{ q1: ["Other", "Referral"] }}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Which other source?")).toBeInTheDocument();
+    expect(screen.getByLabelText("Who referred you?")).toBeInTheDocument();
+  });
+
+  it("fires onAnswerChange when a short_text answer changes", () => {
+    const onAnswerChange = vi.fn();
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "Name" }]}
+        answers={{}}
+        onAnswerChange={onAnswerChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Ann" },
+    });
+    expect(onAnswerChange).toHaveBeenCalledWith("q1", "Ann");
+  });
+
+  it("multi_choice toggle: selects then deselects an option", () => {
+    const onAnswerChange = vi.fn();
+    const question = {
+      id: "q1",
+      type: "multi_choice",
+      label: "Skills",
+      options: ["React", "Vue"],
+    };
+    const { rerender } = render(
+      <FormRenderer
+        questions={[question]}
+        answers={{}}
+        onAnswerChange={onAnswerChange}
+      />,
+    );
+    // clicking an option adds it
+    fireEvent.click(screen.getByRole("checkbox", { name: "React" }));
+    expect(onAnswerChange).toHaveBeenCalledWith("q1", ["React"]);
+
+    // clicking again with that option already selected removes it
+    onAnswerChange.mockClear();
+    rerender(
+      <FormRenderer
+        questions={[question]}
+        answers={{ q1: ["React"] }}
+        onAnswerChange={onAnswerChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "React" }));
+    expect(onAnswerChange).toHaveBeenCalledWith("q1", []);
+  });
+
+  it("showWhen with an array answer: visible when equals is a member of the array", () => {
+    const questions = [
+      {
+        id: "q1",
+        type: "multi_choice",
+        label: "Topics",
+        options: ["Yes", "No"],
+      },
+      {
+        id: "q2",
+        type: "short_text",
+        label: "Details",
+        showWhen: { questionId: "q1", equals: "No" },
+      },
+    ];
+    render(
+      <FormRenderer
+        questions={questions}
+        answers={{ q1: ["No"] }}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Details")).toBeInTheDocument();
+  });
+
+  it("long_text renders a textarea and fires onAnswerChange on change", () => {
+    const onAnswerChange = vi.fn();
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "long_text", label: "Bio" }]}
+        answers={{}}
+        onAnswerChange={onAnswerChange}
+      />,
+    );
+    const textarea = screen.getByRole("textbox", { name: "Bio" });
+    expect(textarea.tagName.toLowerCase()).toBe("textarea");
+    fireEvent.change(textarea, { target: { value: "Hello" } });
+    expect(onAnswerChange).toHaveBeenCalledWith("q1", "Hello");
+  });
+
+  it("exact_text renders a text input", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "exact_text", label: "Code" }]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "Code" });
+    expect(input.tagName.toLowerCase()).toBe("input");
+  });
+
+  it("does not render blank/whitespace options in a single_choice preview", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "single_choice",
+            label: "Pick",
+            options: ["Yes", "", "  "],
+          },
+        ]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("radio")).toHaveLength(1);
+    expect(screen.getByRole("radio", { name: "Yes" })).toBeInTheDocument();
+  });
+
+  it("does not render blank/whitespace options in a multi_choice preview", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["A", "", "B"],
+          },
+        ]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+  });
+});
+
+describe("read-only mode", () => {
+  // No onAnswerChange: read-only mode never calls it, and the prop defaults
+  // to a no-op precisely so no call site has to pass ceremony.
+  const renderReadOnly = (questions, answers, idPrefix) =>
+    render(
+      <FormRenderer
+        questions={questions}
+        answers={answers}
+        readOnly
+        idPrefix={idPrefix}
+      />,
+    );
+
+  it("keeps the line breaks in a long_text answer", () => {
+    renderReadOnly([{ id: "q1", type: "long_text", label: "Why us?" }], {
+      q1: "First paragraph.\n\nSecond paragraph.",
+    });
+    const block = screen.getByText(/First paragraph/);
+    expect(block).toHaveClass("whitespace-pre-wrap");
+    expect(block.textContent).toBe("First paragraph.\n\nSecond paragraph.");
+  });
+
+  it("renders a short_text answer as text, not an input", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Name?" }], {
+      q1: "Alice",
+    });
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("treats a question with no type as text", () => {
+    renderReadOnly([{ id: "q1", label: "Legacy question" }], { q1: "Yes" });
+    expect(screen.getByText("Yes")).toBeInTheDocument();
+  });
+
+  it("shows Not answered for a blank answer", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Salary?" }], {
+      q1: "   ",
+    });
+    expect(screen.getByText("Not answered")).toBeInTheDocument();
+  });
+
+  it("shows Not answered for a missing answer", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Salary?" }], {});
+    expect(screen.getByText("Not answered")).toBeInTheDocument();
+  });
+
+  it("shows unselected options alongside selected ones, all disabled", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "multi_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid", "On-site"],
+        },
+      ],
+      { q1: ["Remote", "Hybrid"] },
+    );
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes).toHaveLength(3);
+    expect(boxes[0]).toBeChecked();
+    expect(boxes[1]).toBeChecked();
+    expect(boxes[2]).not.toBeChecked();
+    boxes.forEach((b) => expect(b).toBeDisabled());
+  });
+
+  it("still hides a question whose showWhen condition is unmet", () => {
+    renderReadOnly(
+      [
+        { id: "q1", type: "short_text", label: "Base" },
+        {
+          id: "q2",
+          type: "short_text",
+          label: "Conditional",
+          showWhen: { questionId: "q1", equals: "yes" },
+        },
+      ],
+      { q1: "no", q2: "stale" },
+    );
+    expect(screen.queryByText("Conditional")).not.toBeInTheDocument();
+  });
+
+  it("renders a recorded array under a question whose type is now text", () => {
+    // The owner changed q1 from multi_choice to short_text after this answer
+    // was recorded. The value must still show, not read "Not answered".
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Work mode" }], {
+      q1: ["Remote", "Hybrid"],
+    });
+    expect(screen.getByText("Remote")).toBeInTheDocument();
+    expect(screen.getByText("Hybrid")).toBeInTheDocument();
+    expect(screen.queryByText("Not answered")).not.toBeInTheDocument();
+  });
+
+  it("renders a recorded object under a text question as JSON", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Work mode" }], {
+      q1: { nested: true },
+    });
+    expect(screen.getByText(/"nested": true/)).toBeInTheDocument();
+    expect(screen.queryByText("Not answered")).not.toBeInTheDocument();
+  });
+
+  it("keeps a multi_choice answer whose option was deleted from the form", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "multi_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: ["Remote", "Telepathy"] },
+    );
+    expect(screen.getByRole("checkbox", { name: "Remote" })).toBeChecked();
+    const retired = screen.getByRole("checkbox", {
+      name: "Telepathy (no longer an option)",
+    });
+    expect(retired).toBeChecked();
+    expect(retired).toBeDisabled();
+  });
+
+  it("keeps a single_choice answer whose option was deleted from the form", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: "Telepathy" },
+    );
+    const retired = screen.getByRole("radio", {
+      name: "Telepathy (no longer an option)",
+    });
+    expect(retired).toBeChecked();
+    expect(retired).toBeDisabled();
+  });
+
+  it("checks the matching box when a multi_choice answer was recorded as a string", () => {
+    // Drift the other way: the question was single_choice when this answer
+    // was recorded, so the value is a bare string.
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "multi_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: "Remote" },
+    );
+    expect(screen.getByRole("checkbox", { name: "Remote" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Hybrid" })).not.toBeChecked();
+    expect(screen.queryByText("(no longer an option)")).not.toBeInTheDocument();
+  });
+
+  it("keeps a single_choice answer recorded as an array", () => {
+    // A radio group can mark only one member, so the whole recorded list is
+    // surfaced as one retired row rather than being flattened and half lost.
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: ["Remote", "Telepathy"] },
+    );
+    expect(
+      screen.getByRole("radio", {
+        name: "Remote, Telepathy (no longer an option)",
+      }),
+    ).toBeChecked();
+  });
+
+  it("does not render a retired row for a single_choice answer recorded as an empty array", () => {
+    // The question was multi_choice with no options picked when this answer
+    // was recorded, then changed to single_choice. An empty selection means
+    // nothing was picked, not a retired choice — it must not surface as a
+    // checked row with no label text.
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: [] },
+    );
+    expect(screen.queryByText("(no longer an option)")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Remote" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Hybrid" })).not.toBeChecked();
+  });
+
+  it("drops the required asterisk and labels no control", () => {
+    renderReadOnly(
+      [{ id: "q1", type: "short_text", label: "Name?", required: true }],
+      { q1: "Alice" },
+    );
+    const label = screen.getByText("Name?");
+    expect(label.tagName).toBe("P");
+    expect(label.textContent).toBe("Name?");
+  });
+
+  it("prefixes DOM ids so two copies can coexist", () => {
+    const { container } = renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote"],
+        },
+      ],
+      { q1: "Remote" },
+      "other-201-",
+    );
+    expect(
+      container.querySelector('input[name="other-201-q1"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("counts characters against a long_text budget as they are typed", () => {
+    // A budget the candidate cannot see is one they only learn about by being
+    // rejected at submit, after writing past it.
+    const questions = [
+      { id: "q1", type: "long_text", label: "Why?", maxLength: 10 },
+    ];
+    const { rerender } = render(
+      <FormRenderer questions={questions} answers={{ q1: "abc" }} />,
+    );
+    expect(screen.getByText("3 / 10 characters")).toBeInTheDocument();
+
+    rerender(
+      <FormRenderer questions={questions} answers={{ q1: "x".repeat(12) }} />,
+    );
+    expect(screen.getByText("12 / 10 characters")).toHaveClass(
+      "text-destructive",
+    );
+  });
+
+  it("shows no counter when the question sets no budget", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "long_text", label: "Why?" }]}
+        answers={{ q1: "abc" }}
+      />,
+    );
+    expect(screen.queryByText(/characters/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a counter on a budgeted long text from the first keystroke", () => {
+    render(
+      <FormRenderer
+        questions={[
+          { id: "q1", type: "long_text", label: "Why", maxLength: 200 },
+        ]}
+        answers={{ q1: "hello" }}
+      />,
+    );
+    expect(screen.getByText("5 / 200 characters")).toBeInTheDocument();
+  });
+
+  it("shows no counter on a short text that is within its ceiling", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "City" }]}
+        answers={{ q1: "Taipei" }}
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("surfaces a counter once a short text is over its ceiling", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "City" }]}
+        answers={{ q1: "x".repeat(256) }}
+      />,
+    );
+    expect(screen.getByText("256 / 255 characters")).toHaveClass(
+      "text-destructive",
+    );
+  });
+
+  it("shows no counter on an unbudgeted long text within the fallback", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "long_text", label: "Why" }]}
+        answers={{ q1: "short answer" }}
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("shows no counter at all in read-only mode", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "City" }]}
+        answers={{ q1: "x".repeat(256) }}
+        readOnly
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("never counts an exact text answer", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "exact_text",
+            label: "Confirm",
+            expectedValue: "YES",
+          },
+        ]}
+        answers={{ q1: "x".repeat(600) }}
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("disables the unpicked options once the cap is reached", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c"],
+            maxSelections: 2,
+          },
+        ]}
+        answers={{ q1: ["a", "b"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "c" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "a" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 2 / 2")).toBeInTheDocument();
+  });
+
+  it("lets the unpicked options back in when one is cleared", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c"],
+            maxSelections: 2,
+          },
+        ]}
+        answers={{ q1: ["a"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "c" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 1 / 2")).toBeInTheDocument();
+  });
+
+  it("keeps an over-cap selection clearable after the author lowers the cap", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c"],
+            maxSelections: 2,
+          },
+        ]}
+        answers={{ q1: ["a", "b", "c"] }}
+      />,
+    );
+    // Every option is picked, so none is disabled and the candidate can climb
+    // back down; the count says why they must.
+    expect(screen.getByRole("checkbox", { name: "a" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 3 / 2")).toHaveClass("text-destructive");
+  });
+
+  it("still disables an unpicked option while a selection sits above the cap", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c", "d", "e", "f"],
+            maxSelections: 3,
+          },
+        ]}
+        answers={{ q1: ["a", "b", "c", "d", "e"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "f" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "a" })).not.toBeDisabled();
+  });
+
+  it("disables nothing when the question has no cap", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b"],
+          },
+        ]}
+        answers={{ q1: ["a"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "b" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 1")).toBeInTheDocument();
+  });
+
+  it("shows no selection count in read-only mode", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b"],
+            maxSelections: 1,
+          },
+        ]}
+        answers={{ q1: ["a"] }}
+        readOnly
+      />,
+    );
+    expect(screen.queryByText(/^Selected /)).not.toBeInTheDocument();
+  });
+});

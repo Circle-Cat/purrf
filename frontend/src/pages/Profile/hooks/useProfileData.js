@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
 import {
@@ -6,11 +6,14 @@ import {
   sortExperienceOrEducationList,
   DegreeEnum,
 } from "@/pages/Profile/utils";
-import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 import { ProfileFields } from "@/constants/ApiEndpoints";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 export const useProfileData = () => {
   const [isLoading, setIsLoading] = useState(true);
+  // True when the profile fetch failed, so the page can show a retry state
+  // instead of rendering as an empty (but successfully loaded) profile.
+  const [loadError, setLoadError] = useState(false);
 
   /**
    * Personal information state.
@@ -57,16 +60,6 @@ export const useProfileData = () => {
       });
     }
 
-    if (Array.isArray(user.alternativeEmails)) {
-      user.alternativeEmails.forEach((email, idx) => {
-        emailList.push({
-          id: `alt-${idx}`,
-          email,
-          isPrimary: false,
-        });
-      });
-    }
-
     setPersonalInfo((prev) => ({
       ...prev,
       id: user.id,
@@ -82,6 +75,16 @@ export const useProfileData = () => {
       company: currentJob.companyOrOrganization || "",
       completedTraining: training.map((t) => ({
         id: t.id,
+        // Names the row, and says whether it opens in the app at all.
+        courseId: t.courseId,
+        name: t.name,
+        // Whether the course has a package we serve -- gates the in-app
+        // Start/Continue/Review link.
+        isHosted: t.isHosted,
+        // Whether the course is still open. A deactivated one closes to the
+        // people already assigned it, so this gates the link too, and says
+        // something different when it is what stopped them.
+        isCourseActive: t.isCourseActive,
         category: t.category,
         status: t.status,
         // Pass the API timestamps through unchanged. TrainingSection wants
@@ -142,10 +145,14 @@ export const useProfileData = () => {
     setEducationList(mappedEducation);
   }, []);
 
+  const { begin, isCurrent } = useRequestGuard();
+
   /**
    * Fetch profile data from backend.
    */
   const fetchProfileData = useCallback(async () => {
+    const seq = begin();
+    setLoadError(false);
     setIsLoading(true);
     try {
       const {
@@ -158,6 +165,9 @@ export const useProfileData = () => {
         ],
       });
 
+      // Ignore a superseded/late response (e.g. a refresh raced an earlier load
+      // or the component unmounted).
+      if (!isCurrent(seq)) return;
       if (profile) {
         mapDataToState(profile);
       } else {
@@ -165,10 +175,11 @@ export const useProfileData = () => {
       }
     } catch (error) {
       console.error("Failed to fetch profile:", error);
+      if (isCurrent(seq)) setLoadError(true);
     } finally {
-      setIsLoading(false);
+      if (isCurrent(seq)) setIsLoading(false);
     }
-  }, [mapDataToState]);
+  }, [mapDataToState, begin, isCurrent]);
 
   /**
    * Generic update handler for profile-related updates.
@@ -188,29 +199,6 @@ export const useProfileData = () => {
   };
 
   /**
-   * Computed flag indicating whether user's timezone can be edited.
-   * Editing is restricted to once every 30 days.
-   */
-  const canEditTimezone = useMemo(() => {
-    if (!personalInfo.timezoneUpdatedAt) return true;
-
-    const days = getDaysSince(personalInfo.timezoneUpdatedAt);
-    return days >= 30;
-  }, [personalInfo.timezoneUpdatedAt]);
-
-  /**
-   * Computed string representing the next available edit date.
-   */
-  const nextEditableDate = useMemo(() => {
-    if (!personalInfo.timezoneUpdatedAt) return "";
-
-    const date = new Date(personalInfo.timezoneUpdatedAt);
-    date.setDate(date.getDate() + 30);
-
-    return formatLocalYmd(date);
-  }, [personalInfo.timezoneUpdatedAt]);
-
-  /**
    * Initial data load.
    */
   useEffect(() => {
@@ -222,11 +210,10 @@ export const useProfileData = () => {
    */
   return {
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
-    canEditTimezone,
-    nextEditableDate,
     handleUpdateProfile,
     refresh: fetchProfileData,
   };

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import uuid4
 from backend.entity.users_entity import UsersEntity
 from backend.dto.profile_create_dto import (
@@ -41,12 +41,9 @@ class ProfileCommandService:
         Update an existing user entity with data from the latest profile.
 
         Behavior:
-        The user's timezone can only be changed once every 30 days. If a
-        timezone change is requested before the cooldown period has elapsed,
-        a ValueError is raised.
-
-        All other user fields are updated unconditionally based on the latest
-        profile data.
+        All user fields, including timezone, are updated unconditionally
+        based on the latest profile data. When the timezone changes,
+        `timezone_updated_at` is refreshed to the current time.
 
         Args:
             session (AsyncSession): The active database session.
@@ -58,30 +55,22 @@ class ProfileCommandService:
             UsersEntity: The updated user entity persisted in the database.
 
         Raises:
-            ValueError: If the timezone is updated within 30 days of the last
-                timezone change.
             Exception: If the database operation fails during the update.
         """
         latest_users_data = latest_profile.user
         if not latest_users_data:
             return
 
-        # Handle timezone update with 30-day restriction
+        # Handle timezone update
         if latest_users_data.timezone != users.timezone:
-            last_update_time = users.timezone_updated_at
-            now = datetime.now(timezone.utc)
-            if now < last_update_time + timedelta(days=30):
-                raise ValueError("Timezone can only be updated once every 30 days")
-
             users.timezone = latest_users_data.timezone
-            users.timezone_updated_at = now
+            users.timezone_updated_at = datetime.now(timezone.utc)
 
         # Update other fields (no restriction)
         users.first_name = latest_users_data.first_name
         users.last_name = latest_users_data.last_name
-        users.communication_method = latest_users_data.communication_method
+        users.communication_channel = latest_users_data.communication_method
         users.preferred_name = latest_users_data.preferred_name
-        users.alternative_emails = latest_users_data.alternative_emails
         users.linkedin_link = latest_users_data.linkedin_link
         users.updated_timestamp = datetime.now(timezone.utc)
 
@@ -136,10 +125,12 @@ class ProfileCommandService:
             - Compares the incoming data with the current stored data
               while ignoring order.
             - If the content is identical, the database update is skipped to
-              avoid unnecessary writes.
+              avoid unnecessary writes. Two empty lists count as identical, so
+              clearing an already-empty section writes nothing.
         - If no ExperienceEntity exists for the user, a new one is created.
         - Otherwise, the specified experience field is fully replaced with the
-          incoming data (full overwrite semantics).
+          incoming data (full overwrite semantics). An empty list therefore
+          clears the section.
 
         Args:
             session: Active SQLAlchemy async session.
@@ -160,7 +151,7 @@ class ProfileCommandService:
 
         new_data_dicts = [item.to_db_dict() for item in data]
 
-        if experience_entity and data and not has_new_items:
+        if experience_entity and not has_new_items:
             current_data_dicts = getattr(experience_entity, field_name) or []
 
             if len(current_data_dicts) == len(new_data_dicts):

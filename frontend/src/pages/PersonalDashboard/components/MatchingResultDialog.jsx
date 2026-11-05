@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { User, Mail, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MatchStatus } from "@/constants/matchStatus";
+import { userDisplayName } from "@/utils/userName";
 
 /**
  * MatchingResultDialog
@@ -49,6 +50,17 @@ export default function MatchingResultDialog({
   const isMatched = currentStatus === MatchStatus.MATCHED;
   const isDisabled = !canViewMatch && !isMatched;
 
+  // Someone moved to unmatched when their pairing ended was matched first.
+  const wasPaired =
+    currentStatus === MatchStatus.UNMATCHED && partners.length > 0;
+
+  const participationEnded = {
+    title: "Participation Ended",
+    description:
+      "You took part in this round, and your participation has since ended.",
+    color: "text-amber-600",
+  };
+
   /**
    * Status message configuration
    */
@@ -70,6 +82,7 @@ export default function MatchingResultDialog({
         "Thank you for applying. Unfortunately, you are not eligible for this round.",
       color: "text-destructive",
     },
+    [MatchStatus.WITHDRAWN]: participationEnded,
     [MatchStatus.PENDING]: {
       title: "Matching Has Not Started",
       description: "The matching process for this round hasn't started yet.",
@@ -83,8 +96,30 @@ export default function MatchingResultDialog({
     },
   };
 
-  const currentConfig =
-    statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
+  // Being matched and having a current partner are two different facts: a
+  // pairing ends when the counterpart leaves the round or the pair is ended.
+  // The round's own copy only fits while one of them is live.
+  const isEveryPairingEnded =
+    (isMatched || wasPaired) &&
+    partners.length > 0 &&
+    partners.every((partner) => partner.isActive === false);
+
+  // The same rejected status is stored for an application that was turned
+  // down and for someone who took part and then left. A pairing only exists
+  // once they took part, so it is what picks the copy apart.
+  const hasLeftTheRound =
+    currentStatus === MatchStatus.REJECTED && partners.length > 0;
+
+  const currentConfig = isEveryPairingEnded
+    ? {
+        title: "Pairing Ended",
+        description:
+          "You were matched this round. That pairing has since ended.",
+        color: "text-amber-600",
+      }
+    : hasLeftTheRound
+      ? participationEnded
+      : statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -127,13 +162,18 @@ export default function MatchingResultDialog({
                     </div>
                     <div>
                       <h4 className="font-semibold text-foreground">
-                        {partner.preferredName ||
-                          `${partner.firstName} ${partner.lastName}`}
+                        {userDisplayName(partner)}
                       </h4>
-                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Mail className="h-3.5 w-3.5" />
-                        <span>{partner.primaryEmail}</span>
-                      </div>
+                      {partner.isActive === false ? (
+                        <p className="text-sm text-muted-foreground">
+                          This pairing has ended.
+                        </p>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                          <Mail className="h-3.5 w-3.5" />
+                          <span>{partner.primaryEmail}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <Badge variant="secondary" className="capitalize">

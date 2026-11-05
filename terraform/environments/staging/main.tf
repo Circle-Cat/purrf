@@ -32,15 +32,47 @@ module "purrf_instance" {
   gerrit_producer_entry_point = "gerrit_event_webhook"
   jira_password               = var.jira_password
   gerrit_http_pass            = var.gerrit_http_pass
-  # The staging deployment is managed by ArgoCD, not Terraform's helm_release.
-  # (image_tag now lives in helm/purrf/values-staging.yaml on the staging branch.)
-  deploy_via_helm = false
-  cf_aud_tag      = "3a069a38522a7ef33aed95d4e58671081380c261391fa14d3433f637f4a0da2a"
-  azure_client_id = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
-  azure_tenant_id = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
-  ld_sdk_key      = data.terraform_remote_state.ld.outputs.api_keys["staging"]
-  tailscale_proxy = "http://outbound.tailscale.svc.cluster.local:1055"
+  cf_aud_tag                  = "3a069a38522a7ef33aed95d4e58671081380c261391fa14d3433f637f4a0da2a"
+  azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
+  azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
+  ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["staging"]
+  tailscale_proxy             = "http://outbound.tailscale.svc.cluster.local:1055"
 
   auth0_google_client_id     = var.auth0_google_client_id
   auth0_google_client_secret = var.auth0_google_client_secret
+
+  mentorship_calendar_id = "c_d22a80da785e3232991f3823ba799ed91fa6f1bcc388552686a72583b23b6cd2@group.calendar.google.com"
+  interview_calendar_id  = "c_ebe9f94084ac6049f47805f47b4278a4a14b6fea8d40e9cd401eda0625b449da@group.calendar.google.com"
+
+  # Both non-prod environments send as the test aliases. A From address only
+  # works once it is a verified Send-As on the mailbox the refresh token
+  # belongs to, and test and staging already share that one machine mailbox,
+  # so a staging-only pair would buy nothing but two more verifications to
+  # keep alive. The cost is that a non-prod message does not name which
+  # environment sent it -- read the body, not the From.
+  gmail_client_id           = var.gmail_client_id
+  gmail_client_secret       = var.gmail_client_secret
+  gmail_refresh_token       = var.gmail_refresh_token
+  kit_api_key               = var.kit_api_key
+  gmail_sender_recruiting   = "recruiting-test@circlecat.org"
+  gmail_sender_notification = "notification-test@circlecat.org"
+  gmail_sender_mentorship   = "mentorship-test@circlecat.org"
+  gmail_sender_inquiries    = "inquiries-test@circlecat.org"
+
+  # The shared mailbox has one watch topic, owned by test. Mail to the aliases
+  # is claimed here rather than on test: only one of the two may claim it, or
+  # each would file the same message.
+  gmail_watch_topic_name  = "purrf-gmail-nonprod"
+  gmail_watch_topic_owner = false
+  gmail_inbox_enabled     = true
+
+  # The backend no longer pulls these subscriptions, so without push their
+  # events wait in Pub/Sub until the seven-day retention drops them.
+  pubsub_event_push_enabled = true
+
+  # The same image test runs, in stub mode, so a staging run writes fake scores
+  # and calls no LLM.
+  enable_matcher    = true
+  matcher_image_tag = "a88afa5237a2aabfba6887ad025a33ceee54887b"
+  matcher_llm_stub  = true
 }

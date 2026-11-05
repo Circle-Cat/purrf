@@ -1,0 +1,186 @@
+from fastapi import APIRouter, File, UploadFile
+from backend.common.fast_api_response_wrapper import api_response
+from backend.utils.permission_decorators import authenticate
+from backend.dto.user_context_dto import UserContextDto
+from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
+from backend.common.api_endpoints import (
+    RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
+    RECRUITING_PUBLIC_JOB_ENDPOINT,
+    RECRUITING_PUBLIC_JOBS_ENDPOINT,
+    RECRUITING_RESUMES_ENDPOINT,
+    RECRUITING_APPLICATIONS_ENDPOINT,
+    RECRUITING_APPLICATION_ENDPOINT,
+    RECRUITING_APPLICATIONS_MINE_ENDPOINT,
+    RECRUITING_MY_APPLICATIONS_ENDPOINT,
+    RECRUITING_MY_LATEST_PROFILE_ENDPOINT,
+)
+
+
+class ApplicationController:
+    """FastAPI routes for candidate application submission (login-gated)."""
+
+    def __init__(self, application_service, job_service, resume_storage, database):
+        """
+        Args:
+            application_service (ApplicationService): Submit/edit/get logic.
+            job_service (JobService): Provides the candidate-visible job lookups.
+            resume_storage (ResumeStorage): Content-addressed résumé upload.
+            database: Async session provider.
+        """
+        self.application_service = application_service
+        self.job_service = job_service
+        self.resume_storage = resume_storage
+        self.database = database
+        self.router = APIRouter(tags=["recruiting-applications"])
+
+        self.router.add_api_route(
+            RECRUITING_APPLICATIONS_MINE_ENDPOINT,
+            endpoint=authenticate()(self.get_my_application),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_MY_APPLICATIONS_ENDPOINT,
+            endpoint=authenticate()(self.list_my_applications),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_MY_LATEST_PROFILE_ENDPOINT,
+            endpoint=authenticate()(self.get_my_latest_profile),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_PUBLIC_JOB_ENDPOINT,
+            endpoint=authenticate()(self.get_public_job),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_PUBLIC_JOBS_ENDPOINT,
+            endpoint=authenticate()(self.list_public_jobs),
+            methods=["GET"],
+            response_model=None,
+        )
+        # No authenticate(): this serves people who have not signed in. See
+        # list_anonymous_jobs for what keeps it safe to leave open.
+        self.router.add_api_route(
+            RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
+            endpoint=self.list_anonymous_jobs,
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_RESUMES_ENDPOINT,
+            endpoint=authenticate()(self.upload_resume),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATIONS_ENDPOINT,
+            endpoint=authenticate()(self.submit_application),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ENDPOINT,
+            endpoint=authenticate()(self.edit_application),
+            methods=["PATCH"],
+            response_model=None,
+        )
+
+    async def get_public_job(self, current_user: UserContextDto, job_id: int):
+        """Fetch a posting's candidate-safe projection for the application form.
+
+        Scoped to the caller: live to everyone, no longer live only to a
+        candidate who already applied to it.
+        """
+        async with self.database.session() as session:
+            result = await self.application_service.get_job_for_applicant(
+                session, current_user, job_id
+            )
+        return api_response(message="Job fetched.", data=result)
+
+    async def list_public_jobs(self, current_user: UserContextDto):
+        """List candidate-visible postings as candidate-safe browse-page summaries."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_publicly_visible(session)
+        return api_response(message="Jobs fetched.", data=result)
+
+    async def list_anonymous_jobs(self):
+        """List candidate-visible postings for visitors who have not signed in.
+
+        Serves the public job pages rendered by the apply Worker, which shows
+        both the list and each posting's detail from this one response. It is
+        a list rather than a list plus a detail route because the auth
+        middleware exempts exact paths only, and a ``{job_id}`` path cannot be
+        named exactly.
+
+        It returns the same summaries as ``list_public_jobs`` and nothing
+        more: no application form, profile config or internal recruiting
+        field, so applying still needs a signed-in session.
+        """
+        async with self.database.session() as session:
+            result = await self.job_service.list_publicly_visible(session)
+        return api_response(message="Jobs fetched.", data=result)
+
+    async def upload_resume(
+        self, current_user: UserContextDto, file: UploadFile = File(...)
+    ):
+        """Store an uploaded résumé content-addressed and return its reference."""
+        data = await file.read()
+        sha256, object_key = self.resume_storage.put(data)
+        return api_response(
+            message="Resume stored.", data={"sha256": sha256, "objectKey": object_key}
+        )
+
+    async def submit_application(
+        self, current_user: UserContextDto, submit_data: ApplicationSubmitDto
+    ):
+        """Submit an application; lands Applied (or Rejected for blocked users)."""
+        async with self.database.session() as session:
+            result = await self.application_service.submit(
+                session, current_user, submit_data
+            )
+        return api_response(message="Application submitted.", data=result)
+
+    async def edit_application(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        edit_data: ApplicationEditDto,
+    ):
+        """Overwrite the caller's application while it is still Applied."""
+        async with self.database.session() as session:
+            result = await self.application_service.edit(
+                session, current_user, application_id, edit_data
+            )
+        return api_response(message="Application updated.", data=result)
+
+    async def get_my_application(self, current_user: UserContextDto, job_id: int):
+        """Return the caller's application for a job (query param job_id)."""
+        async with self.database.session() as session:
+            result = await self.application_service.get_mine(
+                session, current_user, job_id
+            )
+        return api_response(message="Application fetched.", data=result)
+
+    async def get_my_latest_profile(self, current_user: UserContextDto):
+        """Return the profile blocks of the caller's most recent submission.
+
+        The application form's fallback when the caller's profile has nothing
+        for a block. Scoped to the caller by construction -- there is no id to
+        pass, so no application but their own can be reached.
+        """
+        async with self.database.session() as session:
+            result = await self.application_service.get_my_latest_profile(
+                session, current_user
+            )
+        return api_response(message="Latest profile fetched.", data=result)
+
+    async def list_my_applications(self, current_user: UserContextDto):
+        """Return every application the caller has ever submitted, any job kind."""
+        async with self.database.session() as session:
+            result = await self.application_service.list_mine(session, current_user)
+        return api_response(message="Applications fetched.", data=result)

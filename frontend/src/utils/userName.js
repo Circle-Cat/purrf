@@ -1,0 +1,72 @@
+/**
+ * Resolve the name to show for someone other than the viewer. The preferred
+ * name takes priority; when it is missing the full "first last" name is used
+ * as a fallback. This mirrors the backend `user_display_name` helper so every
+ * surface that names another person stays consistent.
+ *
+ * Note: this is only for viewing *other* people. When a user views their own
+ * name, or in admin/audit views, render firstName, lastName and preferredName
+ * separately instead. Recruiting candidates are named by their legal
+ * "first last" name and are resolved on the backend, not here.
+ *
+ * An account created by an email-code sign-in has no name at all. Such a
+ * person is shown as "User <id>" rather than an empty string, which would
+ * leave a blank link or a gap in a sentence.
+ *
+ * @param {{firstName?: string, lastName?: string, preferredName?: string,
+ *          userId?: number, id?: number}} [person]
+ *   The person whose name should be displayed. Search rows carry `userId`,
+ *   partners carry `id`.
+ * @returns {string} The preferred name, the trimmed "first last" fallback, or
+ *   "User <id>"; an empty string when nothing usable is provided.
+ */
+export function userDisplayName(person) {
+  if (!person) return "";
+
+  const preferred = person.preferredName?.trim();
+  if (preferred) return preferred;
+
+  const fullName = `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
+  if (fullName) return fullName;
+
+  const id = person.userId ?? person.id;
+  return id == null ? "" : `User ${id}`;
+}
+
+/**
+ * Render a person's legal name for a place that has room for one cell only.
+ *
+ * Admin and audit views show `firstName`, `lastName` and `preferredName`
+ * separately and verbatim, which is what the wide tables do. A single cell —
+ * the "By" column of an audit row, say — cannot hold three fields, so it falls
+ * back to the legal name and drops the preferred one.
+ *
+ * Dropping the preferred name loses a nickname. *Substituting* it, the way
+ * `userDisplayName` does, loses the identity the view exists to confirm — so
+ * that is the one thing a cell like this must never do.
+ *
+ * @param {{firstName?: string, lastName?: string}} [person]
+ * @returns {string} Empty string when nothing usable is provided.
+ */
+export function legalName(person) {
+  if (!person) return "";
+  return `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
+}
+
+/**
+ * What to call the person a dialog or a card is about.
+ *
+ * Three shapes reach these surfaces. The account console passes a row with a
+ * first/last pair. Recruiting has only ever resolved a candidate to one
+ * display string, so it passes `name`. Either may be missing, and an email is
+ * still better than an unnamed dialog.
+ *
+ * @param {{firstName?: string, lastName?: string, name?: string,
+ *          primaryEmail?: string}|null} person
+ * @returns {string} A name to put in a title, or "" when nothing resolves.
+ */
+export function accountLabel(person) {
+  return (
+    legalName(person) || person?.name?.trim() || person?.primaryEmail || ""
+  );
+}

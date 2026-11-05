@@ -188,10 +188,14 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
     async def test_validation_token(self):
         request = make_request(args=TEST_HANDSHAKE)
 
-        response, status = await _handle_lifecycle_notification_webhook(request)
+        response, status, headers = await _handle_lifecycle_notification_webhook(
+            request
+        )
 
         self.assertEqual(status, HTTPStatus.OK)
         self.assertEqual(response, "test-validation-token")
+        # Graph requires the token back as text/plain; Flask would send text/html.
+        self.assertEqual(headers, {"Content-Type": "text/plain"})
 
     async def test_none_json_body(self):
         request = make_request(json_data=None)

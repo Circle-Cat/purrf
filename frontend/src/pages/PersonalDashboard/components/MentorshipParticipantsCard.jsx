@@ -1,12 +1,12 @@
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
-import { addDays, addMonths, isAfter, isBefore, subMonths } from "date-fns";
-import { formatInTz } from "@/utils/dateTime";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { formatInTz, formatDateTimeWithZone } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import { GraduationCap, User, Plus } from "lucide-react";
+import { GraduationCap, User } from "lucide-react";
+import { toast } from "sonner";
+import { deleteMeeting, rescheduleMeeting } from "@/api/meetingApi";
 import {
   Select,
   SelectContent,
@@ -14,8 +14,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import MeetingSubmissionModal from "@/pages/PersonalDashboard/components/MeetingSubmissionModal";
+import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
+import { userDisplayName } from "@/utils/userName";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
+import MeetingRescheduleDialog from "@/pages/PersonalDashboard/components/MeetingRescheduleDialog";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -25,7 +27,8 @@ import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
  *
  * - Show role, round details, and per-partner meeting overview via MeetingOverviewCard.
  * - Provide a round selector to switch between rounds.
- * - Allow mentees to open the meeting submission modal.
+ * - Host the meeting entry point, which sits beside the round selector that
+ *   governs it rather than elsewhere on the page.
  *
  * @param {{
  *   roundSelectionData: { sortedRounds: Array },
@@ -49,11 +52,21 @@ export default function MentorshipParticipantsCard({
   refreshMeetings,
   userTimezone,
 }) {
+  // The meeting awaiting a new slot, and which partner's row it came from.
+  // `meetingToReschedule` is a `meetingTimeList` entry, which carries only
+  // `meetingId`, `startDatetime`, `endDatetime`, `isCompleted`, and
+  // `meetLink` -- no partner id -- so the partner has to be remembered
+  // separately from whichever row's "Reschedule" was clicked.
+  const [meetingToReschedule, setMeetingToReschedule] = useState(null);
+  const [reschedulePartnerId, setReschedulePartnerId] = useState(null);
+  const [isReschedulingMeeting, setIsReschedulingMeeting] = useState(false);
+
   const { roundInfo, partnerMeetingOverview, participantRole } =
     participantDetails || {};
-  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
-  const { [FEATURE_FLAGS.MANUAL_SUBMIT_MEETING]: manualSubmitMeeting } =
-    useFeatureFlags();
+  const {
+    [FEATURE_FLAGS.MANUAL_SUBMIT_MEETING]: manualSubmitMeeting,
+    [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: createGoogleMeeting,
+  } = useFeatureFlags();
   const isMentee =
     participantRole?.toLowerCase() === MentorshipParticipantRoles.MENTEE;
   const canSubmitMeeting = isMentee && manualSubmitMeeting;
@@ -65,41 +78,124 @@ export default function MentorshipParticipantsCard({
     partnerMeetingOverview?.length > 0 &&
     participantRole;
 
-  const deadline = roundInfo?.timeline?.meetingsCompletionDeadlineAt;
-  const isSubmitDisabled =
-    !hasParticipation ||
-    (deadline
-      ? isAfter(new Date(), addDays(new Date(deadline), 1))
-      : roundInfo?.status === MentorshipRoundStatus.COMPLETED);
+  // A pairing that ended -- the mentor changed mid-round, or the partner left
+  // the program -- still belongs on the card: the meetings held with them are
+  // this user's participation. It is not somewhere new meetings can go, so
+  // only the live pairings are candidates for submission.
+  const livePairings = (partnerMeetingOverview || []).filter(
+    (overview) => overview.isActive !== false,
+  );
 
-  // Feedback opens halfway through the round rather than after all meetings are
-  // done, so participants can write it while the round is still fresh. Both
-  // anchors are optional in the round form, so each falls back to a month
-  // either side of the (required) meetings deadline.
-  const meetingsEnd = deadline ? new Date(deadline) : null;
-  const feedbackOpensAt = roundInfo?.timeline?.meetingLogReminderAt
-    ? new Date(roundInfo.timeline.meetingLogReminderAt)
-    : meetingsEnd
-      ? subMonths(meetingsEnd, 1)
+  // The submission modal is one per round rather than one per partner, so it
+  // can only name a partner while there is exactly one to name -- a mentee and
+  // their current mentor. Any other count leaves the target pair ambiguous, so
+  // submission is withheld rather than guessing which partner the meeting was
+  // held with.
+  const submissionPartnerId =
+    livePairings.length === 1 ? livePairings[0].partnerId : null;
+
+  // Logging stays open a little past the meetings deadline; booking a new
+  // meeting needs a round that is still running, which is a different
+  // question -- keeping the two reasons apart is what lets the entry point
+  // stay reachable for one while the other is closed. The server decides
+  // and enforces the logging cutoff on its own clock; booking is gated here
+  // only. A round list without the verdict (before a round is loaded, or
+  // from a backend that predates it) closes nothing and leaves the server
+  // to refuse.
+  const isLoggingClosed = roundInfo?.isMeetingLogOpen === false;
+  const logUnavailableReason = isLoggingClosed
+    ? "Logging meetings for this round has closed."
+    : !hasParticipation || submissionPartnerId == null
+      ? "No single active pairing to log a meeting against."
       : null;
-  const feedbackClosesAt = roundInfo?.timeline?.feedbackDeadlineAt
-    ? new Date(roundInfo.timeline.feedbackDeadlineAt)
-    : meetingsEnd
-      ? addMonths(meetingsEnd, 1)
-      : null;
+
+  const selectedRound = roundSelectionData?.sortedRounds?.find(
+    (round) => Number(round.id) === Number(selectedRoundId),
+  );
+  // Booking needs a live partner as well as a running round; the dialog's
+  // partner list already leaves ended pairings out, so with none left the
+  // entry point says why instead of opening onto an empty list.
+  const scheduleUnavailableReason =
+    selectedRound?.status !== MentorshipRoundStatus.ACTIVE
+      ? "No active mentorship round"
+      : livePairings.length === 0
+        ? "No active pairing this round."
+        : null;
+
+  // Covers both an admin ending the pair and the member leaving the round:
+  // the card cannot tell them apart, and the sentence is true of either.
+  const allPairingsEnded =
+    partnerMeetingOverview?.length > 0 && livePairings.length === 0;
 
   // Past the closing date the dialog stays reachable but read-only, so people
-  // can still look back at what they submitted.
+  // can still look back at what they submitted. As with logging, a missing
+  // verdict hides and locks nothing.
   const showFeedback = Boolean(
-    hasParticipation &&
-    feedbackOpensAt &&
-    !isBefore(new Date(), feedbackOpensAt),
+    hasParticipation && roundInfo && roundInfo.isFeedbackOpen !== false,
   );
-  const isFeedbackEditable =
-    !feedbackClosesAt || !isAfter(new Date(), feedbackClosesAt);
-  const feedbackDeadlineText = feedbackClosesAt
-    ? `${formatInTz(feedbackClosesAt.toISOString(), userTimezone, "MMM d, yyyy HH:mm")} ${userTimezone || "UTC"}`
+  const isFeedbackEditable = roundInfo?.isFeedbackEditable !== false;
+  const feedbackDeadlineText = roundInfo?.feedbackClosesAt
+    ? formatDateTimeWithZone(roundInfo.feedbackClosesAt, userTimezone)
     : null;
+
+  // Cancelling and rescheduling are offered on the same terms as booking: all
+  // three go through Google, so the flag that gates creating a meeting gates
+  // managing one.
+  const canManageMeetings = Boolean(createGoogleMeeting);
+
+  /**
+   * Cancel one meeting held with a partner, then refresh the round's meetings
+   * so the list reflects what is left.
+   *
+   * @param {string | number} partnerId - Partner the meeting was booked with.
+   * @param {{meetingId: string}} meeting - Meeting to cancel.
+   * @returns {Promise<void>}
+   */
+  const handleCancelMeeting = async (partnerId, meeting) => {
+    try {
+      await deleteMeeting(meeting.meetingId, selectedRoundId, partnerId);
+      toast.success("Meeting cancelled successfully!");
+      await refreshMeetings?.();
+    } catch (error) {
+      console.error("Failed to cancel meeting:", error);
+      toast.error("Failed to cancel the meeting.");
+    }
+  };
+
+  /**
+   * Move the pending meeting to the slot collected by the reschedule dialog,
+   * then refresh the round's meetings so the list reflects the new time.
+   *
+   * @param {{date: string, startTime: string, durationMinutes: number,
+   *   timezone: string}} slot - Wall-clock slot chosen in the dialog.
+   * @returns {Promise<void>}
+   */
+  const handleRescheduleMeeting = async ({
+    date,
+    startTime,
+    durationMinutes,
+    timezone,
+  }) => {
+    setIsReschedulingMeeting(true);
+    try {
+      await rescheduleMeeting(meetingToReschedule.meetingId, {
+        round_id: selectedRoundId,
+        partner_id: reschedulePartnerId,
+        timezone,
+        start_date: date,
+        start_time: startTime,
+        duration_minutes: durationMinutes,
+      });
+      toast.success("Meeting rescheduled successfully!");
+      setMeetingToReschedule(null);
+      await refreshMeetings?.();
+    } catch (error) {
+      console.error("Failed to reschedule meeting:", error);
+      toast.error("Failed to reschedule the meeting.");
+    } finally {
+      setIsReschedulingMeeting(false);
+    }
+  };
 
   const getRoleIcon = (participantRole) => {
     return participantRole?.toLowerCase() ===
@@ -116,17 +212,22 @@ export default function MentorshipParticipantsCard({
         <div className="flex items-center justify-between">
           <CardTitle>Mentorship Participation</CardTitle>
           <div className="flex items-center gap-2">
-            {canSubmitMeeting && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsMeetingModalOpen(true)}
-                disabled={isSubmitDisabled}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Submit Meeting Info
-              </Button>
-            )}
+            <MeetingManagementDialog
+              roundId={selectedRoundId}
+              canSchedule={Boolean(createGoogleMeeting)}
+              scheduleUnavailableReason={scheduleUnavailableReason}
+              canLogPast={canSubmitMeeting}
+              logPartnerId={submissionPartnerId}
+              logExistingMeetings={
+                submissionPartnerId == null
+                  ? []
+                  : livePairings[0].meetingTimeList || []
+              }
+              logUnavailableReason={logUnavailableReason}
+              userTimezone={userTimezone}
+              onBooked={refreshMeetings}
+              onLogged={refreshMeetings}
+            />
             {showFeedback && (
               <MentorshipFeedbackDialog
                 roundId={selectedRoundId}
@@ -198,17 +299,15 @@ export default function MentorshipParticipantsCard({
                     to{" "}
                     {formatDt(
                       roundInfo?.timeline?.meetingsCompletionDeadlineAt,
-                    )}
+                    )}{" "}
+                    {userTimezone}
                   </p>
+                  {allPairingsEnded && (
+                    <p className="font-medium text-amber-600">
+                      Your pairing for this round has ended.
+                    </p>
+                  )}
                 </div>
-              </div>
-              <div>
-                {roundInfo?.status === MentorshipRoundStatus.ACTIVE && (
-                  <Badge variant="default">Active</Badge>
-                )}
-                {roundInfo?.status === MentorshipRoundStatus.COMPLETED && (
-                  <Badge variant="secondary">Completed</Badge>
-                )}
               </div>
             </div>
 
@@ -223,7 +322,24 @@ export default function MentorshipParticipantsCard({
                         : "Mentee"}
                       :
                     </span>{" "}
-                    {overview.preferredName}
+                    {overview.partnerEmail ? (
+                      <a
+                        href={`mailto:${overview.partnerEmail}`}
+                        className="text-primary underline hover:opacity-80"
+                      >
+                        {userDisplayName(overview)}
+                      </a>
+                    ) : (
+                      userDisplayName(overview)
+                    )}
+                    {overview.isActive === false && (
+                      <Badge
+                        variant="outline"
+                        className="ml-2 font-normal align-middle border-amber-200 bg-amber-50 text-amber-600"
+                      >
+                        Ended
+                      </Badge>
+                    )}
                   </p>
                   <MeetingOverviewCard
                     overview={overview}
@@ -231,6 +347,14 @@ export default function MentorshipParticipantsCard({
                     showMeetingList={
                       roundInfo?.status === MentorshipRoundStatus.ACTIVE
                     }
+                    canManageMeetings={canManageMeetings}
+                    onDeleteMeeting={(meeting) =>
+                      handleCancelMeeting(overview.partnerId, meeting)
+                    }
+                    onRescheduleMeeting={(meeting) => {
+                      setMeetingToReschedule(meeting);
+                      setReschedulePartnerId(overview.partnerId);
+                    }}
                   />
                 </div>
               ))}
@@ -238,19 +362,16 @@ export default function MentorshipParticipantsCard({
           </>
         )}
       </CardContent>
-
-      {canSubmitMeeting && (
-        <MeetingSubmissionModal
-          open={isMeetingModalOpen}
-          onOpenChange={setIsMeetingModalOpen}
-          roundId={selectedRoundId}
-          userTimezone={userTimezone}
-          onSuccess={() => {
-            setIsMeetingModalOpen(false);
-            refreshMeetings();
-          }}
-        />
-      )}
+      <MeetingRescheduleDialog
+        open={Boolean(meetingToReschedule)}
+        onOpenChange={(open) => {
+          if (!open) setMeetingToReschedule(null);
+        }}
+        meeting={meetingToReschedule}
+        userTimezone={userTimezone}
+        onSubmit={handleRescheduleMeeting}
+        submitting={isReschedulingMeeting}
+      />
     </Card>
   );
 }

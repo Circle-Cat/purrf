@@ -1,6 +1,5 @@
-import "@/components/common/DateRangePicker.css";
-
 import { useState, useEffect } from "react";
+import { formatLocalYmd } from "@/utils/dateTime";
 
 /**
  * DateRangePicker Component
@@ -28,7 +27,7 @@ export default function DateRangePicker({
   defaultEndDate = "",
   onChange,
 }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = formatLocalYmd(new Date());
   const [startDate, setStartDate] = useState(defaultStartDate || "");
   const [endDate, setEndDate] = useState(defaultEndDate || "");
 
@@ -60,25 +59,28 @@ export default function DateRangePicker({
     handleChange(startDate, newEnd);
   };
 
+  const inputClasses =
+    "h-8 shrink-0 rounded-md border px-2 py-1.5 text-[0.9em] shadow-sm";
+
   return (
-    <div className="date-range-picker">
+    <div className="flex items-center gap-2.5">
       <input
         type="date"
         id="startDateInput"
         data-testid="start-date-input"
-        className="start-date"
+        className={inputClasses}
         value={startDate}
         onChange={handleStartChange}
         max={today}
       />
 
-      <span className="date-separator">-</span>
+      <span>-</span>
 
       <input
         type="date"
         id="endDateInput"
         data-testid="end-date-input"
-        className="end-date"
+        className={inputClasses}
         value={endDate}
         onChange={handleEndChange}
         min={startDate || "1970-01-01"}

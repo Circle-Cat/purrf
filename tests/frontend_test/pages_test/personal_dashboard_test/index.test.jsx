@@ -1,10 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import PersonalDashboard from "@/pages/PersonalDashboard";
+import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { useMyApplications } from "@/hooks/useMyApplications";
+import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
+import { PERMISSIONS } from "@/constants/Permissions";
+import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import * as profileApi from "@/api/profileApi";
+
+vi.mock("@/api/profileApi");
 
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
@@ -18,12 +27,26 @@ vi.mock("@/pages/PersonalDashboard/hooks/useMentorshipData", () => ({
   useMentorshipData: vi.fn(),
 }));
 
+vi.mock("@/pages/PersonalDashboard/hooks/useRegistrationReminder", () => ({
+  useRegistrationReminder: vi.fn(),
+}));
+
 vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/hooks/useWorkActivityData", () => ({
   useWorkActivityData: vi.fn(),
+}));
+
+vi.mock("@/hooks/useMyApplications", () => ({
+  useMyApplications: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/components/MyApplicationsCard", () => ({
+  default: () => (
+    <div data-testid="mock-my-applications-card">Applications</div>
+  ),
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
@@ -33,6 +56,21 @@ vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
     </div>
   ),
 }));
+
+vi.mock(
+  "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
+  () => ({
+    default: () => (
+      <div data-testid="mock-participants-card">Participants Card</div>
+    ),
+  }),
+);
+
+vi.mock("@/hooks/useFeatureFlags", () => {
+  return {
+    useFeatureFlags: vi.fn(),
+  };
+});
 
 describe("PersonalDashboard", () => {
   const mockHookData = {
@@ -44,6 +82,10 @@ describe("PersonalDashboard", () => {
     isPartnersLoading: false,
     loadPastPartners: vi.fn(),
     isLoading: false,
+    selectedRoundId: null,
+    roundSelectionData: {
+      sortedRounds: [{ id: 1, status: MentorshipRoundStatus.COMPLETED }],
+    },
   };
 
   const defaultWorkActivityMock = {
@@ -54,9 +96,94 @@ describe("PersonalDashboard", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { training: [] } },
+    });
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
-    useAuth.mockReturnValue({ roles: [] });
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: ["mentee"],
+    });
+    useAuth.mockReturnValue({ permissions: [] });
+    vi.mocked(useFeatureFlags).mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
+  });
+
+  describe("registration reminder", () => {
+    const lastReminderCall = () => useRegistrationReminder.mock.calls.at(-1)[0];
+
+    it("measures the deadline against the role the user was admitted as", () => {
+      // The round carries a separate deadline per role, and only the
+      // admission says which one is this user's.
+      render(<PersonalDashboard />);
+
+      expect(useMentorshipData).toHaveBeenCalledWith({
+        enabled: true,
+        hiredMentorshipRoles: ["mentee"],
+      });
+    });
+
+    it("hands the reminder the round it should name", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        registrationDeadlineAt: "2026-09-30T15:59:00Z",
+        regRoundName: "2026 Fall",
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall()).toMatchObject({
+        enabled: true,
+        isRegistered: false,
+        isRegistrationOpen: true,
+        registrationDeadlineAt: "2026-09-30T15:59:00Z",
+        roundName: "2026 Fall",
+      });
+    });
+
+    it("reports an existing registration so the reminder stays quiet", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        registration: { id: "reg-1", isRegistered: true },
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall().isRegistered).toBe(true);
+    });
+
+    it("stays disabled for someone with no mentorship admission", () => {
+      useMyApplications.mockReturnValue({
+        applications: [],
+        isLoading: false,
+        loadError: false,
+        load: vi.fn(),
+        hiredMentorshipRoles: [],
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall().enabled).toBe(false);
+    });
+
+    it("stays disabled while the applications list is still loading", () => {
+      useMyApplications.mockReturnValue({
+        applications: [],
+        isLoading: true,
+        loadError: false,
+        load: vi.fn(),
+        hiredMentorshipRoles: [],
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall().enabled).toBe(false);
+    });
   });
 
   it("renders the welcome header", () => {
@@ -127,7 +254,7 @@ describe("PersonalDashboard", () => {
 
   it("shows work activity card for internal users", () => {
     useAuth.mockReturnValue({
-      roles: [USER_ROLES.CC_INTERNAL],
+      permissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
     });
 
     useWorkActivityData.mockReturnValue({
@@ -143,7 +270,7 @@ describe("PersonalDashboard", () => {
 
   it("does not show work activity card for non internal users", () => {
     useAuth.mockReturnValue({
-      roles: [],
+      permissions: [],
     });
 
     useWorkActivityData.mockReturnValue({
@@ -159,7 +286,7 @@ describe("PersonalDashboard", () => {
 
   it("disables work activity card search button while loading for internal users", () => {
     useAuth.mockReturnValue({
-      roles: [USER_ROLES.CC_INTERNAL],
+      permissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
     });
 
     useWorkActivityData.mockReturnValue({
@@ -170,8 +297,146 @@ describe("PersonalDashboard", () => {
 
     render(<PersonalDashboard />);
 
-    const button = screen.getByRole("button");
+    const cardContainer = screen.getByTestId("work-activity-card");
+    const button = cardContainer.querySelector("button");
 
     expect(button).toBeDisabled();
+  });
+
+  it("hides the mentorship section when there is no hired mentorship role", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: [],
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("always renders the My Applications card", () => {
+    render(<PersonalDashboard />);
+    expect(screen.getByTestId("mock-my-applications-card")).toBeInTheDocument();
+  });
+
+  it("shows the mentorship banner and participants card once a hired mentorship role resolves", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: ["mentor"],
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.getByTestId("mock-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("mock-participants-card")).toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card while applications are still loading", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: true,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: [],
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card when the applications fetch errored", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: true,
+      load: vi.fn(),
+      hiredMentorshipRoles: [],
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card when there is no hired mentorship role", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: [],
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("passes showMentorshipSection as the enabled option to useMentorshipData", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: [],
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(useMentorshipData).toHaveBeenCalledWith({
+      enabled: false,
+      hiredMentorshipRoles: [],
+    });
+  });
+
+  it("passes the per-role registration entries through to MentorshipInfoBanner", () => {
+    const registrationEntries = [
+      { role: "mentor", deadlineAt: "2026-09-30T15:59:00Z", isOpen: true },
+    ];
+    const loadRegistrationForRole = vi.fn();
+    useMentorshipData.mockReturnValue({
+      ...mockHookData,
+      registrationEntries,
+      registeredRole: null,
+      loadRegistrationForRole,
+    });
+
+    render(<PersonalDashboard />);
+
+    // React 19 calls function components as (props, undefined); toHaveBeenCalledWith's
+    // expect.anything() rejects that literal undefined second arg, so assert on the
+    // first call's props directly instead.
+    expect(MentorshipInfoBanner.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        registrationEntries,
+        registeredRole: null,
+        loadRegistrationForRole,
+      }),
+    );
+  });
+
+  it("spaces the dashboard cards vertically", () => {
+    const { container } = render(<PersonalDashboard />);
+    expect(container.querySelector(".personal-dashboard").className).toContain(
+      "space-y-5",
+    );
   });
 });

@@ -1,22 +1,238 @@
 export const API_ENDPOINTS = {
   MY_PROFILE: "/profiles/me",
-  MY_ROLES: "/roles/me",
+  MY_PERMISSIONS: "/permissions/me",
+  EMAIL_REMOVE: (emailId) => `/auth/emails/${emailId}`,
+  EMAIL_OTP_INITIATE: "/auth/emails/initiate",
+  EMAIL_OTP_VERIFY: "/auth/emails/verify",
+  EMAIL_LIST: "/auth/emails",
+  EMAIL_SET_PRIMARY_INITIATE: (emailId) =>
+    `/auth/emails/${emailId}/primary/initiate`,
+  EMAIL_SET_PRIMARY_CONFIRM: (emailId) =>
+    `/auth/emails/${emailId}/primary/confirm`,
+  EMAIL_UNLINK_INITIATE: (identityId) =>
+    `/auth/identities/${identityId}/unlink/initiate`,
+  EMAIL_UNLINK_CONFIRM: (identityId) =>
+    `/auth/identities/${identityId}/unlink/confirm`,
   MENTORSHIP_REGISTRATION: (roundId) =>
     `/mentorship/rounds/${roundId}/registration`,
   MENTORSHIP_MATCH_RESULT: (roundId) => `/mentorship/rounds/${roundId}/matches`,
   MENTORSHIP_FEEDBACK: (roundId) => `/mentorship/rounds/${roundId}/feedback`,
   MENTORSHIP_PARTNERS: "/mentorship/partners/me",
   MENTORSHIP_ROUNDS: "/mentorship/rounds",
+  MENTORSHIP_ROUND_SLOTS: "/mentorship/rounds/slots",
+  MENTORSHIP_ADMIN_PARTICIPANTS: "/mentorship/admin/participants",
+  MENTORSHIP_ADMIN_ROUND_FEEDBACK: (roundId) =>
+    `/mentorship/admin/rounds/${roundId}/feedback`,
+  MENTORSHIP_ADMIN_ROUND_UNREGISTERED: (roundId) =>
+    `/mentorship/admin/rounds/${roundId}/unregistered`,
+  MENTORSHIP_ADMIN_KIT_DRAFTS: "/mentorship/admin/kit-drafts",
+  MENTORSHIP_ADMIN_EMAIL_SENDS: "/mentorship/admin/email-sends",
+  MENTORSHIP_ADMIN_EMAIL_SENDS_NOTIFIED:
+    "/mentorship/admin/email-sends/notified",
+  MENTORSHIP_ADMIN_EMAIL_SENDS_PERSON: "/mentorship/admin/email-sends/person",
+  MENTORSHIP_ADMIN_EMAIL_SEND_ACTION: (sendId, action) =>
+    `/mentorship/admin/email-sends/${sendId}/${action}`,
+  MENTORSHIP_ADMIN_NOTIFICATIONS_MARK: (roundId) =>
+    `/mentorship/admin/rounds/${roundId}/notifications/mark`,
+  MENTORSHIP_ADMIN_MATCH_RUNS: "/mentorship/admin/match-runs",
+  MENTORSHIP_ADMIN_MATCH_RUN: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}`,
+  MENTORSHIP_ADMIN_MATCH_RUN_RESULTS: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/results`,
+  MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/unmatched`,
+  MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/edit-lock`,
+  MENTORSHIP_ADMIN_MATCH_RUN_DRAFT: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/draft`,
+  MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/publish-request`,
+  MENTORSHIP_ADMIN_EXEMPTION_REQUEST: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/exemption-request`,
+  MENTORSHIP_ADMIN_WITHDRAW_REQUEST: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/withdraw-request`,
+  MENTORSHIP_ADMIN_MARK_REQUEST: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/mark-request`,
+  MENTORSHIP_ADMIN_END_PAIR_REQUEST: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/end-pair-request`,
+  MENTORSHIP_ADMIN_PARTICIPANT_DETAIL: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}`,
+  MENTORSHIP_ADMIN_PARTICIPANT_NOTES: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/notes`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAILS: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_REPLY: (roundId, userId, threadId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails/${threadId}/reply`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAILS_REFRESH: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails/refresh`,
+  MENTORSHIP_ADMIN_PARTICIPANT_EMAIL_ATTACHMENT: (
+    roundId,
+    userId,
+    messageId,
+    index,
+  ) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/emails/messages/${messageId}/attachments/${index}`,
+  MENTORSHIP_ADMIN_APPROVERS: "/mentorship/admin/approvals/approvers",
+  MENTORSHIP_ADMIN_APPROVALS_MINE: "/mentorship/admin/approvals/mine",
+  MENTORSHIP_ADMIN_APPROVAL_REASSIGN: (requestId) =>
+    `/mentorship/admin/approvals/${requestId}/reassign`,
+  MENTORSHIP_ADMIN_APPROVAL_DECIDE: (requestId) =>
+    `/mentorship/admin/approvals/${requestId}/decide`,
+  MENTORSHIP_ADMIN_APPROVAL_WITHDRAW: (requestId) =>
+    `/mentorship/admin/approvals/${requestId}/withdraw`,
+  MENTORSHIP_ADMIN_PAIR_MEETINGS: (pairId) =>
+    `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
   MY_INTERNAL_ACTIVITY_SUMMARY: "/summary/me",
+  LEAVE_APPROVALS: "/leave/requests/approvals",
+  LEAVE_ME: "/leave/me",
+  LEAVE_REQUESTS: "/leave/requests",
+  LEAVE_REQUEST_WITHDRAW: (requestId) =>
+    `/leave/requests/${requestId}/withdraw`,
+  LEAVE_POLICY: "/leave/policy",
+  LEAVE_HOLIDAYS_YEAR: (year) => `/leave/holidays/${year}`,
+  LEAVE_HOLIDAY_YEARS: "/leave/holiday-years",
+  LEAVE_BALANCES: "/leave/balances",
+  LEAVE_LEDGER: "/leave/ledger",
+  LEAVE_ME_LEDGER: "/leave/me/ledger",
+  LEAVE_ADJUSTMENTS: "/leave/adjustments",
+  LEAVE_REQUEST_DECISION: (requestId) =>
+    `/leave/requests/${requestId}/decision`,
   MENTORSHIP_MEETINGS_V2: "/mentorship/v2/meetings",
+  MENTORSHIP_MEETING_V2_SINGLE: (meetingId) =>
+    `/mentorship/v2/meetings/${meetingId}`,
+  MENTORSHIP_MEETING_V2_BATCH_DELETE: "/mentorship/v2/meetings/batch-delete",
+  ADMIN_PERMISSIONS: "/admin/permissions",
+  ADMIN_USERS: "/admin/users",
+  ADMIN_USER_PERMISSIONS: (userId) => `/admin/users/${userId}/permissions`,
+  ADMIN_AUDIT_PERMISSION_CHANGES: "/admin/audit/permission-changes",
+  ADMIN_USER_GRANT: (userId) => `/admin/users/${userId}/permissions/grant`,
+  ADMIN_USER_REVOKE: (userId) => `/admin/users/${userId}/permissions/revoke`,
+  ADMIN_USER_SUPER_ADMIN: (userId) => `/admin/users/${userId}/super-admin`,
+  ADMIN_ACCOUNTS: "/admin/accounts",
+  ADMIN_ACCOUNT_SIGN_IN_METHODS: (userId) =>
+    `/admin/accounts/${userId}/sign-in-methods`,
+  ADMIN_ACCOUNT_DEACTIVATE: (userId) => `/admin/accounts/${userId}/deactivate`,
+  ADMIN_ACCOUNT_REACTIVATE: (userId) => `/admin/accounts/${userId}/reactivate`,
+  ADMIN_ACCOUNT_UNBLOCK: (userId) => `/admin/accounts/${userId}/unblock`,
+  ADMIN_ACCOUNT_BLOCK: (userId) => `/admin/accounts/${userId}/block`,
+  ADMIN_ACCOUNT_BLOCK_REQUESTS: (userId) =>
+    `/admin/accounts/${userId}/block-requests`,
+  BLOCK_REQUEST_REVIEWERS: "/block-request-reviewers",
+  BLOCK_PREFLIGHT: (userId) => `/block-preflight/${userId}`,
+  BLOCK_REQUESTS: "/block-requests",
+  BLOCK_REQUESTS_RAISED: "/block-requests/raised",
+  BLOCK_REQUESTS_RAISED_DECIDED: (userId) =>
+    `/block-requests/raised/${userId}/decided`,
+  BLOCK_REQUEST_REASSIGN: (requestId) =>
+    `/block-requests/${requestId}/reassign`,
+  BLOCK_REQUEST_DECIDE: (requestId) => `/block-requests/${requestId}/decide`,
+  BLOCK_REQUEST_WITHDRAW: (requestId) =>
+    `/block-requests/${requestId}/withdraw`,
+  RECRUITING_JOBS: "/recruiting/jobs",
+  RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
+  RECRUITING_JOB_SUBMIT: (jobId) => `/recruiting/jobs/${jobId}/submit`,
+  RECRUITING_JOB_CLOSE: (jobId) => `/recruiting/jobs/${jobId}/close`,
+  RECRUITING_JOB_ACTIVITY: (jobId) => `/recruiting/jobs/${jobId}/activity`,
+  RECRUITING_JOB_REQUEST_CLOSE: (jobId) =>
+    `/recruiting/jobs/${jobId}/request-close`,
+  RECRUITING_JOB_REQUEST_REOPEN: (jobId) =>
+    `/recruiting/jobs/${jobId}/request-reopen`,
+  RECRUITING_JOB_DISCARD_PENDING_EDIT: (jobId) =>
+    `/recruiting/jobs/${jobId}/discard-pending-edit`,
+  RECRUITING_APPROVERS: "/recruiting/approvers",
+  RECRUITING_JOB_REVIEW_REVIEWER: (jobId) =>
+    `/recruiting/jobs/${jobId}/review/reviewer`,
+  RECRUITING_JOB_REVIEW_WITHDRAW: (jobId) =>
+    `/recruiting/jobs/${jobId}/review/withdraw`,
+  RECRUITING_REVIEWS: "/recruiting/reviews",
+  RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
+  RECRUITING_INTERVIEW_POOL: "/recruiting/interview-pool",
+  RECRUITING_JOB_OWNERS: "/recruiting/job-owners",
+  RECRUITING_PUBLIC_JOB: (jobId) => `/recruiting/public/jobs/${jobId}`,
+  RECRUITING_PUBLIC_JOBS: "/recruiting/public/jobs",
+  RECRUITING_RESUMES: "/recruiting/resumes",
+  RECRUITING_APPLICATIONS: "/recruiting/applications",
+  RECRUITING_APPLICATION: (applicationId) =>
+    `/recruiting/applications/${applicationId}`,
+  RECRUITING_APPLICATIONS_MINE: "/recruiting/applications/mine",
+  RECRUITING_MY_APPLICATIONS: "/recruiting/my-applications",
+  RECRUITING_MY_LATEST_PROFILE: "/recruiting/my-latest-profile",
+  RECRUITING_BOARD_JOBS: "/recruiting/board/jobs",
+  RECRUITING_BOARD_APPLICANTS: "/recruiting/board/applicants",
+  RECRUITING_JOB_BOARD: (jobId) => `/recruiting/jobs/${jobId}/board`,
+  RECRUITING_JOB_BOARD_STAGE: (jobId) =>
+    `/recruiting/jobs/${jobId}/board/applications`,
+  RECRUITING_APPLICATION_STAGE: (id) => `/recruiting/applications/${id}/stage`,
+  RECRUITING_APPLICATION_SUB_STATUS: (id) =>
+    `/recruiting/applications/${id}/sub-status`,
+  RECRUITING_APPLICATION_ROUND: (id) => `/recruiting/applications/${id}/round`,
+  RECRUITING_APPLICATION_RESUME: (id) =>
+    `/recruiting/applications/${id}/resume`,
+  RECRUITING_APPLICATION_ASSIGNMENT: (id) =>
+    `/recruiting/applications/${id}/assignment`,
+  RECRUITING_APPLICATION_INTERVIEW: (id) =>
+    `/recruiting/applications/${id}/interview`,
+  RECRUITING_APPLICATION_EVALUATION: (id) =>
+    `/recruiting/applications/${id}/evaluation`,
+  RECRUITING_EVALUATIONS_MINE: "/recruiting/evaluations/mine",
+  RECRUITING_APPLICATION_EVALUATIONS: (id) =>
+    `/recruiting/applications/${id}/evaluations`,
+  RECRUITING_APPLICATION_ACTIVITY: (id) =>
+    `/recruiting/applications/${id}/activity`,
+  RECRUITING_APPLICATION_COMMENTS: (id) =>
+    `/recruiting/applications/${id}/comments`,
+  RECRUITING_APPLICATION_EMAILS: (id) =>
+    `/recruiting/applications/${id}/emails`,
+  RECRUITING_APPLICATION_EMAIL_TEMPLATES: (id) =>
+    `/recruiting/applications/${id}/email-templates`,
+  RECRUITING_APPLICATION_EMAIL_ATTACHMENT: (id, messageId, index) =>
+    `/recruiting/applications/${id}/emails/messages/${messageId}/attachments/${index}`,
+  RECRUITING_APPLICATION_MENTIONABLE_USERS: (id) =>
+    `/recruiting/applications/${id}/mentionable-users`,
+  RECRUITING_APPLICATION_OTHER_APPLICATIONS: (id) =>
+    `/recruiting/applications/${id}/other-applications`,
+  RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
+  RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
+  RECRUITING_NOTIFICATIONS_READ: "/recruiting/notifications/read",
+  RECRUITING_NOTIFICATIONS_READ_ALL: "/recruiting/notifications/read-all",
+  RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
+  TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
+  TRAINING_TRIAL_SESSION: (trainingId) =>
+    `/training/${trainingId}/trial-session`,
+  TRAINING_PROGRESS: (trainingId) => `/training/${trainingId}/progress`,
+  TRAINING_COURSES: "/training/courses",
+  TRAINING_COURSE: (courseId) => `/training/courses/${courseId}`,
+  TRAINING_COURSE_TRIAL: (courseId) => `/training/courses/${courseId}/trial`,
+  TRAINING_COURSE_PACKAGE: (courseId) =>
+    `/training/courses/${courseId}/package`,
+  TRAINING_COURSE_PUBLISH: (courseId) =>
+    `/training/courses/${courseId}/package/publish`,
+  TRAINING_COURSE_PREVIEW_SESSION: (courseId) =>
+    `/training/courses/${courseId}/preview-session`,
+  TRAINING_ASSIGNMENTS_BULK: "/training/assignments/bulk",
+  TRAINING_ASSIGNMENTS_AUDIENCE: "/training/assignments/audience",
+  TRAINING_ASSIGNMENTS_AUDIENCE_IDS: "/training/assignments/audience/ids",
+  TRAINING_USER_ASSIGNMENTS: (userId) =>
+    `/training/users/${userId}/assignments`,
+  INBOX_THREADS: "/inbox/threads",
+  INBOX_COUNT: "/inbox/count",
+  INBOX_THREAD: (id) => `/inbox/threads/${id}`,
+  INBOX_THREAD_REPLY: (id) => `/inbox/threads/${id}/reply`,
+  INBOX_THREAD_ARCHIVE: (id) => `/inbox/threads/${id}/archive`,
+  INBOX_THREAD_UNARCHIVE: (id) => `/inbox/threads/${id}/unarchive`,
+  INBOX_THREAD_ASSIGNMENT: (id) => `/inbox/threads/${id}/assignment`,
+  INBOX_THREAD_MOVE: (id) => `/inbox/threads/${id}/move`,
+  INBOX_THREAD_ASSIGN_OPTIONS: (id) => `/inbox/threads/${id}/assign-options`,
+  INBOX_PEOPLE: "/inbox/people",
+  INBOX_ATTACHMENT: (id, messageId, index) =>
+    `/inbox/threads/${id}/messages/${messageId}/attachments/${index}`,
 };
 
 /**
  * Query parameter values for the `/profiles/me` API.
  */
 export const ProfileFields = Object.freeze({
-  USER: "user",
   WORK_HISTORY: "workHistory",
   EDUCATION: "education",
   TRAINING: "training",

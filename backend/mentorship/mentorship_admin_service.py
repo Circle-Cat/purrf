@@ -1,0 +1,1377 @@
+from collections import Counter
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
+from backend.dto.mentorship_approval_dto import ApprovalPersonDto
+from backend.dto.participant_detail_dto import (
+    DetailRoundDto,
+    ParticipantDetailDto,
+    ParticipantNoteDto,
+    ParticipationHistoryRowDto,
+    PendingRequestDto,
+    RejectedRequestDto,
+)
+from backend.dto.participant_search_dto import (
+    AttendanceIssueDto,
+    ExemptionFindingDto,
+    MarkCountsDto,
+    ParticipantPairDto,
+    ParticipantRowDto,
+    ParticipantSearchDto,
+    PersonRowDto,
+    UnregisteredRowDto,
+    UnregisteredSearchDto,
+)
+from backend.dto.participant_search_row_dto import (
+    ParticipantSearchPairRow,
+    ParticipantSearchRow,
+    PersonSearchRow,
+)
+from backend.dto.partner_dto import PartnerDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
+from backend.dto.round_feedback_dto import (
+    AdminPartnerFeedbackDto,
+    ParticipantFeedbackDto,
+    RoundFeedbackDto,
+)
+from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
+from backend.admin.block_service import pending_block_summary
+from backend.common.exceptions import ConflictError, NotFoundError
+from backend.common.mentorship_enums import (
+    MENTORSHIP_ONBOARDING_CATEGORIES,
+    MeetingNoteTag,
+    MeetingSource,
+    PairStatus,
+    ParticipantNoteTag,
+    ParticipantRole,
+    TrainingCategory,
+)
+from backend.common.mentorship_email_enums import MentorshipEmailNotificationState
+from backend.common.name_utils import display_name_or_id, user_display_name
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
+from backend.mentorship.round_windows import is_in_progress
+from backend.repository.user_id_condition import UserIdCondition
+
+
+class MentorshipAdminService:
+    """Service for admin-facing mentorship participant search."""
+
+    _ABSENT_TAGS = {
+        MeetingNoteTag.UNKNOWN_ABSENT,
+        MeetingNoteTag.MENTOR_ABSENT,
+        MeetingNoteTag.MENTEE_ABSENT,
+    }
+    _SPECIFIC_LATE_TAGS = {MeetingNoteTag.MENTOR_LATE, MeetingNoteTag.MENTEE_LATE}
+
+    def __init__(
+        self,
+        users_repository,
+        participants_repository,
+        rounds_repository,
+        training_repository,
+        pairs_repository,
+        mentorship_mapper,
+        logger,
+        mentorship_meeting_repository,
+        application_repository,
+        matching_eligibility_service,
+        mentorship_approval_service,
+        note_repository,
+        approval_service,
+        mentorship_email_service,
+        meeting_service,
+    ) -> None:
+        self.users_repository = users_repository
+        self.participants_repository = participants_repository
+        self.rounds_repository = rounds_repository
+        self.training_repository = training_repository
+        self.pairs_repository = pairs_repository
+        self.mentorship_mapper = mentorship_mapper
+        self.logger = logger
+        self.mentorship_meeting_repository = mentorship_meeting_repository
+        self.application_repository = application_repository
+        self.matching_eligibility_service = matching_eligibility_service
+        self.mentorship_approval_service = mentorship_approval_service
+        self.note_repository = note_repository
+        self.approval_service = approval_service
+        self.mentorship_email_service = mentorship_email_service
+        self.meeting_service = meeting_service
+
+    async def _notification_condition(
+        self, session: AsyncSession, round_id: int | None, filters
+    ) -> UserIdCondition | None:
+        """The people a notification filter keeps (Notified, Scheduled) or
+        leaves out (Not notified), or None without one.
+
+        Raises:
+            ValueError: Only one of stage and state was given, or no round.
+        """
+        stage, state = filters.notification_stage, filters.notification_state
+        if stage is None and state is None:
+            return None
+        if stage is None or state is None:
+            raise ValueError("Pick both a notification and its state.")
+        if round_id is None:
+            raise ValueError("The notification filter needs a round.")
+        S = MentorshipEmailNotificationState
+        query = await self.mentorship_email_service.notified_user_ids(
+            session,
+            round_id,
+            stage,
+            sent=state != S.SCHEDULED,
+            scheduled=state != S.NOTIFIED,
+        )
+        return UserIdCondition(query, exclude=state == S.NOT_NOTIFIED)
+
+    def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
+        """
+        Split email records into a primary address and a list of alternatives.
+
+        Args:
+            emails (list[UserEmailsEntity]): Email records for a single user.
+
+        Returns:
+            tuple[str | None, list[str]]: Primary email (None if absent) and
+            alternative emails.
+        """
+        primary_email = None
+        alternative_emails = []
+        for e in emails:
+            if e.is_primary:
+                primary_email = e.email
+            else:
+                alternative_emails.append(e.email)
+        return primary_email, alternative_emails
+
+    def _person_fields(
+        self, row: PersonSearchRow, users_map: dict, emails_map: dict
+    ) -> dict:
+        """
+        The PersonRowDto fields for a search row: the user's names and
+        emails, and the account flags the row was read with.
+
+        Args:
+            row (PersonSearchRow): The row; its user must be in users_map.
+            users_map (dict[int, UsersEntity]): Users keyed by user_id.
+            emails_map (dict[int, list[UserEmailsEntity]]): Emails keyed by
+                user_id; a user with none may be absent.
+
+        Returns:
+            dict: Keyword arguments for any PersonRowDto subclass.
+        """
+        user = users_map[row.user_id]
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(row.user_id, [])
+        )
+        return {
+            "user_id": row.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "preferred_name": user.preferred_name,
+            "primary_email": primary_email,
+            "alternative_emails": alternative_emails,
+            "is_blocked": row.is_blocked,
+            "is_deactivated": row.is_deactivated,
+            "is_internal": row.is_internal,
+        }
+
+    async def _fetch_batch_relations(
+        self, session: AsyncSession, rows: list[ParticipantSearchRow]
+    ) -> tuple[dict, dict, dict]:
+        """
+        Batch-fetch user, email, and training records referenced by a
+        page of search rows.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            rows (list[ParticipantSearchRow]): One page/batch of search rows.
+
+        Returns:
+            tuple: (users_map, emails_map, trainings_map), keyed by user_id.
+            trainings_map's values are further keyed by TrainingCategory.
+        """
+        mentorship_user_ids: set[int] = set()
+        training_user_ids: set[int] = set()
+        for row in rows:
+            mentorship_user_ids.add(row.user_id)
+            for pair in row.pairs:
+                mentorship_user_ids.add(pair.mentor_id)
+                mentorship_user_ids.add(pair.mentee_id)
+            training_user_ids.add(row.user_id)
+
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, list(mentorship_user_ids)
+        )
+
+        trainings = (
+            await self.training_repository.get_training_by_user_ids_and_categories(
+                session,
+                list(training_user_ids),
+                categories=list(MENTORSHIP_ONBOARDING_CATEGORIES),
+            )
+        )
+        trainings_map: dict = {}
+        for t in trainings:
+            trainings_map.setdefault(t.user_id, {})[t.category] = t.status
+
+        return users_map, emails_map, trainings_map
+
+    def _get_partner_user(
+        self, user_id: int, pair: ParticipantSearchPairRow, users_map: dict
+    ):
+        """
+        Resolve the other side of one of a participant's pairs.
+
+        Args:
+            user_id (int): The participant the row is about.
+            pair (ParticipantSearchPairRow): One of that participant's pairs.
+            users_map (dict[int, UsersEntity]): User records keyed by user_id.
+
+        Returns:
+            The partner's user record, or None if the partner isn't in
+            users_map.
+        """
+        partner_id = pair.mentee_id if user_id == pair.mentor_id else pair.mentor_id
+        return users_map.get(partner_id)
+
+    def _attendance_issues(
+        self, pair: ParticipantSearchPairRow, meetings: list[MentorshipMeetingEntity]
+    ) -> list[AttendanceIssueDto]:
+        """
+        The pair's meetings that carry any note tag, in the repository's
+        start_datetime order, tagged the same way the meeting log shows them.
+
+        Args:
+            pair (ParticipantSearchPairRow): The pair the meetings belong to.
+            meetings (list[MentorshipMeetingEntity]): That pair's meetings.
+
+        Returns:
+            list[AttendanceIssueDto]: One entry per tagged meeting.
+        """
+        issues: list[AttendanceIssueDto] = []
+        for meeting in meetings:
+            note = self._resolve_meeting_notes_from_row(
+                meeting, pair.mentor_id, pair.mentee_id
+            )
+            if note:
+                issues.append(
+                    AttendanceIssueDto(start_datetime=meeting.start_datetime, note=note)
+                )
+        return issues
+
+    def _build_pair_dtos(
+        self,
+        row: ParticipantSearchRow,
+        users_map: dict,
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
+    ) -> list[ParticipantPairDto]:
+        """
+        Build the Pair column entries for a participant search row, keeping
+        the row's pair_id order and skipping any pair whose partner can't be
+        resolved.
+
+        Args:
+            row (ParticipantSearchRow): The row whose pairs to build.
+            users_map (dict[int, UsersEntity]): User records keyed by user_id.
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]): The
+                page's meetings keyed by pair_id; a pair with none is absent.
+                Also gives each pair its earliest meeting.
+
+        Returns:
+            list[ParticipantPairDto]: One entry per resolvable pair.
+        """
+        pair_dtos: list[ParticipantPairDto] = []
+        for pair in row.pairs:
+            partner = self._get_partner_user(row.user_id, pair, users_map)
+            if partner is None:
+                continue
+            meetings = meetings_by_pair.get(pair.pair_id, [])
+            pair_dtos.append(
+                ParticipantPairDto(
+                    pair_id=pair.pair_id,
+                    partner=PartnerDto(
+                        id=partner.user_id,
+                        first_name=partner.first_name or "",
+                        last_name=partner.last_name or "",
+                        preferred_name=partner.preferred_name or "",
+                        primary_email=None,
+                        participant_role=None,
+                        recommendation_reason=None,
+                        is_active=pair.pair_status == PairStatus.ACTIVE,
+                    ),
+                    completed_meeting_count=pair.completed_count,
+                    attendance_issues=self._attendance_issues(pair, meetings),
+                    first_meeting_at=min(
+                        (m.start_datetime for m in meetings if m.start_datetime),
+                        default=None,
+                    ),
+                )
+            )
+        return pair_dtos
+
+    def _get_required_meetings(
+        self, row: ParticipantSearchRow, rounds_map: dict
+    ) -> int | None:
+        """
+        Look up a row's required meeting count from its round.
+
+        Args:
+            row (ParticipantSearchRow): The row to look up a round for.
+            rounds_map (dict[int, MentorshipRoundEntity]): Round records keyed by round_id.
+
+        Returns:
+            int | None: The round's required_meetings, or None if it has no round.
+        """
+        round_entity = rounds_map.get(row.round_id) if row.round_id else None
+        return round_entity.required_meetings if round_entity else None
+
+    async def search_participants(
+        self,
+        session: AsyncSession,
+        filters: ParticipantSearchFilterDto,
+        limit: int = 100,
+        offset: int = 0,
+        sort_by: str | None = None,
+        order: str = "asc",
+    ) -> ParticipantSearchDto:
+        """
+        Search mentorship participants and non-participants for admin with pagination.
+
+        Executes the participant query, batch-fetches related user, email, round,
+        training and meeting data, then assembles the response.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            filters (ParticipantSearchFilterDto): Filter criteria from the request.
+            limit (int): Maximum number of rows to return. Defaults to 100.
+            offset (int): Number of rows to skip for pagination. Defaults to 0.
+            sort_by (str | None): Column to sort by (whitelisted in the repo).
+                Unknown values fall back to the deterministic default order.
+            order (str): "asc" or "desc" (default "asc").
+
+        Returns:
+            ParticipantSearchDto: Assembled participant rows and total count.
+
+        Raises:
+            ValueError: ``eligible`` or ``needs_exemption`` was asked for
+                without a round, for a round that does not exist, or for one
+                not in progress; or both were asked for at once; or a
+                notification filter missing its stage, state or round.
+        """
+        if filters.eligible and filters.needs_exemption:
+            raise ValueError("Ask for eligible or needs exemption, not both.")
+        condition = await self._notification_condition(
+            session, filters.round_id, filters
+        )
+        findings: dict[int, list] = {}
+        if filters.eligible:
+            only_user_ids = await self._eligible_user_ids(session, filters.round_id)
+        elif filters.needs_exemption:
+            findings = await self._needs_exemption(session, filters.round_id)
+            only_user_ids = set(findings)
+        else:
+            only_user_ids = None
+        rows, total = await self.participants_repository.search_participants_for_admin(
+            session,
+            filters,
+            limit,
+            offset,
+            sort_by,
+            order,
+            only_user_ids=only_user_ids,
+            user_id_condition=condition,
+        )
+        if not rows:
+            return ParticipantSearchDto(participant_rows=[], total=total)
+
+        users_map, emails_map, trainings_map = await self._fetch_batch_relations(
+            session, rows
+        )
+
+        rounds = await self.rounds_repository.get_all_rounds(session)
+        rounds_map = {r.round_id: r for r in rounds}
+
+        meetings_by_pair = (
+            await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                session, sorted({p.pair_id for row in rows for p in row.pairs})
+            )
+        )
+
+        requests = (
+            await self.mentorship_approval_service.pending_exemptions(
+                session, filters.round_id, [row.user_id for row in rows]
+            )
+            if filters.needs_exemption
+            else {}
+        )
+        marked = Counter(
+            (note.user_id, note.round_id, note.tag)
+            for note in await self.note_repository.list_tagged(
+                session,
+                sorted({row.user_id for row in rows}),
+                [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+            )
+        )
+
+        participant_rows: list[ParticipantRowDto] = []
+        for row in rows:
+            statuses = trainings_map.get(row.user_id, {})
+            mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
+            mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
+
+            round_entity = rounds_map.get(row.round_id) if row.round_id else None
+
+            participant_rows.append(
+                ParticipantRowDto(
+                    **self._person_fields(row, users_map, emails_map),
+                    round_id=row.round_id,
+                    round_name=round_entity.name if round_entity else None,
+                    participant_role=row.participant_role,
+                    approval_status=row.approval_status,
+                    mentor_onboarding_status=mentor_status,
+                    mentee_onboarding_status=mentee_status,
+                    pairs=self._build_pair_dtos(row, users_map, meetings_by_pair),
+                    required_meetings=self._get_required_meetings(row, rounds_map),
+                    exemption_findings=[
+                        ExemptionFindingDto(
+                            reason=f.reason.value,
+                            round_id=f.round_id,
+                            round_name=rounds_map[f.round_id].name
+                            if f.round_id in rounds_map
+                            else None,
+                            completed=f.completed,
+                            required=f.required,
+                        )
+                        for f in findings.get(row.user_id, [])
+                    ],
+                    exemption_request=requests.get(row.user_id),
+                    marks=MarkCountsDto(
+                        no_show=marked[
+                            (row.user_id, row.round_id, ParticipantNoteTag.NO_SHOW)
+                        ],
+                        red_flag=marked[
+                            (row.user_id, row.round_id, ParticipantNoteTag.RED_FLAG)
+                        ],
+                    ),
+                )
+            )
+
+        return ParticipantSearchDto(participant_rows=participant_rows, total=total)
+
+    async def _eligible_user_ids(
+        self, session: AsyncSession, round_id: int | None
+    ) -> set[int]:
+        """The people eligible for matching in a round in progress.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int | None): The round searched.
+
+        Returns:
+            set[int]: Their user_ids.
+
+        Raises:
+            ValueError: No round, an unknown round, or one not in progress.
+        """
+        if round_id is None:
+            raise ValueError("Eligible for matching needs a round.")
+        await self._get_round_in_progress(session, round_id)
+        return await self.matching_eligibility_service.eligible_user_ids(
+            session, round_id
+        )
+
+    async def _needs_exemption(
+        self, session: AsyncSession, round_id: int | None
+    ) -> dict[int, list]:
+        """The people only their history keeps out of matching in a round in
+        progress, with what in their history does.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int | None): The round searched.
+
+        Returns:
+            dict[int, list[HistoryFinding]]: user_id -> findings.
+
+        Raises:
+            ValueError: No round, an unknown round, or one not in progress.
+        """
+        if round_id is None:
+            raise ValueError("Needs exemption needs a round.")
+        await self._get_round_in_progress(session, round_id)
+        return await self.matching_eligibility_service.needs_exemption(
+            session, round_id
+        )
+
+    async def _get_round_in_progress(self, session: AsyncSession, round_id: int):
+        """The round, if it is in progress: the lists that act on a round --
+        who is eligible for matching, who has not registered -- are only
+        offered then.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+
+        Returns:
+            MentorshipRoundEntity: The round.
+
+        Raises:
+            ValueError: The round does not exist or is not in progress.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+        if not is_in_progress(round_entity, datetime.now(timezone.utc)):
+            raise ValueError(f"Mentorship round {round_id} is not in progress.")
+        return round_entity
+
+    async def _round_in_progress(self, session: AsyncSession, round_id: int) -> bool:
+        """Whether a round exists and is in progress now.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+
+        Returns:
+            bool: False for an unknown round too.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        return round_entity is not None and is_in_progress(
+            round_entity, datetime.now(timezone.utc)
+        )
+
+    async def search_unregistered(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        filters: UnregisteredFilterDto,
+        limit: int = 100,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> UnregisteredSearchDto:
+        """
+        List the people admitted as a mentor or mentee who have not
+        registered for a round, with what an admin chasing them needs: who
+        they are, what they were admitted as, and how much they have taken
+        part before.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round they have not registered for.
+            filters (UnregisteredFilterDto): Person and admitted-role filters.
+            limit (int): Maximum number of rows to return. Defaults to 100.
+            offset (int): Number of rows to skip for pagination. Defaults to 0.
+            order (str): "asc" or "desc" by user ID (default "asc").
+
+        Returns:
+            UnregisteredSearchDto: One row per person and the total count.
+
+        Raises:
+            ValueError: If the round does not exist or is not in progress, or
+                a notification filter is missing its stage or state.
+        """
+        await self._get_round_in_progress(session, round_id)
+        condition = await self._notification_condition(session, round_id, filters)
+
+        rows, total = await self.participants_repository.search_unregistered_for_admin(
+            session,
+            round_id,
+            filters,
+            limit,
+            offset,
+            order,
+            user_id_condition=condition,
+        )
+        if not rows:
+            return UnregisteredSearchDto(rows=[], total=total)
+
+        user_ids = [row.user_id for row in rows]
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, user_ids
+        )
+        roles_map = (
+            await self.application_repository.list_hired_activity_roles_by_user_ids(
+                session, user_ids
+            )
+        )
+        rounds_map = (
+            await self.participants_repository.list_registered_rounds_by_user_ids(
+                session, user_ids
+            )
+        )
+
+        result: list[UnregisteredRowDto] = []
+        for row in rows:
+            roles = roles_map.get(row.user_id, set())
+            past_rounds = rounds_map.get(row.user_id, [])
+            result.append(
+                UnregisteredRowDto(
+                    **self._person_fields(row, users_map, emails_map),
+                    admitted_roles=[
+                        role
+                        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE)
+                        if role in roles
+                    ],
+                    rounds_taken_part=len(past_rounds),
+                    last_round_name=past_rounds[0].name if past_rounds else None,
+                )
+            )
+        return UnregisteredSearchDto(rows=result, total=total)
+
+    async def get_participant_detail(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> ParticipantDetailDto:
+        """Everything the admin console's page for one person in one round
+        shows, registered for it or not.
+
+        Reuses the participant search for the registration and history rows,
+        so the page and the list cannot disagree about a pair or a status.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round the page is about.
+            user_id (int): The person.
+
+        Returns:
+            ParticipantDetailDto: The page's data.
+
+        Raises:
+            NotFoundError: The round or the user does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise NotFoundError(f"Mentorship round {round_id} does not exist.")
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, [user_id]
+        )
+        user = users_map.get(user_id)
+        if user is None:
+            raise NotFoundError(f"User {user_id} does not exist.")
+        in_progress = is_in_progress(round_entity, datetime.now(timezone.utc))
+
+        rows = (
+            await self.search_participants(
+                session, ParticipantSearchFilterDto(user_id=user_id)
+            )
+        ).participant_rows
+        registration = next((r for r in rows if r.round_id == round_id), None)
+        if registration is not None and in_progress:
+            # The Needs exemption search is what fills in the findings and
+            # the request waiting on them; it returns nothing for someone
+            # whose history is clean.
+            flagged = (
+                await self.search_participants(
+                    session,
+                    ParticipantSearchFilterDto(
+                        user_id=user_id, round_id=round_id, needs_exemption=True
+                    ),
+                )
+            ).participant_rows
+            if flagged:
+                registration = flagged[0]
+
+        exempted_rounds = (
+            await self.note_repository.list_round_ids_by_tag(
+                session, [user_id], ParticipantNoteTag.MATCHING_EXEMPTION
+            )
+        ).get(user_id, set())
+
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(user_id, [])
+        )
+        pair_ids = (
+            [p.pair_id for p in registration.pairs] if registration is not None else []
+        )
+        return ParticipantDetailDto(
+            person=PersonRowDto(
+                user_id=user_id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                preferred_name=user.preferred_name,
+                primary_email=primary_email,
+                alternative_emails=alternative_emails,
+                is_blocked=bool(user.is_blocked),
+                is_deactivated=not user.is_active,
+                is_internal=bool(user.is_internal),
+            ),
+            round=DetailRoundDto(
+                round_id=round_entity.round_id,
+                name=round_entity.name,
+                required_meetings=round_entity.required_meetings,
+                in_progress=in_progress,
+            ),
+            registration=registration,
+            exempted=round_id in exempted_rounds,
+            feedback=await self._feedback_of(session, round_id, user_id),
+            notes=await self._notes_of(session, round_id, user_id),
+            pending_block_request=await pending_block_summary(
+                session,
+                approval_service=self.approval_service,
+                users_repository=self.users_repository,
+                user_id=user_id,
+            ),
+            pending_requests=[
+                PendingRequestDto.model_validate(r)
+                for r in await self.mentorship_approval_service.pending_for_participant(
+                    session, round_id, user_id, pair_ids=pair_ids
+                )
+            ],
+            rejected_requests=[
+                RejectedRequestDto.model_validate(r)
+                for r in await self.mentorship_approval_service.rejected_for_participant(
+                    session, round_id, user_id, pair_ids=pair_ids
+                )
+            ],
+            history=await self._history(session, round_entity, rows, exempted_rounds),
+        )
+
+    async def add_participant_note(
+        self,
+        session: AsyncSession,
+        *,
+        round_id: int,
+        user_id: int,
+        author_id: int,
+        body: str,
+    ) -> ParticipantNoteDto:
+        """Write a plain note on a person in a round. Commits.
+
+        The person need not have registered: a note hangs on the person and
+        the round, not on a registration.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round, which must be in progress.
+            user_id (int): Who the note is about.
+            author_id (int): Who is writing it.
+            body (str): What it says, already validated by the request DTO.
+
+        Returns:
+            ParticipantNoteDto: The new note.
+
+        Raises:
+            NotFoundError: The round or the user does not exist.
+            ConflictError: The round is not in progress (code
+                ``round_not_in_progress``).
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise NotFoundError(f"Mentorship round {round_id} does not exist.")
+        if not is_in_progress(round_entity, datetime.now(timezone.utc)):
+            raise ConflictError(
+                "Notes can only be added while the round is in progress.",
+                code="round_not_in_progress",
+            )
+        if await self.users_repository.get_user_by_user_id(session, user_id) is None:
+            raise NotFoundError(f"User {user_id} does not exist.")
+
+        note = await self.note_repository.create(
+            session,
+            user_id=user_id,
+            round_id=round_id,
+            author_user_id=author_id,
+            body=body,
+        )
+        await session.commit()
+        # created_at is filled in by the database; read it back before the
+        # attribute is touched, or the async session cannot load it.
+        await session.refresh(note)
+        return self._note_dto(note, await self._names(session, {author_id}))
+
+    async def _names(self, session: AsyncSession, user_ids) -> dict[int, str]:
+        """Display names of these people, keyed by user_id."""
+        users = await self.users_repository.get_all_by_ids(session, list(user_ids))
+        return {u.user_id: display_name_or_id(u) for u in users}
+
+    def _note_dto(self, note, names: dict[int, str]) -> ParticipantNoteDto:
+        return ParticipantNoteDto(
+            note_id=note.note_id,
+            tag=note.tag,
+            body=note.body,
+            pair_id=note.pair_id,
+            request_id=note.request_id,
+            notification_stage=note.notification_stage,
+            author=ApprovalPersonDto(
+                user_id=note.author_user_id, name=names.get(note.author_user_id)
+            ),
+            created_at=note.created_at,
+        )
+
+    async def _notes_of(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> list[ParticipantNoteDto]:
+        """The person's notes in the round, newest first."""
+        notes = await self.note_repository.list_for_user_round(
+            session, user_id, round_id
+        )
+        names = await self._names(session, {n.author_user_id for n in notes})
+        return [self._note_dto(n, names) for n in reversed(notes)]
+
+    async def _feedback_of(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> ParticipantFeedbackDto | None:
+        """The person's feedback for the round, if the round asks them for
+        any -- the same people the round's Feedback page lists."""
+        owed = await self.participants_repository.get_feedback_owed_in_round(
+            session, round_id
+        )
+        mine = next(((p, u) for p, u in owed if u.user_id == user_id), None)
+        if mine is None:
+            return None
+        participant, user = mine
+        partners = {
+            u.user_id: u
+            for u in await self.users_repository.get_all_by_ids(
+                session,
+                [e["partner_id"] for e in self._pair_feedback_entries(participant)],
+            )
+        }
+        return self._participant_feedback(participant, user, partners)
+
+    async def _history(
+        self,
+        session: AsyncSession,
+        round_entity,
+        rows: list[ParticipantRowDto],
+        exempted_rounds: set[int],
+    ) -> list[ParticipationHistoryRowDto]:
+        """The person's rounds that ended before this one, newest first.
+
+        "Ended before" compares meetings_completion_deadline_at; a round
+        missing it has no place on the timeline and is left out, and so is
+        every round when this one is missing it.
+        """
+        cutoff = round_entity.meetings_completion_deadline_at
+        if cutoff is None:
+            return []
+        rounds_map = {
+            r.round_id: r for r in await self.rounds_repository.get_all_rounds(session)
+        }
+
+        def deadline(row):
+            r = rounds_map.get(row.round_id)
+            return r.meetings_completion_deadline_at if r else None
+
+        earlier = [r for r in rows if deadline(r) is not None and deadline(r) < cutoff]
+        earlier.sort(key=deadline, reverse=True)
+        return [
+            ParticipationHistoryRowDto.model_validate({
+                **r.model_dump(),
+                "exempted": r.round_id in exempted_rounds,
+            })
+            for r in earlier
+        ]
+
+    def _resolve_meeting_notes(
+        self, meeting: dict, mentor_id: int, mentee_id: int
+    ) -> list[MeetingNoteTag]:
+        """
+        Resolve note tags for a meeting based on its duration, absence, and lateness flags.
+
+        Manual (v1) entries never carry these keys at all, so `.get()`
+        returning None for each of them is what naturally yields an empty
+        note list rather than a separate branch for that generation.
+
+        Args:
+            meeting (dict): A single meeting record (Google or manual) from
+                the pair's meeting_log.
+            mentor_id (int): User ID of the pair's mentor.
+            mentee_id (int): User ID of the pair's mentee.
+
+        Returns:
+            list[MeetingNoteTag]: Note tags applicable to the meeting.
+        """
+        notes = []
+        if meeting.get("has_insufficient_duration"):
+            notes.append(MeetingNoteTag.INSUFFICIENT_DURATION)
+        if meeting.get("has_unknown_absent"):
+            notes.append(MeetingNoteTag.UNKNOWN_ABSENT)
+        elif absent_user_id := meeting.get("absent_user_id"):
+            if absent_user_id == mentor_id:
+                notes.append(MeetingNoteTag.MENTOR_ABSENT)
+            elif absent_user_id == mentee_id:
+                notes.append(MeetingNoteTag.MENTEE_ABSENT)
+        if meeting.get("has_unknown_late"):
+            notes.append(MeetingNoteTag.UNKNOWN_LATE)
+        else:
+            late_user_ids = meeting.get("late_user_id") or []
+            if mentor_id in late_user_ids:
+                notes.append(MeetingNoteTag.MENTOR_LATE)
+            if mentee_id in late_user_ids:
+                notes.append(MeetingNoteTag.MENTEE_LATE)
+        return notes
+
+    def _resolve_meeting_notes_from_row(
+        self,
+        meeting: MentorshipMeetingEntity,
+        mentor_id: int,
+        mentee_id: int,
+    ) -> list[MeetingNoteTag]:
+        """
+        Resolve note tags for a `mentorship_meeting` row's attendance columns.
+
+        The entity-row twin of `_resolve_meeting_notes`, used by the read path
+        that has switched from the JSONB column to querying
+        `MentorshipMeetingRepository` directly. Rows of every source are read
+        the same way: a MANUAL row carries attendance only once an admin has
+        marked it, and yields an empty list until then.
+
+        Args:
+            meeting (MentorshipMeetingEntity): A single meeting row.
+            mentor_id (int): User ID of the pair's mentor.
+            mentee_id (int): User ID of the pair's mentee.
+
+        Returns:
+            list[MeetingNoteTag]: Note tags applicable to the meeting.
+        """
+        notes = []
+        if meeting.has_insufficient_duration:
+            notes.append(MeetingNoteTag.INSUFFICIENT_DURATION)
+        if meeting.has_unknown_absent:
+            notes.append(MeetingNoteTag.UNKNOWN_ABSENT)
+        elif meeting.absent_user_id:
+            if meeting.absent_user_id == mentor_id:
+                notes.append(MeetingNoteTag.MENTOR_ABSENT)
+            elif meeting.absent_user_id == mentee_id:
+                notes.append(MeetingNoteTag.MENTEE_ABSENT)
+        if meeting.has_unknown_late:
+            notes.append(MeetingNoteTag.UNKNOWN_LATE)
+        else:
+            late_user_ids = meeting.late_user_ids or []
+            if mentor_id in late_user_ids:
+                notes.append(MeetingNoteTag.MENTOR_LATE)
+            if mentee_id in late_user_ids:
+                notes.append(MeetingNoteTag.MENTEE_LATE)
+        return notes
+
+    def _meeting_row_to_admin_dict(self, meeting: MentorshipMeetingEntity) -> dict:
+        """
+        Bridge a `MentorshipMeetingEntity` row into the dict shape
+        `map_to_admin_meeting_dto` expects (the same shape a JSONB entry used
+        to have), converting its datetime columns to the ISO strings
+        `AdminMeetingDto`'s fields are typed as.
+
+        Only called for MANUAL/GOOGLE rows, whose `start_datetime` /
+        `end_datetime` / `created_datetime` are never NULL (only LEGACY rows
+        have NULL times, and callers must exclude those before reaching here).
+
+        Args:
+            meeting (MentorshipMeetingEntity): A single meeting row.
+
+        Returns:
+            dict: meeting_id/start_datetime/end_datetime/created_datetime,
+                with the datetimes as ISO strings.
+        """
+        return {
+            "meeting_id": meeting.meeting_id,
+            "start_datetime": meeting.start_datetime.isoformat(),
+            "end_datetime": meeting.end_datetime.isoformat(),
+            "created_datetime": meeting.created_datetime.isoformat(),
+        }
+
+    async def get_round_feedback(
+        self, session: AsyncSession, round_id: int
+    ) -> RoundFeedbackDto:
+        """
+        Everyone a round's feedback is asked of, with what each of them sent.
+
+        What someone wrote about a partner stays on the writer's row: it is
+        their view of the partner, not the partner's feedback.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+
+        Returns:
+            RoundFeedbackDto: The round, its counts, and one row per person.
+
+        Raises:
+            ValueError: The round does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+
+        owed = await self.participants_repository.get_feedback_owed_in_round(
+            session, round_id
+        )
+        partner_ids = {
+            entry["partner_id"]
+            for participant, _ in owed
+            for entry in self._pair_feedback_entries(participant)
+        }
+        partners = {
+            user.user_id: user
+            for user in await self.users_repository.get_all_by_ids(
+                session, list(partner_ids)
+            )
+        }
+
+        rows = [
+            self._participant_feedback(participant, user, partners)
+            for participant, user in owed
+        ]
+        return RoundFeedbackDto(
+            round_id=round_entity.round_id,
+            round_name=round_entity.name,
+            owed=len(rows),
+            sent=sum(row.has_submitted for row in rows),
+            participants=rows,
+        )
+
+    def _pair_feedback_entries(self, participant) -> list[dict]:
+        """The participant's partner entries that name a partner."""
+        entries = participant.pair_feedback
+        if not isinstance(entries, list):
+            return []
+        return [
+            e
+            for e in entries
+            if isinstance(e, dict) and e.get("partner_id") is not None
+        ]
+
+    def _participant_feedback(
+        self, participant, user, partners: dict
+    ) -> ParticipantFeedbackDto:
+        """Map one owed participant and their feedback, if any."""
+        program = participant.program_feedback
+        submitted = isinstance(program, dict)
+        program = program if submitted else {}
+
+        partner_feedback = []
+        for entry in self._pair_feedback_entries(participant):
+            partner = partners.get(entry["partner_id"])
+            partner_feedback.append(
+                AdminPartnerFeedbackDto(
+                    partner_id=entry["partner_id"],
+                    partner_name=user_display_name(
+                        first_name=partner.first_name,
+                        last_name=partner.last_name,
+                        preferred_name=partner.preferred_name,
+                    )
+                    if partner
+                    else None,
+                    rating=entry.get("rating"),
+                    feedback=entry.get("feedback"),
+                )
+            )
+
+        return ParticipantFeedbackDto(
+            user_id=user.user_id,
+            name=display_name_or_id(user),
+            role=participant.participant_role,
+            has_submitted=submitted,
+            most_valuable_aspects=program.get("most_valuable_aspects"),
+            challenges=program.get("challenges"),
+            program_rating=program.get("program_rating"),
+            partner_feedback=partner_feedback,
+        )
+
+    async def get_meeting_log(
+        self, session: AsyncSession, pair_id: int
+    ) -> AdminMeetingLogDto | None:
+        """
+        Fetch the meeting log for a mentorship pair.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair_id (int): ID of the mentorship pair.
+
+        Returns:
+            AdminMeetingLogDto | None: Meeting log for the pair, or None if the pair
+            does not exist.
+        """
+        pair = await self.pairs_repository.get_pair_by_id(session, pair_id)
+        if pair is None:
+            return None
+        return await self._build_meeting_log_dto(session, pair)
+
+    async def _build_meeting_log_dto(
+        self, session: AsyncSession, pair
+    ) -> AdminMeetingLogDto:
+        """
+        Builds an AdminMeetingLogDto from a pair's `mentorship_meeting` rows.
+
+        Reads MANUAL and GOOGLE rows for the pair in one query (LEGACY rows
+        are excluded -- they carry no times and have nothing to show in this
+        list). There is no separate priority branch per generation: a pair
+        holding both generations shows both, in the order the repository
+        already returned them, instead of one silently hiding the other.
+
+        Ordering decision: this method trusts
+        `MentorshipMeetingRepository.get_meetings_by_pair`'s own order
+        (`start_datetime` ascending, then `created_datetime`, then
+        `meeting_id`) rather than re-sorting by `created_datetime` to match
+        this admin log's old JSONB-era order. See the PR report for the
+        rationale; it is a deliberate, user-visible change, pinned by a test.
+
+        round_version is derived from what the rows actually are rather than
+        assumed: any GOOGLE row present means "v2"; only MANUAL rows means
+        "v1"; no rows at all keeps the "v2" default.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair: The pair to build a meeting log for. Must have `pair_id`,
+                `round_id`, `mentor_id`, and `mentee_id` populated.
+
+        Returns:
+            AdminMeetingLogDto: The pair's meeting log built from rows.
+        """
+        meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session, pair.pair_id
+        )
+        if not meetings:
+            round_version = "v2"
+        elif any(m.source == MeetingSource.GOOGLE for m in meetings):
+            round_version = "v2"
+        else:
+            round_version = "v1"
+
+        mentor_id = pair.mentor_id
+        mentee_id = pair.mentee_id
+        meeting_dtos = [
+            self.mentorship_mapper.map_to_admin_meeting_dto(
+                self._meeting_row_to_admin_dict(m),
+                is_completed=m.is_completed,
+                note_tags=self._resolve_meeting_notes_from_row(m, mentor_id, mentee_id),
+            )
+            for m in meetings
+        ]
+
+        return AdminMeetingLogDto(
+            round_version=round_version,
+            meetings=meeting_dtos,
+            round_in_progress=await self._round_in_progress(session, pair.round_id),
+        )
+
+    def _validate_note_tags(self, note: list[MeetingNoteTag] | None) -> None:
+        """
+        Raises ValueError if note combines mutually exclusive tags.
+
+        At most one absent tag; unknown_late cannot combine with a specific
+        late tag; mentor_late and mentee_late may coexist. The same role
+        cannot be marked as both absent and late.
+        """
+        if note is None:
+            return
+        tags = set(note)
+        if len(tags & self._ABSENT_TAGS) > 1:
+            raise ValueError(f"note cannot combine more than one absent tag: {note}")
+        if MeetingNoteTag.UNKNOWN_LATE in tags and tags & self._SPECIFIC_LATE_TAGS:
+            raise ValueError(
+                f"note cannot combine unknown_late with a specific late tag: {note}"
+            )
+        if (
+            MeetingNoteTag.MENTOR_ABSENT in tags and MeetingNoteTag.MENTOR_LATE in tags
+        ) or (
+            MeetingNoteTag.MENTEE_ABSENT in tags and MeetingNoteTag.MENTEE_LATE in tags
+        ):
+            raise ValueError(
+                f"note cannot mark the same role both absent and late: {note}"
+            )
+
+    def _validate_no_absent_if_completed(
+        self, meeting: MentorshipMeetingEntity
+    ) -> None:
+        """
+        Prevent `is_completed` and absent note tags from coexisting.
+
+        Must be called after `is_completed` and `note` have been merged
+        into `meeting`; otherwise it may validate against stale or
+        partial state.
+
+        Args:
+            meeting (MentorshipMeetingEntity): The meeting row with
+                `is_completed` and absent tag fields already resolved to
+                their final values for this update.
+
+        Raises:
+            ValueError: If `is_completed` is true and an absent tag
+                (unknown, mentor, or mentee) is set.
+        """
+        if meeting.is_completed and (
+            meeting.has_unknown_absent or meeting.absent_user_id is not None
+        ):
+            raise ValueError(
+                f"Cannot mark meeting {meeting.meeting_id} completed while a "
+                "participant is marked absent."
+            )
+
+    def _apply_note_tags(
+        self,
+        meeting: MentorshipMeetingEntity,
+        note: list[MeetingNoteTag],
+        mentor_id: int,
+        mentee_id: int,
+    ) -> None:
+        """
+        Writes note's tags onto a meeting row's persisted attributes.
+
+        `late_user_ids` (`ARRAY(Integer)`) is not `Mutable`-wrapped, so it is
+        always assigned a whole new list here, never appended to in place --
+        an in-place append would not be seen by the unit of work and would
+        silently fail to persist.
+        """
+        meeting.has_insufficient_duration = MeetingNoteTag.INSUFFICIENT_DURATION in note
+        meeting.has_unknown_absent = MeetingNoteTag.UNKNOWN_ABSENT in note
+        if MeetingNoteTag.MENTOR_ABSENT in note:
+            meeting.absent_user_id = mentor_id
+        elif MeetingNoteTag.MENTEE_ABSENT in note:
+            meeting.absent_user_id = mentee_id
+        else:
+            meeting.absent_user_id = None
+        meeting.has_unknown_late = MeetingNoteTag.UNKNOWN_LATE in note
+        late_user_ids = []
+        if MeetingNoteTag.MENTOR_LATE in note:
+            late_user_ids.append(mentor_id)
+        if MeetingNoteTag.MENTEE_LATE in note:
+            late_user_ids.append(mentee_id)
+        meeting.late_user_ids = late_user_ids
+
+    @staticmethod
+    def _attendance_outcome(meeting: MentorshipMeetingEntity) -> tuple:
+        """
+        The attendance result of a meeting row, as the admin editor sees it.
+
+        NULL flags and a NULL late list read the same as False and empty --
+        the editor cannot tell them apart, so turning one into the other is
+        not a change the admin made.
+        """
+        return (
+            bool(meeting.is_completed),
+            meeting.absent_user_id,
+            sorted(meeting.late_user_ids or []),
+            bool(meeting.has_unknown_absent),
+            bool(meeting.has_unknown_late),
+            bool(meeting.has_insufficient_duration),
+        )
+
+    async def apply_v2_meeting_batch(
+        self,
+        session: AsyncSession,
+        pair_id: int,
+        batch: V2MeetingBatchUpdateDto,
+    ) -> AdminMeetingLogDto:
+        """
+        Apply incremental updates/deletes to a pair's v2 meeting log.
+
+        Locks the pair row for the duration of the transaction, applies all
+        deletes then all updates against the current DB state (not the
+        client's snapshot), recalculates completed_count, and returns the
+        pair's latest meeting log. A row whose attendance result changes is
+        stamped with ``attendance_set_by_admin_at`` so the Meet attendance
+        sweep stops re-deriving it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair_id (int): The mentorship pair ID.
+            batch (V2MeetingBatchUpdateDto): Meeting updates and deletions.
+
+        Returns:
+            AdminMeetingLogDto: The pair's meeting log after applying batch.
+
+        Raises:
+            ValueError: updates and deletes are both empty; the same
+                meeting_id appears in both; a meeting_id doesn't exist among
+                this pair's rows; or the pair itself doesn't exist.
+            ConflictError: With code ``round_not_in_progress`` when the
+                pair's round is not in progress: a past round's log is
+                read-only, whatever its rows' source. MANUAL rows of a round
+                in progress (what a mentee logs by hand) are edited and
+                deleted like GOOGLE ones. Also raised, with code
+                ``calendar_cancel_failed``, when
+                Calendar refuses to cancel a deleted upcoming GOOGLE
+                meeting's event; nothing is written then.
+        """
+        if not batch.updates and not batch.deletes:
+            raise ValueError("updates and deletes must not both be empty.")
+
+        update_ids = {item.meeting_id for item in batch.updates}
+        delete_ids = set(batch.deletes)
+        overlap = update_ids & delete_ids
+        if overlap:
+            raise ValueError(
+                f"meeting_id(s) cannot appear in both updates and deletes: {sorted(overlap)}"
+            )
+        for item in batch.updates:
+            self._validate_note_tags(item.note)
+
+        pair = await self.pairs_repository.get_pair_by_id(
+            session, pair_id, with_lock=True
+        )
+        if pair is None:
+            raise ValueError(f"Mentorship pair {pair_id} not found.")
+        if not await self._round_in_progress(session, pair.round_id):
+            raise ConflictError(
+                "Meetings of a round that is not in progress cannot be edited.",
+                code="round_not_in_progress",
+            )
+
+        meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session, pair_id
+        )
+        by_id = {m.meeting_id: m for m in meetings}
+        target_ids = update_ids | delete_ids
+        missing = target_ids - by_id.keys()
+        if missing:
+            raise ValueError(
+                f"meeting_id(s) not found for this pair: {sorted(missing)}"
+            )
+
+        if delete_ids:
+            # An upcoming meeting still has a live invite; a started one is
+            # history, and cancelling it would mail everyone a cancellation.
+            now = datetime.now(timezone.utc)
+            upcoming_ids = sorted(
+                mid
+                for mid in delete_ids
+                if by_id[mid].source == MeetingSource.GOOGLE
+                and by_id[mid].start_datetime is not None
+                and by_id[mid].start_datetime > now
+            )
+            if upcoming_ids:
+                await self.meeting_service.cancel_calendar_events(upcoming_ids)
+            await self.mentorship_meeting_repository.delete_meetings(
+                session, pair_id, list(delete_ids)
+            )
+        edited_at = datetime.now(timezone.utc)
+        for item in batch.updates:
+            meeting = by_id[item.meeting_id]
+            before = self._attendance_outcome(meeting)
+            if item.is_completed is not None:
+                meeting.is_completed = item.is_completed
+            if item.note is not None:
+                self._apply_note_tags(
+                    meeting, item.note, pair.mentor_id, pair.mentee_id
+                )
+            if item.is_completed is not None or item.note is not None:
+                self._validate_no_absent_if_completed(meeting)
+            if self._attendance_outcome(meeting) != before:
+                meeting.attendance_set_by_admin_at = edited_at
+
+        # Assigned directly rather than left for the ORM to refresh -- same
+        # rationale as MeetingService.upsert_meetings: the UPDATE issued here
+        # sets completed_count from a scalar subquery, which falls back to the
+        # "fetch" synchronize strategy and EXPIRES completed_count on this
+        # loaded pair rather than repopulating it; reading it after commit()
+        # without reassigning would raise MissingGreenlet under async.
+        pair.completed_count = (
+            await self.mentorship_meeting_repository.recalculate_completed_count(
+                session, pair_id
+            )
+        )
+
+        await session.commit()
+
+        self.logger.info(
+            "[MentorshipAdminService] meeting log batch applied for pair_id=%s: updated=%d, deleted=%d",
+            pair_id,
+            len(batch.updates),
+            len(delete_ids),
+        )
+
+        return await self._build_meeting_log_dto(session, pair)

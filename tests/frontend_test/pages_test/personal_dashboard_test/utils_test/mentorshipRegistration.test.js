@@ -66,13 +66,27 @@ describe("mentorshipRegistration utils", () => {
       expect(result.selectedPartners).toEqual([]);
       expect(result.excludedPartners).toEqual([]);
     });
+
+    // The role-less read answers only "am I registered", and carries a
+    // null `roundPreferences` when the answer is no.
+    it("tolerates a source carrying null round preferences", () => {
+      const result = mapRegistrationToForm(
+        { isRegistered: false, roundPreferences: null },
+        [],
+      );
+
+      expect(result.partnerCapacity).toBe(1);
+      expect(result.goal).toBe("");
+      expect(result.currentStage).toBe("");
+      expect(result.timeUrgency).toBe("");
+    });
   });
 
   describe("mapFormToApi", () => {
     it("maps form state back to API format correctly", () => {
       const formData = {
         industries: [{ id: "ds" }],
-        skillsets: [{ id: "leadership" }, { id: "communicationSkills" }],
+        skillsets: [{ id: "networking" }, { id: "projectManagement" }],
         partnerCapacity: 3,
         goal: "Become a better mentor",
         selectedPartners: [{ id: "10" }, { id: "11" }],
@@ -85,7 +99,7 @@ describe("mentorshipRegistration utils", () => {
         roundPreferences: {},
       };
 
-      const result = mapFormToApi(formData, currentRegistration);
+      const result = mapFormToApi(formData, currentRegistration, "mentor");
 
       // Industry boolean map
       expect(result.globalPreferences.specificIndustry).toEqual(
@@ -98,16 +112,21 @@ describe("mentorshipRegistration utils", () => {
         ),
       );
 
-      // Skillset boolean map
-      expect(result.globalPreferences.skillsets).toEqual(
-        SKILLSET_CONFIG.reduce(
-          (acc, c) => ({
-            ...acc,
-            [c.id]: ["leadership", "communicationSkills"].includes(c.id),
-          }),
-          {},
-        ),
-      );
+      // Skillset boolean map. Spelled out rather than derived from
+      // SKILLSET_CONFIG: the payload keys are the contract with SkillsetsDto,
+      // which has no field for anything outside this set, so an option added
+      // to the form without a matching backend field must fail here rather
+      // than be silently dropped on the wire.
+      expect(result.globalPreferences.skillsets).toEqual({
+        resumeGuidance: false,
+        careerPathGuidance: false,
+        experienceSharing: false,
+        industryTrends: false,
+        technicalSkills: false,
+        softSkills: false,
+        networking: true,
+        projectManagement: true,
+      });
 
       expect(result.roundPreferences.maxPartners).toBe(3);
       expect(result.roundPreferences.goal).toBe("Become a better mentor");
@@ -127,14 +146,71 @@ describe("mentorshipRegistration utils", () => {
 
       const currentRegistration = {
         globalPreferences: { foo: "bar" },
-        roundPreferences: { baz: "qux", participantRole: "mentee" },
+        roundPreferences: { baz: "qux" },
       };
 
-      const result = mapFormToApi(formData, currentRegistration);
+      const result = mapFormToApi(formData, currentRegistration, "mentee");
 
       expect(result.globalPreferences.foo).toBe("bar");
       expect(result.roundPreferences.baz).toBe("qux");
+    });
+
+    // The role is what the entry point the user pressed says it is. The
+    // server validates it against their admissions and against any
+    // registration the round already holds.
+    it("states the role it was given", () => {
+      const formData = {
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 1,
+        goal: "",
+        selectedPartners: [],
+        excludedPartners: [],
+      };
+
+      const result = mapFormToApi(formData, {}, "mentor");
+
+      expect(result.roundPreferences.participantRole).toBe("mentor");
+    });
+
+    it("states the role over one carried by the source data", () => {
+      const formData = {
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 1,
+        goal: "",
+        selectedPartners: [],
+        excludedPartners: [],
+      };
+
+      const result = mapFormToApi(
+        formData,
+        { roundPreferences: { participantRole: "mentee" } },
+        "mentor",
+      );
+
+      expect(result.roundPreferences.participantRole).toBe("mentor");
+    });
+
+    it("tolerates a source carrying null round preferences", () => {
+      const formData = {
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 2,
+        goal: "Ship it",
+        selectedPartners: [],
+        excludedPartners: [],
+      };
+
+      const result = mapFormToApi(
+        formData,
+        { isRegistered: false, roundPreferences: null },
+        "mentee",
+      );
+
       expect(result.roundPreferences.participantRole).toBe("mentee");
+      expect(result.roundPreferences.maxPartners).toBe(2);
+      expect(result.roundPreferences.goal).toBe("Ship it");
     });
   });
 });

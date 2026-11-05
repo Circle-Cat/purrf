@@ -1,3 +1,5 @@
+import { userDisplayName } from "@/utils/userName";
+
 export const CAREER_TRANSITION_OPTIONS = [
   {
     id: "none",
@@ -110,8 +112,6 @@ export const SKILLSET_CONFIG = [
   { id: "softSkills", name: "Soft Skills Enhancement" },
   { id: "networking", name: "Networking" },
   { id: "projectManagement", name: "Project Management" },
-  { id: "leadership", name: "Leadership" },
-  { id: "communicationSkills", name: "Communication Skills" },
 ];
 
 /**
@@ -142,13 +142,13 @@ export const mapRegistrationToForm = (registration, allPastPartners) => {
       .filter((p) => roundPref.expectedPartnerIds?.includes(p.id))
       .map((p) => ({
         id: p.id,
-        name: p.preferredName || `${p.firstName} ${p.lastName}`,
+        name: userDisplayName(p),
       })),
     excludedPartners: allPastPartners
       .filter((p) => roundPref.unexpectedPartnerIds?.includes(p.id))
       .map((p) => ({
         id: p.id,
-        name: p.preferredName || `${p.firstName} ${p.lastName}`,
+        name: userDisplayName(p),
       })),
     // Mentor survey fields
     careerTransition: survey.careerTransition || "",
@@ -174,10 +174,12 @@ export const mapRegistrationToForm = (registration, allPastPartners) => {
  * and partner preferences into the structure expected by the API.
  *
  * @param {Object} formData - Current form state
- * @param {Object} currentRegistration - Existing registration data
+ * @param {Object} currentRegistration - Existing registration data, or the
+ *   role-specific prefill for a first-time registrant
+ * @param {"mentor"|"mentee"} role - The role this form registers under
  * @returns {Object} API-ready registration payload
  */
-export const mapFormToApi = (formData, currentRegistration) => {
+export const mapFormToApi = (formData, currentRegistration, role) => {
   const industryObj = INDUSTRY_CONFIG.reduce(
     (acc, c) => ({
       ...acc,
@@ -224,6 +226,9 @@ export const mapFormToApi = (formData, currentRegistration) => {
     },
     roundPreferences: {
       ...currentRegistration?.roundPreferences,
+      // Stated, not inherited: the server validates this against the
+      // caller's admissions and against the round's existing registration.
+      participantRole: role,
       maxPartners: formData.partnerCapacity,
       goal: formData.goal,
       expectedPartnerIds: formData.selectedPartners.map((p) => p.id),

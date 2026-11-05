@@ -3,8 +3,16 @@ import { WorkActivityDataCard } from "@/pages/PersonalDashboard/components/WorkA
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import MyApplicationsCard from "@/pages/PersonalDashboard/components/MyApplicationsCard";
+import { useMyApplications } from "@/hooks/useMyApplications";
+import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/useOnboardingTrainingReminder";
+import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
 import { useAuth } from "@/context/auth";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { PERMISSIONS } from "@/constants/Permissions";
+import { useLeaveApprovals } from "@/pages/Leave/hooks/useLeaveApprovals";
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
+import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
+import TimeOffCard from "@/pages/PersonalDashboard/components/TimeOffCard";
 
 /**
  * PersonalDashboard
@@ -23,11 +31,35 @@ import { USER_ROLES } from "@/constants/UserRoles";
  */
 const PersonalDashboard = () => {
   const {
+    applications,
+    isLoading: isApplicationsLoading,
+    loadError: applicationsLoadError,
+    load: loadApplications,
+    hiredMentorshipRoles,
+  } = useMyApplications();
+
+  // Only show the mentorship section, and only start fetching mentorship
+  // data, once we've actually confirmed at least one mentorship admission
+  // — not while the applications fetch is still loading or has errored.
+  // A slow or failed fetch hides the section (the user can retry via My
+  // Applications' own retry button) rather than firing a wasted
+  // mentorship-data fetch.
+  const showMentorshipSection =
+    !isApplicationsLoading &&
+    !applicationsLoadError &&
+    hiredMentorshipRoles.length > 0;
+
+  useOnboardingTrainingReminder({ enabled: showMentorshipSection });
+
+  const {
     registration, // Registration data for the current or most recent round
     isRegistrationOpen, // Whether the registration period is currently open
+    registrationDeadlineAt, // Deadline the registration window is measured against
+    regRoundName, // Display name of the round taking registrations
     isFeedbackEnabled, // Whether the feedback phase is currently active
-    feedbackRoundId, // Round ID for which feedback is currently open
-    feedbackRoundName, // Display name of the feedback round
+    registrationEntries, // One entry per role the user may register under, each with its own deadline
+    registeredRole, // Role an existing registration settled on, or null
+    loadRegistrationForRole, // Fetches one role's registration form prefill
     saveRegistration, // Function to submit or update registration data
     pastPartners, // List of past mentorship partners
     isPartnersLoading, // Whether partner data is currently loading
@@ -42,57 +74,112 @@ const PersonalDashboard = () => {
     participantDetails, // Round info, per-partner meeting overview, and user role
     refreshMeetings, // Trigger a refresh of meeting log data for the selected round
     isParticipantCardLoading, // Whether the participant card data is currently loading
+    isLoading: isMentorshipLoading, // Whether the rounds and registration fetch is still in flight
     userTimezone, // Current user's IANA timezone string from their profile
-  } = useMentorshipData();
+  } = useMentorshipData({
+    enabled: showMentorshipSection,
+    hiredMentorshipRoles,
+  });
 
-  const { roles } = useAuth();
-  const isInternal = roles?.includes(USER_ROLES.CC_INTERNAL);
+  useRegistrationReminder({
+    enabled: showMentorshipSection,
+    isLoading: isMentorshipLoading,
+    isRegistered: Boolean(registration?.isRegistered),
+    isRegistrationOpen,
+    registrationDeadlineAt,
+    roundName: regRoundName,
+  });
+
+  const { permissions } = useAuth();
+  const canViewActivitySummary = permissions?.includes(
+    PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+  );
 
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
-    useWorkActivityData({ enabled: isInternal });
+    useWorkActivityData({ enabled: canViewActivitySummary });
+
+  // Whether the viewer decides anybody else's leave is only knowable by
+  // asking: it is not a permission, and a manager who is outside the leave
+  // population has no employment profile to read it off. So this fetch is
+  // unconditional, unlike the sections gated on data we already hold.
+  const { isEnabled: isLeaveEnabled } = useLeaveEnabled();
+  const { isApprover, pendingCount } = useLeaveApprovals({
+    enabled: isLeaveEnabled,
+  });
+  // Whether the feature applies to the viewer at all. Independent of the line
+  // above: a manager outside the leave population decides their reports'
+  // requests and has no leave of their own.
+  const { isCovered, availableHours, pendingHours, usedHours } =
+    useLeaveStanding({ enabled: isLeaveEnabled });
 
   return (
-    <div className="personal-dashboard">
+    <div className="personal-dashboard space-y-5">
       {/* Welcome header */}
-      <div className="flex items-start justify-between mb-5 shrink-0">
-        <div className="flex items-center gap-2">
-          <span role="img" aria-label="clapping hands" className="text-xl">
-            &#x1F44F;
-          </span>
-          <h2 className="m-0 text-lg font-medium">Welcome</h2>
-        </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span role="img" aria-label="clapping hands" className="text-xl">
+          &#x1F44F;
+        </span>
+        <h2 className="m-0 text-lg font-medium">Welcome</h2>
       </div>
 
-      {/* Mentorship information banner */}
-      <MentorshipInfoBanner
-        registration={registration}
-        isRegistrationOpen={isRegistrationOpen}
-        isFeedbackEnabled={isFeedbackEnabled}
-        feedbackRoundId={feedbackRoundId}
-        feedbackRoundName={feedbackRoundName}
-        onSaveRegistration={saveRegistration}
-        pastPartners={pastPartners}
-        isPartnersLoading={isPartnersLoading}
-        onLoadPastPartners={loadPastPartners}
-        refreshRegistration={refreshRegistration}
-        matchResult={matchResult}
-        matchResultRoundName={matchResultRoundName}
-        canViewMatch={canViewMatch}
+      {/* My Applications card */}
+      <MyApplicationsCard
+        applications={applications}
+        isLoading={isApplicationsLoading}
+        loadError={applicationsLoadError}
+        onRetry={loadApplications}
       />
 
-      {/* Mentorship participant card */}
-      <MentorshipParticipantsCard
-        userTimezone={userTimezone}
-        roundSelectionData={roundSelectionData}
-        selectedRoundId={selectedRoundId}
-        onRoundChange={handleRoundChange}
-        isParticipantCardLoading={isParticipantCardLoading}
-        participantDetails={participantDetails}
-        refreshMeetings={refreshMeetings}
-      />
+      {showMentorshipSection && (
+        <>
+          {/* Mentorship information banner */}
+          <MentorshipInfoBanner
+            registration={registration}
+            isRegistrationOpen={isRegistrationOpen}
+            isFeedbackEnabled={isFeedbackEnabled}
+            registrationEntries={registrationEntries}
+            registeredRole={registeredRole}
+            loadRegistrationForRole={loadRegistrationForRole}
+            onSaveRegistration={saveRegistration}
+            pastPartners={pastPartners}
+            isPartnersLoading={isPartnersLoading}
+            onLoadPastPartners={loadPastPartners}
+            refreshRegistration={refreshRegistration}
+            matchResult={matchResult}
+            matchResultRoundName={matchResultRoundName}
+            canViewMatch={canViewMatch}
+          />
+
+          {/* Mentorship participant card */}
+          <MentorshipParticipantsCard
+            userTimezone={userTimezone}
+            roundSelectionData={roundSelectionData}
+            selectedRoundId={selectedRoundId}
+            onRoundChange={handleRoundChange}
+            isParticipantCardLoading={isParticipantCardLoading}
+            participantDetails={participantDetails}
+            refreshMeetings={refreshMeetings}
+          />
+        </>
+      )}
+
+      {/* One card for both sides of leave. It is shown to anybody covered and
+          to anybody who approves; a manager outside the leave population
+          decides their reports' requests with no balance of their own, and
+          the card itself decides what they see. */}
+      {isLeaveEnabled && (
+        <TimeOffCard
+          isCovered={isCovered}
+          isApprover={isApprover}
+          approvalsPendingCount={pendingCount}
+          availableHours={availableHours}
+          pendingHours={pendingHours}
+          usedHours={usedHours}
+        />
+      )}
 
       {/* Work Activity Data Card */}
-      {isInternal && (
+      {canViewActivitySummary && (
         <WorkActivityDataCard
           initialData={summary}
           isLoading={isPersonalSummaryLoading}

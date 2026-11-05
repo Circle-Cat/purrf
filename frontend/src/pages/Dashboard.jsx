@@ -1,11 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { formatLocalYmd } from "@/utils/dateTime";
-import "@/pages/Dashboard.css";
 import { Group } from "@/constants/Groups";
-import { LdapStatus } from "@/constants/LdapStatus";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import Table from "@/components/common/Table";
-import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
+import { getSummary } from "@/api/dashboardApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 
@@ -28,6 +26,15 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  * @property {number} meetingHours - Total duration (in hours) of meetings attended.
  * @property {number} chatMessagesSent - Number of chat messages sent.
  */
+
+const EMPTY_SUMMARY = {
+  totalMembers: 0,
+  totalCompletedTickets: 0,
+  totalMergedCls: 0,
+  totalMergedLoc: 0,
+  totalMeetingHours: 0,
+  totalMessagesSent: 0,
+};
 
 /**
  * Dashboard Component
@@ -67,6 +74,7 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  *
  * Notes:
  * - The `getSummary` API is asynchronous and updates `summaryData` and `tableData` on success.
+ *   On failure both are cleared and the reason is shown instead.
  * - Date values are managed in browser local time to avoid UTC/local date boundary inconsistencies.
  *
  *
@@ -93,15 +101,11 @@ const Dashboard = () => {
   const groupsData = Object.values(Group);
 
   const [error, setError] = useState("");
+  // Why the last query failed. While set, the cards show no figures: the
+  // previous query's numbers under the new filters would read as theirs.
+  const [queryError, setQueryError] = useState("");
 
-  const [summaryData, setSummaryData] = useState({
-    totalMembers: 0,
-    totalCompletedTickets: 0,
-    totalMergedCls: 0,
-    totalMergedLoc: 0,
-    totalMeetingHours: 0,
-    totalMessagesSent: 0,
-  });
+  const [summaryData, setSummaryData] = useState(EMPTY_SUMMARY);
 
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
@@ -171,28 +175,14 @@ const Dashboard = () => {
     includeTerminated,
   }) => {
     try {
-      const [{ data: summaryResult }, { data: ldapsResult }] =
-        await Promise.all([
-          getSummary({
-            startDate: startDate,
-            endDate: endDate,
-            groups: groups,
-            includeTerminated: includeTerminated,
-          }),
-          getLdapsAndDisplayNames({
-            status: includeTerminated ? LdapStatus.All : LdapStatus.Active,
-            groups: groups,
-          }),
-        ]);
-
-      let totalLdaps = 0;
-      for (const group in ldapsResult) {
-        const statusObject = ldapsResult[group];
-        for (const status in statusObject) {
-          const ldapMap = statusObject[status];
-          totalLdaps += Object.keys(ldapMap).length;
-        }
-      }
+      // The summary has one row per member of the selected groups, members
+      // with no activity included, so its length is the member count.
+      const { data: summaryResult } = await getSummary({
+        startDate: startDate,
+        endDate: endDate,
+        groups: groups,
+        includeTerminated: includeTerminated,
+      });
 
       const accumulatedSummary = summaryResult.reduce(
         (acc, member) => {
@@ -234,12 +224,15 @@ const Dashboard = () => {
         totalMergedLoc: accumulatedSummary.totalMergedLoc,
         totalMessagesSent: accumulatedSummary.totalMessagesSent,
         totalMeetingHours: finalTotalMeetingHours,
-        totalMembers: totalLdaps,
+        totalMembers: summaryResult.length,
       });
+      setQueryError("");
     } catch (err) {
-      console.log(err);
-    } finally {
-      console.log(summaryData);
+      setTableData([]);
+      setSummaryData(EMPTY_SUMMARY);
+      setQueryError(
+        err?.response?.data?.message || "Could not load the activity summary.",
+      );
     }
   };
 
@@ -329,7 +322,7 @@ const Dashboard = () => {
   }, []);
 
   return (
-    <div className="dashboard-page">
+    <div className="flex flex-col p-5">
       <div className="flex flex-row gap-3 overflow-x-auto pb-2">
         {[
           { title: "Members", value: summaryData.totalMembers },
@@ -353,63 +346,79 @@ const Dashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-1">
-              <div className="text-lg font-bold">{item.value}</div>
+              <div className="text-lg font-bold">
+                {queryError ? "—" : item.value}
+              </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div className="search-filter-row">
+      <div className="relative mb-5 flex flex-wrap items-center gap-2.5">
         <DateRangePicker
           defaultStartDate={defaultStart}
           defaultEndDate={defaultEnd}
           onChange={handleDateChange}
         />
 
-        <div className="checkbox-container">
+        <div className="flex items-center gap-[30px]">
           {groupsData.map((group) => {
             const isRequired = [
               Group.Interns,
               Group.Employees,
               Group.Volunteers,
             ].includes(group);
-            const errorClass = error ? "error" : "";
 
             return (
-              <div key={group} className="checkbox-item">
+              <div key={group} className="mr-[5px]">
                 <label
-                  className={`group-label ${errorClass} ${isRequired ? "required" : ""}`}
+                  className={`flex h-8 items-center whitespace-nowrap text-[0.9em]${
+                    isRequired && error
+                      ? " after:ml-[2px] after:text-red-500 after:content-['*']"
+                      : ""
+                  }`}
                 >
                   <input
                     type="checkbox"
+                    className="mr-[5px] h-4 w-4"
                     checked={groups.includes(group)}
                     onChange={() => handleGroupChange(group)}
                   />
-                  <span>{group}</span>
+                  <span className="text-black">{group}</span>
                 </label>
               </div>
             );
           })}
 
-          <label className="checkbox-item">
+          <label className="mr-[5px] flex h-8 items-center whitespace-nowrap text-[0.9em]">
             <input
               type="checkbox"
+              className="mr-[5px] h-4 w-4"
               checked={includeTerminated}
               onChange={(e) => setIncludeTerminated(e.target.checked)}
             />
-            <span>Include Terminated Members</span>
+            <span className="text-black">Include Terminated Members</span>
           </label>
         </div>
 
-        {error && <div className="error-message">{error}</div>}
+        {error && (
+          <div className="absolute left-[23.5%] top-[60%] mt-1 block text-xs text-destructive">
+            {error}
+          </div>
+        )}
 
         <Button size="sm" onClick={handleSearchClick}>
           Search
         </Button>
       </div>
 
+      {queryError && (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {queryError}
+        </p>
+      )}
+
       <Table
-        className="table-container"
         columns={tableColumns}
         data={sortedTableData}
         onSort={handleSort}

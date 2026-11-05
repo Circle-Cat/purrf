@@ -202,18 +202,21 @@ export default function MultipleSelector({
                       <div className="flex items-center justify-between w-full group/header">
                         <span>{groupName}</span>
                         {!disabled && (
-                          <button
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               toggleGroup(items);
                             }}
-                            className="text-[10px] uppercase font-bold text-primary opacity-0 group-hover/header:opacity-100 transition-opacity"
+                            className="h-auto px-0 text-[10px] uppercase font-bold text-primary no-underline hover:no-underline opacity-0 group-hover/header:opacity-100 transition-opacity"
                           >
                             {isAllGroupSelected
                               ? "Deselect Group"
                               : "Select Group"}
-                          </button>
+                          </Button>
                         )}
                       </div>
                     ) : undefined

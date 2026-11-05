@@ -3,10 +3,10 @@ import { createContext } from "react";
 /**
  * Shared React context for the LaunchDarkly React SDK.
  *
- * Passed explicitly to `withLDProvider` (via `reactOptions.reactContext`) and to
+ * Passed explicitly to `LDProvider` (via `reactOptions.reactContext`) and to
  * `useLDClient(ldReactContext)` so that both sides reference the same context instance.
  *
- * Without this, the Bazel/esbuild production build can place `withLDProvider` and
+ * Without this, the Bazel/esbuild production build can place `LDProvider` and
  * `useLDClient` in separate bundle chunks, each with their own copy of the SDK's
  * internal default context, causing `useLDClient()` to always return `undefined`.
  *

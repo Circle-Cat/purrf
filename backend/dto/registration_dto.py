@@ -27,5 +27,7 @@ class RegistrationDto(BaseDto):
     is_registered: bool
     round_name: str
     global_preferences: GlobalPreferencesDto
-    round_preferences: RoundPreferencesDto
+    # None when the caller is not registered for the round and named no role
+    # to prefill a form for — there is nothing to show yet.
+    round_preferences: RoundPreferencesDto | None = None
     is_onboarding_training_completed: bool | None = None

@@ -1,0 +1,393 @@
+"""Renders one recruiting event into (subject, HTML body) for delivery.
+
+Bridges the domain-neutral ``render_registry``/``DeliveryService`` to
+``notification_email_copy``'s per-type template functions. Dispatch is by
+``EventEntity.event_type``, and the display fields each template reads
+(applicant_name/job_title/actor_name/job_kind/stage/round) are resolved from
+``subject_id`` + ``event.details`` and handed over as a plain
+``SimpleNamespace``.
+
+Stage and round are read from ``event.details`` -- the value captured at the
+instant the write site recorded the event -- never re-queried live. A Pub/Sub
+redelivery can render this notification hours after the event (see
+``EXPIRY`` in ``delivery_service.py``), by which point the application may
+have moved to a different stage or round; a live read would misreport a
+point-in-time fact as current.
+
+The ``details`` keys each renderer below reads are a contract with the write
+site that records the event. If a write site spells or nests a key
+differently, the affected renderer raises ``KeyError``/``ValueError``, which
+``DeliveryService`` treats as a transient failure (retried, then expired
+after 24h) rather than a silent wrong render.
+
+Importing this module registers every renderer. ``fast_app_factory`` imports
+it once at startup for that side effect, alongside ``recipient_resolvers``.
+"""
+
+from datetime import datetime
+
+from types import SimpleNamespace
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.common.name_utils import display_name_of, display_name_or_id
+from backend.common.recruiting_enums import ApplicationStage
+from backend.entity.event_entity import EventEntity
+from backend.notification_management.render_registry import register_render
+from backend.recruiting import notification_email_copy as copy
+from backend.recruiting.candidate_names import candidate_name_of
+from backend.repository.application_repository import ApplicationRepository
+from backend.repository.application_submission_repository import (
+    ApplicationSubmissionRepository,
+)
+from backend.repository.job_repository import JobRepository
+from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.users_repository import UsersRepository
+
+# Stateless, so one module-level instance serves every render.
+_user_emails_repository = UserEmailsRepository()
+_users_repository = UsersRepository()
+_application_repository = ApplicationRepository()
+_application_submission_repository = ApplicationSubmissionRepository()
+_job_repository = JobRepository()
+
+
+async def _candidate_name(session: AsyncSession, user_id: int) -> str:
+    """Resolve a candidate id to their name as a candidate, or "".
+
+    A candidate is named the way their application names them, so a preferred
+    name on their profile does not apply to mail about them.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        user_id (int): The candidate to resolve.
+
+    Returns:
+        str: Their legal "First Last", else the name they typed into their
+            latest application, else "User <id>"; "" if no such user.
+    """
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return await candidate_name_of(session, _application_submission_repository, user)
+
+
+async def _actor_name(session: AsyncSession, user_id: int) -> str:
+    """Resolve an acting colleague's id to their display name, or "".
+
+    The actor is internal, so the shared rule applies: preferred name first,
+    full name as the fallback.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        user_id (int): The actor to resolve.
+
+    Returns:
+        str: The resolved display name, or "" if no such user.
+    """
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_of(user) if user is not None else ""
+
+
+async def _assignee_name(session: AsyncSession, user_id: int | None) -> str:
+    """Name the evaluator an assignment event hands the application to.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        user_id (int | None): ``assigneeId`` from the event's details.
+
+    Returns:
+        str: The evaluator's display name, ``"User <id>"`` when they have no
+            name, or "" when the event names nobody or the user is gone.
+    """
+    if user_id is None:
+        return ""
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_or_id(user) if user is not None else ""
+
+
+async def _application_context(session: AsyncSession, application_id: int):
+    """job_title/job_kind/applicant_name/applicant_email for an
+    application-scoped event.
+
+    Returns ("", None, "", None) if the application (or its job) is gone --
+    same "resolved to nothing" convention ``RecruitingNotificationService
+    ._to_dto`` uses for the bell.
+
+    The address comes from ``UserEmailsRepository.get_contact_email`` rather
+    than a join written here: primary-else-oldest-claim is one rule, shared
+    with the board and the blacklist page, and a second copy of it would
+    drift.
+    """
+    pair = await _application_repository.get_with_job(session, application_id)
+    if pair is None:
+        return "", None, "", None
+    application, job = pair
+    return (
+        job.title,
+        job.kind,
+        await _candidate_name(session, application.user_id),
+        await _user_emails_repository.get_contact_email(session, application.user_id),
+    )
+
+
+async def _job_context(session: AsyncSession, job_id: int):
+    """job_title/job_kind for a job-scoped event. ("", None) if the job is gone."""
+    job = await _job_repository.get_by_job_id(session, job_id)
+    return (job.title, job.kind) if job is not None else ("", None)
+
+
+async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespace:
+    """The display fields every renderer below starts from, resolved once.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being rendered.
+
+    Returns:
+        SimpleNamespace: job_title/job_kind/applicant_name/applicant_email/
+            actor_name, plus whatever event-type-specific fields the caller
+            adds afterwards. ``applicant_email`` is the candidate's contact
+            address, or None when the event has no candidate or the candidate
+            has no address on file.
+            ``actor_name`` is None for an event the system recorded under its
+            own rules, "" for an actor who no longer resolves, and a name
+            otherwise -- three states the copy reads apart.
+    """
+    # A null actor stays None instead of being resolved: "" is what an actor
+    # whose user row is gone resolves to, and the copy words those two cases
+    # differently on purpose (see ``notification_email_copy``'s module
+    # docstring). Resolving NULL here would answer "" for it as well and
+    # report the pipeline's own rule as a person nobody can name.
+    actor_name = (
+        None if event.actor_id is None else await _actor_name(session, event.actor_id)
+    )
+    if event.subject_type == "application":
+        (
+            job_title,
+            job_kind,
+            applicant_name,
+            applicant_email,
+        ) = await _application_context(session, event.subject_id)
+    elif event.subject_type == "job":
+        job_title, job_kind = await _job_context(session, event.subject_id)
+        applicant_name, applicant_email = "", None
+    else:
+        job_title, job_kind, applicant_name, applicant_email = "", None, "", None
+    return SimpleNamespace(
+        job_title=job_title,
+        job_kind=job_kind,
+        applicant_name=applicant_name,
+        applicant_email=applicant_email,
+        actor_name=actor_name,
+    )
+
+
+def _stage(details: dict, key: str = "stage") -> ApplicationStage:
+    """``ApplicationStage(details[key])`` -- see the module docstring on why
+    this reads the event's own snapshot rather than the application's live
+    stage."""
+    return ApplicationStage(details[key])
+
+
+def _with_footer(rendered: tuple[str, str]) -> tuple[str, str]:
+    """Append the standard automated-message footer.
+
+    Every renderer here goes through this, so the footer reads the same on
+    each notification email regardless of which template produced the body."""
+    subject, body = rendered
+    return subject, body + copy._FOOTER
+
+
+# --- application_submitted / auto_rejected -----------------------------
+
+
+@register_render("recruiting.application_submitted")
+async def _render_application_submitted(session, event):
+    """A landing application, worded by how it landed.
+
+    One event type covers both a plain submission and one a screen rule hired
+    outright, because both are the same thing happening to the application.
+    They read differently to an owner though -- one is work waiting on the
+    board, the other is already decided -- so the auto-hire marker in the
+    details selects the copy.
+
+    A plain submission also says what became of the stage's default
+    interviewer: ``autoAssigneeId`` names who got it, and
+    ``unavailableDefaultAssigneeId`` says the default could not be assigned.
+    Both are optional, since a stage need not have a default.
+    """
+    dto = await _base_dto(session, event)
+    stage = _stage(event.details)
+    if "screenAutoHireRuleId" in event.details:
+        return _with_footer(copy._application_auto_hired(dto, stage))
+    auto_assignee_id = event.details.get("autoAssigneeId")
+    dto.auto_assignee_name = None
+    if auto_assignee_id is not None:
+        # A row that no longer resolves still gets a handle, so the sentence
+        # never reads "assigned to  automatically".
+        dto.auto_assignee_name = (
+            await _actor_name(session, auto_assignee_id) or f"User {auto_assignee_id}"
+        )
+    dto.unavailable_default_assignee_id = event.details.get(
+        "unavailableDefaultAssigneeId"
+    )
+    return _with_footer(copy._application_submitted(dto, stage))
+
+
+@register_render("recruiting.auto_rejected")
+async def _render_auto_rejected(session, event):
+    dto = await _base_dto(session, event)
+    return _with_footer(copy._application_auto_rejected(dto, None))
+
+
+# --- reassigned / auto_assigned -> _assigned_to_evaluate ----------------
+
+
+async def _render_assigned_to_evaluate(session, event):
+    dto = await _base_dto(session, event)
+    dto.round = event.details.get("round")
+    dto.assignee_name = await _assignee_name(session, event.details.get("assigneeId"))
+    return _with_footer(copy._assigned_to_evaluate(dto, _stage(event.details)))
+
+
+register_render("recruiting.reassigned")(_render_assigned_to_evaluate)
+register_render("recruiting.auto_assigned")(_render_assigned_to_evaluate)
+
+
+# --- mentioned -----------------------------------------------------------
+
+
+@register_render("recruiting.mentioned")
+async def _render_mentioned(session, event):
+    dto = await _base_dto(session, event)
+    return _with_footer(copy._mentioned(dto, None))
+
+
+# --- email_received -------------------------------------------------------
+
+
+@register_render("recruiting.email_received")
+async def _render_email_received(session, event):
+    """A reply on a thread the recipient sent into.
+
+    The sender and subject come from the event: they are what the message
+    said when it arrived, and the candidate typed them, so the copy escapes
+    them like any other field.
+    """
+    dto = await _base_dto(session, event)
+    dto.email_from = event.details.get("from") or ""
+    dto.email_subject = event.details.get("subject") or ""
+    return _with_footer(copy._email_received(dto, None))
+
+
+# --- email_bounced --------------------------------------------------------
+
+
+@register_render("recruiting.email_bounced")
+async def _render_email_bounced(session, event):
+    """A delivery failure on a thread the recipient sent into.
+
+    The addresses come from the bounce report, which a remote mail server
+    wrote, so the copy escapes them like any other field.
+    """
+    dto = await _base_dto(session, event)
+    dto.email_failed_recipients = ", ".join(event.details.get("failedRecipients") or [])
+    return _with_footer(copy._email_bounced(dto, None))
+
+
+# --- review_opened / review_reassigned / review_decided (subject is the job) --
+
+
+async def _review_dto(session, event):
+    """The base dto plus the review's kind, which picks the copy's wording.
+
+    Read with ``get``: events recorded before the kind was carried have none,
+    and the copy reads that as a first publication.
+    """
+    dto = await _base_dto(session, event)
+    dto.review_kind = event.details.get("kind")
+    return dto
+
+
+@register_render("recruiting.review_opened")
+async def _render_review_opened(session, event):
+    dto = await _review_dto(session, event)
+    return _with_footer(copy._job_review_requested(dto, None))
+
+
+@register_render("recruiting.review_reassigned")
+async def _render_review_reassigned(session, event):
+    dto = await _review_dto(session, event)
+    return _with_footer(copy._job_review_reassigned(dto, None))
+
+
+@register_render("recruiting.review_decided")
+async def _render_review_decided(session, event):
+    dto = await _review_dto(session, event)
+    dto.review_comment = event.details.get("comment")
+    template = {
+        "approved": copy._job_review_approved,
+        "withdrawn": copy._job_review_withdrawn,
+    }.get(event.details["decision"], copy._job_review_rejected)
+    return _with_footer(template(dto, None))
+
+
+# --- events whose copy reads details straight through --------------------
+#
+# Each wrapper below takes what its template needs from event.details and
+# passes it on, with no context lookup beyond the base dto.
+
+
+@register_render("recruiting.blacklisted")
+async def _render_blacklisted(session, event):
+    dto = await _base_dto(session, event)
+    dto.reason = event.details["reason"]
+    return _with_footer(copy._blacklisted(dto, None))
+
+
+@register_render("recruiting.stage_changed")
+async def _render_stage_changed(session, event):
+    dto = await _base_dto(session, event)
+    return _with_footer(copy._stage_changed(dto, _stage(event.details, "toStage")))
+
+
+@register_render("recruiting.round_advanced")
+async def _render_round_advanced(session, event):
+    dto = await _base_dto(session, event)
+    dto.round = event.details["toRound"]
+    return _with_footer(copy._round_advanced(dto, _stage(event.details)))
+
+
+@register_render("recruiting.sub_status_changed")
+async def _render_sub_status_changed(session, event):
+    dto = await _base_dto(session, event)
+    dto.to_sub_status = event.details["toSubStatus"]
+    return _with_footer(copy._sub_status_changed(dto, _stage(event.details)))
+
+
+@register_render("recruiting.evaluation_confirmed")
+async def _render_evaluation_confirmed(session, event):
+    dto = await _base_dto(session, event)
+    dto.round = event.details["round"]
+    return _with_footer(copy._evaluation_confirmed(dto, _stage(event.details)))
+
+
+async def _render_interview(session, event, template):
+    dto = await _base_dto(session, event)
+    dto.round = event.details["round"]
+    dto.start_at = datetime.fromisoformat(event.details["startAt"])
+    return _with_footer(template(dto, _stage(event.details)))
+
+
+@register_render("recruiting.interview_scheduled")
+async def _render_interview_scheduled(session, event):
+    return await _render_interview(session, event, copy._interview_scheduled)
+
+
+@register_render("recruiting.interview_updated")
+async def _render_interview_updated(session, event):
+    return await _render_interview(session, event, copy._interview_updated)
+
+
+@register_render("recruiting.interview_cancelled")
+async def _render_interview_cancelled(session, event):
+    return await _render_interview(session, event, copy._interview_cancelled)

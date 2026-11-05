@@ -2,6 +2,24 @@ import { format } from "date-fns";
 import { TZDate } from "@date-fns/tz";
 
 /**
+ * Every half-hour clock time in a day as "HH:mm" strings, "00:00" to "23:30".
+ *
+ * Frozen because it is shared: the mentorship meeting log and scheduling forms
+ * offer the same grid of start and end times, and a second copy of this list
+ * is a second chance for the two to drift apart. Callers map it into whatever
+ * shape their picker wants.
+ *
+ * @type {readonly string[]}
+ */
+export const HALF_HOUR_SLOTS = Object.freeze(
+  Array.from({ length: 48 }, (_, i) => {
+    const hour = String(Math.floor(i / 2)).padStart(2, "0");
+    const minute = i % 2 === 0 ? "00" : "30";
+    return `${hour}:${minute}`;
+  }),
+);
+
+/**
  * Format a UTC ISO string into the given IANA timezone using a date-fns pattern.
  * Returns null for null/empty/invalid iso inputs.
  * Falls back to UTC when tz is null or empty.
@@ -19,6 +37,46 @@ export function formatInTz(iso, tz, pattern) {
 }
 
 /**
+ * Format a UTC instant as "yyyy-MM-dd {tz}" using the given IANA timezone.
+ * The timezone name is printed verbatim without converting it to a DST abbreviation.
+ *
+ * @param {string|null|undefined} iso - UTC ISO datetime string.
+ * @param {string|null|undefined} tz - IANA timezone string (e.g. "America/New_York").
+ * @returns {string|null} e.g. "2024-03-10 America/New_York", or null if input is missing.
+ */
+export function formatDateWithZone(iso, tz) {
+  if (!iso || !tz) return null;
+  return `${formatInTz(iso, tz, "yyyy-MM-dd")} ${tz}`;
+}
+
+/**
+ * Format a UTC instant as "yyyy-MM-dd HH:mm {tz}" using the given IANA timezone.
+ * The timezone name is printed verbatim without converting it to a DST abbreviation.
+ *
+ * @param {string|null|undefined} iso - UTC ISO datetime string.
+ * @param {string|null|undefined} tz - IANA timezone string (e.g. "America/New_York").
+ * @returns {string|null} e.g. "2024-03-10 14:30 America/New_York", or null if input is missing.
+ */
+export function formatDateTimeWithZone(iso, tz) {
+  if (!iso || !tz) return null;
+  return `${formatInTz(iso, tz, "yyyy-MM-dd HH:mm")} ${tz}`;
+}
+
+/**
+ * Format a UTC instant range as "yyyy-MM-dd · HH:mm - HH:mm {tz}" using the given IANA timezone.
+ * The timezone name is printed verbatim without converting it to a DST abbreviation.
+ *
+ * @param {string|null|undefined} startIso - UTC ISO start datetime string.
+ * @param {string|null|undefined} endIso - UTC ISO end datetime string.
+ * @param {string|null|undefined} tz - IANA timezone string (e.g. "America/New_York").
+ * @returns {string|null} e.g. "2024-03-10 · 14:30 - 15:30 America/New_York", or null if input is missing.
+ */
+export function formatDateTimeRangeWithZone(startIso, endIso, tz) {
+  if (!startIso || !endIso || !tz) return null;
+  return `${formatInTz(startIso, tz, "yyyy-MM-dd")} · ${formatInTz(startIso, tz, "HH:mm")} - ${formatInTz(endIso, tz, "HH:mm")} ${tz}`;
+}
+
+/**
  * Format a JS Date object as a YYYY-MM-DD string using the browser's local time.
  * Avoids the UTC/local boundary issue of `.toISOString().split("T")[0]`.
  *
@@ -30,6 +88,51 @@ export function formatLocalYmd(date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * Minutes since midnight for an "HH:mm" (or "HH:mm:ss") clock string.
+ *
+ * The string counterpart of minutesIntoLocalDay, measured from the same origin,
+ * so a picker can compare an offered slot against the current clock directly.
+ * Any seconds component is ignored.
+ *
+ * @param {string} timeStr - e.g. "14:30" or "14:30:00".
+ * @returns {number} 0 at "00:00" through 1439 at "23:59".
+ */
+export function hhMmToMinutes(timeStr) {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Whether two dates fall on the same calendar day, by the local components each
+ * one carries.
+ *
+ * Compares calendar days rather than instants, through formatLocalYmd, so it
+ * stays correct across the UTC/local boundary that slicing `.toISOString()`
+ * gets wrong. Pass a TZDate from nowInTz to compare against a specific zone's
+ * clock rather than the browser's.
+ *
+ * @param {Date} a
+ * @param {Date} b
+ * @returns {boolean}
+ */
+export function isSameLocalDay(a, b) {
+  return formatLocalYmd(a) === formatLocalYmd(b);
+}
+
+/**
+ * Minutes elapsed since local midnight for the date's own local components.
+ *
+ * Lets a time picker compare an "HH:mm" option against the current clock in one
+ * subtraction. Pass a TZDate from nowInTz to read a specific zone's clock.
+ *
+ * @param {Date} date
+ * @returns {number} 0 at midnight through 1439 at 23:59.
+ */
+export function minutesIntoLocalDay(date) {
+  return date.getHours() * 60 + date.getMinutes();
 }
 
 /**
@@ -61,20 +164,20 @@ export function nowInTz(tz) {
  * Inverse of formatInTz — used when submitting user-selected local datetimes to the backend.
  *
  * @param {Date} dateObj - Plain Date whose getFullYear/Month/Date components are used.
- * @param {string} timeStr - "HH:mm" string (e.g. "14:30").
+ * @param {string} timeStr - "HH:mm" or "HH:mm:ss" string (e.g. "14:30", "23:59:59"). Seconds default to 0.
  * @param {string} tz - IANA timezone string.
  * @param {number} [addDays=0] - Optional day offset applied to dateObj's date.
  * @returns {string} UTC ISO string without milliseconds, e.g. "2024-03-15T12:00:00Z".
  */
 export function localToUtcIso(dateObj, timeStr, tz, addDays = 0) {
-  const [h, m] = timeStr.split(":").map(Number);
+  const [h, m, s = 0] = timeStr.split(":").map(Number);
   const d = new TZDate(
     dateObj.getFullYear(),
     dateObj.getMonth(),
     dateObj.getDate() + addDays,
     h,
     m,
-    0,
+    s,
     tz,
   );
   return new Date(+d).toISOString().split(".")[0] + "Z";
@@ -96,24 +199,17 @@ export function getDaysSince(dateString) {
 }
 
 /**
- * Format an IANA timezone string as a human-readable label.
- * e.g. "Asia/Shanghai" → "Shanghai (UTC+8)"
+ * The IANA zone to render times in for the person currently looking.
  *
- * @param {string} tz - IANA timezone string.
- * @returns {string}
+ * Their profile zone when they have set one, otherwise whatever their browser
+ * reports. Callers pass the profile zone the API shipped with the payload
+ * (e.g. `viewerTimezone` on the recruiting application detail), so a viewer who
+ * never filled in a profile still sees times in their own local terms rather
+ * than someone else's.
+ *
+ * @param {string|null|undefined} profileTimezone - IANA zone from the profile.
+ * @returns {string} An IANA zone name, never empty.
  */
-export function formatTimezoneLabel(tz) {
-  const city = tz.split("/")[1].replace(/_/g, " ");
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    timeZoneName: "shortOffset",
-  }).formatToParts(new Date());
-
-  const offset =
-    parts
-      .find((p) => p.type === "timeZoneName")
-      ?.value?.replace("GMT", "UTC") ?? "";
-
-  return `${city} (${offset})`;
+export function resolveViewerTimezone(profileTimezone) {
+  return profileTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 }

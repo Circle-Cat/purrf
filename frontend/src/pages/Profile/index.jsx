@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import "@/pages/Profile/Profile.css";
 
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
 import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
+import { useMyApplications } from "@/hooks/useMyApplications";
 
 import ProfileHeader from "@/pages/Profile/components/ProfileHeader";
-import ContactSection from "@/pages/Profile/components/ContactSection";
+import LinkedInSection from "@/pages/Profile/components/LinkedInSection";
+import EmailSection from "@/pages/Profile/components/EmailSection";
 import ExperienceSection from "@/pages/Profile/components/ExperienceSection";
 import EducationSection from "@/pages/Profile/components/EducationSection";
 import TrainingSection from "@/pages/Profile/components/TrainingSection";
@@ -14,6 +15,7 @@ import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
 import ExperienceEditModal from "@/pages/Profile/modals/ExperienceEditModal";
 import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 /**
  * Profile page component.
@@ -25,16 +27,24 @@ const Profile = () => {
   /** Fetch profile data and core logic from the hook */
   const {
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
-    canEditTimezone,
-    nextEditableDate,
     handleUpdateProfile,
+    refresh,
   } = useProfileData();
 
+  // The completeness reminder speaks only about mentorship matching, so it
+  // is addressed to admitted participants alone. `hiredMentorshipRoles` is
+  // empty while the applications list is still in flight, which keeps the
+  // reminder quiet until we actually know.
+  const { hiredMentorshipRoles } = useMyApplications();
+
   useProfileCompletenessReminder({
+    enabled: hiredMentorshipRoles.length > 0,
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
@@ -60,12 +70,29 @@ const Profile = () => {
 
   /** Display loading state while fetching profile data */
   if (isLoading) {
-    return <div className="profile-page-container">Loading profile...</div>;
+    return <div className="min-h-screen px-6 py-8">Loading profile...</div>;
+  }
+
+  /**
+   * Display a retry state on load failure, so a failed fetch is not mistaken
+   * for an empty profile.
+   */
+  if (loadError) {
+    return (
+      <div className="min-h-screen px-6 py-8">
+        <div className="mx-auto flex max-w-[1000px] flex-col items-center gap-4 py-16 text-center">
+          <p className="text-muted-foreground">
+            We couldn&apos;t load your profile. Please try again.
+          </p>
+          <Button onClick={refresh}>Retry</Button>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="profile-page-container">
-      <div className="profile-content-area">
+    <div className="min-h-screen px-6 py-8">
+      <div className="mx-auto flex max-w-[1000px] flex-col gap-4">
         {/** Top section with personal info */}
         <Card>
           <CardHeader>
@@ -76,7 +103,14 @@ const Profile = () => {
           </CardHeader>
           {/* ContactSection */}
           <CardContent>
-            <ContactSection info={personalInfo} />
+            <LinkedInSection info={personalInfo} />
+          </CardContent>
+        </Card>
+
+        {/* Email Card */}
+        <Card>
+          <CardContent>
+            <EmailSection info={personalInfo} />
           </CardContent>
         </Card>
 
@@ -117,8 +151,6 @@ const Profile = () => {
         onClose={() => toggleModal("personal", false)}
         initialData={personalInfo}
         onSave={handleUpdateProfile}
-        canEditTimezone={canEditTimezone}
-        nextEditableDate={nextEditableDate}
       />
 
       <ExperienceEditModal

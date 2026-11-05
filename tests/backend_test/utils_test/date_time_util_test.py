@@ -543,6 +543,35 @@ class TestDateTimeUtil(TestCase):
         self.assertTrue(time_min.endswith("Z"))
         self.assertTrue(time_max.endswith("Z"))
 
+    def test_format_iso_utc_to_pt_converts_z_suffix(self):
+        """A 'Z'-suffixed UTC ISO string converts to Pacific Time, no TZ abbreviation by default."""
+        # 2024-07-15T22:30:00Z is 15:30 in Pacific (UTC-7, daylight saving).
+        result = self.utils.format_iso_utc_to_pt("2024-07-15T22:30:00Z")
+        self.assertEqual(result, "2024-07-15 15:30")
+
+    def test_format_iso_utc_to_pt_converts_offset_suffix(self):
+        """A '+00:00'-suffixed UTC ISO string converts the same as 'Z'."""
+        result = self.utils.format_iso_utc_to_pt("2024-07-15T22:30:00+00:00")
+        self.assertEqual(result, "2024-07-15 15:30")
+
+    def test_format_iso_utc_to_pt_winter_offset_differs_from_summer(self):
+        """DST is still correctly applied even without displaying the abbreviation:
+        the same UTC hour converts to a different Pacific hour in winter vs summer."""
+        result = self.utils.format_iso_utc_to_pt("2024-01-15T22:30:00Z")
+        self.assertEqual(result, "2024-01-15 14:30")
+
+    def test_format_iso_utc_to_pt_custom_fmt_can_include_tz_abbreviation(self):
+        """Callers that do want the PDT/PST distinction can opt in via fmt=."""
+        result = self.utils.format_iso_utc_to_pt(
+            "2024-07-15T22:30:00Z", fmt="%Y-%m-%d %H:%M %Z"
+        )
+        self.assertEqual(result, "2024-07-15 15:30 PDT")
+
+    def test_format_iso_utc_to_pt_raises_on_invalid_input(self):
+        """An unparseable string raises ValueError."""
+        with self.assertRaises(ValueError):
+            self.utils.format_iso_utc_to_pt("not-a-date")
+
 
 if __name__ == "__main__":
     main()

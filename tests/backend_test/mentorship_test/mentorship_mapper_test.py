@@ -1,6 +1,6 @@
 import unittest
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
@@ -9,22 +9,26 @@ from backend.dto.preference_dto import (
 )
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
-from backend.dto.partner_dto import PartnerDto
 from backend.dto.meeting_dto import MeetingDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 from backend.entity.users_entity import UsersEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.common.mentorship_enums import (
+    RoundStatus,
     CommunicationMethod,
     ParticipantRole,
     PairStatus,
     MenteeActionStatus,
     MentorActionStatus,
+    MeetingNoteTag,
+    MeetingSource,
 )
 
 
@@ -34,31 +38,60 @@ class TestMentorshipMapper(unittest.TestCase):
         self.now = datetime.now(timezone.utc)
         self.mapper = MentorshipMapper()
 
+        # All eleven distinct, so a column read into the wrong field fails.
         self.test_dates = {
-            "promotion_start_at": "2025-07-02T06:59:59Z",
-            "mentor_application_deadline_at": "2025-07-16T06:59:59Z",
-            "mentee_application_deadline_at": "2025-07-14T06:59:59Z",
-            "review_start_at": "2025-07-17T06:59:59Z",
-            "acceptance_notification_at": "2025-07-31T06:59:59Z",
-            "matching_completed_at": "2025-08-06T06:59:59Z",
-            "match_notification_at": "2025-08-07T06:59:59Z",
-            "first_meeting_deadline_at": "2025-08-21T06:59:59Z",
-            "meetings_completion_deadline_at": "2025-11-21T07:59:59Z",
-            "feedback_deadline_at": "2025-11-23T07:59:59Z",
+            "promotion_start_at": datetime(2025, 7, 2, 6, 59, 59, tzinfo=timezone.utc),
+            "mentor_application_deadline_at": datetime(
+                2025, 7, 16, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "mentee_application_deadline_at": datetime(
+                2025, 7, 14, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "onboarding_notification_at": datetime(
+                2025, 7, 18, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "onboarding_deadline_at": datetime(
+                2025, 7, 25, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "match_notification_at": datetime(
+                2025, 8, 7, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "first_meeting_deadline_at": datetime(
+                2025, 8, 21, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "meeting_log_reminder_at": datetime(
+                2025, 9, 1, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "meetings_completion_deadline_at": datetime(
+                2025, 11, 21, 7, 59, 59, tzinfo=timezone.utc
+            ),
+            "feedback_start_at": datetime(2025, 11, 22, 7, 59, 59, tzinfo=timezone.utc),
+            "feedback_deadline_at": datetime(
+                2025, 11, 23, 7, 59, 59, tzinfo=timezone.utc
+            ),
         }
+        self.sparse_onboarding_deadline = datetime(
+            2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc
+        )
 
         self.mentorship_round_entities = [
             MentorshipRoundEntity(
                 round_id=1,
                 name="Spring-2025",
-                description=self.test_dates,
                 required_meetings=4,
+                **self.test_dates,
             ),
             MentorshipRoundEntity(
-                round_id=2, name="Summer-2025", description={}, required_meetings=5
+                round_id=2,
+                name="Summer-2025",
+                required_meetings=5,
+                onboarding_deadline_at=self.sparse_onboarding_deadline,
             ),
             MentorshipRoundEntity(
-                round_id=3, name="Spring-2026", description=None, required_meetings=5
+                round_id=3,
+                name="Spring-2026",
+                required_meetings=5,
+                onboarding_deadline_at=self.sparse_onboarding_deadline,
             ),
         ]
 
@@ -164,16 +197,30 @@ class TestMentorshipMapper(unittest.TestCase):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             )
         ]
 
     def test_map_to_rounds_dto_with_full_data(self):
-        """Test mapping a mentorship round entity with complete timeline data."""
-        dtos = self.mapper.map_to_rounds_dto(self.mentorship_round_entities)
+        """Test mapping mentorship round entities with complete timeline and count data."""
+        pair_stats = {
+            1: {
+                "active_pairs": 5,
+                "matched_participants": 10,
+                "total_completed_meetings": 10,
+            },
+            2: {
+                "active_pairs": 4,
+                "matched_participants": 7,
+                "total_completed_meetings": 6,
+            },
+        }
+
+        dtos = self.mapper.map_to_rounds_dto(
+            self.mentorship_round_entities,
+            pair_stats=pair_stats,
+        )
         dto = dtos[0]
 
         self.assertIsInstance(dto, RoundsDto)
@@ -181,30 +228,52 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.name, "Spring-2025")
         self.assertEqual(dto.required_meetings, 4)
 
-        expected_timeline = TimelineDto(**self.test_dates)
         self.assertIsNotNone(dto.timeline)
-        self.assertEqual(dto.timeline, expected_timeline)
+        for field, value in self.test_dates.items():
+            self.assertEqual(getattr(dto.timeline, field), value, msg=field)
 
-    def test_map_to_partner_dto_with_full_data(self):
-        """Test mapping users entity has preferred_name to partner dto."""
-        self.users[0].preferred_name = "Amy"
-        dtos = self.mapper.map_to_partner_dto(self.users)
-        dto = dtos[0]
+        self.assertEqual(dtos[0].active_pairs, 5)
+        self.assertEqual(dtos[0].matched_participants, 10)
+        self.assertEqual(dtos[0].total_completed_meetings, 10)
+        self.assertEqual(dtos[1].active_pairs, 4)
+        self.assertEqual(dtos[1].matched_participants, 7)
+        self.assertEqual(dtos[1].total_completed_meetings, 6)
+        self.assertIsNone(dtos[2].active_pairs)
+        self.assertIsNone(dtos[2].matched_participants)
+        self.assertIsNone(dtos[2].total_completed_meetings)
 
-        self.assertIsInstance(dto, PartnerDto)
-        self.assertEqual(dto.id, self.users[0].user_id)
-        self.assertEqual(dto.first_name, self.users[0].first_name)
-        self.assertEqual(dto.last_name, self.users[0].last_name)
-        self.assertEqual(dto.preferred_name, self.users[0].preferred_name)
-        self.assertEqual(dto.primary_email, self.users[0].primary_email)
+    def test_map_to_rounds_dto_with_feedback_counts(self):
+        """Each round carries its own feedback counts; a round with none
+        gets None for both."""
+        dtos = self.mapper.map_to_rounds_dto(
+            self.mentorship_round_entities,
+            feedback_counts={1: {"owed": 8, "sent": 3}, 2: {"owed": 5, "sent": 0}},
+        )
 
-    def test_map_to_partner_dto_without_preferred_name(self):
-        """Test mapping users entity with no preferred_name to partner dto."""
-        dtos = self.mapper.map_to_partner_dto(self.users)
-        dto = dtos[0]
+        self.assertEqual((dtos[0].feedback_owed, dtos[0].feedback_sent), (8, 3))
+        self.assertEqual((dtos[1].feedback_owed, dtos[1].feedback_sent), (5, 0))
+        self.assertIsNone(dtos[2].feedback_owed)
+        self.assertIsNone(dtos[2].feedback_sent)
 
-        self.assertIsInstance(dto, PartnerDto)
-        self.assertEqual(dto.preferred_name, self.users[0].first_name)
+    def test_timeline_dto_fields_are_exactly_the_round_columns(self):
+        """TimelineDto carries one field per timeline column and nothing
+        else, so a renamed or dropped date cannot linger in the API."""
+        self.assertEqual(set(TimelineDto.model_fields), set(self.test_dates))
+        for field in self.test_dates:
+            self.assertIn(field, MentorshipRoundEntity.__table__.columns)
+
+    def test_map_to_rounds_dto_with_sparse_timeline(self):
+        """A round with only its required onboarding deadline still gets a
+        timeline, with every other date None."""
+        dto = self.mapper.map_to_rounds_dto(self.mentorship_round_entities[1:2])[0]
+
+        self.assertIsNotNone(dto.timeline)
+        self.assertEqual(
+            dto.timeline.onboarding_deadline_at, self.sparse_onboarding_deadline
+        )
+        for field in self.test_dates:
+            if field != "onboarding_deadline_at":
+                self.assertIsNone(getattr(dto.timeline, field), msg=field)
 
     def test_map_to_global_preferences_dto_success(self):
         """Test mapping preference entity to global preferences dto correctly."""
@@ -261,14 +330,41 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.goal, "")
 
     def test_map_to_meeting_dto_success(self):
-        """Test mapping pair entities with valid meeting log to meetting dto correctly."""
+        """Test mapping pair entities with meeting rows to meeting dto correctly."""
         pair_entity = self.pair_entities[0]
+        # Deliberately blanked: the fixture's own `meeting_log` holds entries
+        # with these exact same times (see setUp), so leaving it in place
+        # would let a mapper that still reads `meeting_log` -- and ignores
+        # `meetings_by_pair` entirely -- pass this test by coincidence.
+        # Clearing it makes the test source-discriminating.
+        pair_entity.meeting_log = None
         partner_id = pair_entity.mentor_id
+        meeting_rows = [
+            MentorshipMeetingEntity(
+                meeting_id=str(uuid.uuid4()),
+                pair_id=pair_entity.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+                end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+                is_completed=True,
+                created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+            ),
+            MentorshipMeetingEntity(
+                meeting_id=str(uuid.uuid4()),
+                pair_id=pair_entity.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=datetime.fromisoformat("2025-09-02T17:00:00+00:00"),
+                end_datetime=datetime.fromisoformat("2025-09-02T18:00:00+00:00"),
+                is_completed=True,
+                created_datetime=datetime.fromisoformat("2025-08-29T07:42:00+00:00"),
+            ),
+        ]
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: meeting_rows},
+            completed_counts={pair_entity.pair_id: 1},
         )
         info = dto.meeting_info[0]
 
@@ -284,17 +380,53 @@ class TestMentorshipMapper(unittest.TestCase):
             info.meeting_time_list[0].start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "2025-09-01T22:30:00Z",
         )
+        # completed_meetings_count comes from the counts handed in, not from
+        # counting the rows in meetings_by_pair -- that mapping excludes
+        # LEGACY rows, which are all a historical pairing has.
         self.assertEqual(info.completed_meetings_count, 1)
 
+    def test_map_to_meeting_dto_takes_completed_count_from_the_caller(self):
+        """completed_meetings_count comes from the counts handed in, not from
+        mentorship_pairs.completed_count. Seeded so the two disagree: the
+        column says 9, the caller counted 2. The counts cannot be derived from
+        meetings_by_pair here -- that mapping excludes LEGACY rows, which are
+        all a historical pairing has."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.completed_count = 9
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, 456)],
+            meetings_by_pair={},
+            completed_counts={pair_entity.pair_id: 2},
+        )
+
+        self.assertEqual(dto.meeting_info[0].completed_meetings_count, 2)
+
+    def test_map_to_meeting_dto_reports_zero_when_the_pair_was_not_counted(self):
+        """A pair missing from the counts reports 0 rather than raising."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.completed_count = 9
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, 456)],
+            meetings_by_pair={},
+            completed_counts={},
+        )
+
+        self.assertEqual(dto.meeting_info[0].completed_meetings_count, 0)
+
     def test_meeting_dto_no_meeting_log(self):
-        """Test mapping pair entities with None meeting log returns empty meeting list."""
+        """Test mapping pair entities absent from meetings_by_pair returns an empty meeting list."""
         pair_entity = self.pair_entities[1]
         partner_id = pair_entity.mentor_id
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=2,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={},
+            completed_counts={pair_entity.pair_id: 0},
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -303,57 +435,153 @@ class TestMentorshipMapper(unittest.TestCase):
         info = dto.meeting_info[0]
         self.assertEqual(info.meeting_time_list, [])
 
+    def test_map_to_meeting_dto_excludes_legacy_rows(self):
+        """LEGACY rows carry no times and must never appear in the list, even
+        if a caller passes them in (e.g. via include_legacy=True); the
+        completed count they represent still comes through via
+        pair.completed_count, unaffected by this filtering."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.completed_count = 5
+        partner_id = pair_entity.mentor_id
+        manual_row = MentorshipMeetingEntity(
+            meeting_id=str(uuid.uuid4()),
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+        )
+        legacy_row = MentorshipMeetingEntity(
+            meeting_id="legacy-12-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.LEGACY,
+            start_datetime=None,
+            end_datetime=None,
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2020-01-01T00:00:00+00:00"),
+        )
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [legacy_row, manual_row]},
+            completed_counts={pair_entity.pair_id: 5},
+        )
+        info = dto.meeting_info[0]
+
+        self.assertEqual(len(info.meeting_time_list), 1)
+        self.assertEqual(info.meeting_time_list[0].meeting_id, manual_row.meeting_id)
+        self.assertEqual(info.completed_meetings_count, 5)
+
+    def test_map_to_meeting_dto_preserves_repository_order(self):
+        """The v1 list order moved from JSONB insertion order to whatever
+        order the repository hands back (start_datetime ascending, per
+        MentorshipMeetingRepository). This mapper does not re-sort -- it must
+        trust and pass through the given order exactly. Rows here are built
+        with `created_datetime` deliberately in the OPPOSITE order from
+        `start_datetime`, so a mapper that (accidentally or otherwise) sorted
+        by creation time instead of trusting input order would produce a
+        different, and therefore caught, result."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.meeting_log = None
+        partner_id = pair_entity.mentor_id
+
+        earliest_start_but_created_last = MentorshipMeetingEntity(
+            meeting_id="row-a",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T10:00:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T11:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-09-05T00:00:00+00:00"),
+        )
+        latest_start_but_created_first = MentorshipMeetingEntity(
+            meeting_id="row-b",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-10T10:00:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-10T11:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-09-01T00:00:00+00:00"),
+        )
+        # Given in start_datetime-ascending order, as the repository contract
+        # promises -- NOT in created_datetime order.
+        repository_ordered_rows = [
+            earliest_start_but_created_last,
+            latest_start_but_created_first,
+        ]
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: repository_ordered_rows},
+            completed_counts={pair_entity.pair_id: 0},
+        )
+        info = dto.meeting_info[0]
+
+        self.assertEqual(
+            [m.meeting_id for m in info.meeting_time_list],
+            ["row-a", "row-b"],
+        )
+
     def test_map_to_meeting_v2_dto_success(self):
-        """Test mapping manual and google meetings into MeetingDto correctly."""
+        """Test mapping manual and google meeting rows into MeetingDto correctly.
+
+        Rows are handed in already interleaved by start_datetime (as
+        MentorshipMeetingRepository.get_meetings_by_pair(s) returns them) --
+        manual/manual/google in the middle of the manual ones -- to pin that
+        this method passes the given order through rather than concatenating
+        manual rows before google rows.
+        """
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
         pair_entity.completed_count = 2
+        # Deliberately stale: v2 must read exclusively from `meetings_by_pair`
+        # rows, never from this JSONB column.
+        pair_entity.meeting_log = None
 
-        pair_entity.meeting_log = {
-            "meeting_time_list": [
-                {
-                    "meeting_id": "manual-1",
-                    "start_datetime": datetime.fromisoformat(
-                        "2025-09-01T22:30:00+00:00"
-                    ),
-                    "end_datetime": datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
-                    "is_completed": True,
-                    "created_datetime": "2025-08-30T07:42:00Z",
-                },
-                {
-                    "meeting_id": "manual-2",
-                    "start_datetime": datetime.fromisoformat(
-                        "2025-09-03T22:30:00+00:00"
-                    ),
-                    "end_datetime": datetime.fromisoformat("2025-09-03T23:00:00+00:00"),
-                    "is_completed": False,
-                    "created_datetime": "2025-08-30T07:42:00Z",
-                },
-            ],
-            "google_meetings": [
-                {
-                    "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat(
-                        "2025-09-02T22:30:00+00:00"
-                    ),
-                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
-                    "created_datetime": datetime.fromisoformat(
-                        "2025-08-31T10:00:00+00:00"
-                    ),
-                    "is_completed": True,
-                    "has_unknown_absent": True,
-                    "absent_user_id": 123,
-                    "has_unknown_late": False,
-                    "late_user_ids": None,
-                    "has_insufficient_duration": True,
-                }
-            ],
-        }
+        manual_1 = MentorshipMeetingEntity(
+            meeting_id="manual-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+        )
+        google_1 = MentorshipMeetingEntity(
+            meeting_id="google-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-31T10:00:00+00:00"),
+            has_unknown_absent=True,
+            absent_user_id=123,
+            has_unknown_late=False,
+            late_user_ids=None,
+            has_insufficient_duration=True,
+        )
+        manual_2 = MentorshipMeetingEntity(
+            meeting_id="manual-2",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-03T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-03T23:00:00+00:00"),
+            is_completed=False,
+            created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+        )
+        # start_datetime order: manual_1, google_1, manual_2 -- google
+        # sandwiched between two manual rows, NOT segregated by source.
+        interleaved_rows = [manual_1, google_1, manual_2]
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: interleaved_rows},
+            completed_counts={pair_entity.pair_id: 2},
         )
         info = dto.meeting_info[0]
 
@@ -365,56 +593,56 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(info.completed_meetings_count, 2)
         self.assertEqual(len(info.meeting_time_list), 3)
 
-        self.assertEqual(info.meeting_time_list[0].meeting_id, "manual-1")
+        # Order must match the input exactly -- manual, google, manual --
+        # proving this method interleaves by trusting given order rather
+        # than concatenating all manual rows before all google rows.
+        self.assertEqual(
+            [m.meeting_id for m in info.meeting_time_list],
+            ["manual-1", "google-1", "manual-2"],
+        )
+
         self.assertTrue(info.meeting_time_list[0].is_completed)
         self.assertEqual(
             info.meeting_time_list[0].created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "2025-08-30T07:42:00Z",
         )
 
-        self.assertEqual(info.meeting_time_list[1].meeting_id, "manual-2")
-        self.assertFalse(info.meeting_time_list[1].is_completed)
-
-        self.assertEqual(info.meeting_time_list[2].meeting_id, "google-1")
-        self.assertTrue(info.meeting_time_list[2].is_completed)
+        self.assertTrue(info.meeting_time_list[1].is_completed)
         self.assertEqual(
-            info.meeting_time_list[2].created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            info.meeting_time_list[1].created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "2025-08-31T10:00:00Z",
         )
+
+        self.assertFalse(info.meeting_time_list[2].is_completed)
 
     def test_map_to_meeting_v2_dto_detail_false_excludes_google_extra_fields(self):
         """Test google meeting extra fields are not populated when include_details=False."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
         pair_entity.completed_count = 1
+        pair_entity.meeting_log = None
 
-        pair_entity.meeting_log = {
-            "meeting_time_list": [],
-            "google_meetings": [
-                {
-                    "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat(
-                        "2025-09-02T22:30:00+00:00"
-                    ),
-                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
-                    "created_datetime": datetime.fromisoformat(
-                        "2025-08-31T10:00:00+00:00"
-                    ),
-                    "is_completed": True,
-                    "has_unknown_absent": True,
-                    "absent_user_id": 123,
-                    "has_unknown_late": True,
-                    "late_user_ids": [456],
-                    "has_insufficient_duration": True,
-                }
-            ],
-        }
+        google_row = MentorshipMeetingEntity(
+            meeting_id="google-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-31T10:00:00+00:00"),
+            has_unknown_absent=True,
+            absent_user_id=123,
+            has_unknown_late=True,
+            late_user_ids=[456],
+            has_insufficient_duration=True,
+        )
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [google_row]},
             include_details=False,
+            completed_counts={pair_entity.pair_id: 1},
         )
         info = dto.meeting_info[0]
         google_meeting = info.meeting_time_list[0]
@@ -433,38 +661,39 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(google_meeting.has_insufficient_duration)
 
     def test_map_to_meeting_v2_dto_detail_true_includes_google_extra_fields(self):
-        """Test google meeting extra fields are populated when include_details=True."""
+        """Test google meeting extra fields are populated when include_details=True.
+
+        Also the PUR-525 pre-existing-bug pin: `late_user_ids` (plural) now
+        reads from the real column of the same name, rather than the JSONB
+        writer's `late_user_id` (singular) that never matched this read key --
+        so it must carry a value here, not silently stay null.
+        """
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
         pair_entity.completed_count = 1
+        pair_entity.meeting_log = None
 
-        pair_entity.meeting_log = {
-            "meeting_time_list": [],
-            "google_meetings": [
-                {
-                    "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat(
-                        "2025-09-02T22:30:00+00:00"
-                    ),
-                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
-                    "created_datetime": datetime.fromisoformat(
-                        "2025-08-31T10:00:00+00:00"
-                    ),
-                    "is_completed": True,
-                    "has_unknown_absent": True,
-                    "absent_user_id": 123,
-                    "has_unknown_late": True,
-                    "late_user_ids": [456],
-                    "has_insufficient_duration": True,
-                }
-            ],
-        }
+        google_row = MentorshipMeetingEntity(
+            meeting_id="google-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-31T10:00:00+00:00"),
+            has_unknown_absent=True,
+            absent_user_id=123,
+            has_unknown_late=True,
+            late_user_ids=[456],
+            has_insufficient_duration=True,
+        )
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [google_row]},
             include_details=True,
+            completed_counts={pair_entity.pair_id: 1},
         )
         info = dto.meeting_info[0]
         google_meeting = info.meeting_time_list[0]
@@ -479,19 +708,89 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertTrue(google_meeting.has_unknown_absent)
         self.assertEqual(google_meeting.absent_user_id, 123)
         self.assertTrue(google_meeting.has_unknown_late)
+        # The bug-fix assertion: late_user_ids (plural) is populated.
         self.assertEqual(google_meeting.late_user_ids, [456])
         self.assertTrue(google_meeting.has_insufficient_duration)
 
-    def test_map_to_meeting_v2_dto_no_meeting_log(self):
-        """Test mapping pair entities with None meeting log returns empty meeting list."""
+    def test_map_to_meeting_v2_dto_exposes_meet_link_without_details(self):
+        """Test meet_link is returned even when include_details=False.
+
+        `include_details` gates the ADMIN-only attendance fields. The Meet
+        link is not one of them: this endpoint only ever returns the caller's
+        own pairs, so withholding the link would hide a participant's own
+        meeting from them. Pinned with include_details=False precisely
+        because that is the value the two meeting lists in the UI send.
+        """
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+        pair_entity.meeting_log = None
+
+        google_row = MentorshipMeetingEntity(
+            meeting_id="google-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+            is_completed=False,
+            created_datetime=datetime.fromisoformat("2025-08-31T10:00:00+00:00"),
+            meet_link="https://meet.google.com/abc-defg-hij",
+        )
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [google_row]},
+            include_details=False,
+            completed_counts={pair_entity.pair_id: 0},
+        )
+
+        self.assertEqual(
+            dto.meeting_info[0].meeting_time_list[0].meet_link,
+            "https://meet.google.com/abc-defg-hij",
+        )
+
+    def test_map_to_meeting_v2_dto_manual_row_has_no_meet_link(self):
+        """Test a MANUAL row reports meet_link as None.
+
+        A manually logged meeting was never created through Google, and the
+        entity's `google_fields` CHECK constraint forbids it from carrying a
+        link. The UI keys the Join button off this being null.
+        """
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+        pair_entity.meeting_log = None
+
+        manual_row = MentorshipMeetingEntity(
+            meeting_id="manual-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+            is_completed=False,
+            created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+        )
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [manual_row]},
+            include_details=True,
+            completed_counts={pair_entity.pair_id: 0},
+        )
+
+        self.assertIsNone(dto.meeting_info[0].meeting_time_list[0].meet_link)
+
+    def test_map_to_meeting_v2_dto_no_meetings(self):
+        """Test mapping a pair absent from meetings_by_pair returns an empty list."""
         pair_entity = self.pair_entities[1]
         partner_id = pair_entity.mentor_id
         pair_entity.completed_count = 0
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=2,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={},
+            completed_counts={pair_entity.pair_id: 0},
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -546,58 +845,222 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(dto.current_stage)
         self.assertIsNone(dto.time_urgency)
 
-    def test_map_to_meeting_v2_dto_missing_meeting_time_list_key(self):
-        """Test mapping works when meeting_time_list key does not exist."""
+    def test_map_to_meeting_v2_dto_excludes_legacy_rows(self):
+        """LEGACY rows must never surface in the v2 list either, even if a
+        caller somehow passed one in -- they carry no times and this method
+        must not crash trying to build a MeetingTimeDto from null times."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
-        pair_entity.completed_count = 1
+        pair_entity.completed_count = 5
+        pair_entity.meeting_log = None
 
-        pair_entity.meeting_log = {
-            "google_meetings": [
-                {
-                    "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat(
-                        "2025-09-02T22:30:00+00:00"
-                    ),
-                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
-                    "created_datetime": datetime.fromisoformat(
-                        "2025-08-31T10:00:00+00:00"
-                    ),
-                    "is_completed": True,
-                    "has_unknown_absent": True,
-                    "absent_user_id": 123,
-                    "has_unknown_late": True,
-                    "late_user_ids": [456],
-                    "has_insufficient_duration": True,
-                }
-            ]
-        }
+        google_row = MentorshipMeetingEntity(
+            meeting_id="google-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-31T10:00:00+00:00"),
+        )
+        legacy_row = MentorshipMeetingEntity(
+            meeting_id="legacy-12-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.LEGACY,
+            start_datetime=None,
+            end_datetime=None,
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2020-01-01T00:00:00+00:00"),
+        )
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [legacy_row, google_row]},
             include_details=True,
+            completed_counts={pair_entity.pair_id: 5},
         )
-
-        self.assertIsInstance(dto, MeetingDto)
-        self.assertEqual(len(dto.meeting_info), 1)
 
         info = dto.meeting_info[0]
         self.assertEqual(len(info.meeting_time_list), 1)
-        self.assertEqual(info.completed_meetings_count, 1)
+        self.assertEqual(info.meeting_time_list[0].meeting_id, "google-1")
+        self.assertEqual(info.completed_meetings_count, 5)
 
-        google_meeting = info.meeting_time_list[0]
-        self.assertEqual(google_meeting.meeting_id, "google-1")
-        self.assertEqual(
-            google_meeting.created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "2025-08-31T10:00:00Z",
+    def test_map_to_admin_meeting_dto(self):
+        """Test mapping a raw meeting_log entry to an AdminMeetingDto."""
+        meeting = {
+            "meeting_id": "gm-1",
+            "start_datetime": "2026-05-05T10:00:00",
+            "end_datetime": "2026-05-05T11:00:00",
+            "created_datetime": "2026-05-05T09:55:00",
+        }
+
+        dto = self.mapper.map_to_admin_meeting_dto(
+            meeting,
+            is_completed=True,
+            note_tags=[MeetingNoteTag.MENTOR_LATE],
         )
-        self.assertTrue(google_meeting.has_unknown_absent)
-        self.assertEqual(google_meeting.absent_user_id, 123)
-        self.assertTrue(google_meeting.has_unknown_late)
-        self.assertEqual(google_meeting.late_user_ids, [456])
-        self.assertTrue(google_meeting.has_insufficient_duration)
+
+        self.assertIsInstance(dto, AdminMeetingDto)
+        self.assertEqual(dto.meeting_id, "gm-1")
+        self.assertEqual(dto.start_datetime, "2026-05-05T10:00:00")
+        self.assertEqual(dto.end_datetime, "2026-05-05T11:00:00")
+        self.assertTrue(dto.is_completed)
+        self.assertEqual(dto.note, [MeetingNoteTag.MENTOR_LATE])
+        self.assertEqual(dto.create_datetime, "2026-05-05T09:55:00")
+
+
+class TestMapToRoundsDtoAtNow(unittest.TestCase):
+    """map_to_rounds_dto evaluates each round's status and windows at now."""
+
+    NOW = datetime(2026, 3, 18, 12, 0, tzinfo=timezone.utc)
+    MICRO = timedelta(microseconds=1)
+
+    def _round(
+        self,
+        round_id=1,
+        promotion_start_at=None,
+        match_notification_at=None,
+        meetings_completion_deadline_at=None,
+        **dates,
+    ) -> MentorshipRoundEntity:
+        return MentorshipRoundEntity(
+            round_id=round_id,
+            name=f"round-{round_id}",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 1, 20, tzinfo=timezone.utc),
+            promotion_start_at=promotion_start_at,
+            match_notification_at=match_notification_at,
+            meetings_completion_deadline_at=meetings_completion_deadline_at,
+            **dates,
+        )
+
+    def test_map_to_rounds_dto_evaluates_status_at_the_given_now(self):
+        rounds = [
+            self._round(
+                round_id=1,
+                match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(
+                round_id=2,
+                promotion_start_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(
+                round_id=3,
+                meetings_completion_deadline_at=datetime(
+                    2026, 2, 1, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(round_id=4),
+        ]
+
+        dtos = MentorshipMapper().map_to_rounds_dto(rounds, now=self.NOW)
+
+        self.assertEqual(
+            [(d.id, d.status) for d in dtos],
+            [
+                (1, RoundStatus.ACTIVE),
+                (2, RoundStatus.UPCOMING),
+                (3, RoundStatus.COMPLETED),
+                (4, None),
+            ],
+        )
+
+        later = MentorshipMapper().map_to_rounds_dto(
+            rounds[:1], now=datetime(2027, 1, 1, tzinfo=timezone.utc)
+        )
+        self.assertEqual(later[0].status, RoundStatus.COMPLETED)
+
+    def test_map_to_rounds_dto_reports_the_windows_at_the_given_now(self):
+        """Every date on each round is distinct, and the round before its
+        opening has its derived opening and feedback_start_at already
+        behind now, so reading either as the opening would call it open."""
+
+        def at(month, day):
+            return datetime(2026, month, day, 6, 59, 59, tzinfo=timezone.utc)
+
+        rounds = [
+            self._round(
+                round_id=1,
+                meeting_log_reminder_at=at(3, 1),
+                meetings_completion_deadline_at=at(3, 25),
+                feedback_start_at=at(3, 28),
+                feedback_deadline_at=at(4, 10),
+            ),
+            self._round(
+                round_id=2,
+                meeting_log_reminder_at=at(1, 10),
+                meetings_completion_deadline_at=at(2, 1),
+                feedback_start_at=at(2, 5),
+                feedback_deadline_at=at(2, 20),
+            ),
+            self._round(
+                round_id=3,
+                meeting_log_reminder_at=at(4, 1),
+                meetings_completion_deadline_at=at(4, 10),
+                feedback_start_at=at(3, 15),
+            ),
+            self._round(round_id=4),
+        ]
+
+        dtos = MentorshipMapper().map_to_rounds_dto(rounds, now=self.NOW)
+
+        self.assertEqual(
+            [
+                (
+                    d.id,
+                    d.feedback_opens_at,
+                    d.feedback_closes_at,
+                    d.is_feedback_open,
+                    d.is_feedback_editable,
+                    d.is_meeting_log_open,
+                )
+                for d in dtos
+            ],
+            [
+                (1, at(3, 1), at(4, 10), True, True, True),
+                (2, at(1, 10), at(2, 20), True, False, False),
+                (3, at(4, 1), at(5, 10), False, False, True),
+                (4, None, None, False, True, True),
+            ],
+        )
+
+    def test_map_to_rounds_dto_windows_follow_now(self):
+        r = self._round(
+            meeting_log_reminder_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 3, 25, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        )
+        cases = (
+            (r.meeting_log_reminder_at - self.MICRO, False, False, True),
+            (r.meeting_log_reminder_at, True, True, True),
+            (
+                datetime(2026, 3, 26, tzinfo=timezone.utc) + self.MICRO,
+                True,
+                True,
+                False,
+            ),
+            (r.feedback_deadline_at + self.MICRO, True, False, False),
+        )
+
+        for now, is_open, editable, log_open in cases:
+            with self.subTest(now=now):
+                dto = MentorshipMapper().map_to_rounds_dto([r], now=now)[0]
+
+                self.assertEqual(
+                    (
+                        dto.is_feedback_open,
+                        dto.is_feedback_editable,
+                        dto.is_meeting_log_open,
+                    ),
+                    (is_open, editable, log_open),
+                )
 
 
 if __name__ == "__main__":

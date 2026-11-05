@@ -83,7 +83,7 @@ describe("Table Component", () => {
     );
 
     const nameHeader = screen.getByText("Name");
-    expect(nameHeader).toHaveClass("sortable", "sorted-asc");
+    expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
   });
 
   it("should apply descending sort styles correctly", () => {
@@ -97,6 +97,6 @@ describe("Table Component", () => {
     );
 
     const ageHeader = screen.getByText("Age");
-    expect(ageHeader).toHaveClass("sortable", "sorted-desc");
+    expect(ageHeader).toHaveAttribute("aria-sort", "descending");
   });
 });
