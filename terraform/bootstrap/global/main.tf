@@ -497,7 +497,7 @@ resource "cloudflare_dns_record" "root_test" {
 # Requests carry a signed path token instead
 # (random_password.training_token_signing_key in the purrf_instance module).
 #
-# staging and prod get the same record by hand when the feature promotes.
+# staging got the same record by hand; prod's is training_content_prod below.
 resource "cloudflare_dns_record" "training_content_test" {
   zone_id = local.zone_id
   name    = "test-training-content"
@@ -505,6 +505,22 @@ resource "cloudflare_dns_record" "training_content_test" {
   # The test cluster's cloudflare-tunnel ingress controller, same tunnel as
   # api_test above. staging and prod ride c65a2ea6 (cloudflare2-tunnel).
   content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+# prod's course files, on prod's tunnel like api_prod. Everything said above
+# about keeping the test host out of Access and CORS holds here too.
+resource "cloudflare_dns_record" "training_content_prod" {
+  zone_id = local.zone_id
+  name    = "training-content"
+  type    = "CNAME"
+  content = "c65a2ea6-84c7-4dec-b860-035393e1c402.cfargotunnel.com"
   proxied = true
   ttl     = 1
   lifecycle {
