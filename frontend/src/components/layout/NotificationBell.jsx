@@ -13,6 +13,7 @@ import {
   dismissAllNotifications,
   dismissNotification,
   listNotifications,
+  markAllNotificationsRead,
   markNotificationsRead,
 } from "@/api/recruitingApi";
 import { LEAVE_TYPE_LABELS } from "@/constants/LeaveRequest";
@@ -303,11 +304,10 @@ const describe = (n) => {
  * Header bell + popover for in-app recruiting notifications.
  *
  * Notifications are light reminders: they don't navigate anywhere.
- * Opening the panel marks the rows it shows read on the server, and the
- * badge counts only unread rows. Rows that were unread when the panel opened
- * keep their dot until it opens again, so the user can tell which ones are
- * new; after that they show grey. Dismissing one (the X) or "Clear all"
- * takes it off the list.
+ * Clicking an unread row marks it read on the server; "Mark all as read"
+ * marks every one, including any beyond the rows listed. Read rows stay
+ * listed in grey, below the unread ones, and the badge counts only unread
+ * rows. Dismissing one (the X) or "Clear all" takes it off the list.
  *
  * Refetches on three user-driven triggers: the tab/window becoming visible
  * again, a route pathname change, and the panel opening. The bell lives in
@@ -327,10 +327,6 @@ const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadError, setLoadError] = useState(false);
-  // The rows that were unread when the panel last opened. They are marked
-  // read on the server straight away but keep their dot until the next open.
-  const [newThisOpen, setNewThisOpen] = useState(() => new Set());
-  const latestNotifications = useRef([]);
   const { pathname } = useLocation();
 
   // The fetch in progress, if any. Set synchronously before the first await:
@@ -359,7 +355,6 @@ const NotificationBell = () => {
         const { data } = await listNotifications();
         if (mutations.current !== mutationsAtStart) return null;
         const rows = data?.notifications ?? [];
-        latestNotifications.current = rows;
         setNotifications(rows);
         setUnreadCount(data?.unreadCount ?? 0);
         return rows;
@@ -401,37 +396,54 @@ const NotificationBell = () => {
     };
   }, [load]);
 
+  /** Set isRead on the listed rows whose ids are given. */
+  const setRead = (ids, isRead) =>
+    setNotifications((prev) =>
+      prev.map((n) => (ids.includes(n.id) ? { ...n, isRead } : n)),
+    );
+
   /**
-   * On open: refresh, remember which rows are new, and mark them read.
-   * Only the rows shown are marked, so an unread one beyond the page is not
-   * marked read unseen. A fetch already running (the first load, a route
-   * change) is waited for rather than started again. When it fetched
-   * nothing usable, the rows already on screen are the ones the user is
-   * looking at.
+   * Mark one row read when the user clicks it. The row greys and the badge
+   * drops at once; a failure puts both back. The write counter is bumped on
+   * both sides of the request: a refetch started before it, or while it was
+   * in flight, may carry the state from before it committed.
    */
-  const handleOpen = async () => {
-    const rows =
-      (await load({ showToast: false })) ?? latestNotifications.current;
-    const unreadIds = rows.filter((n) => !n.isRead).map((n) => n.id);
-    setNewThisOpen(new Set(unreadIds));
-    if (unreadIds.length === 0) return;
-    // Bumped on both sides of the request: a refetch started before it, or
-    // while it was in flight, may carry the count from before it committed.
+  const handleMarkRead = async (notification) => {
+    if (notification.isRead) return;
     mutations.current += 1;
+    setRead([notification.id], true);
+    setUnreadCount((c) => Math.max(0, c - 1));
     try {
-      const { data } = await markNotificationsRead(unreadIds);
+      const { data } = await markNotificationsRead([notification.id]);
       mutations.current += 1;
       setUnreadCount(data?.unreadCount ?? 0);
     } catch (e) {
+      setRead([notification.id], false);
+      setUnreadCount((c) => c + 1);
+      toast.error(e.message);
+    }
+  };
+
+  /** Mark every unread notification read, listed or not. */
+  const handleMarkAllRead = async () => {
+    const unreadIds = notifications.filter((n) => !n.isRead).map((n) => n.id);
+    const countBefore = unreadCount;
+    mutations.current += 1;
+    setRead(unreadIds, true);
+    setUnreadCount(0);
+    try {
+      const { data } = await markAllNotificationsRead();
+      mutations.current += 1;
+      setUnreadCount(data?.unreadCount ?? 0);
+    } catch (e) {
+      setRead(unreadIds, false);
+      setUnreadCount(countBefore);
       toast.error(e.message);
     }
   };
 
   const handleDismiss = async (notification) => {
     mutations.current += 1;
-    latestNotifications.current = latestNotifications.current.filter(
-      (n) => n.id !== notification.id,
-    );
     setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
     try {
       const { data } = await dismissNotification(notification.id);
@@ -443,7 +455,6 @@ const NotificationBell = () => {
 
   const handleDismissAll = async () => {
     mutations.current += 1;
-    latestNotifications.current = [];
     setNotifications([]);
     try {
       const { data } = await dismissAllNotifications();
@@ -456,7 +467,7 @@ const NotificationBell = () => {
   return (
     <Popover
       onOpenChange={(open) => {
-        if (open) handleOpen();
+        if (open) load({ showToast: false });
       }}
     >
       <PopoverTrigger asChild>
@@ -480,14 +491,24 @@ const NotificationBell = () => {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between border-b p-2">
           <span className="text-sm font-medium">Notifications</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={notifications.length === 0}
-            onClick={handleDismissAll}
-          >
-            Clear all
-          </Button>
+          <div className="flex items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={unreadCount === 0}
+              onClick={handleMarkAllRead}
+            >
+              Mark all as read
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={notifications.length === 0}
+              onClick={handleDismissAll}
+            >
+              Clear all
+            </Button>
+          </div>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {loadError && (
@@ -499,28 +520,43 @@ const NotificationBell = () => {
             <p className="p-4 text-sm text-slate-500">No notifications yet.</p>
           )}
           {notifications.map((n) => {
-            const looksUnread = !n.isRead || newThisOpen.has(n.id);
-            return (
-              <div
-                key={n.id}
-                data-read={looksUnread ? "false" : "true"}
-                className="flex items-start gap-2 border-b px-4 py-2 text-sm last:border-b-0"
-              >
+            const text = (
+              <>
                 <span
-                  aria-label={looksUnread ? "Unread" : undefined}
+                  aria-label={n.isRead ? undefined : "Unread"}
                   className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                    looksUnread ? "bg-blue-500" : "invisible"
+                    n.isRead ? "invisible" : "bg-blue-500"
                   }`}
                 />
                 <span
                   className={`flex-1 ${
-                    looksUnread
-                      ? "font-medium text-slate-900"
-                      : "text-slate-400"
+                    n.isRead ? "text-slate-400" : "font-medium text-slate-900"
                   }`}
                 >
                   {describe(n)}
                 </span>
+              </>
+            );
+            return (
+              <div
+                key={n.id}
+                data-read={n.isRead ? "true" : "false"}
+                className="flex items-start gap-2 border-b px-4 py-2 text-sm last:border-b-0"
+              >
+                {n.isRead ? (
+                  <div className="flex flex-1 items-start gap-2">{text}</div>
+                ) : (
+                  // Its own button, beside the X rather than around it, so a
+                  // dismiss never also marks the row read.
+                  <button
+                    type="button"
+                    title="Mark as read"
+                    onClick={() => handleMarkRead(n)}
+                    className="-mx-1 flex flex-1 cursor-pointer items-start gap-2 rounded px-1 text-left hover:bg-slate-50"
+                  >
+                    {text}
+                  </button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"

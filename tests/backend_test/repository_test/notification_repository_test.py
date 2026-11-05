@@ -278,6 +278,65 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         await self.session.refresh(row)
         self.assertIsNone(row.read_at)
 
+    async def test_list_by_user_puts_unread_rows_before_read_ones(self):
+        """An old unread row must not be pushed off the page by newer read ones."""
+        _app, recipient = await self._seed()
+        old_unread = NotificationEntity(
+            user_id=recipient.user_id,
+            event_id=self.event.event_id,
+            created_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        )
+        new_read = NotificationEntity(
+            user_id=recipient.user_id,
+            event_id=self.event.event_id,
+            created_at=datetime(2026, 5, 9, tzinfo=timezone.utc),
+            read_at=datetime(2026, 5, 10, tzinfo=timezone.utc),
+        )
+        newer_unread = NotificationEntity(
+            user_id=recipient.user_id,
+            event_id=self.event.event_id,
+            created_at=datetime(2026, 4, 2, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([old_unread, new_read, newer_unread])
+        repo = NotificationRepository()
+
+        page = await repo.list_by_user(self.session, recipient.user_id, limit=2)
+
+        self.assertEqual(
+            [n.notification_id for n in page],
+            [newer_unread.notification_id, old_unread.notification_id],
+        )
+
+    async def test_mark_all_read_marks_every_unread_row_of_that_user(self):
+        _app, recipient = await self._seed()
+        other = _make_user()
+        await self.insert_entities([other])
+        dismissed_at = datetime(2026, 2, 3, tzinfo=timezone.utc)
+        mine = [
+            NotificationEntity(user_id=recipient.user_id, event_id=self.event.event_id)
+            for _ in range(25)
+        ]
+        dismissed = NotificationEntity(
+            user_id=recipient.user_id,
+            event_id=self.event.event_id,
+            dismissed_at=dismissed_at,
+        )
+        someone_elses = NotificationEntity(
+            user_id=other.user_id, event_id=self.event.event_id
+        )
+        await self.insert_entities([*mine, dismissed, someone_elses])
+        repo = NotificationRepository()
+
+        await repo.mark_all_read(self.session, recipient.user_id)
+
+        for row in (*mine, dismissed, someone_elses):
+            await self.session.refresh(row)
+        self.assertTrue(all(row.read_at is not None for row in mine))
+        self.assertIsNone(dismissed.read_at)
+        self.assertIsNone(someone_elses.read_at)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        self.assertEqual(await repo.count_by_user(self.session, other.user_id), 1)
+
     async def _notification(
         self, recipient, *, status=None, claimed_at=None, created_at=None
     ):
