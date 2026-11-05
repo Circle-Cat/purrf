@@ -142,6 +142,12 @@ variable "tailscale_proxy" {
   default     = ""
 }
 
+variable "auth0_email_disable_signup" {
+  description = "Refuse email one-time-code logins from addresses with no Auth0 account yet, so only existing users can sign in that way. Google logins are unaffected."
+  type        = bool
+  default     = false
+}
+
 variable "auth0_google_client_id" {
   description = "Client ID of the Google OAuth app backing the Auth0 Google social connection."
   type        = string
