@@ -4,8 +4,9 @@
  * Each visitor is sent to Purrf or to Workable on arrival. Purrf visitors see
  * the open postings rendered here; Workable visitors are redirected to the
  * matching Workable page. The split is by a sticky per-visitor bucket against
- * PURRF_RATIO, so raising the ratio only moves visitors from Workable to
- * Purrf, and setting it to 0 sends everyone back.
+ * the Purrf share for the page asked for: a posting's own share in
+ * PURRF_RATIOS, else PURRF_RATIO, which also covers the list. Raising a share
+ * only moves visitors from Workable to Purrf, and 0 sends everyone back.
  */
 
 const JOBS_PATH = "/api/recruiting/anonymous/jobs";
@@ -23,17 +24,42 @@ export function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
+/** A share clamped to [0, 1], or null when it is not a number. */
+function share(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio)) return null;
+  return Math.min(1, Math.max(0, ratio));
+}
+
 /**
- * Reads the Purrf share from the environment.
+ * Reads the Purrf share for a page from the environment.
+ *
+ * PURRF_RATIOS is a JSON object of posting id to share, for postings split
+ * differently from the rest; PURRF_RATIO is the share for every other
+ * posting and for the list.
  *
  * @param {object} env Worker environment bindings.
- * @returns {number} A ratio in [0, 1]; anything unparseable is 0, which
- *   sends everyone to Workable.
+ * @param {number|null} [jobId] The posting asked for, or null for the list.
+ * @returns {number} A ratio in [0, 1]; anything unparseable falls through to
+ *   PURRF_RATIO, and an unparseable PURRF_RATIO is 0, which sends everyone
+ *   to Workable.
  */
-export function purrfRatio(env) {
-  const ratio = Number(env.PURRF_RATIO);
-  if (!Number.isFinite(ratio)) return 0;
-  return Math.min(1, Math.max(0, ratio));
+export function purrfRatio(env, jobId = null) {
+  if (jobId !== null) {
+    let ratios = env.PURRF_RATIOS ?? {};
+    if (typeof ratios === "string") {
+      try {
+        ratios = JSON.parse(ratios);
+      } catch {
+        console.error("apply-router: PURRF_RATIOS is not valid JSON");
+        ratios = {};
+      }
+    }
+    const own = share(ratios?.[String(jobId)]);
+    if (own !== null) return own;
+  }
+  return share(env.PURRF_RATIO) ?? 0;
 }
 
 /**
@@ -249,7 +275,7 @@ function tagged(url, variant) {
  */
 async function route(env, bucket, kind, jobId) {
   const workable = workableUrl(env, jobId);
-  const variant = chooseVariant(bucket, purrfRatio(env), workable);
+  const variant = chooseVariant(bucket, purrfRatio(env, jobId), workable);
   const log = (fields) =>
     console.log(JSON.stringify({ event: kind, jobId, bucket, ...fields }));
 

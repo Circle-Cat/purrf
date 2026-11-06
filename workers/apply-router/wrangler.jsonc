@@ -11,6 +11,8 @@
   //   WORKABLE_BOARD_URL  the Workable job board
   //   WORKABLE_JOBS       JSON mapping a Purrf job id to its Workable page
   // Without a Workable page for a request, the visitor goes to Purrf.
+  // PURRF_RATIO is the Purrf share; PURRF_RATIOS, JSON of posting id to share,
+  // overrides it for the postings it names.
   "env": {
     "test": {
       "routes": [{ "pattern": "test-apply.purrf.io/*", "zone_name": "purrf.io" }],
@@ -18,6 +20,18 @@
         "API_ORIGIN": "https://test-api.purrf.io",
         "APP_ORIGIN": "https://test.purrf.io",
         "PURRF_RATIO": "0.5"
+      }
+    },
+    "prod": {
+      "routes": [{ "pattern": "apply.purrf.io/*", "zone_name": "purrf.io" }],
+      "vars": {
+        "API_ORIGIN": "https://api.purrf.io",
+        "APP_ORIGIN": "https://purrf.io",
+        // The list and any posting not named below are Purrf's. Mentees are
+        // split half and half, mentors only apply on Purrf, and interns
+        // (North America and China) all go to Workable.
+        "PURRF_RATIO": "1",
+        "PURRF_RATIOS": "{\"1\":0.5,\"2\":1,\"3\":0,\"4\":0}"
       }
     }
   }
