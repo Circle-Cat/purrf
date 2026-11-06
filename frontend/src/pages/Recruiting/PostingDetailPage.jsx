@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -119,6 +120,13 @@ const PostingDetailPage = () => {
   const { user, permissions = [] } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.RECRUITING_JOB_APPROVE);
+  // The same any-of set the Job Postings route admits, so the way back never
+  // lands on Access Denied.
+  const canOpenPostings = [
+    PERMISSIONS.RECRUITING_JOB_WRITE,
+    PERMISSIONS.RECRUITING_JOB_READ,
+    PERMISSIONS.RECRUITING_JOB_APPROVE,
+  ].some((p) => permissions.includes(p));
 
   const [job, setJob] = useState(null);
   const [approversById, setApproversById] = useState({});
@@ -431,6 +439,15 @@ const PostingDetailPage = () => {
 
   return (
     <div className="space-y-6 p-6">
+      {canOpenPostings && (
+        <Link
+          to={ROUTE_PATHS.RECRUITING_POSTINGS}
+          className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Job Postings
+        </Link>
+      )}
       {isAssignedReviewer && (
         <AwaitingDecisionCard
           title={`${reviewKind.label} awaiting your decision`}
