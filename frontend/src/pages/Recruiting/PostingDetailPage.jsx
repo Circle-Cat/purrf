@@ -120,8 +120,6 @@ const PostingDetailPage = () => {
   const { user, permissions = [] } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.RECRUITING_JOB_APPROVE);
-  // The same any-of set the Job Postings route admits, so the way back never
-  // lands on Access Denied.
   const canOpenPostings = [
     PERMISSIONS.RECRUITING_JOB_WRITE,
     PERMISSIONS.RECRUITING_JOB_READ,
