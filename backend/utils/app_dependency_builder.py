@@ -165,6 +165,7 @@ from backend.communication.notification_email_service import NotificationEmailSe
 from backend.notification_management.notification_event_email_service import (
     NotificationEventEmailService,
 )
+from backend.recruiting.notification_links import link_for
 from backend.notification_management.delivery_service import DeliveryService
 from backend.notification_management.delivery_controller import (
     NotificationDeliveryController,
@@ -1014,6 +1015,9 @@ class AppDependencyBuilder:
             user_emails_repository=self.user_emails_repository,
             email_service=self.notification_email_service,
             event_repository=self.event_repository,
+            link=link_for,
+            # The first origin is the app itself; the rest serve its API.
+            app_origin=(os.getenv(APP_ORIGINS) or "").split(",")[0].strip() or None,
         )
         self.delivery_service = DeliveryService(
             logger=self.logger,
