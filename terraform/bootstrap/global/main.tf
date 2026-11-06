@@ -497,7 +497,7 @@ resource "cloudflare_dns_record" "root_test" {
 # Requests carry a signed path token instead
 # (random_password.training_token_signing_key in the purrf_instance module).
 #
-# staging and prod get the same record by hand when the feature promotes.
+# staging got the same record by hand; prod's is training_content_prod below.
 resource "cloudflare_dns_record" "training_content_test" {
   zone_id = local.zone_id
   name    = "test-training-content"
@@ -505,6 +505,22 @@ resource "cloudflare_dns_record" "training_content_test" {
   # The test cluster's cloudflare-tunnel ingress controller, same tunnel as
   # api_test above. staging and prod ride c65a2ea6 (cloudflare2-tunnel).
   content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+# prod's course files, on prod's tunnel like api_prod. Everything said above
+# about keeping the test host out of Access and CORS holds here too.
+resource "cloudflare_dns_record" "training_content_prod" {
+  zone_id = local.zone_id
+  name    = "training-content"
+  type    = "CNAME"
+  content = "c65a2ea6-84c7-4dec-b860-035393e1c402.cfargotunnel.com"
   proxied = true
   ttl     = 1
   lifecycle {
@@ -588,11 +604,14 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
     { type = "public", uri = local.environments.prod.origin_web },
     { type = "public", uri = local.environments.prod.api_host },
   ]
-  allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", "e0e42a6d-d9a1-4e9e-9338-9643176c5fc4"]
+  # Single IdP + auto-redirect, as on test and staging: the backend reads the
+  # user's identity from the custom claims only the Auth0 OIDC IdP puts in the
+  # Access token, so a login through any other IdP arrives with no sub.
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_prod.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true
@@ -636,10 +655,16 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_prod
       "profile",
     ]
 
+    # The backend reads these from the Access token's custom claims; without
+    # email_verified every login is refused as untrusted. Same set as staging.
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
+      "picture",
     ]
 
     email_claim_name = "aud"
@@ -810,8 +835,7 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
     { type = "public", uri = "staging.purrf.pages.dev" },
   ]
   # Single IdP + auto-redirect: like test, CF Access skips its own login
-  # chooser and sends visitors straight to the Auth0 page. (Prod keeps the
-  # two-IdP chooser; staging deliberately trades that fidelity away.)
+  # chooser and sends visitors straight to the Auth0 page.
   allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id]
   session_duration     = "24h"
   app_launcher_visible = true
@@ -841,9 +865,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   ]
 }
 
-# Notification push gateway. Prod gets its own set once staging has run for
-# real; every environment needs a full set of its own, because the Worker
-# reaching one backend must not hold a credential the others honour.
+# Notification push gateway. Every environment needs a full set of its own,
+# because the Worker reaching one backend must not hold a credential the
+# others honour.
 #
 # <env>-hook.purrf.io is answered entirely by a Worker. The AAAA record points
 # at the reserved discard address and is proxied, so the name resolves and
@@ -1041,6 +1065,64 @@ resource "cloudflare_zero_trust_access_policy" "notification_delivery_staging" {
   include = [{
     service_token = {
       token_id = cloudflare_zero_trust_access_service_token.notification_gateway_staging.id
+    }
+  }]
+}
+
+
+# The prod set, same shape as staging. The Worker's prod route for
+# hook.purrf.io is already in workers/pubsub-gateway/wrangler.jsonc.
+
+resource "cloudflare_dns_record" "hook_prod" {
+  zone_id = local.zone_id
+  name    = "hook"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+resource "cloudflare_zero_trust_access_service_token" "notification_gateway_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-gateway-prod"
+  duration   = "forever"
+}
+
+
+resource "cloudflare_zero_trust_access_application" "notification_delivery_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-delivery-prod"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.prod.api_host}/api/notifications/deliver" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/email/gmail/push" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/pubsub/push/microsoft-chat" },
+    { type = "public", uri = "${local.environments.prod.api_host}/api/pubsub/push/gerrit" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.notification_delivery_prod.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "notification_delivery_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "gateway-worker-only-prod"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.notification_gateway_prod.id
     }
   }]
 }

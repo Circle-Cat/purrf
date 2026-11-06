@@ -185,9 +185,13 @@ resource "google_cloud_run_v2_job" "matcher" {
     }
   }
 
+  # Cloud Run checks that the job's service account can read each secret when
+  # the job is created, so the grants have to land first.
   depends_on = [
     google_project_service.matcher,
     google_secret_manager_secret_version.matcher_llm_api_key_placeholder,
+    google_secret_manager_secret_iam_member.matcher_redis_password_job_access,
+    google_secret_manager_secret_iam_member.matcher_llm_api_key_job_access,
   ]
 }
 

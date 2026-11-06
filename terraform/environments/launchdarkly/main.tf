@@ -54,15 +54,14 @@ locals {
       off_in      = ["production"]
       public_in   = ["staging", "test"]
     }
-    # Only test and staging have a matcher job to start; in production the
-    # endpoint would refuse anyway, and each press is an hour of a paid job
-    # once the stub is off.
+    # Until production has a matcher job, a press there is refused and the
+    # round's lock released; once it does, each press is an hour of a paid job.
     matching_run = {
       key         = "matching-run"
       name        = "Matching Run"
       description = "Lets an admin start a mentorship matching run"
-      off_in      = ["production"]
-      public_in   = ["staging", "test"]
+      off_in      = []
+      public_in   = ["production", "staging", "test"]
     }
     # Gates every leave screen. The backend has no flag of its own, so off here
     # hides the feature rather than disabling it.
@@ -78,8 +77,8 @@ locals {
       key         = "mentorship-kit-email"
       name        = "Mentorship Kit Email"
       description = "Lets a mentorship admin send notifications to participants through Kit"
-      off_in      = ["production"]
-      public_in   = ["staging", "test"]
+      off_in      = []
+      public_in   = ["production", "staging", "test"]
     }
   }
 

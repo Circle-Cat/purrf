@@ -124,7 +124,7 @@ resource "auth0_connection" "email" {
   options {
     api_enable_users       = false
     brute_force_protection = true
-    disable_signup         = false
+    disable_signup         = var.auth0_email_disable_signup
     from                   = "{{ application.name }} <root@auth0.com>"
     subject                = "Welcome to {{ application.name }}"
     name                   = "email"
