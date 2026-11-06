@@ -93,6 +93,25 @@ describe("purrfRatio", () => {
     expect(purrfRatio({ PURRF_RATIO: "4" })).toBe(1);
     expect(purrfRatio({ PURRF_RATIO: "-1" })).toBe(0);
   });
+
+  it("reads a posting's own share from PURRF_RATIOS", () => {
+    const env = { PURRF_RATIO: "1", PURRF_RATIOS: '{"1":0.5,"3":0}' };
+    expect(purrfRatio(env, 1)).toBe(0.5);
+    expect(purrfRatio(env, 3)).toBe(0);
+  });
+
+  it("falls back to PURRF_RATIO for the list and for unlisted postings", () => {
+    const env = { PURRF_RATIO: "1", PURRF_RATIOS: '{"1":0.5}' };
+    expect(purrfRatio(env)).toBe(1);
+    expect(purrfRatio(env, 9)).toBe(1);
+  });
+
+  it("ignores an unreadable PURRF_RATIOS or entry", () => {
+    expect(purrfRatio({ PURRF_RATIO: "0.4", PURRF_RATIOS: "{" }, 1)).toBe(0.4);
+    expect(
+      purrfRatio({ PURRF_RATIO: "0.4", PURRF_RATIOS: '{"1":"half"}' }, 1),
+    ).toBe(0.4);
+  });
 });
 
 describe("readBucket", () => {
@@ -275,6 +294,15 @@ describe("Workable visitors", () => {
     };
     const response = await get("/jobs", WORKABLE_VISITOR, env);
     expect(response.status).toBe(200);
+  });
+
+  it("are split per posting when PURRF_RATIOS names it", async () => {
+    stubBackend();
+    const env = { ...ENV, PURRF_RATIO: "1", PURRF_RATIOS: '{"7":0}' };
+    const posting = await get("/jobs/7", PURRF_VISITOR, env);
+    expect(destination(posting).url).toBe(MENTEE_ON_WORKABLE);
+    const list = await get("/jobs", PURRF_VISITOR, env);
+    expect(list.status).toBe(200);
   });
 
   it("all go back to Workable at ratio 0, including former Purrf visitors", async () => {
