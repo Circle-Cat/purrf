@@ -83,6 +83,22 @@ describe("PostingDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("links back to Job Postings for a viewer who can open it", async () => {
+    authState.permissions = ["recruiting.job.approve"];
+    const { router } = renderAt(1);
+    await screen.findByRole("heading", { name: "Backend Engineer" });
+    await userEvent.click(screen.getByRole("link", { name: "Job Postings" }));
+    expect(router.state.location.pathname).toBe("/recruiting/postings");
+  });
+
+  it("offers no way back to a viewer Job Postings would turn away", async () => {
+    renderAt(1);
+    await screen.findByRole("heading", { name: "Backend Engineer" });
+    expect(
+      screen.queryByRole("link", { name: "Job Postings" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("explains the missing operate row while an initial review is pending", async () => {
     api.getJob.mockResolvedValue({
       data: {
