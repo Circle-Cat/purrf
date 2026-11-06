@@ -31,10 +31,6 @@ resource "kubernetes_secret" "purrf_app" {
     CF_TEAM_DOMAIN                    = "ccat-dev.cloudflareaccess.com"
     CF_AUD_TAG                        = var.cf_aud_tag
     GOOGLE_AUDIENCE                   = "purrf"
-    PUBSUB_PROJECT_ID                 = var.gcp_project_id
-    MICROSOFT_SUBSCRIPTION_ID         = google_pubsub_subscription.subscriptions["chat-microsoft-events"].name
-    GOOGLE_CHAT_SUBSCRIPTION_ID       = google_pubsub_subscription.subscriptions["chat-google-events"].name
-    GERRIT_SUBSCRIPTION_ID            = google_pubsub_subscription.subscriptions["gerrit-events"].name
     LAUNCHDARKLY_SDK_KEY              = var.ld_sdk_key
     TAILSCALE_PROXY                   = var.tailscale_proxy
     MENTORSHIP_MENTOR_ONBOARDING_LINK = "https://circle-cat-inc-3811.reach360.com/share/course/3d9db106-543a-4d4d-98c2-7edee343d53f"
