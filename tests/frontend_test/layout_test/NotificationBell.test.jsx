@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -271,6 +271,88 @@ describe("NotificationBell", () => {
 
     expect(api.dismissNotification).toHaveBeenCalledWith(7);
     expect(api.markNotificationsRead).not.toHaveBeenCalled();
+  });
+
+  const linkedRow = (id, applicantName, link) => ({
+    ...mentionRow(id, applicantName, false),
+    link,
+  });
+
+  it("offers Open only on a row with a link", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      linkedRow(7, "Ada Lovelace", "/recruiting/applications/42"),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    renderBell();
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+
+    expect(screen.getAllByRole("button", { name: "Open" })).toHaveLength(1);
+    expect(
+      within(rowFor("Ada Lovelace")).getByRole("button", { name: "Open" }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowFor("Alan Turing")).queryByRole("button", { name: "Open" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks the row read, closes the panel and goes to its link on Open", async () => {
+    const user = userEvent.setup();
+    listWith(2, [
+      linkedRow(7, "Ada Lovelace", "/recruiting/applications/42?mode=evaluate"),
+      mentionRow(12, "Alan Turing", false),
+    ]);
+    api.markNotificationsRead.mockResolvedValue({ data: { unreadCount: 1 } });
+    const { router } = renderBell("/dashboard");
+    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(api.markNotificationsRead).toHaveBeenCalledWith([7]);
+    expect(api.markNotificationsRead).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/recruiting/applications/42",
+      ),
+    );
+    expect(router.state.location.search).toBe("?mode=evaluate");
+    await waitFor(() =>
+      expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+  });
+
+  it("opens a read row's link without marking it again", async () => {
+    const user = userEvent.setup();
+    listWith(0, [
+      { ...linkedRow(3, "Edsger Dijkstra", "/leave/requests"), isRead: true },
+    ]);
+    const { router } = renderBell("/dashboard");
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await openBell(user);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(api.markNotificationsRead).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/leave/requests"),
+    );
+  });
+
+  it("only marks read, without going anywhere, when a linked row is clicked", async () => {
+    const user = userEvent.setup();
+    listWith(1, [linkedRow(7, "Ada Lovelace", "/recruiting/applications/42")]);
+    const { router } = renderBell("/dashboard");
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await openBell(user);
+
+    await user.click(screen.getByText(/Ada Lovelace/));
+
+    expect(api.markNotificationsRead).toHaveBeenCalledWith([7]);
+    expect(rowFor("Ada Lovelace")).toHaveAttribute("data-read", "true");
+    expect(router.state.location.pathname).toBe("/dashboard");
   });
 
   it("greys every row and clears the badge on Mark all as read", async () => {
