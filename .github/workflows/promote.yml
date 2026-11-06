@@ -13,8 +13,9 @@ on:
       commits:
         description: >-
           Upstream commit SHAs to cherry-pick, separated by spaces or commas.
-          Leave empty to promote all pending commits. (Used for staging; for
-          prod the range is anchored to release_tag instead.)
+          Leave empty to promote all pending commits: for staging, every main
+          commit not yet on staging; for prod, every staging commit between the
+          release tag prod is running and release_tag.
         required: false
         default: ''
       release_tag:
@@ -134,8 +135,43 @@ jobs:
                 exit 1
               fi
             done
-            # Oldest first, so dependencies apply before their dependents.
-            candidates=$(git rev-list --reverse --no-walk $requested)
+            # Oldest first by ancestry, so dependencies apply before their
+            # dependents. Not by date: a batch cherry-picked onto staging in one
+            # run shares one committer timestamp, and a date sort then hands it
+            # back in input order reversed.
+            wanted=$(git rev-parse $requested)
+            candidates=$(git rev-list --reverse --topo-order "$ANCHOR" \
+              | grep -Fx -f <(printf '%s\n' $wanted))
+          elif [ "$TARGET" = "prod" ]; then
+            # Every staging commit since the release prod is running. That
+            # release is found by image rather than by history: each prod
+            # release pins values-prod.yaml to the image in values-staging.yaml
+            # at its tag, while prod's own history stopped lining up with
+            # staging's long ago, so git cherry would list released commits as
+            # pending.
+            PROD_IMAGE=$(git show "origin/prod:helm/purrf/values-prod.yaml" | yq '.image.tag')
+            if [ "$PROD_IMAGE" = "$IMAGE_TAG" ]; then
+              echo "::error::prod already runs $IMAGE_TAG, the image at $RELEASE_TAG."
+              exit 1
+            fi
+            PREVIOUS_TAG=""
+            for tag in $(git tag -l 'release/*' --sort=-creatordate); do
+              [ "$tag" = "$RELEASE_TAG" ] && continue
+              if [ "$(git show "refs/tags/$tag:helm/purrf/values-staging.yaml" 2>/dev/null | yq '.image.tag')" = "$PROD_IMAGE" ]; then
+                PREVIOUS_TAG="$tag"
+                break
+              fi
+            done
+            if [ -z "$PREVIOUS_TAG" ]; then
+              echo "::error::No release tag carries prod's image $PROD_IMAGE, so the range cannot be worked out. Pass commits explicitly."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "refs/tags/$PREVIOUS_TAG^{commit}" "refs/tags/$RELEASE_TAG^{commit}"; then
+              echo "::error::$PREVIOUS_TAG, the release prod is running, is not an ancestor of $RELEASE_TAG: staging's history was rewritten in between. Pass commits explicitly."
+              exit 1
+            fi
+            echo "prod is running $PREVIOUS_TAG; releasing the commits after it up to $RELEASE_TAG."
+            candidates=$(git rev-list --reverse --topo-order --no-merges "refs/tags/$PREVIOUS_TAG..refs/tags/$RELEASE_TAG")
           else
             # Every commit on the anchor whose patch is not yet on the target.
             candidates=$(git cherry "origin/$TARGET" "$ANCHOR" | awk '$1 == "+" { print $2 }')

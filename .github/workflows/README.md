@@ -128,7 +128,12 @@ Run **Promote** with:
 - `target`: `prod`
 - `release_tag`: the tag from step 3 (e.g. `release/2026.06.16`)
 
-It cherry-picks the code **up to the tag** (skipping staging's env-pin commits),
+With `commits` empty it cherry-picks the staging commits **after the release prod
+is running, up to the tag**, oldest first by ancestry (skipping staging's
+env-pin commits). The running release is the `release/*` tag whose
+`values-staging.yaml` image matches `values-prod.yaml` on `prod`; when none
+matches, or that tag is not an ancestor of the new one because staging's history
+was rewritten, the run stops and asks for `commits` instead. It then
 reads the tested image tag from `values-staging.yaml@<tag>`, and pins
 `values-prod.yaml` to it — all in one PR. `promotion-guard` + `lint-and-test` +
 maintainer review, then merge with a **merge commit**. ArgoCD prod pulls the
