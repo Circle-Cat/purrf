@@ -33,6 +33,9 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo = create_autospec(ApplicationSubmissionRepository, instance=True)
         self.sub_repo.get_latest_personal_by_user_ids.return_value = {}
         self.session = AsyncMock()
+        # Links read the database themselves; notification_links_test covers
+        # them against a real one.
+        self.page_links = AsyncMock(return_value={})
         self.service = RecruitingNotificationService(
             self.notification_repo,
             self.app_repo,
@@ -40,6 +43,7 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             self.event_repo,
             self.sub_repo,
+            page_links=self.page_links,
         )
 
     def _notification(self, event=None, **overrides):
@@ -285,6 +289,57 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
             self.job_repo.get_by_job_id,
             self.users_repo.get_user_by_user_id,
         ]
+
+    async def test_list_for_user_carries_each_rows_link(self):
+        """Links are worked out once for the page, for the caller, from the
+        postings the page already loaded, and land on the row whose event
+        they belong to."""
+        events = [
+            self._event(event_id=41, subject_type="application", subject_id=10),
+            self._event(
+                event_id=42,
+                subject_type="gmail_sync_state",
+                subject_id=1,
+                actor_id=None,
+                event_type="ops.gmail_sync_alert",
+            ),
+        ]
+        rows = [self._row(51, 41), self._row(52, 42)]
+        self.notification_repo.list_by_user = AsyncMock(return_value=rows)
+        self.notification_repo.count_by_user = AsyncMock(return_value=2)
+        self.event_repo.get_by_ids = AsyncMock(return_value=events)
+        application = ApplicationEntity(
+            job_id=7, user_id=4, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.application_id = 10
+        self.app_repo.get_by_ids = AsyncMock(return_value=[application])
+        job = JobEntity(
+            kind=JobKind.EMPLOYMENT, title="Backend", status=JobStatus.PUBLISHED
+        )
+        job.job_id = 7
+        self.job_repo.get_by_job_ids = AsyncMock(return_value=[job])
+        self._stub_users()
+        self.page_links.return_value = {
+            41: "/recruiting/applications/10?mode=evaluate",
+            42: None,
+        }
+
+        result = await self.service.list_for_user(self.session, user_id=2)
+
+        self.page_links.assert_awaited_once()
+        args, kwargs = self.page_links.await_args
+        self.assertIs(args[0], self.session)
+        self.assertEqual([e.event_id for e in args[1]], [41, 42])
+        self.assertEqual(args[2], 2)
+        self.assertEqual(kwargs, {"jobs_by_application": {10: job}})
+        self.assertEqual(
+            [(n.id, n.link) for n in result.notifications],
+            [(51, "/recruiting/applications/10?mode=evaluate"), (52, None)],
+        )
+        self.assertEqual(
+            result.model_dump(by_alias=True)["notifications"][0]["link"],
+            "/recruiting/applications/10?mode=evaluate",
+        )
 
     async def test_list_for_user_loads_each_kind_once_for_mixed_rows(self):
         """Three rows of three subject types, two actors: one load per kind."""
