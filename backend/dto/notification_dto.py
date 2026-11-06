@@ -9,9 +9,9 @@ from backend.dto.base_dto import BaseDto
 class NotificationDto(BaseDto):
     """One row in a user's notification list.
 
-    Notifications are light reminders with no navigation target. ``event_type``
-    and ``details`` come straight off the event that caused the row, so the
-    reader words each kind itself -- the same pair the timeline renders from.
+    ``event_type`` and ``details`` come straight off the event that caused
+    the row, so the reader words each kind itself -- the same pair the
+    timeline renders from.
     ``job_title``/``applicant_name``/``actor_name`` are resolved display
     strings, "" (or None for actor_name) when the referenced row is missing --
     same fallback convention as MyEvaluationDto/CommentDto. A null
@@ -29,6 +29,10 @@ class NotificationDto(BaseDto):
     ``summary`` is the whole line for a posting review event, worded by the
     same phrases as its email so the two channels cannot drift; None for
     every other event, which the reader words itself.
+
+    ``link`` is the app path where this reader acts on the notification,
+    such as ``/recruiting/applications/42``, worked out per recipient by
+    ``recruiting/notification_links.py``; None when there is no such page.
     """
 
     id: int
@@ -42,6 +46,7 @@ class NotificationDto(BaseDto):
     created_at: datetime
     is_read: bool = False
     summary: str | None = None
+    link: str | None = None
 
 
 class NotificationListDto(BaseDto):

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { Bell, X } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowUpRight, Bell, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -270,8 +270,10 @@ const describe = (n) => wordOf(n) || FALLBACK_LINE;
 /**
  * Header bell + popover for in-app recruiting notifications.
  *
- * Notifications are light reminders: they don't navigate anywhere.
- * Clicking an unread row marks it read on the server; "Mark all as read"
+ * Clicking an unread row marks it read on the server and goes nowhere. A row
+ * whose notification has a `link` (an app path the backend worked out for
+ * this reader) also gets an Open button: it marks the row read the same way,
+ * closes the panel and navigates there. "Mark all as read"
  * marks every one, including any beyond the rows listed. Read rows stay
  * listed in grey, below the unread ones, and the badge counts only unread
  * rows. Dismissing one (the X) or "Clear all" takes it off the list.
@@ -294,7 +296,9 @@ const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadError, setLoadError] = useState(false);
+  const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
 
   // The fetch in progress, if any. Set synchronously before the first await:
   // visibilitychange and focus both fire when returning to a hidden tab, and
@@ -391,6 +395,16 @@ const NotificationBell = () => {
     }
   };
 
+  /**
+   * Go to where the reader acts on a notification. Marking read is not
+   * awaited: it is optimistic and puts the row back itself if it fails.
+   */
+  const handleOpen = (notification) => {
+    handleMarkRead(notification);
+    setOpen(false);
+    navigate(notification.link);
+  };
+
   /** Mark every unread notification read, listed or not. */
   const handleMarkAllRead = async () => {
     const unreadIds = notifications.filter((n) => !n.isRead).map((n) => n.id);
@@ -433,8 +447,10 @@ const NotificationBell = () => {
 
   return (
     <Popover
-      onOpenChange={(open) => {
-        if (open) load({ showToast: false });
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) load({ showToast: false });
       }}
     >
       <PopoverTrigger asChild>
@@ -523,6 +539,18 @@ const NotificationBell = () => {
                   >
                     {text}
                   </button>
+                )}
+                {n.link && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Open"
+                    title="Open"
+                    className="h-5 w-5 shrink-0 text-slate-500"
+                    onClick={() => handleOpen(n)}
+                  >
+                    <ArrowUpRight size={14} />
+                  </Button>
                 )}
                 <Button
                   variant="ghost"
