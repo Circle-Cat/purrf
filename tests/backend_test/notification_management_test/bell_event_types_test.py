@@ -6,6 +6,7 @@ from pathlib import Path
 # resolver, which is the set the bell can receive.
 import backend.utils.fast_app_factory  # noqa: F401
 from backend.notification_management import recipient_registry
+from backend.recruiting import notification_links
 
 _LISTED = Path("tests/shared/bell_event_types.json")
 
@@ -24,6 +25,24 @@ class TestBellEventTypes(unittest.TestCase):
         )
         self.assertEqual(
             sorted(listed - registered), [], "in the list but not registered"
+        )
+
+    def test_every_listed_event_has_a_link_decision(self):
+        """Each type the bell can receive either has a rule for where its
+        reader acts on it or is deliberately linkless. A new type with
+        neither has had nobody decide where it leads."""
+        listed = set(json.loads(_LISTED.read_text(encoding="utf-8")))
+        linked = set(notification_links.LINKED)
+        linkless = set(notification_links.LINKLESS)
+
+        self.assertEqual(sorted(linked & linkless), [], "both linked and linkless")
+        self.assertEqual(
+            sorted(listed - linked - linkless), [], "listed but no link decision"
+        )
+        self.assertEqual(
+            sorted((linked | linkless) - listed),
+            [],
+            "a link decision for no listed type",
         )
 
 
