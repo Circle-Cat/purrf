@@ -19,6 +19,7 @@ import {
   DialogOverlay,
 } from "@radix-ui/react-dialog";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { useGuides } from "@/guides/GuideContext";
 
 /**
  * Top navigation bar. Optionally renders a button that toggles the sidebar's
@@ -34,6 +35,7 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
   const [char, setChar] = useState("");
   const [pictureUrl, setPictureUrl] = useState(null);
   const navigate = useNavigate();
+  const { active: guidesActive, start: startGuide } = useGuides();
 
   const goToProfile = () => {
     navigate(ROUTE_PATHS.PROFILE);
@@ -91,6 +93,7 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
               variant="ghost"
               size="icon"
               aria-label="User menu"
+              data-tour="avatar-menu"
               // The outline keeps a picture on a light background from
               // dissolving into the header. `border-border` is named
               // explicitly because an unqualified `border` inherits
@@ -140,6 +143,15 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
             >
               Contact Us
             </Item>
+            {guidesActive && (
+              <Item
+                onClick={() => startGuide("welcome")}
+                className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
+                aria-label="Take the tour"
+              >
+                Take the tour
+              </Item>
+            )}
             <Item
               onClick={performGlobalLogout}
               className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
