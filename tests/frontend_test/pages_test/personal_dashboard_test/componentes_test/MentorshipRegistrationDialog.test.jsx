@@ -530,7 +530,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     const callWithId = (id) =>
       showReminderToast.mock.calls.find(([args]) => args.id === id)?.[0];
 
-    it("fires the must-complete-or-no-match message for a mentee when the POST response says training is not completed", async () => {
+    it("tells a mentee training is required for matching when the POST response says training is not completed", async () => {
       mapFormToApi.mockReturnValue({ api: "data" });
       mapRegistrationToForm.mockReturnValue(validMenteeForm);
       const onSave = onSaveResolving(false);
@@ -547,10 +547,10 @@ describe("MentorshipRegistrationDialog Component", () => {
       expect(reminder.message).toMatch(
         /must complete the onboarding training/i,
       );
-      expect(reminder.message).toMatch(/eligible for mentor matching/i);
+      expect(reminder.message).toMatch(/eligible for matching this round/i);
     });
 
-    it("fires the soft mentoring-quality message for a mentor when the POST response says training is not completed", async () => {
+    it("tells a mentor training is required for matching too, since matching checks every role", async () => {
       mapFormToApi.mockReturnValue({ api: "data" });
       mapRegistrationToForm.mockReturnValue(validMentorForm);
       const onSave = onSaveResolving(false, "mentor");
@@ -567,8 +567,10 @@ describe("MentorshipRegistrationDialog Component", () => {
 
       const reminder = callWithId("post-registration-training-toast");
       expect(reminder).toBeDefined();
-      expect(reminder.message).toMatch(/get started as a mentor/i);
-      expect(reminder.message).not.toMatch(/eligible for mentor matching/i);
+      expect(reminder.message).toMatch(
+        /must complete the onboarding training/i,
+      );
+      expect(reminder.message).toMatch(/eligible for matching this round/i);
     });
 
     it("fires the success toast first so the training reminder lands on top of the sonner stack", async () => {
