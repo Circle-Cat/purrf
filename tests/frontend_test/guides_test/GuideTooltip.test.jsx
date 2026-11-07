@@ -42,6 +42,16 @@ describe("GuideTooltip", () => {
     expect(screen.getByText("Click your avatar.")).toBeInTheDocument();
   });
 
+  test("shows a list body as one item per sentence", () => {
+    renderTooltip({ body: ["First sentence.", "Second sentence."] });
+
+    const items = screen.getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "First sentence.",
+      "Second sentence.",
+    ]);
+  });
+
   test("offers Next but not Back or Done on the first step", async () => {
     const handlers = renderTooltip();
 

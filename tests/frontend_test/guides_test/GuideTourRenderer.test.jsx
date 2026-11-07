@@ -65,4 +65,18 @@ describe("GuideTourRenderer", () => {
     expect(handlers.onDismiss).toHaveBeenCalledTimes(1);
     expect(handlers.onNext).not.toHaveBeenCalled();
   });
+
+  test("passes a list body through to the tooltip", async () => {
+    renderTour({
+      steps: [
+        STEPS[0],
+        { ...STEPS[1], body: ["One sentence.", "Another sentence."] },
+      ],
+    });
+    await screen.findByText("Second title");
+
+    expect(
+      screen.getAllByRole("listitem").map((item) => item.textContent),
+    ).toEqual(["One sentence.", "Another sentence."]);
+  });
 });

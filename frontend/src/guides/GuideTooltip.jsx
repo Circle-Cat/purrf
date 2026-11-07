@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
  *
  * @param {Object} props
  * @param {React.ReactNode} props.title - The step's heading.
- * @param {React.ReactNode} props.body - The step's text.
+ * @param {React.ReactNode | string[]} props.body - The step's text; an
+ *   array is shown as a list, one entry per sentence.
  * @param {boolean} props.showBack - Whether a previous step exists.
  * @param {boolean} props.isLastStep - Shows Done instead of Next.
  * @param {boolean} props.showDismiss - Shows the "Don't show again" link.
@@ -50,7 +51,15 @@ const GuideTooltip = ({
       <X />
     </Button>
     <h2 className="pr-8 text-base font-semibold">{title}</h2>
-    <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+    {Array.isArray(body) ? (
+      <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+        {body.map((sentence) => (
+          <li key={sentence}>{sentence}</li>
+        ))}
+      </ul>
+    ) : (
+      <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+    )}
     <div className="mt-4 flex items-center gap-2">
       {showDismiss && (
         <button

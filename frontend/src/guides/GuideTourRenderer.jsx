@@ -40,8 +40,8 @@ const JoyrideTooltip = ({ step, tooltipProps }) => {
  * fully controlled by the caller.
  *
  * @param {Object} props
- * @param {Array<{anchor: string, title: string, body: string}>} props.steps -
- *   Every step of the guide.
+ * @param {Array<{anchor: string, title: string, body: string | string[]}>} props.steps -
+ *   Every step of the guide, with bodies already resolved.
  * @param {number} props.stepIndex - The step to show.
  * @param {boolean} props.showBack - Whether Back is offered.
  * @param {boolean} props.isLastStep - Whether Done replaces Next.

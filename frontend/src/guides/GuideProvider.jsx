@@ -15,6 +15,7 @@ import { GUIDES } from "@/guides/definitions";
 import { GuideContext } from "@/guides/GuideContext";
 import GuideTourRenderer from "@/guides/GuideTourRenderer";
 import { hasAutoStarted, markAutoStarted } from "@/guides/session";
+import { resolveSteps } from "@/guides/steps";
 
 // How long a `before` action that changed the layout gets to settle before
 // the step is highlighted. Matches the sidebar's `duration-200` width
@@ -109,8 +110,16 @@ export const GuideProvider = ({ children, actions = {}, guides = GUIDES }) => {
   }, []);
 
   const begin = useCallback(
-    (guide, manual) => {
+    (definition, manual) => {
       if (tourRef.current) return false;
+      const { permissions: perms, flags: flagValues } = latest.current;
+      const guide = {
+        ...definition,
+        steps: resolveSteps(definition.steps, {
+          permissions: perms,
+          flags: flagValues,
+        }),
+      };
       const first = findStep(guide.steps, 0, 1);
       if (first === -1) return false;
       const base = { guide, manual, pathname: latest.current.pathname };

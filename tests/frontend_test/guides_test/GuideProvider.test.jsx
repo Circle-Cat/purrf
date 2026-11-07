@@ -17,6 +17,7 @@ import { useGuides } from "@/guides/GuideContext";
 import { resetGuideSession } from "@/guides/session";
 import { listGuideProgress, recordGuideProgress } from "@/api/guidesApi";
 import { useAuth } from "@/context/auth";
+import { PERMISSIONS } from "@/constants/Permissions";
 
 vi.mock("@/api/guidesApi", () => ({
   listGuideProgress: vi.fn(),
@@ -44,6 +45,9 @@ vi.mock("@/guides/GuideTourRenderer", () => ({
   }) => (
     <div data-testid="tour" data-step={stepIndex}>
       <p>{steps[stepIndex].title}</p>
+      <div data-testid="tour-body">
+        {[].concat(steps[stepIndex].body).join(" | ")}
+      </div>
       <button onClick={onClose}>Close tour</button>
       {showDismiss && <button onClick={onDismiss}>Don't show again</button>}
       {showBack && <button onClick={onBack}>Back</button>}
@@ -95,7 +99,7 @@ const engineTree = ({ anchors, guides, actions, flagState }) => (
 );
 
 const renderEngine = ({
-  anchors = ["avatar-menu", "nav-open-positions"],
+  anchors = ["avatar-menu", "nav-group-apply"],
   guides,
   actions,
   flagState = FLAG_ON,
@@ -233,7 +237,7 @@ describe("GuideProvider", () => {
 
   test("waits for LaunchDarkly to answer before starting", async () => {
     listGuideProgress.mockResolvedValue([]);
-    const anchors = ["avatar-menu", "nav-open-positions"];
+    const anchors = ["avatar-menu", "nav-group-apply"];
     const { rerender } = renderEngine({
       flagState: { flags: { "onboarding-guides": true }, ready: false },
     });
@@ -269,7 +273,7 @@ describe("GuideProvider", () => {
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Open Positions");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("That's it");
+    await screen.findByText("That's it for now");
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
     expect(recordGuideProgress).toHaveBeenCalledTimes(1);
@@ -414,7 +418,7 @@ describe("GuideProvider", () => {
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
       await screen.findByText("Open Positions");
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
-      await screen.findByText("That's it");
+      await screen.findByText("That's it for now");
       await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
       expect(recordGuideProgress).toHaveBeenCalledTimes(1);
@@ -453,14 +457,15 @@ describe("GuideProvider", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
-      expect(await screen.findByText("That's it")).toBeInTheDocument();
-      expect(screen.getByTestId("tour")).toHaveAttribute("data-step", "2");
+      expect(await screen.findByText("That's it for now")).toBeInTheDocument();
+      // Index into the resolved steps: avatar, me, apply, closing.
+      expect(screen.getByTestId("tour")).toHaveAttribute("data-step", "3");
       expect(screen.queryByText("Open Positions")).not.toBeInTheDocument();
     });
 
     test("starts at the first step whose anchor exists", async () => {
       listGuideProgress.mockResolvedValue([]);
-      renderEngine({ anchors: ["nav-open-positions"] });
+      renderEngine({ anchors: ["nav-group-apply"] });
 
       expect(await screen.findByText("Open Positions")).toBeInTheDocument();
       // No later step's anchor exists, so this one is the last.
@@ -468,6 +473,54 @@ describe("GuideProvider", () => {
       expect(
         screen.queryByRole("button", { name: "Back" }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("steps built from the sidebar", () => {
+    const ALL_ANCHORS = [
+      "avatar-menu",
+      "nav-group-me",
+      "nav-group-apply",
+      "nav-group-recruiting",
+      "nav-group-mentorship",
+      "nav-group-activity",
+      "nav-group-admin",
+    ];
+
+    test("lists only the entries the viewer can see", async () => {
+      useAuth.mockReturnValue({
+        ...SIGNED_IN,
+        permissions: [
+          PERMISSIONS.RECRUITING_AUDIT_READ,
+          PERMISSIONS.RECRUITING_INTERVIEW_EVALUATE,
+          PERMISSIONS.INTERNAL_ACTIVITY_READ,
+        ],
+      });
+      listGuideProgress.mockResolvedValue([]);
+      renderEngine({ anchors: ALL_ANCHORS });
+      await screen.findByText("Your account menu");
+
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await screen.findByText("Your dashboard");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await screen.findByText("Open Positions");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+      expect(await screen.findByText("Recruiting")).toBeInTheDocument();
+      expect(screen.getByTestId("tour-body")).toHaveTextContent(
+        "My Interview Evaluations lists the interviews you were assigned to score. | " +
+          "Recruiting Audit reports on applications across postings.",
+      );
+
+      // Mentorship's anchor is on the page, but the viewer sees none of it.
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByText("Activity data")).toBeInTheDocument();
+      expect(screen.getByTestId("tour-body")).toHaveTextContent(
+        /^DataSearch looks up work activity by person and date\.$/,
+      );
+
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByText("That's it for now")).toBeInTheDocument();
     });
   });
 
