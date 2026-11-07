@@ -80,6 +80,7 @@ const Sidebar = () => {
       label: "Open Positions",
       to: ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
       permissions: [],
+      tourAnchor: "nav-open-positions",
     },
     {
       label: "Inbox",
@@ -144,6 +145,7 @@ const Sidebar = () => {
                   <NavLink
                     to={item.to}
                     end
+                    data-tour={item.tourAnchor}
                     className={({ isActive }) =>
                       `flex items-center rounded-xl px-4 py-3 text-sm font-medium no-underline transition-all ${
                         isActive

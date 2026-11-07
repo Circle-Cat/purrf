@@ -227,6 +227,9 @@ export const API_ENDPOINTS = {
   INBOX_PEOPLE: "/inbox/people",
   INBOX_ATTACHMENT: (id, messageId, index) =>
     `/inbox/threads/${id}/messages/${messageId}/attachments/${index}`,
+  GUIDES_PROGRESS: "/guides/progress",
+  GUIDE_PROGRESS: (guideKey) =>
+    `/guides/progress/${encodeURIComponent(guideKey)}`,
 };
 
 /**

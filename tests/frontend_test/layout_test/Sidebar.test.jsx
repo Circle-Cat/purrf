@@ -53,6 +53,16 @@ describe("Sidebar Component", () => {
     );
   });
 
+  test("marks Open Positions as the tour's anchor, and only it", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_APPLICATION_ADVANCE]);
+
+    expect(screen.getByText("Open Positions").closest("a")).toHaveAttribute(
+      "data-tour",
+      "nav-open-positions",
+    );
+    expect(document.querySelectorAll("[data-tour]")).toHaveLength(1);
+  });
+
   test("hides Applications Board for a user with no permissions", () => {
     renderSidebar([]);
 
