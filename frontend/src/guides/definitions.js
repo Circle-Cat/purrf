@@ -39,13 +39,13 @@ export const GUIDES = [
       {
         anchor: "nav-group-me",
         title: "Your home page",
-        body: "Personal Dashboard is where you start. It shows your applications and everything else you take part in at Circle Cat.",
+        navGroup: "me",
         before: "expand-sidebar",
       },
       {
         anchor: "nav-group-apply",
         title: "Open Positions",
-        body: "Every Circle Cat activity and job opening is listed here. Open one to read the details and apply.",
+        navGroup: "apply",
         before: "expand-sidebar",
       },
       {

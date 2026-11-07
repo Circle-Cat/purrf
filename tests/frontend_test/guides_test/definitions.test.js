@@ -38,10 +38,12 @@ describe("GUIDES", () => {
     ]);
   });
 
-  test("builds the body of each staff group step from that group", () => {
+  test("builds the body of every sidebar group step from that group", () => {
     const built = welcome.steps.filter((step) => step.navGroup);
 
     expect(built.map((step) => step.navGroup)).toEqual([
+      "me",
+      "apply",
       "recruiting",
       "mentorship",
       "activity",

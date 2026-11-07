@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
  *
  * @param {Object} props
  * @param {React.ReactNode} props.title - The step's heading.
- * @param {React.ReactNode | string[]} props.body - The step's text; an
- *   array is shown as a list, one entry per sentence.
+ * @param {React.ReactNode | Array<{label: string, text: string}>} props.body -
+ *   The step's text. An array holds one line per sidebar entry, its label in
+ *   bold; several lines are shown as a list.
  * @param {boolean} props.showBack - Whether a previous step exists.
  * @param {boolean} props.isLastStep - Shows Done instead of Next.
  * @param {boolean} props.showDismiss - Shows the "Don't show again" link.
@@ -22,6 +23,13 @@ import { Button } from "@/components/ui/button";
  *   tour library puts focus when a step opens.
  * @returns {JSX.Element}
  */
+const entryLine = ({ label, text }) => (
+  <span key={label}>
+    <strong className="font-semibold text-popover-foreground">{label}</strong>
+    {text}
+  </span>
+);
+
 const GuideTooltip = ({
   title,
   body,
@@ -51,12 +59,16 @@ const GuideTooltip = ({
       <X />
     </Button>
     <h2 className="pr-8 text-base font-semibold">{title}</h2>
-    {Array.isArray(body) ? (
+    {Array.isArray(body) && body.length > 1 ? (
       <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-muted-foreground">
-        {body.map((sentence) => (
-          <li key={sentence}>{sentence}</li>
+        {body.map((line) => (
+          <li key={line.label}>{entryLine(line)}</li>
         ))}
       </ul>
+    ) : Array.isArray(body) ? (
+      <p className="mt-2 text-sm text-muted-foreground">
+        {body.map((line) => entryLine(line))}
+      </p>
     ) : (
       <p className="mt-2 text-sm text-muted-foreground">{body}</p>
     )}

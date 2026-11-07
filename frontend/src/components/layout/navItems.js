@@ -30,6 +30,8 @@ export const NAV_GROUPS = [
         label: "Personal Dashboard",
         to: ROUTE_PATHS.PERSONAL_DASHBOARD,
         permissions: [],
+        tourText:
+          "Personal Dashboard is where you start. It shows your applications and everything else you take part in at Circle Cat.",
       },
     ],
   },
@@ -40,6 +42,8 @@ export const NAV_GROUPS = [
         label: "Open Positions",
         to: ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
         permissions: [],
+        tourText:
+          "Open Positions lists every Circle Cat activity and job opening. Open one to read the details and apply.",
       },
     ],
   },

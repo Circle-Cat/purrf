@@ -42,14 +42,31 @@ describe("GuideTooltip", () => {
     expect(screen.getByText("Click your avatar.")).toBeInTheDocument();
   });
 
-  test("shows a list body as one item per sentence", () => {
-    renderTooltip({ body: ["First sentence.", "Second sentence."] });
+  test("lists several entries, one per line, with each label in bold", () => {
+    renderTooltip({
+      body: [
+        { label: "Inbox", text: " holds team mail." },
+        { label: "Job Postings", text: " is where postings live." },
+      ],
+    });
 
     const items = screen.getAllByRole("listitem");
     expect(items.map((item) => item.textContent)).toEqual([
-      "First sentence.",
-      "Second sentence.",
+      "Inbox holds team mail.",
+      "Job Postings is where postings live.",
     ]);
+    expect(screen.getByText("Inbox").tagName).toBe("STRONG");
+    expect(screen.getByText("Job Postings").tagName).toBe("STRONG");
+  });
+
+  test("shows a single entry as a sentence, not a list", () => {
+    renderTooltip({
+      body: [{ label: "Open Positions", text: " lists every opening." }],
+    });
+
+    expect(screen.queryByRole("listitem")).toBeNull();
+    expect(screen.getByText("Open Positions").tagName).toBe("STRONG");
+    expect(screen.getByText(/lists every opening\./)).toBeInTheDocument();
   });
 
   test("offers Next but not Back or Done on the first step", async () => {

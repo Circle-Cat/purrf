@@ -46,7 +46,12 @@ vi.mock("@/guides/GuideTourRenderer", () => ({
     <div data-testid="tour" data-step={stepIndex}>
       <p>{steps[stepIndex].title}</p>
       <div data-testid="tour-body">
-        {[].concat(steps[stepIndex].body).join(" | ")}
+        {[]
+          .concat(steps[stepIndex].body)
+          .map((line) =>
+            typeof line === "string" ? line : `${line.label}${line.text}`,
+          )
+          .join(" | ")}
       </div>
       <button onClick={onClose}>Close tour</button>
       {showDismiss && <button onClick={onDismiss}>Don't show again</button>}

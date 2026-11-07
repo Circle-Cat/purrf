@@ -32,11 +32,31 @@ describe("resolveSteps", () => {
       "Administration",
     ]);
     expect(steps[1].body).toEqual([
-      "Job Postings is where postings are drafted, reviewed and published.",
-      "Recruiting Audit reports on applications across postings.",
+      {
+        label: "Job Postings",
+        text: " is where postings are drafted, reviewed and published.",
+      },
+      {
+        label: "Recruiting Audit",
+        text: " reports on applications across postings.",
+      },
     ]);
     expect(steps[2].body).toEqual([
-      "User Permissions grants and removes permissions.",
+      { label: "User Permissions", text: " grants and removes permissions." },
+    ]);
+  });
+
+  test("splits each line into the label and the rest of its text", () => {
+    const [, recruiting] = resolveSteps(STEPS, {
+      permissions: [PERMISSIONS.RECRUITING_INTERVIEW_EVALUATE],
+      flags: {},
+    });
+
+    expect(recruiting.body).toEqual([
+      {
+        label: "My Interview Evaluations",
+        text: " lists the interviews you were assigned to score.",
+      },
     ]);
   });
 
@@ -54,7 +74,10 @@ describe("resolveSteps", () => {
 
     expect(steps.map((step) => step.title)).toEqual(["Fixed", "Activity"]);
     expect(steps[1].body).toEqual([
-      "DataSearch looks up work activity by person and date.",
+      {
+        label: "DataSearch",
+        text: " looks up work activity by person and date.",
+      },
     ]);
   });
 
@@ -70,7 +93,10 @@ describe("resolveSteps", () => {
         flags: { [FEATURE_FLAGS.LEAVE_MANAGEMENT]: true },
       })[1].body,
     ).toEqual([
-      "Leave Administration manages company holidays and everyone's leave balances.",
+      {
+        label: "Leave Administration",
+        text: " manages company holidays and everyone's leave balances.",
+      },
     ]);
   });
 

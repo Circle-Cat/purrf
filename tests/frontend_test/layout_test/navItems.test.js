@@ -20,10 +20,8 @@ describe("NAV_GROUPS", () => {
     ]);
   });
 
-  test("gives every staff entry a tour sentence", () => {
-    for (const group of NAV_GROUPS.filter(
-      (g) => g.key !== "me" && g.key !== "apply",
-    )) {
+  test("gives every entry a tour sentence that starts with its label", () => {
+    for (const group of NAV_GROUPS) {
       for (const item of group.items) {
         expect(item.tourText).toMatch(new RegExp(`^${item.label} .+\\.$`));
       }

@@ -70,7 +70,13 @@ describe("GuideTourRenderer", () => {
     renderTour({
       steps: [
         STEPS[0],
-        { ...STEPS[1], body: ["One sentence.", "Another sentence."] },
+        {
+          ...STEPS[1],
+          body: [
+            { label: "One", text: " sentence." },
+            { label: "Another", text: " sentence." },
+          ],
+        },
       ],
     });
     await screen.findByText("Second title");
