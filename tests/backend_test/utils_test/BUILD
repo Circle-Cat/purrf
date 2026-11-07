@@ -43,6 +43,7 @@ py_test(
     deps = [
         "//backend/common:api_endpoints",
         "//backend/notification_management:delivery_controller",
+        "//backend/onboarding_guide:guide_progress_controller",
         "//backend/recruiting",
         "//backend/utils:fast_app_factory",
         "@pypi//httpx",
