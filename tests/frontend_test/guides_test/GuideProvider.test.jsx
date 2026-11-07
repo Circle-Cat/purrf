@@ -501,7 +501,7 @@ describe("GuideProvider", () => {
       await screen.findByText("Your account menu");
 
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
-      await screen.findByText("Your dashboard");
+      await screen.findByText("Your home page");
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
       await screen.findByText("Open Positions");
       await userEvent.click(screen.getByRole("button", { name: "Next" }));

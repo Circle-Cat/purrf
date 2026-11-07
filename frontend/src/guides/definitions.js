@@ -38,8 +38,8 @@ export const GUIDES = [
       },
       {
         anchor: "nav-group-me",
-        title: "Your dashboard",
-        body: "Personal Dashboard gathers what is yours: your applications, and your mentorship and time off if they apply to you.",
+        title: "Your home page",
+        body: "Personal Dashboard is where you start. It shows your applications and everything else you take part in at Circle Cat.",
         before: "expand-sidebar",
       },
       {

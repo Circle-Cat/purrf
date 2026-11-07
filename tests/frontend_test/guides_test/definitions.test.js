@@ -15,7 +15,7 @@ describe("GUIDES", () => {
   test("walks the avatar menu, then each sidebar group, then closes", () => {
     expect(welcome.steps.map(({ anchor, title }) => [anchor, title])).toEqual([
       ["avatar-menu", "Your account menu"],
-      ["nav-group-me", "Your dashboard"],
+      ["nav-group-me", "Your home page"],
       ["nav-group-apply", "Open Positions"],
       ["nav-group-recruiting", "Recruiting"],
       ["nav-group-mentorship", "Mentorship"],
