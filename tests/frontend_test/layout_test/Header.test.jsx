@@ -236,7 +236,7 @@ describe("Header Component", () => {
     });
   });
 
-  test('should go to the sign in & security settings when "Settings" is clicked', async () => {
+  test('should go to the sign in & security settings when "Emails & sign-in" is clicked', async () => {
     const user = userEvent.setup();
     const mockUserName = "Alice";
     getCookie.mockReturnValue("some-jwt-cookie-string");
@@ -259,7 +259,7 @@ describe("Header Component", () => {
     );
     await user.click(userChar.closest("button"));
     const settingsItem = await screen.findByRole("menuitem", {
-      name: "Settings",
+      name: "Emails & sign-in",
     });
 
     await user.click(settingsItem);
@@ -311,13 +311,13 @@ describe("Header Component", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  test("should call performGlobalLogout when logout is clicked", async () => {
+  test("should call performGlobalLogout when Log out is clicked", async () => {
     setup("some-jwt", "Alice");
     const user = userEvent.setup();
 
     await user.click(screen.getByText("A"));
 
-    const logoutItem = await screen.findByText("Logout");
+    const logoutItem = await screen.findByText("Log out");
     await user.click(logoutItem);
 
     expect(performGlobalLogout).toHaveBeenCalled();
