@@ -145,6 +145,24 @@ describe("adminAccountsApi", () => {
     );
   });
 
+  it("names the application page a block request came from", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await createBlockRequest(
+      { userId: 7, reason: "second no-show", reviewerId: 9 },
+      "recruiting_application",
+      4417,
+    );
+
+    expect(request.post).toHaveBeenCalledWith(
+      "/block-requests",
+      { userId: 7, reason: "second no-show", reviewerId: 9 },
+      {
+        params: { raised_from: "recruiting_application", application_id: 4417 },
+      },
+    );
+  });
+
   it("lists only the caller's own pending requests", async () => {
     request.get.mockResolvedValue({ data: [] });
 

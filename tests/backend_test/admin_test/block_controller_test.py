@@ -269,6 +269,21 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(kwargs["user_id"], TARGET)
         self.assertEqual(kwargs["reviewer_id"], REVIEWER)
         self.assertEqual(kwargs["raised_from"], "recruiting_application")
+        self.assertIsNone(kwargs["application_id"])
+
+    def test_raise_passes_the_application_it_came_from(self):
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
+
+        resp = client.post(
+            f"{BLOCK_REQUESTS_ENDPOINT}"
+            "?raised_from=recruiting_application&application_id=4417",
+            json={"userId": TARGET, "reason": "second no-show", "reviewerId": REVIEWER},
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            self.service.raise_request.await_args.kwargs["application_id"], 4417
+        )
 
     def test_raise_accepts_a_request_without_a_reason(self):
         """The reason is optional, as on every approval request."""
