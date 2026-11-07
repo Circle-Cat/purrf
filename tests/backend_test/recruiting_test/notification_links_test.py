@@ -6,6 +6,7 @@ from backend.admin.block_service import (
     BLOCK_TARGET,
     BLOCK_USER,
     RAISE_PERMISSION_BY_SOURCE,
+    RECRUITING_APPLICATION_SOURCE,
 )
 from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.communication_enums import ContextType
@@ -83,6 +84,7 @@ END_PAIR_REQUEST = 8803
 LEAVE_REQUEST = 8804
 MENTORSHIP_BLOCK = 8805
 RECRUITING_BLOCK = 8806
+RECRUITING_BLOCK_ON_APPLICATION = 8807
 
 
 def _user(user_id: int, *, is_super_admin: bool = False) -> UsersEntity:
@@ -565,6 +567,18 @@ class NotificationLinksTest(BaseRepositoryTestLib):
                 RAISER,
                 REVIEWER,
             ),
+            _request(
+                RECRUITING_BLOCK_ON_APPLICATION,
+                BLOCK_USER,
+                BLOCK_TARGET,
+                str(CANDIDATE),
+                {
+                    "raised_from": "recruiting_application",
+                    "application_id": APPLICATION,
+                },
+                RAISER,
+                REVIEWER,
+            ),
         ])
 
     async def test_a_block_request_opens_the_account(self):
@@ -612,7 +626,42 @@ class NotificationLinksTest(BaseRepositoryTestLib):
             f"/mentorship-management/participants/{TARGET}",
         )
 
-    async def test_a_decided_block_has_no_link_for_a_recruiting_raiser(self):
+    async def test_a_decided_block_opens_the_application_for_a_recruiting_raiser(self):
+        await self._blocks()
+        for decision in ("approved", "rejected"):
+            with self.subTest(decision):
+                event = _event(
+                    UserEvent.BLOCK_REQUEST_DECIDED,
+                    USER_SUBJECT_TYPE,
+                    CANDIDATE,
+                    {
+                        "requestId": RECRUITING_BLOCK_ON_APPLICATION,
+                        "decision": decision,
+                    },
+                )
+                self.assertEqual(
+                    await self._link(event, RAISER),
+                    f"/recruiting/applications/{APPLICATION}",
+                )
+
+    async def test_a_decided_recruiting_block_still_opens_the_account_for_the_reviewer(
+        self,
+    ):
+        await self._blocks()
+        event = _event(
+            UserEvent.BLOCK_REQUEST_DECIDED,
+            USER_SUBJECT_TYPE,
+            CANDIDATE,
+            {"requestId": RECRUITING_BLOCK_ON_APPLICATION, "decision": "rejected"},
+        )
+
+        self.assertEqual(
+            await self._link(event, REVIEWER), f"/admin/accounts?user_id={CANDIDATE}"
+        )
+
+    async def test_a_decided_block_has_no_link_for_a_recruiting_raiser_without_an_application(
+        self,
+    ):
         await self._blocks()
         event = _event(
             UserEvent.BLOCK_REQUEST_DECIDED,
@@ -689,9 +738,13 @@ class NotificationLinkConstantsTest(unittest.TestCase):
         self.assertEqual(notification_links.PUBLISH_MATCHING, PUBLISH_MATCHING)
         self.assertEqual(notification_links.END_PAIR, END_PAIR)
 
-    def test_the_mentorship_source_is_a_block_source(self):
+    def test_the_block_sources_are_the_services(self):
         self.assertIn(
             notification_links.MENTORSHIP_PARTICIPANT_SOURCE, RAISE_PERMISSION_BY_SOURCE
+        )
+        self.assertEqual(
+            notification_links.RECRUITING_APPLICATION_SOURCE,
+            RECRUITING_APPLICATION_SOURCE,
         )
 
 
