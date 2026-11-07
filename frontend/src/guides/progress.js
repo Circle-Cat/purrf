@@ -79,11 +79,11 @@ export const qualifyingTasks = (guides, viewer) =>
  * reject the location, any `route` matches, and it has not started on its own
  * this session.
  *
- * A task qualifies on its own, for a viewer who saw the basics tour (its row
- * completed or dismissed) before the task applied to them, when its audience
- * includes the viewer, its row is absent or snoozed, it has not started on its
- * own this session, and the viewer is on its first segment that needs no
- * params. Without a basics row seen, the basics tour leads into the tasks
+ * A task is offered (in the chooser, not run) to a viewer who saw the basics
+ * tour (its row completed or dismissed) before the task applied to them, when
+ * its audience includes the viewer, its row is absent or snoozed, it has not
+ * been offered or run this session, and the viewer is on its first segment
+ * that needs no params. Without a basics row seen, the basics tour leads into the tasks
  * instead. A task offered here, or already walked this session, keeps its
  * segments from also showing as page intros.
  *
@@ -96,7 +96,7 @@ export const qualifyingTasks = (guides, viewer) =>
  * @param {Object} viewer - `{ permissions, flags, mentorshipRoles }`.
  * @param {{pathname: string}} location - Where the viewer is.
  * @returns {Array<{guide: Object, segment?: Object, task?: boolean}>} A page
- *   intro carries the segment it shows; a task to run whole has `task`.
+ *   intro carries the segment it shows; a task to offer has `task`.
  */
 export const autoStartCandidates = (guides, progress, viewer, location) => {
   const unseen = (key) =>

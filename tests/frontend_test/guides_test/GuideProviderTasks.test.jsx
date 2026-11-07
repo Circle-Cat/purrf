@@ -247,6 +247,14 @@ const finishBasics = async () => {
   await click("Done");
 };
 
+const CHOOSER = "What would you like to do next?";
+
+// Picks a task in the chooser, which is the only way a task starts.
+const pick = async (title = "Do alpha") => {
+  const dialog = await screen.findByRole("dialog", { name: CHOOSER });
+  await userEvent.click(within(dialog).getByRole("button", { name: title }));
+};
+
 const path = () => screen.getByTestId("path").textContent;
 
 describe("GuideProvider tasks", () => {
@@ -265,9 +273,25 @@ describe("GuideProvider tasks", () => {
   });
 
   describe("after the basics tour", () => {
-    test("walks the one qualifying task across its pages", async () => {
+    test("offers even a single task, which waits to be picked", async () => {
       renderTasks();
       await finishBasics();
+
+      const dialog = await screen.findByRole("dialog", { name: CHOOSER });
+      expect(
+        within(dialog)
+          .getAllByRole("button")
+          .map((button) => button.textContent),
+      ).toEqual(["Do alpha", "I'll explore on my own", "Close"]);
+      await pause();
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(path()).toBe("/start");
+    });
+
+    test("walks the picked task across its pages", async () => {
+      renderTasks();
+      await finishBasics();
+      await pick();
 
       expect(await screen.findByText("Home one")).toBeInTheDocument();
       expect(path()).toBe("/home");
@@ -290,6 +314,9 @@ describe("GuideProvider tasks", () => {
         ["task-alpha", "completed"],
       ]);
       expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      // Nothing left to offer, so the chooser does not come back.
+      await pause();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
     test("skips a segment whose params cannot be resolved", async () => {
@@ -304,6 +331,7 @@ describe("GuideProvider tasks", () => {
         },
       });
       await finishBasics();
+      await pick();
       await screen.findByText("Home one");
       await click("Next");
       await screen.findByText("Home two");
@@ -329,6 +357,7 @@ describe("GuideProvider tasks", () => {
         },
       });
       await finishBasics();
+      await pick();
 
       expect(await screen.findByText("Home one")).toBeInTheDocument();
     });
@@ -350,6 +379,7 @@ describe("GuideProvider tasks", () => {
       ];
       renderTasks({ guides });
       await finishBasics();
+      await pick();
 
       expect(await screen.findByText("Home one")).toBeInTheDocument();
       expect(path()).toBe("/home");
@@ -359,6 +389,7 @@ describe("GuideProvider tasks", () => {
     test("a route change the viewer makes ends the task as snoozed", async () => {
       renderTasks();
       await finishBasics();
+      await pick();
       await screen.findByText("Home one");
 
       await click("Go /elsewhere");
@@ -379,6 +410,7 @@ describe("GuideProvider tasks", () => {
       await pause();
 
       expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(path()).toBe("/start");
       expect(recordGuideProgress.mock.calls).toEqual([
         ["welcome", "completed"],
@@ -412,9 +444,7 @@ describe("GuideProvider tasks", () => {
       renderTasks({ guides: [BASICS, ALPHA, GAMMA] });
       await finishBasics();
 
-      const dialog = await screen.findByRole("dialog", {
-        name: "What would you like to do?",
-      });
+      const dialog = await screen.findByRole("dialog", { name: CHOOSER });
       expect(
         within(dialog)
           .getAllByRole("button")
@@ -616,6 +646,7 @@ describe("GuideProvider tasks", () => {
     });
 
     test("count again, with their task, after a replay of the basics tour", async () => {
+      // The task is offered again rather than its page intro shown.
       listGuideProgress.mockResolvedValue([
         { guideKey: "welcome", status: "completed", snoozeCount: 0 },
         { ...TASK_TURNED_DOWN, updatedAt: "2026-11-01T10:00:00Z" },
@@ -644,6 +675,7 @@ describe("GuideProvider tasks", () => {
       await click("Go /start");
       await click("Go /home");
 
+      await pick();
       expect(await screen.findByText("Home one")).toBeInTheDocument();
     });
 
@@ -684,13 +716,23 @@ describe("GuideProvider tasks", () => {
       snoozeCount: 0,
     };
 
-    test("runs whole, once, on the page it starts on", async () => {
+    test("offers it, once, on the page it starts on", async () => {
       listGuideProgress.mockResolvedValue([SEEN_BASICS]);
       renderTasks();
       await settle();
-      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
       await click("Go /home");
+
+      const dialog = await screen.findByRole("dialog", { name: CHOOSER });
+      expect(
+        within(dialog).getByRole("button", { name: "Do alpha" }),
+      ).toBeInTheDocument();
+      // Neither the task nor this page's intro starts by itself.
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Do alpha" }),
+      );
 
       expect(await screen.findByText("Home one")).toBeInTheDocument();
       // The whole task, not the page intro: the item page is still ahead.
@@ -706,11 +748,13 @@ describe("GuideProvider tasks", () => {
       await click("Go /home");
       await pause();
       expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    test("walks every segment and records completion", async () => {
+    test("walks every segment once picked and records completion", async () => {
       listGuideProgress.mockResolvedValue([SEEN_BASICS]);
       renderTasks({ at: "/home" });
+      await pick();
 
       await screen.findByText("Home one");
       await click("Next");
@@ -725,9 +769,25 @@ describe("GuideProvider tasks", () => {
       ]);
     });
 
+    test("closing the chooser writes nothing and offers nothing more", async () => {
+      listGuideProgress.mockResolvedValue([SEEN_BASICS]);
+      renderTasks({ at: "/home" });
+      const dialog = await screen.findByRole("dialog", { name: CHOOSER });
+
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Close" }),
+      );
+      await pause();
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(recordGuideProgress).not.toHaveBeenCalled();
+    });
+
     test("does not follow a run of the same task earlier this session", async () => {
       renderTasks();
       await finishBasics();
+      await pick();
       await screen.findByText("Home one");
       await click("Close tour");
 
@@ -748,6 +808,7 @@ describe("GuideProvider tasks", () => {
       await pause();
 
       expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
     test("is left to the basics tour while that has not been seen", async () => {
@@ -758,7 +819,7 @@ describe("GuideProvider tasks", () => {
     });
 
     test.each(["completed", "dismissed"])(
-      "does not start once its row is %s",
+      "is not offered once its row is %s",
       async (status) => {
         listGuideProgress.mockResolvedValue([
           SEEN_BASICS,
@@ -769,15 +830,17 @@ describe("GuideProvider tasks", () => {
         await settle();
 
         expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       },
     );
 
-    test("starts again in a later session after a snooze", async () => {
+    test("is offered again in a later session after a snooze", async () => {
       listGuideProgress.mockResolvedValue([
         SEEN_BASICS,
         { guideKey: "task-alpha", status: "snoozed", snoozeCount: 1 },
       ]);
       renderTasks({ at: "/home" });
+      await pick();
 
       expect(await screen.findByText("Home one")).toBeInTheDocument();
       await click("Next");
@@ -796,7 +859,7 @@ describe("GuideProvider tasks", () => {
       };
       renderTasks({ guides: [BASICS, ALPHA, beta], at: "/home" });
 
-      const dialog = await screen.findByRole("dialog");
+      const dialog = await screen.findByRole("dialog", { name: CHOOSER });
       expect(
         within(dialog).getByRole("button", { name: "Do alpha" }),
       ).toBeInTheDocument();

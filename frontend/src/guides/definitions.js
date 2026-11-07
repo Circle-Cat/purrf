@@ -25,8 +25,10 @@
  * engine navigates there itself) and, when that pattern has params,
  * `params(viewer)` to fill them, which may read the page the previous
  * segment showed; a segment whose route cannot be resolved, or whose anchors
- * do not render in time, is skipped. A task starts only after the basics
- * tour, but each of its segments doubles as the intro of its page: opened by
+ * do not render in time, is skipped. A task runs only when the viewer picks
+ * it from the chooser offered after the basics tour (or once they newly
+ * qualify for it), but each of its segments doubles as the intro of its
+ * page: opened by
  * the viewer, the page shows that segment alone, stored under
  * `page-<segment key>`, until the viewer has seen it or completed the task.
  *

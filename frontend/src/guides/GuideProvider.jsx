@@ -264,7 +264,7 @@ const createEngine = ({ latest, setTour, setChooser }) => {
 
   // `offered` is the chooser's list when the task was picked from one, so
   // the chooser comes back with the same tasks afterwards.
-  const startTask = (task, manual, offered) => {
+  const startTask = (task, manual, offered = null) => {
     const after = offered
       ? () => offerTasks(manual, offered)
       : () => blockAutoStartOn(here());
@@ -289,16 +289,18 @@ const createEngine = ({ latest, setTour, setChooser }) => {
     );
   };
 
-  // What follows the basics tour: the one task the viewer qualifies for, or
-  // a choice between several. `offered` replaces the qualifying tasks.
+  // What follows the basics tour: a choice of the tasks the viewer
+  // qualifies for and has not completed or turned down, even when there is
+  // only one; a task never starts until it is picked. With `offered`, the
+  // chooser comes back with that list while any of it is still to do.
   const offerTasks = (manual, offered) => {
-    const tasks = offered ?? qualifyingTasks(latest.current.guides, viewer());
-    if (tasks.length === 0) {
+    const tasks =
+      offered ??
+      qualifyingTasks(latest.current.guides, viewer()).filter(
+        (task) => !isSeen(progress.get(task.key)),
+      );
+    if (!tasks.some((task) => !isSeen(progress.get(task.key)))) {
       blockAutoStartOn(here());
-      return;
-    }
-    if (tasks.length === 1) {
-      startTask(tasks[0], manual, null);
       return;
     }
     openChooser(manual, tasks);
@@ -332,7 +334,8 @@ const createEngine = ({ latest, setTour, setChooser }) => {
         .map(({ guide }) => guide);
       for (const { guide, segment, task } of candidates) {
         if (busy() || here() !== location.pathname) return;
-        if (task && newTasks.length > 1) {
+        // A task the viewer newly qualifies for is offered, never started.
+        if (task) {
           for (const offered of newTasks) markAutoStarted(offered.key);
           openChooser(false, newTasks);
           return;
@@ -359,7 +362,7 @@ const createEngine = ({ latest, setTour, setChooser }) => {
       }
       if (busy()) return;
       if (guide.type === "task") {
-        startTask(guide, true, null);
+        startTask(guide, true);
         return;
       }
       begin(
@@ -445,9 +448,10 @@ const createEngine = ({ latest, setTour, setChooser }) => {
  * own until the viewer changes page; each guide and page intro starts on its
  * own at most once per session; an auto-started basics tour or page intro
  * needs two visible steps. When the basics tour (`basics: true`) is completed,
- * the tasks the viewer qualifies for follow: one starts at once, several are
- * offered in a chooser. A viewer who saw the basics tour before qualifying
- * for a task gets that task on its own, once, on the page it starts on.
+ * the tasks the viewer qualifies for are offered in a chooser, even a single
+ * one; a task starts only when picked. A viewer who saw the basics tour
+ * before qualifying for a task is offered it the same way, once per session,
+ * on the page it starts on.
  * Replaying the basics tour makes page intros and tasks
  * count as unseen again (see RESET_KEY).
  *

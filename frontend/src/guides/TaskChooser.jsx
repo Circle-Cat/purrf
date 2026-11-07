@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/dialog";
 
 /**
- * Asks which task to walk through after the basics tour, when the viewer
- * qualifies for more than one. Tasks already completed carry a check.
+ * Asks which task to walk through, after the basics tour or when the viewer
+ * newly qualifies for some. Tasks already completed carry a check.
  *
  * @param {Object} props
  * @param {Array<{key: string, title: string, completed: boolean}>} props.tasks -
@@ -31,7 +31,7 @@ const TaskChooser = ({ tasks, onChoose, onClose, onExplore }) => (
   >
     <DialogContent className="sm:max-w-sm">
       <DialogHeader>
-        <DialogTitle>What would you like to do?</DialogTitle>
+        <DialogTitle>What would you like to do next?</DialogTitle>
         <DialogDescription>
           Pick one to walk through it step by step.
         </DialogDescription>

@@ -19,7 +19,7 @@ describe("TaskChooser", () => {
     render(<TaskChooser tasks={TASKS} onChoose={vi.fn()} onClose={vi.fn()} />);
 
     expect(
-      screen.getByRole("dialog", { name: "What would you like to do?" }),
+      screen.getByRole("dialog", { name: "What would you like to do next?" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Do alpha" }),
