@@ -16,7 +16,7 @@ const EmailSection = ({ info }) => {
         </h3>
         <Button size="sm" asChild>
           <Link to={ROUTE_PATHS.SIGN_IN_SECURITY}>
-            Manage in Settings
+            Manage emails
             <ExternalLink size={14} />
           </Link>
         </Button>

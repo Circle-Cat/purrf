@@ -129,9 +129,9 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
             <Item
               onClick={goToSettings}
               className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
-              aria-label="Settings"
+              aria-label="Emails & sign-in"
             >
-              Settings
+              Emails &amp; sign-in
             </Item>
             <Item
               onClick={openContactUs}

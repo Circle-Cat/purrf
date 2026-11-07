@@ -236,7 +236,7 @@ describe("Header Component", () => {
     });
   });
 
-  test('should go to the sign in & security settings when "Settings" is clicked', async () => {
+  test('should go to the sign in & security settings when "Emails & sign-in" is clicked', async () => {
     const user = userEvent.setup();
     const mockUserName = "Alice";
     getCookie.mockReturnValue("some-jwt-cookie-string");
@@ -259,7 +259,7 @@ describe("Header Component", () => {
     );
     await user.click(userChar.closest("button"));
     const settingsItem = await screen.findByRole("menuitem", {
-      name: "Settings",
+      name: "Emails & sign-in",
     });
 
     await user.click(settingsItem);
