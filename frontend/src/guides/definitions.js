@@ -72,11 +72,6 @@ export const GUIDES = [
         navGroup: "admin",
         before: "expand-sidebar",
       },
-      {
-        anchor: "avatar-menu",
-        title: "That's it for now",
-        body: "Each page explains itself the first time you open it. You can take this tour again from the avatar menu.",
-      },
     ],
   },
 ];

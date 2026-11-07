@@ -277,8 +277,6 @@ describe("GuideProvider", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Open Positions");
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("That's it for now");
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
     expect(recordGuideProgress).toHaveBeenCalledTimes(1);
@@ -422,8 +420,6 @@ describe("GuideProvider", () => {
       await screen.findByText("Your account menu");
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
       await screen.findByText("Open Positions");
-      await userEvent.click(screen.getByRole("button", { name: "Next" }));
-      await screen.findByText("That's it for now");
       await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
       expect(recordGuideProgress).toHaveBeenCalledTimes(1);
@@ -457,15 +453,15 @@ describe("GuideProvider", () => {
 
     test("skips a step whose anchor is missing", async () => {
       listGuideProgress.mockResolvedValue([]);
-      renderEngine({ anchors: ["avatar-menu"] });
+      renderEngine({ anchors: ["avatar-menu", "nav-group-apply"] });
       await screen.findByText("Your account menu");
 
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
-      expect(await screen.findByText("That's it for now")).toBeInTheDocument();
-      // Index into the resolved steps: avatar, me, apply, closing.
-      expect(screen.getByTestId("tour")).toHaveAttribute("data-step", "3");
-      expect(screen.queryByText("Open Positions")).not.toBeInTheDocument();
+      expect(await screen.findByText("Open Positions")).toBeInTheDocument();
+      // Index into the resolved steps: avatar, me, apply.
+      expect(screen.getByTestId("tour")).toHaveAttribute("data-step", "2");
+      expect(screen.queryByText("Your home page")).not.toBeInTheDocument();
     });
 
     test("starts at the first step whose anchor exists", async () => {
@@ -524,8 +520,8 @@ describe("GuideProvider", () => {
         /^DataSearch looks up work activity by person and date\.$/,
       );
 
-      await userEvent.click(screen.getByRole("button", { name: "Next" }));
-      expect(await screen.findByText("That's it for now")).toBeInTheDocument();
+      // Administration's group is not visible either, so this is the end.
+      expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
     });
   });
 

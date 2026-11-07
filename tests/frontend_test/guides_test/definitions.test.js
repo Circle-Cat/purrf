@@ -12,7 +12,7 @@ describe("GUIDES", () => {
     expect(welcome.trigger).toEqual({ kind: "first-visit" });
   });
 
-  test("walks the avatar menu, then each sidebar group, then closes", () => {
+  test("walks the avatar menu, then each sidebar group", () => {
     expect(welcome.steps.map(({ anchor, title }) => [anchor, title])).toEqual([
       ["avatar-menu", "Your account menu"],
       ["nav-group-me", "Your home page"],
@@ -21,7 +21,6 @@ describe("GUIDES", () => {
       ["nav-group-mentorship", "Mentorship"],
       ["nav-group-activity", "Activity data"],
       ["nav-group-admin", "Administration"],
-      ["avatar-menu", "That's it for now"],
     ]);
   });
 
@@ -34,7 +33,6 @@ describe("GUIDES", () => {
       "expand-sidebar",
       "expand-sidebar",
       "expand-sidebar",
-      null,
     ]);
   });
 
