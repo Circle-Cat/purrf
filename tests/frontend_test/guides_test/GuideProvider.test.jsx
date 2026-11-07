@@ -75,12 +75,12 @@ const Controls = () => {
   );
 };
 
-const renderEngine = ({
-  anchors = ["avatar-menu", "nav-open-positions"],
-  guides,
-  actions,
-} = {}) =>
-  render(
+const FLAG_ON = { flags: { "onboarding-guides": true }, ready: true };
+
+const engineTree = ({ anchors, guides, actions, flagState }) => (
+  <FlagsContext.Provider
+    value={{ ...flagState, setFlags: () => {}, setReady: () => {} }}
+  >
     <MemoryRouter initialEntries={["/start"]}>
       <GuideProvider guides={guides} actions={actions}>
         {anchors.map((anchor) => (
@@ -90,8 +90,16 @@ const renderEngine = ({
         ))}
         <Controls />
       </GuideProvider>
-    </MemoryRouter>,
-  );
+    </MemoryRouter>
+  </FlagsContext.Provider>
+);
+
+const renderEngine = ({
+  anchors = ["avatar-menu", "nav-open-positions"],
+  guides,
+  actions,
+  flagState = FLAG_ON,
+} = {}) => render(engineTree({ anchors, guides, actions, flagState }));
 
 // Lets the progress fetch settle so a "did not start" assertion is not
 // vacuously early.
@@ -206,31 +214,33 @@ describe("GuideProvider", () => {
 
     expect(audience).toHaveBeenCalledWith({
       permissions: ["a.read"],
-      flags: {},
+      flags: { "onboarding-guides": true },
     });
     expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
   });
 
-  test("starts without waiting for LaunchDarkly to answer", async () => {
+  test("does nothing while the onboarding-guides flag is off", async () => {
     listGuideProgress.mockResolvedValue([]);
-    render(
-      <FlagsContext.Provider
-        value={{
-          flags: {},
-          setFlags: () => {},
-          ready: false,
-          setReady: () => {},
-        }}
-      >
-        <MemoryRouter initialEntries={["/start"]}>
-          <GuideProvider>
-            <span data-tour="avatar-menu">avatar-menu</span>
-            <span data-tour="nav-open-positions">nav-open-positions</span>
-            <Controls />
-          </GuideProvider>
-        </MemoryRouter>
-      </FlagsContext.Provider>,
-    );
+    renderEngine({ flagState: { flags: {}, ready: true } });
+    await act(async () => {});
+
+    await userEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await act(async () => {});
+
+    expect(listGuideProgress).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+  });
+
+  test("waits for LaunchDarkly to answer before starting", async () => {
+    listGuideProgress.mockResolvedValue([]);
+    const anchors = ["avatar-menu", "nav-open-positions"];
+    const { rerender } = renderEngine({
+      flagState: { flags: { "onboarding-guides": true }, ready: false },
+    });
+    await act(async () => {});
+    expect(listGuideProgress).not.toHaveBeenCalled();
+
+    rerender(engineTree({ anchors, flagState: FLAG_ON }));
 
     expect(await screen.findByTestId("tour")).toBeInTheDocument();
   });

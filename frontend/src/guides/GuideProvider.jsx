@@ -9,6 +9,7 @@ import {
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/context/auth";
 import { FlagsContext } from "@/context/flags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { listGuideProgress, recordGuideProgress } from "@/api/guidesApi";
 import { GUIDES } from "@/guides/definitions";
 import { GuideContext } from "@/guides/GuideContext";
@@ -65,12 +66,14 @@ const END_STATUS = {
 export const GuideProvider = ({ children, actions = {}, guides = GUIDES }) => {
   const { loading, hasVerifiedEmail, accessDenied, authError, permissions } =
     useAuth();
-  // Not gated on the flags being ready: without a LaunchDarkly client (local
-  // builds) they never become ready. An audience that reads a flag sees it
-  // as off until LaunchDarkly answers.
-  const { flags } = useContext(FlagsContext);
+  // The whole engine sits behind one LaunchDarkly flag. Until LaunchDarkly
+  // answers the flag reads as off, so nothing starts early; with no client
+  // (local builds) it never answers and guides stay off.
+  const { flags, ready: flagsReady } = useContext(FlagsContext);
+  const enabled = flagsReady && Boolean(flags[FEATURE_FLAGS.ONBOARDING_GUIDES]);
   const { pathname } = useLocation();
-  const active = !loading && hasVerifiedEmail && !accessDenied && !authError;
+  const active =
+    enabled && !loading && hasVerifiedEmail && !accessDenied && !authError;
 
   // `tour` drives rendering; `tourRef` is the same thing read synchronously
   // by handlers, so two quick clicks cannot both act on a stale step.
