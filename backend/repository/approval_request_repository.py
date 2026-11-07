@@ -88,6 +88,29 @@ class ApprovalRequestRepository:
         result = await session.execute(stmt)
         return result.scalars().one_or_none()
 
+    async def get_by_ids(
+        self, session: AsyncSession, request_ids: Collection[int]
+    ) -> list[ApprovalRequestEntity]:
+        """
+        The requests with these ids, whatever their status, in no order.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            request_ids (Collection[int]): The requests to fetch.
+
+        Returns:
+            list[ApprovalRequestEntity]: The rows found; empty, without a
+                query, for no ids.
+        """
+        if not request_ids:
+            return []
+        result = await session.execute(
+            select(ApprovalRequestEntity).where(
+                ApprovalRequestEntity.request_id.in_(list(request_ids))
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_pending_for_target(
         self, session: AsyncSession, action: str, target_type: str, target_id: str
     ) -> ApprovalRequestEntity | None:

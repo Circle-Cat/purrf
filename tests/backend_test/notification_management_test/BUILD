@@ -150,6 +150,7 @@ py_test(
     data = ["//tests/shared:bell_event_types_vector"],
     deps = [
         "//backend/notification_management:recipient_registry",
+        "//backend/recruiting",
         "//backend/utils:fast_app_factory",
     ],
 )

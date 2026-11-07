@@ -9,6 +9,7 @@ from backend.dto.notification_dto import (
 )
 from backend.recruiting.candidate_names import candidate_names
 from backend.recruiting.notification_email_copy import review_summary
+from backend.recruiting.notification_links import links_for_page
 
 
 async def _by_id(load, session, ids, key):
@@ -25,8 +26,9 @@ async def _by_id(load, session, ids, key):
 class RecruitingNotificationService:
     """Read-side logic for in-app notifications: list, mark read, dismiss.
 
-    Notifications are light reminders. Clicking one in the bell marks it
-    read, which only greys it out; dismissing one takes it off the bell, so
+    Clicking a row in the bell marks it read, which only greys it out; a row
+    with a link also offers to open the page where its reader acts on it.
+    Dismissing one takes it off the bell, so
     everything listed is undismissed. The row survives either way because it
     also carries the email state machine.
 
@@ -44,6 +46,7 @@ class RecruitingNotificationService:
         users_repository,
         event_repository,
         application_submission_repository,
+        page_links=links_for_page,
     ):
         """
         Args:
@@ -59,6 +62,8 @@ class RecruitingNotificationService:
             application_submission_repository (ApplicationSubmissionRepository):
                 Reads the name a candidate with a nameless account typed into
                 their application.
+            page_links (Callable): Works out where the reader acts on each
+                event of a page; ``notification_links.links_for_page``.
         """
         self.notification_repository = notification_repository
         self.application_repository = application_repository
@@ -66,10 +71,11 @@ class RecruitingNotificationService:
         self.users_repository = users_repository
         self.event_repository = event_repository
         self.application_submission_repository = application_submission_repository
+        self.page_links = page_links
 
     @staticmethod
     def _to_dto(
-        row, events, applications, jobs, users, applicant_names
+        row, events, applications, jobs, users, applicant_names, links
     ) -> NotificationDto:
         """Resolve one notification row into what the bell renders.
 
@@ -88,6 +94,8 @@ class RecruitingNotificationService:
             applicant_names (dict[int, str]): Their candidates' names by user
                 id, resolved by the candidate rule rather than the colleague
                 one: a preferred name on a candidate's profile does not apply.
+            links (dict[int, str | None]): Where the reader acts on each
+                event, by event id.
 
         Returns:
             NotificationDto: Empty display fields where the referenced rows
@@ -127,6 +135,7 @@ class RecruitingNotificationService:
             actor_name=actor_name,
             created_at=row.created_at,
             is_read=row.read_at is not None,
+            link=links.get(row.event_id),
             summary=(
                 review_summary(
                     event.event_type,
@@ -197,7 +206,10 @@ class RecruitingNotificationService:
 
         A page costs the same number of queries however many rows it holds:
         see ``_load_page``. The bell refetches on every route change and
-        window focus, so a per-row lookup here is paid on every click.
+        window focus, so a per-row lookup here is paid on every click. Links
+        reuse the postings loaded here and read every approval request in
+        one query; what is left per row is a lookup for the few events whose
+        page depends on a row nothing else loads, read once per row named.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -218,7 +230,16 @@ class RecruitingNotificationService:
         if not rows:
             return NotificationListDto(notifications=[], unread_count=unread_count)
         lookups = await self._load_page(session, rows)
-        items = [self._to_dto(row, *lookups) for row in rows]
+        events, applications, jobs = lookups[:3]
+        links = await self.page_links(
+            session,
+            events.values(),
+            user_id,
+            jobs_by_application={
+                a.application_id: jobs.get(a.job_id) for a in applications.values()
+            },
+        )
+        items = [self._to_dto(row, *lookups, links) for row in rows]
         return NotificationListDto(notifications=items, unread_count=unread_count)
 
     async def mark_read(

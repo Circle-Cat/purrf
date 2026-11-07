@@ -7,9 +7,10 @@ possibly days later -- while an email is rendered milliseconds after the
 event, so only the email can safely state point-in-time facts like the
 stage an evaluation was assigned at.
 
-Emails carry no links (decided 2026-07-30), so each body has to stand on
-its own: what happened, who and which posting it concerns, and where in
-Purrf to act on it.
+Each body still stands on its own -- what happened, who and which posting
+it concerns, and where in Purrf to act on it -- because the "Open in Purrf"
+link added at delivery (``notification_event_email_service.with_link``) is
+missing for some events and stripped by some mail clients.
 
 That last part is a promise about the UI, so the destination has to be
 the sidebar label the recipient will actually see -- verbatim, from
