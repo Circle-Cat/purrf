@@ -80,6 +80,15 @@ locals {
       off_in      = []
       public_in   = ["production", "staging", "test"]
     }
+    # Gates the onboarding guide engine: tours auto-starting on first visit
+    # and the Take the tour item in the account menu.
+    onboarding_guides = {
+      key         = "onboarding-guides"
+      name        = "Onboarding Guides"
+      description = "Shows first-visit onboarding tours and the Take the tour menu item"
+      off_in      = ["production", "staging"]
+      public_in   = ["test"]
+    }
   }
 
   flag_env_matrix = {
