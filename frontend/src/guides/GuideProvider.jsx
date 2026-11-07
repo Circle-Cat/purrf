@@ -65,7 +65,10 @@ const END_STATUS = {
 export const GuideProvider = ({ children, actions = {}, guides = GUIDES }) => {
   const { loading, hasVerifiedEmail, accessDenied, authError, permissions } =
     useAuth();
-  const { flags, ready: flagsReady } = useContext(FlagsContext);
+  // Not gated on the flags being ready: without a LaunchDarkly client (local
+  // builds) they never become ready. An audience that reads a flag sees it
+  // as off until LaunchDarkly answers.
+  const { flags } = useContext(FlagsContext);
   const { pathname } = useLocation();
   const active = !loading && hasVerifiedEmail && !accessDenied && !authError;
 
@@ -151,7 +154,7 @@ export const GuideProvider = ({ children, actions = {}, guides = GUIDES }) => {
   );
 
   useEffect(() => {
-    if (!active || !flagsReady || hasAutoStarted()) return undefined;
+    if (!active || hasAutoStarted()) return undefined;
     let cancelled = false;
     listGuideProgress()
       .then((rows) => {
@@ -185,7 +188,7 @@ export const GuideProvider = ({ children, actions = {}, guides = GUIDES }) => {
     return () => {
       cancelled = true;
     };
-  }, [active, flagsReady, begin]);
+  }, [active, begin]);
 
   useEffect(() => {
     const current = tourRef.current;

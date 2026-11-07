@@ -12,6 +12,7 @@ import { MemoryRouter, useNavigate } from "react-router-dom";
 import "@testing-library/jest-dom/vitest";
 
 import { GuideProvider } from "@/guides/GuideProvider";
+import { FlagsContext } from "@/context/flags";
 import { useGuides } from "@/guides/GuideContext";
 import { resetGuideSession } from "@/guides/session";
 import { listGuideProgress, recordGuideProgress } from "@/api/guidesApi";
@@ -208,6 +209,30 @@ describe("GuideProvider", () => {
       flags: {},
     });
     expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+  });
+
+  test("starts without waiting for LaunchDarkly to answer", async () => {
+    listGuideProgress.mockResolvedValue([]);
+    render(
+      <FlagsContext.Provider
+        value={{
+          flags: {},
+          setFlags: () => {},
+          ready: false,
+          setReady: () => {},
+        }}
+      >
+        <MemoryRouter initialEntries={["/start"]}>
+          <GuideProvider>
+            <span data-tour="avatar-menu">avatar-menu</span>
+            <span data-tour="nav-open-positions">nav-open-positions</span>
+            <Controls />
+          </GuideProvider>
+        </MemoryRouter>
+      </FlagsContext.Provider>,
+    );
+
+    expect(await screen.findByTestId("tour")).toBeInTheDocument();
   });
 
   test("auto-starts at most one guide per session", async () => {
