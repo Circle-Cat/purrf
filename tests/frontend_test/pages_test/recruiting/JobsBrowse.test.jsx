@@ -46,7 +46,7 @@ describe("JobsBrowse page", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "All Circle Cat programs and job openings. Open one to read the details and apply.",
+          "All Circle Cat activities and job openings. Open one to read the details and apply.",
         ),
       ).toBeInTheDocument(),
     );
