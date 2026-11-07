@@ -2,6 +2,7 @@ import React from "react";
 import BalanceHistoryRow from "@/pages/Leave/components/BalanceHistoryRow";
 import { useLeaveLedger } from "@/pages/Leave/hooks/useLeaveLedger";
 import { Button } from "@/components/ui/button";
+import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 
 const PAGE_SIZE = 50;
 
@@ -36,9 +37,10 @@ export default function LedgerPage({
     pageSize: PAGE_SIZE,
   });
 
-  const totalPages = Math.ceil(totalEntries / PAGE_SIZE) || 1;
-  const hasPrev = page > 1;
-  const hasNext = page < totalPages;
+  const first = totalEntries === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const last = Math.min(page * PAGE_SIZE, totalEntries);
+  const isPrevDisabled = page <= 1 || isLoading;
+  const isNextDisabled = page * PAGE_SIZE >= totalEntries || isLoading;
 
   const allFilterOptions = React.useMemo(() => {
     const map = new Map();
@@ -84,7 +86,7 @@ export default function LedgerPage({
         </div>
 
         <div className="text-xs text-muted-foreground">
-          Showing {entries.length} of {totalEntries} entries
+          {LEAVE_CALENDAR_ZONE_LABEL}
         </div>
       </div>
 
@@ -116,30 +118,28 @@ export default function LedgerPage({
       </div>
 
       {/* 3. Prev/Next Pager */}
-      <div className="flex items-center justify-between pt-2">
-        <span className="text-xs text-muted-foreground">
-          Page {page} of {totalPages}
+      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isPrevDisabled}
+          onClick={() => onPageChange(page - 1)}
+        >
+          Prev
+        </Button>
+        <span>
+          {first}–{last} of {totalEntries}
         </span>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!hasPrev || isLoading}
-            onClick={() => onPageChange(page - 1)}
-          >
-            Previous
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!hasNext || isLoading}
-            onClick={() => onPageChange(page + 1)}
-          >
-            Next
-          </Button>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isNextDisabled}
+          onClick={() => onPageChange(page + 1)}
+        >
+          Next
+        </Button>
       </div>
     </div>
   );

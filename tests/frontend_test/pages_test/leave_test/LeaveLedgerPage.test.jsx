@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import LedgerPage from "@/pages/Leave/LedgerPage";
 import { useLeaveLedger } from "@/pages/Leave/hooks/useLeaveLedger";
+import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 
 vi.mock("@/pages/Leave/hooks/useLeaveLedger", () => ({
   useLeaveLedger: vi.fn(),
@@ -23,6 +24,18 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     onPageChange: vi.fn(),
     people: mockPeople,
   };
+
+  const sampleEntries = [
+    {
+      leaveLedgerId: 1,
+      userId: 42,
+      name: "Alice Smith",
+      ldap: "asmith",
+      hours: "40.00",
+      entryType: "weekly_accrual",
+      effectiveDate: "2026-01-01",
+    },
+  ];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -166,7 +179,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
 
     render(<LedgerPage {...defaultProps} page={1} />);
 
-    const prevBtn = screen.getByRole("button", { name: /Previous/i });
+    const prevBtn = screen.getByRole("button", { name: /Prev/i });
     const nextBtn = screen.getByRole("button", { name: /Next/i });
 
     expect(prevBtn).toBeDisabled();
@@ -187,5 +200,99 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     fireEvent.click(nextBtn);
 
     expect(defaultProps.onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it("case 1: page 1 of 120 entries", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: sampleEntries,
+      totalEntries: 120,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={1} />);
+
+    expect(screen.getByText("1–50 of 120")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Prev/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Next/i })).not.toBeDisabled();
+  });
+
+  it("case 2: page 2 of 120 entries", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: sampleEntries,
+      totalEntries: 120,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={2} />);
+
+    expect(screen.getByText("51–100 of 120")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Prev/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /Next/i })).not.toBeDisabled();
+  });
+
+  it("case 3: page 3 of 120 entries (partial last page)", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: sampleEntries,
+      totalEntries: 120,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={3} />);
+
+    expect(screen.getByText("101–120 of 120")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Prev/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /Next/i })).toBeDisabled();
+  });
+
+  it("case 4: 0 entries", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: [],
+      totalEntries: 0,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={1} />);
+
+    expect(screen.getByText("0–0 of 0")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Prev/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Next/i })).toBeDisabled();
+    expect(
+      screen.getByText(/No balance history entries found/i),
+    ).toBeInTheDocument();
+  });
+
+  it("case 5: displays calendar zone label and removes 'Showing' text", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: sampleEntries,
+      totalEntries: 120,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} />);
+
+    expect(screen.getByText(LEAVE_CALENDAR_ZONE_LABEL)).toBeInTheDocument();
+    expect(screen.queryByText(/Showing/i)).not.toBeInTheDocument();
+  });
+
+  it("case 6: clicking Prev and Next on page 2 calls onPageChange with correct values", () => {
+    mockUseLeaveLedger.mockReturnValue({
+      entries: sampleEntries,
+      totalEntries: 120,
+      isLoading: false,
+      loadError: false,
+    });
+
+    render(<LedgerPage {...defaultProps} page={2} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Prev/i }));
+    expect(defaultProps.onPageChange).toHaveBeenLastCalledWith(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /Next/i }));
+    expect(defaultProps.onPageChange).toHaveBeenLastCalledWith(3);
   });
 });
