@@ -165,6 +165,7 @@ const PersonalDashboard = () => {
             isParticipantCardLoading={isParticipantCardLoading}
             participantDetails={participantDetails}
             refreshMeetings={refreshMeetings}
+            isRegistrationOpen={isRegistrationOpen}
           />
         </>
       )}
