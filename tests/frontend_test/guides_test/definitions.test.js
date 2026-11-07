@@ -10,6 +10,7 @@ describe("GUIDES", () => {
     expect(welcome).toBeDefined();
     expect(welcome.type).toBe("tour");
     expect(welcome.trigger).toEqual({ kind: "first-visit" });
+    expect(welcome.basics).toBe(true);
   });
 
   test("walks the avatar menu, then each sidebar group", () => {

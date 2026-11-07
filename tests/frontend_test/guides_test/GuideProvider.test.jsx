@@ -16,12 +16,17 @@ import { FlagsContext } from "@/context/flags";
 import { useGuides } from "@/guides/GuideContext";
 import { resetGuideSession } from "@/guides/session";
 import { listGuideProgress, recordGuideProgress } from "@/api/guidesApi";
+import { listMyApplications } from "@/api/recruitingApi";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 
 vi.mock("@/api/guidesApi", () => ({
   listGuideProgress: vi.fn(),
   recordGuideProgress: vi.fn(),
+}));
+
+vi.mock("@/api/recruitingApi", () => ({
+  listMyApplications: vi.fn(),
 }));
 
 vi.mock("@/context/auth", () => ({
@@ -91,7 +96,7 @@ const engineTree = ({ anchors, guides, actions, flagState }) => (
     value={{ ...flagState, setFlags: () => {}, setReady: () => {} }}
   >
     <MemoryRouter initialEntries={["/start"]}>
-      <GuideProvider guides={guides} actions={actions}>
+      <GuideProvider guides={guides} actions={actions} anchorTimeoutMs={100}>
         {anchors.map((anchor) => (
           <span key={anchor} data-tour={anchor}>
             {anchor}
@@ -122,6 +127,10 @@ describe("GuideProvider", () => {
     resetGuideSession();
     useAuth.mockReturnValue(SIGNED_IN);
     recordGuideProgress.mockResolvedValue({});
+    listMyApplications.mockResolvedValue({
+      success: true,
+      data: { applications: [], mentorshipRoles: [] },
+    });
   });
 
   afterEach(() => {
@@ -183,7 +192,10 @@ describe("GuideProvider", () => {
         priority: 10,
         audience: () => true,
         trigger: { kind: "first-visit" },
-        steps: [{ anchor: "avatar-menu", title: "Low guide", body: "l" }],
+        steps: [
+          { anchor: "avatar-menu", title: "Low guide", body: "l" },
+          { anchor: "nav-group-apply", title: "Low more", body: "l2" },
+        ],
       },
       {
         key: "high",
@@ -191,7 +203,10 @@ describe("GuideProvider", () => {
         priority: 50,
         audience: () => true,
         trigger: { kind: "first-visit" },
-        steps: [{ anchor: "avatar-menu", title: "High guide", body: "h" }],
+        steps: [
+          { anchor: "avatar-menu", title: "High guide", body: "h" },
+          { anchor: "nav-group-apply", title: "High more", body: "h2" },
+        ],
       },
     ];
     listGuideProgress.mockResolvedValue([]);
@@ -224,6 +239,7 @@ describe("GuideProvider", () => {
     expect(audience).toHaveBeenCalledWith({
       permissions: ["a.read"],
       flags: { "onboarding-guides": true },
+      mentorshipRoles: [],
     });
     expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
   });
@@ -386,10 +402,13 @@ describe("GuideProvider", () => {
       await userEvent.click(screen.getByRole("button", { name: "Close tour" }));
 
       expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
-      expect(recordGuideProgress).not.toHaveBeenCalled();
+      // Only the replay's reset; nothing about the guide itself.
+      expect(recordGuideProgress.mock.calls).toEqual([
+        ["tour-reset", "completed"],
+      ]);
     });
 
-    test("writes nothing on Escape or a route change", async () => {
+    test("writes nothing about the guide on Escape or a route change", async () => {
       renderEngine();
       await settle();
 
@@ -409,7 +428,10 @@ describe("GuideProvider", () => {
         expect(screen.queryByTestId("tour")).not.toBeInTheDocument(),
       );
 
-      expect(recordGuideProgress).not.toHaveBeenCalled();
+      expect(recordGuideProgress.mock.calls).toEqual([
+        ["tour-reset", "completed"],
+        ["tour-reset", "completed"],
+      ]);
     });
 
     test("records completed on Done", async () => {
@@ -422,8 +444,10 @@ describe("GuideProvider", () => {
       await screen.findByText("Open Positions");
       await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
-      expect(recordGuideProgress).toHaveBeenCalledTimes(1);
-      expect(recordGuideProgress).toHaveBeenCalledWith("welcome", "completed");
+      expect(recordGuideProgress.mock.calls).toEqual([
+        ["tour-reset", "completed"],
+        ["welcome", "completed"],
+      ]);
     });
 
     test("can be started after an auto-started tour this session", async () => {
@@ -466,14 +490,31 @@ describe("GuideProvider", () => {
 
     test("starts at the first step whose anchor exists", async () => {
       listGuideProgress.mockResolvedValue([]);
-      renderEngine({ anchors: ["nav-group-apply"] });
+      renderEngine({ anchors: ["nav-group-me", "nav-group-apply"] });
+
+      expect(await screen.findByText("Your home page")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Back" }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
       expect(await screen.findByText("Open Positions")).toBeInTheDocument();
       // No later step's anchor exists, so this one is the last.
       expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: "Back" }),
-      ).not.toBeInTheDocument();
+    });
+
+    test("does not auto-start the basics tour with one visible step", async () => {
+      listGuideProgress.mockResolvedValue([]);
+      renderEngine({ anchors: ["nav-group-apply"] });
+      await settle();
+      await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      expect(recordGuideProgress).not.toHaveBeenCalled();
+
+      // Asked for, one step is enough.
+      await userEvent.click(screen.getByRole("button", { name: "Replay" }));
+      expect(await screen.findByText("Open Positions")).toBeInTheDocument();
     });
   });
 

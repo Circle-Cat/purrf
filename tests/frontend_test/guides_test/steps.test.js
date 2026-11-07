@@ -108,4 +108,27 @@ describe("resolveSteps", () => {
 
     expect(steps).toEqual([]);
   });
+
+  test("drops a step whose when rejects the viewer", () => {
+    const when = ({ mentorshipRoles }) => mentorshipRoles.includes("mentor");
+    const steps = [
+      { anchor: "a", title: "Always", body: "a" },
+      { anchor: "b", title: "Mentors only", body: "b", when },
+    ];
+
+    expect(
+      resolveSteps(steps, {
+        permissions: [],
+        flags: {},
+        mentorshipRoles: ["mentee"],
+      }).map((s) => s.title),
+    ).toEqual(["Always"]);
+    expect(
+      resolveSteps(steps, {
+        permissions: [],
+        flags: {},
+        mentorshipRoles: ["mentor"],
+      }).map((s) => s.title),
+    ).toEqual(["Always", "Mentors only"]);
+  });
 });
