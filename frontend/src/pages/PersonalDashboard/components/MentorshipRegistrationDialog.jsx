@@ -39,14 +39,10 @@ const PROFILE_CHECK_SESSION_KEY = "post-registration-profile-check-shown";
 const PROFILE_CHECK_TOAST_TITLE = "Double-check your profile";
 const PROFILE_CHECK_TOAST_MESSAGE =
   "We use your profile info to match you with the right partner — please make sure it's up to date in your Profile page.";
-// Mentors can still meet with their mentee while they finish training,
-// so the message is a soft nudge framed around quality of mentorship.
-const POST_REGISTRATION_MENTOR_MESSAGE =
-  "Complete the onboarding training in your Profile page to help you get started as a mentor.";
-// Mentees are gated by training: matching skips them if they haven't
-// completed it, so the message is explicit about the consequence.
-const POST_REGISTRATION_MENTEE_MESSAGE =
-  "You must complete the onboarding training in your Profile page to be eligible for mentor matching this round.";
+// Matching leaves out anyone, mentor or mentee, whose onboarding course for
+// their role is not done, so the message states the consequence.
+const POST_REGISTRATION_TOAST_MESSAGE =
+  "You must complete the onboarding training in your Profile page to be eligible for matching this round.";
 
 /**
  * MentorshipRegistrationDialog
@@ -298,11 +294,7 @@ export default function MentorshipRegistrationDialog({
       showReminderToast({
         id: POST_REGISTRATION_TOAST_ID,
         title: POST_REGISTRATION_TOAST_TITLE,
-        message:
-          response?.data?.roundPreferences?.participantRole ===
-          MentorshipParticipantRoles.MENTOR
-            ? POST_REGISTRATION_MENTOR_MESSAGE
-            : POST_REGISTRATION_MENTEE_MESSAGE,
+        message: POST_REGISTRATION_TOAST_MESSAGE,
       });
     }
 
