@@ -6,9 +6,10 @@ import { listPublicJobs } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
- * Logged-in browse page for published jobs: one card per posting
- * (title, kind, clamped description) linking to the candidate job-detail
- * page. Requires no recruiting permissions.
+ * Logged-in browse page for published postings: every Circle Cat program
+ * and job opening, one card per posting (title, kind, clamped description)
+ * linking to the candidate job-detail page. Requires no recruiting
+ * permissions.
  */
 const JobsBrowse = () => {
   const navigate = useNavigate();
@@ -44,10 +45,16 @@ const JobsBrowse = () => {
 
   return (
     <div className="space-y-4 p-6">
-      <h1 className="text-xl font-semibold text-slate-900">Open Positions</h1>
+      <div className="space-y-1">
+        <h1 className="text-xl font-semibold text-slate-900">Open Positions</h1>
+        <p className="text-sm text-muted-foreground">
+          All Circle Cat programs and job openings. Open one to read the details
+          and apply.
+        </p>
+      </div>
       {jobs.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No open positions right now.
+          No open positions right now. Check back later.
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
