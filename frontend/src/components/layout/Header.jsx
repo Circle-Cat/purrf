@@ -143,9 +143,9 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
             <Item
               onClick={performGlobalLogout}
               className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
-              aria-label="Logout"
+              aria-label="Log out"
             >
-              Logout
+              Log out
             </Item>
           </Content>
         </Root>

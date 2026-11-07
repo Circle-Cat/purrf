@@ -311,13 +311,13 @@ describe("Header Component", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  test("should call performGlobalLogout when logout is clicked", async () => {
+  test("should call performGlobalLogout when Log out is clicked", async () => {
     setup("some-jwt", "Alice");
     const user = userEvent.setup();
 
     await user.click(screen.getByText("A"));
 
-    const logoutItem = await screen.findByText("Logout");
+    const logoutItem = await screen.findByText("Log out");
     await user.click(logoutItem);
 
     expect(performGlobalLogout).toHaveBeenCalled();
