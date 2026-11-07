@@ -1607,6 +1607,7 @@ const ApplicationDetailPage = () => {
       // renders this verbatim, and "recruiting board" would name a page the
       // request did not come from.
       "recruiting_application",
+      detail.application.id,
     )
       .then(({ data }) => {
         setRaisedBlockRequest(data);

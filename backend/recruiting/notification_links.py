@@ -61,9 +61,10 @@ _users = UsersRepository()
 PUBLISH_MATCHING = "publish_matching"
 END_PAIR = "end_pair"
 
-# The block-request source that a mentorship admin raises from; one of
-# ``block_service.RAISE_PERMISSION_BY_SOURCE``.
+# The block-request sources, as ``block_service.RAISE_PERMISSION_BY_SOURCE``
+# names them; a test holds these to it.
 MENTORSHIP_PARTICIPANT_SOURCE = "mentorship_participant"
+RECRUITING_APPLICATION_SOURCE = "recruiting_application"
 
 # Event types that reach the bell but have no page to act on.
 LINKLESS = frozenset({OpsEvent.GMAIL_SYNC_ALERT})
@@ -89,6 +90,10 @@ def _path(base: str, **params) -> str:
     """``base`` with the given query parameters, the None ones left out."""
     query = urlencode({k: v for k, v in params.items() if v is not None})
     return f"{base}?{query}" if query else base
+
+
+def _application_page(application_id) -> str:
+    return f"/recruiting/applications/{application_id}"
 
 
 def _participant(user_id, round_id=None, review=None) -> str:
@@ -212,7 +217,7 @@ class NotificationLinks:
         """The application's page; in evaluate mode for a recipient who is
         there only as its current assignee."""
         application_id = event.subject_id
-        path = f"/recruiting/applications/{application_id}"
+        path = _application_page(application_id)
         if event.event_type not in _ASSIGNEE_AUDIENCE:
             return path
         job = await self._job_of_application(application_id)
@@ -297,16 +302,20 @@ class NotificationLinks:
 
     async def _block_decided(self, event: EventEntity) -> str | None:
         """The reviewer back to the account; the raiser to the page they
-        raised it from, which only a mentorship participant has to offer --
-        a recruiting raiser may have no standing on the account console, and
-        the application it came from is not named on the request."""
+        raised it from. A recruiting raiser may have no standing on the
+        account console, so a request that does not name its application
+        leads them nowhere."""
         row = await self._approval_request(event)
         if row is None:
             return None
         if row.reviewer_id == self.user_id:
             return await self._account(event)
-        if (row.payload or {}).get("raised_from") == MENTORSHIP_PARTICIPANT_SOURCE:
+        payload = row.payload or {}
+        source = payload.get("raised_from")
+        if source == MENTORSHIP_PARTICIPANT_SOURCE:
             return _participant(event.subject_id)
+        if source == RECRUITING_APPLICATION_SOURCE and payload.get("application_id"):
+            return _application_page(payload["application_id"])
         return None
 
 
