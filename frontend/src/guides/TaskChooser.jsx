@@ -17,11 +17,12 @@ import {
  * @param {Array<{key: string, title: string, completed: boolean}>} props.tasks -
  *   The tasks to offer, in order.
  * @param {(key: string) => void} props.onChoose - A task was picked.
- * @param {() => void} props.onClose - The viewer chose to explore alone, or
- *   closed the dialog.
+ * @param {() => void} props.onClose - The dialog was closed.
+ * @param {() => void} props.onExplore - The viewer chose to explore alone,
+ *   turning the offered tasks down.
  * @returns {JSX.Element}
  */
-const TaskChooser = ({ tasks, onChoose, onClose }) => (
+const TaskChooser = ({ tasks, onChoose, onClose, onExplore }) => (
   <Dialog
     open
     onOpenChange={(open) => {
@@ -55,7 +56,7 @@ const TaskChooser = ({ tasks, onChoose, onClose }) => (
         ))}
       </div>
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={onExplore}>
           I&apos;ll explore on my own
         </Button>
       </DialogFooter>

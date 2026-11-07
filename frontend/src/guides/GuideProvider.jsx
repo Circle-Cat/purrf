@@ -262,26 +262,24 @@ const createEngine = ({ latest, setTour, setChooser }) => {
     write(RESET_KEY, "completed");
   };
 
-  const startTask = (task, manual, fromChooser) => {
-    const after = fromChooser
-      ? () => offerTasks(manual)
+  // `offered` is the chooser's list when the task was picked from one, so
+  // the chooser comes back with the same tasks afterwards.
+  const startTask = (task, manual, offered) => {
+    const after = offered
+      ? () => offerTasks(manual, offered)
       : () => blockAutoStartOn(here());
-    begin(buildRun(task, { manual, onDone: after, onSkip: after }));
+    begin(
+      buildRun(task, {
+        manual,
+        onShown: () => markAutoStarted(task.key),
+        onDone: after,
+        onSkip: after,
+      }),
+    );
   };
 
-  // What follows the basics tour: the one task the viewer qualifies for, or
-  // a choice between several.
-  const offerTasks = (manual) => {
-    const tasks = qualifyingTasks(latest.current.guides, viewer());
-    if (tasks.length === 0) {
-      blockAutoStartOn(here());
-      return;
-    }
-    if (tasks.length === 1) {
-      startTask(tasks[0], manual, false);
-      return;
-    }
-    chooser = { manual };
+  const openChooser = (manual, tasks) => {
+    chooser = { manual, tasks };
     setChooser(
       tasks.map((task) => ({
         key: task.key,
@@ -289,6 +287,21 @@ const createEngine = ({ latest, setTour, setChooser }) => {
         completed: progress.get(task.key)?.status === "completed",
       })),
     );
+  };
+
+  // What follows the basics tour: the one task the viewer qualifies for, or
+  // a choice between several. `offered` replaces the qualifying tasks.
+  const offerTasks = (manual, offered) => {
+    const tasks = offered ?? qualifyingTasks(latest.current.guides, viewer());
+    if (tasks.length === 0) {
+      blockAutoStartOn(here());
+      return;
+    }
+    if (tasks.length === 1) {
+      startTask(tasks[0], manual, null);
+      return;
+    }
+    openChooser(manual, tasks);
   };
 
   const closeChooser = (block) => {
@@ -314,8 +327,16 @@ const createEngine = ({ latest, setTour, setChooser }) => {
         viewer(),
         location,
       );
-      for (const { guide, segment } of candidates) {
+      const newTasks = candidates
+        .filter((candidate) => candidate.task)
+        .map(({ guide }) => guide);
+      for (const { guide, segment, task } of candidates) {
         if (busy() || here() !== location.pathname) return;
+        if (task && newTasks.length > 1) {
+          for (const offered of newTasks) markAutoStarted(offered.key);
+          openChooser(false, newTasks);
+          return;
+        }
         const key = segment ? pageKey(segment) : guide.key;
         const r = buildRun(guide, {
           manual: false,
@@ -338,7 +359,7 @@ const createEngine = ({ latest, setTour, setChooser }) => {
       }
       if (busy()) return;
       if (guide.type === "task") {
-        startTask(guide, true, false);
+        startTask(guide, true, null);
         return;
       }
       begin(
@@ -353,10 +374,21 @@ const createEngine = ({ latest, setTour, setChooser }) => {
     chooseTask: (key) => {
       const closed = closeChooser(false);
       const task = latest.current.guides.find((g) => g.key === key);
-      if (closed && task) startTask(task, closed.manual, true);
+      if (closed && task) startTask(task, closed.manual, closed.tasks);
     },
 
     closeChooser: () => closeChooser(true),
+
+    // "I'll explore on my own" turns down every task offered, so none of
+    // them starts on its own later. Completed ones keep their completion.
+    exploreAlone: () => {
+      const closed = closeChooser(true);
+      for (const task of closed?.tasks ?? []) {
+        if (progress.get(task.key)?.status !== "completed") {
+          write(task.key, "dismissed");
+        }
+      }
+    },
 
     move: (direction) => {
       const r = run;
@@ -414,7 +446,9 @@ const createEngine = ({ latest, setTour, setChooser }) => {
  * own at most once per session; an auto-started basics tour or page intro
  * needs two visible steps. When the basics tour (`basics: true`) is completed,
  * the tasks the viewer qualifies for follow: one starts at once, several are
- * offered in a chooser. Replaying the basics tour makes page intros and tasks
+ * offered in a chooser. A viewer who saw the basics tour before qualifying
+ * for a task gets that task on its own, once, on the page it starts on.
+ * Replaying the basics tour makes page intros and tasks
  * count as unseen again (see RESET_KEY).
  *
  * Only active once auth has loaded, the email is verified and there is no
@@ -555,6 +589,7 @@ export const GuideProvider = ({
           tasks={chooser}
           onChoose={engine.chooseTask}
           onClose={engine.closeChooser}
+          onExplore={engine.exploreAlone}
         />
       )}
     </GuideContext.Provider>

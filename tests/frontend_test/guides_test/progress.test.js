@@ -249,4 +249,89 @@ describe("guide progress", () => {
       },
     );
   });
+
+  describe("newly qualified tasks", () => {
+    const BASICS = tour("welcome", { basics: true });
+    const seen = (status) => new Map([["welcome", { status }]]);
+
+    test("offer the task whole instead of its segments' intros", () => {
+      const candidates = autoStartCandidates(
+        [BASICS, TASK],
+        seen("completed"),
+        VIEWER,
+        at("/home"),
+      );
+
+      expect(candidates).toEqual([{ guide: TASK, task: true }]);
+    });
+
+    test.each([
+      ["no basics row", new Map(), false],
+      ["a snoozed basics row", seen("snoozed"), false],
+      ["a dismissed basics row", seen("dismissed"), true],
+    ])("with %s offer the task: %s", (_label, progress, offered) => {
+      const keys = autoStartCandidates(
+        [BASICS, TASK],
+        progress,
+        VIEWER,
+        at("/home"),
+      )
+        .filter((candidate) => candidate.task)
+        .map(({ guide }) => guide.key);
+
+      expect(keys).toEqual(offered ? ["task-alpha"] : []);
+    });
+
+    test("only on the route of the first segment without params", () => {
+      expect(
+        autoStartCandidates(
+          [BASICS, TASK],
+          seen("completed"),
+          VIEWER,
+          at("/items/7"),
+        ),
+      ).toEqual([{ guide: TASK, segment: TASK.segments[1] }]);
+    });
+
+    test.each([
+      ["snoozed", true],
+      ["completed", false],
+      ["dismissed", false],
+    ])("with a %s task row offer it: %s", (status, offered) => {
+      const progress = new Map([
+        ["welcome", { status: "completed" }],
+        ["task-alpha", { status }],
+      ]);
+
+      expect(
+        autoStartCandidates([BASICS, TASK], progress, VIEWER, at("/home")).some(
+          (candidate) => candidate.task,
+        ),
+      ).toBe(offered);
+    });
+
+    test("not once it ran this session, nor its intros", () => {
+      markAutoStarted("task-alpha");
+
+      expect(
+        autoStartCandidates(
+          [BASICS, TASK],
+          seen("completed"),
+          VIEWER,
+          at("/home"),
+        ),
+      ).toEqual([]);
+    });
+
+    test("not for a viewer outside its audience", () => {
+      expect(
+        autoStartCandidates(
+          [BASICS, TASK],
+          seen("completed"),
+          { ...VIEWER, mentorshipRoles: [] },
+          at("/home"),
+        ),
+      ).toEqual([]);
+    });
+  });
 });

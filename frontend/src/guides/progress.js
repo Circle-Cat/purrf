@@ -77,7 +77,17 @@ export const qualifyingTasks = (guides, viewer) =>
  * audience includes the viewer, it has no row or a snoozed one, any
  * `requires.seen` guide is completed or dismissed, `trigger.skipIf` does not
  * reject the location, any `route` matches, and it has not started on its own
- * this session. A page intro qualifies when its segment's route matches, its
+ * this session.
+ *
+ * A task qualifies on its own, for a viewer who saw the basics tour (its row
+ * completed or dismissed) before the task applied to them, when its audience
+ * includes the viewer, its row is absent or snoozed, it has not started on its
+ * own this session, and the viewer is on its first segment that needs no
+ * params. Without a basics row seen, the basics tour leads into the tasks
+ * instead. A task offered here, or already walked this session, keeps its
+ * segments from also showing as page intros.
+ *
+ * A page intro qualifies when its segment's route matches, its
  * `page-*` row is absent or snoozed, its task is not completed (walking a task
  * counts as seeing its pages) and it has not started this session.
  *
@@ -85,8 +95,8 @@ export const qualifyingTasks = (guides, viewer) =>
  * @param {Map<string, Object>} progress - From `indexProgress`.
  * @param {Object} viewer - `{ permissions, flags, mentorshipRoles }`.
  * @param {{pathname: string}} location - Where the viewer is.
- * @returns {Array<{guide: Object, segment?: Object}>} A page intro carries
- *   the segment it shows.
+ * @returns {Array<{guide: Object, segment?: Object, task?: boolean}>} A page
+ *   intro carries the segment it shows; a task to run whole has `task`.
  */
 export const autoStartCandidates = (guides, progress, viewer, location) => {
   const unseen = (key) =>
@@ -107,8 +117,26 @@ export const autoStartCandidates = (guides, progress, viewer, location) => {
     .sort((a, b) => b.priority - a.priority)
     .map((guide) => ({ guide }));
 
+  const basics = guides.find((guide) => guide.basics);
+  const basicsSeen = Boolean(basics) && isSeen(progress.get(basics.key));
+  const startsHere = (task) => {
+    const first = task.segments.find((segment) => !segment.params);
+    return Boolean(first) && matchPath(first.route, location.pathname) !== null;
+  };
+  const tasks = basicsSeen
+    ? qualifyingTasks(guides, viewer).filter(
+        (task) =>
+          !hasAutoStarted(task.key) && unseen(task.key) && startsHere(task),
+      )
+    : [];
+
   const intros = qualifyingTasks(guides, viewer)
-    .filter((task) => progress.get(task.key)?.status !== "completed")
+    .filter(
+      (task) =>
+        progress.get(task.key)?.status !== "completed" &&
+        !tasks.includes(task) &&
+        !hasAutoStarted(task.key),
+    )
     .flatMap((task) =>
       task.segments
         .filter(
@@ -120,5 +148,9 @@ export const autoStartCandidates = (guides, progress, viewer, location) => {
         .map((segment) => ({ guide: task, segment })),
     );
 
-  return [...singles, ...intros];
+  return [
+    ...singles,
+    ...tasks.map((task) => ({ guide: task, task: true })),
+    ...intros,
+  ];
 };

@@ -38,17 +38,41 @@ describe("TaskChooser", () => {
     expect(onChoose).toHaveBeenCalledWith("task-alpha");
   });
 
-  test.each(["I'll explore on my own", "Close"])(
-    "%s closes it",
-    async (name) => {
-      const onClose = vi.fn();
-      render(
-        <TaskChooser tasks={TASKS} onChoose={vi.fn()} onClose={onClose} />,
-      );
+  test("reports exploring alone", async () => {
+    const onClose = vi.fn();
+    const onExplore = vi.fn();
+    render(
+      <TaskChooser
+        tasks={TASKS}
+        onChoose={vi.fn()}
+        onClose={onClose}
+        onExplore={onExplore}
+      />,
+    );
 
-      await userEvent.click(screen.getByRole("button", { name }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "I'll explore on my own" }),
+    );
 
-      expect(onClose).toHaveBeenCalledTimes(1);
-    },
-  );
+    expect(onExplore).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test("reports being closed", async () => {
+    const onClose = vi.fn();
+    const onExplore = vi.fn();
+    render(
+      <TaskChooser
+        tasks={TASKS}
+        onChoose={vi.fn()}
+        onClose={onClose}
+        onExplore={onExplore}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onExplore).not.toHaveBeenCalled();
+  });
 });

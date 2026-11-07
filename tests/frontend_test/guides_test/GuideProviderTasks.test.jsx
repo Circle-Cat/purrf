@@ -445,9 +445,11 @@ describe("GuideProvider tasks", () => {
       await waitFor(() =>
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
+      // Exploring alone turns down what is left; gamma keeps its completion.
       expect(recordGuideProgress.mock.calls).toEqual([
         ["welcome", "completed"],
         ["task-gamma", "completed"],
+        ["task-alpha", "dismissed"],
       ]);
     });
 
@@ -483,9 +485,19 @@ describe("GuideProvider tasks", () => {
   });
 
   describe("page intros", () => {
+    // Turned down as a whole, so the task does not start on its own here and
+    // its pages still introduce themselves.
+    const TASK_TURNED_DOWN = {
+      guideKey: "task-alpha",
+      status: "dismissed",
+      snoozeCount: 0,
+      updatedAt: "2026-11-03T10:00:00Z",
+    };
+
     beforeEach(() => {
       listGuideProgress.mockResolvedValue([
         { guideKey: "welcome", status: "completed", snoozeCount: 0 },
+        TASK_TURNED_DOWN,
       ]);
     });
 
@@ -517,6 +529,7 @@ describe("GuideProvider tasks", () => {
     ])("with a %s row shows: %s", async (status, shown) => {
       listGuideProgress.mockResolvedValue([
         { guideKey: "welcome", status: "completed", snoozeCount: 0 },
+        TASK_TURNED_DOWN,
         { guideKey: "page-alpha-home", status, snoozeCount: 1 },
       ]);
       renderTasks({ at: "/home" });
@@ -602,9 +615,10 @@ describe("GuideProvider tasks", () => {
       ]);
     });
 
-    test("show again after a replay of the basics tour", async () => {
+    test("count again, with their task, after a replay of the basics tour", async () => {
       listGuideProgress.mockResolvedValue([
         { guideKey: "welcome", status: "completed", snoozeCount: 0 },
+        { ...TASK_TURNED_DOWN, updatedAt: "2026-11-01T10:00:00Z" },
         {
           guideKey: "page-alpha-home",
           status: "completed",
@@ -647,6 +661,7 @@ describe("GuideProvider tasks", () => {
             snoozeCount: 0,
             updatedAt: "2026-11-02T10:00:00Z",
           },
+          TASK_TURNED_DOWN,
           {
             guideKey: "page-alpha-home",
             status: "completed",
@@ -660,6 +675,143 @@ describe("GuideProvider tasks", () => {
         expect(screen.queryByText("Home one") !== null).toBe(shown);
       },
     );
+  });
+
+  describe("a task the viewer newly qualifies for", () => {
+    const SEEN_BASICS = {
+      guideKey: "welcome",
+      status: "completed",
+      snoozeCount: 0,
+    };
+
+    test("runs whole, once, on the page it starts on", async () => {
+      listGuideProgress.mockResolvedValue([SEEN_BASICS]);
+      renderTasks();
+      await settle();
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+
+      await click("Go /home");
+
+      expect(await screen.findByText("Home one")).toBeInTheDocument();
+      // The whole task, not the page intro: the item page is still ahead.
+      await click("Next");
+      await screen.findByText("Home two");
+      expect(screen.getByRole("button", { name: "Next" })).toBeInTheDocument();
+      await click("Close tour");
+      expect(recordGuideProgress.mock.calls).toEqual([
+        ["task-alpha", "snoozed"],
+      ]);
+
+      await click("Go /start");
+      await click("Go /home");
+      await pause();
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+    });
+
+    test("walks every segment and records completion", async () => {
+      listGuideProgress.mockResolvedValue([SEEN_BASICS]);
+      renderTasks({ at: "/home" });
+
+      await screen.findByText("Home one");
+      await click("Next");
+      await screen.findByText("Home two");
+      await click("Next");
+      await screen.findByText("Item one");
+      expect(path()).toBe("/items/42");
+      await click("Done");
+
+      expect(recordGuideProgress.mock.calls).toEqual([
+        ["task-alpha", "completed"],
+      ]);
+    });
+
+    test("does not follow a run of the same task earlier this session", async () => {
+      renderTasks();
+      await finishBasics();
+      await screen.findByText("Home one");
+      await click("Close tour");
+
+      await click("Go /start");
+      await click("Go /home");
+      await pause();
+
+      // Neither the task again nor its page intro.
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+    });
+
+    test("waits for the page it starts on", async () => {
+      listGuideProgress.mockResolvedValue([SEEN_BASICS]);
+      renderTasks();
+      await settle();
+
+      await click("Go /elsewhere");
+      await pause();
+
+      expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+    });
+
+    test("is left to the basics tour while that has not been seen", async () => {
+      listGuideProgress.mockResolvedValue([]);
+      renderTasks({ at: "/home" });
+
+      expect(await screen.findByText("Basics one")).toBeInTheDocument();
+    });
+
+    test.each(["completed", "dismissed"])(
+      "does not start once its row is %s",
+      async (status) => {
+        listGuideProgress.mockResolvedValue([
+          SEEN_BASICS,
+          { guideKey: "task-alpha", status, snoozeCount: 0 },
+          { guideKey: "page-alpha-home", status: "completed", snoozeCount: 0 },
+        ]);
+        renderTasks({ at: "/home" });
+        await settle();
+
+        expect(screen.queryByTestId("tour")).not.toBeInTheDocument();
+      },
+    );
+
+    test("starts again in a later session after a snooze", async () => {
+      listGuideProgress.mockResolvedValue([
+        SEEN_BASICS,
+        { guideKey: "task-alpha", status: "snoozed", snoozeCount: 1 },
+      ]);
+      renderTasks({ at: "/home" });
+
+      expect(await screen.findByText("Home one")).toBeInTheDocument();
+      await click("Next");
+      // Still the task: the intro would end on this step.
+      await screen.findByText("Home two");
+      expect(screen.getByRole("button", { name: "Next" })).toBeInTheDocument();
+    });
+
+    test("offers a chooser when several newly qualify", async () => {
+      listGuideProgress.mockResolvedValue([SEEN_BASICS]);
+      const beta = {
+        ...GAMMA,
+        key: "task-beta",
+        title: "Do beta",
+        segments: [{ ...GAMMA.segments[0], key: "beta-home", route: "/home" }],
+      };
+      renderTasks({ guides: [BASICS, ALPHA, beta], at: "/home" });
+
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).getByRole("button", { name: "Do alpha" }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "I'll explore on my own" }),
+      );
+
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(recordGuideProgress.mock.calls).toEqual([
+        ["task-alpha", "dismissed"],
+        ["task-beta", "dismissed"],
+      ]);
+    });
   });
 
   describe("pacing", () => {
