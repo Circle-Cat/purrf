@@ -331,3 +331,26 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "notification_links_test",
+    srcs = ["notification_links_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/common:approval_enums",
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/common:ops_enums",
+        "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/recruiting",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

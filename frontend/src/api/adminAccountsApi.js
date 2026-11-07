@@ -59,15 +59,23 @@ export const getBlockPreflight = (userId) =>
  *   reason may be "", as on every approval request.
  * @param {string} raisedFrom Domain page the request came from. A query
  *   parameter on the wire, not a body field.
+ * @param {number} [applicationId] The application page it came from, when
+ *   that page is one; what lets the outcome lead the raiser back to it.
  */
 export const createBlockRequest = (
   { userId, reason, reviewerId },
   raisedFrom,
+  applicationId,
 ) =>
   request.post(
     API_ENDPOINTS.BLOCK_REQUESTS,
     { userId, reason, reviewerId },
-    { params: { raised_from: raisedFrom } },
+    {
+      params:
+        applicationId == null
+          ? { raised_from: raisedFrom }
+          : { raised_from: raisedFrom, application_id: applicationId },
+    },
   );
 
 /** The requests waiting on the caller's own decision. Nobody else's. */

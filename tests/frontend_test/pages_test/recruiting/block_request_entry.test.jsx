@@ -340,6 +340,7 @@ describe("Request block — sending the request", () => {
       expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
         { userId: APPLICANT_ID, reason: "repeated no-shows", reviewerId: 77 },
         "recruiting_application",
+        101,
       ),
     );
     expect(toast.success).toHaveBeenCalledWith(
@@ -379,6 +380,7 @@ describe("Request block — sending the request", () => {
       expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
         { userId: APPLICANT_ID, reason: "", reviewerId: 77 },
         "recruiting_application",
+        101,
       ),
     );
   });

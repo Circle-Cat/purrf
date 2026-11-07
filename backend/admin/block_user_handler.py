@@ -73,6 +73,14 @@ class BlockUserHandler(ApprovalHandler):
             # Approving it later would overwrite blocked_by/at/reason and
             # erase who imposed the sanction in force and why.
             raise ValueError("This person is already blocked")
+        application_id = payload.get("application_id")
+        if application_id is not None:
+            # Here rather than in the service, so that it too is answered only
+            # after the reviewer: first, it would tell any raiser who names a
+            # bogus reviewer whose application an id is.
+            application = await self._applications.get_by_id(session, application_id)
+            if application is None or application.user_id != target.user_id:
+                raise ValueError("The application is not this person's")
 
     async def problems_at_approval(self, session, request) -> list[str]:
         if int(request.target_id) == request.reviewer_id:
