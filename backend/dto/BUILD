@@ -11,6 +11,7 @@ py_library(
         "//backend/common:identity_type",
         "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",
+        "//backend/common:onboarding_guide_enums",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",

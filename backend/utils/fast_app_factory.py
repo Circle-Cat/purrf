@@ -62,6 +62,7 @@ class FastAppFactory:
         evaluation_controller,
         audit_controller,
         recruiting_notification_controller,
+        guide_progress_controller,
         leave_admin_controller,
         training_admin_controller,
         training_content_controller,
@@ -103,6 +104,7 @@ class FastAppFactory:
             evaluation_controller: An instance of EvaluationController that manages API routes for assignee-facing interview evaluation scorecards.
             audit_controller: An instance of AuditController that manages API routes for the cross-posting recruiting audit page.
             recruiting_notification_controller: An instance of RecruitingNotificationController that manages API routes for the caller's own in-app notifications.
+            guide_progress_controller: An instance of GuideProgressController that manages API routes for the caller's own onboarding guide progress.
             leave_admin_controller: An instance of LeaveAdminController that manages admin-only leave API routes, starting with hand-written balance adjustments.
             training_admin_controller: An instance of TrainingAdminController that manages the course catalogue and manual assignment.
             training_content_controller: An instance of TrainingContentController that serves course files on the content origin.
@@ -145,6 +147,7 @@ class FastAppFactory:
         self.evaluation_controller = evaluation_controller
         self.audit_controller = audit_controller
         self.recruiting_notification_controller = recruiting_notification_controller
+        self.guide_progress_controller = guide_progress_controller
         self.leave_admin_controller = leave_admin_controller
         self.training_admin_controller = training_admin_controller
         self.training_content_controller = training_content_controller
@@ -256,6 +259,7 @@ class FastAppFactory:
         app.include_router(
             self.recruiting_notification_controller.router, prefix="/api"
         )
+        app.include_router(self.guide_progress_controller.router, prefix="/api")
         app.include_router(self.leave_calendar_controller.router, prefix="/api")
         app.include_router(self.leave_admin_controller.router, prefix="/api")
         app.include_router(self.training_admin_controller.router, prefix="/api")

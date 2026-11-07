@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 from backend.common.api_endpoints import (
     ADMIN_ACCOUNTS_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
+    GUIDE_PROGRESS_ENDPOINT,
+    GUIDES_PROGRESS_ENDPOINT,
     HEALTH_ENDPOINT,
 )
 from backend.utils.fast_app_factory import FastAppFactory
@@ -41,6 +43,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -134,6 +137,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -191,6 +195,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -248,6 +253,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -308,6 +314,7 @@ class TestFastAppFactory(unittest.TestCase):
             evaluation_controller=self.mock_controller,
             audit_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=leave_admin,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -365,6 +372,7 @@ class TestFastAppFactory(unittest.TestCase):
             evaluation_controller=self.mock_controller,
             audit_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -422,6 +430,7 @@ class TestFastAppFactory(unittest.TestCase):
             evaluation_controller=self.mock_controller,
             audit_controller=audit,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -481,6 +490,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -541,6 +551,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=evaluation,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -622,6 +633,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -691,6 +703,7 @@ class TestFastAppFactory(unittest.TestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -722,6 +735,24 @@ class TestFastAppFactory(unittest.TestCase):
             "GET /recruiting/applications/mine must be registered before the "
             "board's /recruiting/applications/{application_id} or it 422s",
         )
+
+    def test_guide_progress_routes_are_mounted_under_api(self):
+        from backend.onboarding_guide.guide_progress_controller import (
+            GuideProgressController,
+        )
+
+        self.factory.guide_progress_controller = GuideProgressController(
+            MagicMock(), MagicMock()
+        )
+
+        routes = {
+            (route.path, method)
+            for route in self.factory.create_app().routes
+            for method in getattr(route, "methods", None) or ()
+        }
+
+        self.assertIn((f"/api{GUIDES_PROGRESS_ENDPOINT}", "GET"), routes)
+        self.assertIn((f"/api{GUIDE_PROGRESS_ENDPOINT}", "PUT"), routes)
 
     @patch("backend.utils.fast_app_factory.register_exception_handlers")
     def test_exception_handler_registration_called(self, mock_register):
@@ -783,6 +814,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             audit_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            guide_progress_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             training_admin_controller=self.mock_controller,
             training_content_controller=self.mock_controller,
@@ -860,6 +892,7 @@ class TestAccountConsoleRoutes(unittest.TestCase):
             evaluation_controller=controller,
             audit_controller=controller,
             recruiting_notification_controller=controller,
+            guide_progress_controller=controller,
             leave_admin_controller=controller,
             training_admin_controller=controller,
             training_content_controller=controller,
