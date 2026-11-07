@@ -11,6 +11,7 @@ from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.exceptions import ConflictError
 from backend.common.permissions import Permission
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
 
@@ -22,6 +23,9 @@ OTHER_RAISER = 6
 REVIEWER = 3
 OTHER_ADMIN = 4
 ADMIN = 7
+# The target's application and someone else's, numbered apart from the people.
+TARGETS_APPLICATION = 4417
+OTHERS_APPLICATION = 4418
 
 
 def _user(user_id):
@@ -35,6 +39,13 @@ def _user(user_id):
     row.blocked_by = None
     row.blocked_at = None
     row.blocked_reason = None
+    return row
+
+
+def _application(application_id, user_id):
+    row = ApplicationEntity()
+    row.application_id = application_id
+    row.user_id = user_id
     return row
 
 
@@ -153,6 +164,15 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.users_repo = MagicMock()
         self.app_repo = MagicMock()
         self.app_repo.list_by_user = AsyncMock(return_value=[])
+        self.applications = {
+            TARGETS_APPLICATION: _application(TARGETS_APPLICATION, TARGET),
+            OTHERS_APPLICATION: _application(OTHERS_APPLICATION, OTHER_RAISER),
+        }
+        self.app_repo.get_by_id = AsyncMock(
+            side_effect=lambda _s, application_id, **_: self.applications.get(
+                application_id
+            )
+        )
         self.sub_repo = MagicMock()
         self.interview_repo = MagicMock()
         self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
@@ -233,6 +253,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         reason="second no-show",
         reviewer_id=REVIEWER,
         raised_from="recruiting_application",
+        application_id=None,
     ):
         return await self.service.raise_request(
             self.session,
@@ -241,6 +262,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             reason=reason,
             reviewer_id=reviewer_id,
             raised_from=raised_from,
+            application_id=application_id,
         )
 
     async def _decide(self, request_id, *, actor_id=REVIEWER, approved, note=None):
@@ -300,6 +322,36 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.target_type, "user")
         self.assertEqual(row.target_id, str(TARGET))
         self.assertEqual(row.payload, {"raised_from": "recruiting_application"})
+
+    async def test_raise_stores_the_application_it_came_from(self):
+        await self._raise(application_id=TARGETS_APPLICATION)
+
+        (row,) = self.requests.rows
+        self.assertEqual(
+            row.payload,
+            {
+                "raised_from": "recruiting_application",
+                "application_id": TARGETS_APPLICATION,
+            },
+        )
+
+    async def test_raise_refuses_an_application_that_is_not_the_targets(self):
+        for application_id in (OTHERS_APPLICATION, 4499):
+            with self.subTest(application_id=application_id):
+                with self.assertRaises(ValueError):
+                    await self._raise(application_id=application_id)
+
+                self.assertEqual(self.requests.rows, [])
+                self.session.commit.assert_not_awaited()
+
+    async def test_raise_refuses_an_application_from_a_mentorship_page(self):
+        with self.assertRaises(ValueError):
+            await self._raise(
+                raised_from="mentorship_participant",
+                application_id=TARGETS_APPLICATION,
+            )
+
+        self.assertEqual(self.requests.rows, [])
 
     async def test_names_are_resolved_in_one_lookup(self):
         await self._raise()

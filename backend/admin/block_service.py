@@ -42,6 +42,9 @@ RAISE_PERMISSION_BY_SOURCE: dict[str, Permission] = {
     "recruiting_application": Permission.RECRUITING_APPLICATION_ADVANCE,
     "mentorship_participant": Permission.MENTORSHIP_ADMIN_WRITE,
 }
+# The source whose page is one application rather than the person: a request
+# raised there names the application, so its outcome can lead the raiser back.
+RECRUITING_APPLICATION_SOURCE = "recruiting_application"
 
 
 async def _is_permission_admin(session, user, user_permissions_repository) -> bool:
@@ -411,6 +414,7 @@ class BlockService:
         reason: str | None,
         reviewer_id: int,
         raised_from: str,
+        application_id: int | None = None,
     ) -> BlockRequestDto:
         """Ask a named reviewer to block someone. Commits.
 
@@ -427,6 +431,10 @@ class BlockService:
             reviewer_id (int): The USER_ADMIN holder asked to decide.
             raised_from (str): One of ``RAISE_PERMISSION_BY_SOURCE``: the
                 domain page it came from, shown to the reviewer.
+            application_id (int | None): The application whose page it was
+                raised on, when that page is a recruiting application. Must be
+                the target's own. Without it the request still stands; its
+                outcome just has nowhere to send the raiser back to.
 
         Returns:
             BlockRequestDto: The new pending request.
@@ -434,8 +442,9 @@ class BlockService:
         Raises:
             PermissionError: If the raiser names themselves as the target.
             ValueError: If the target is unknown or already blocked, the
-                reviewer is not an eligible USER_ADMIN holder, or
-                ``raised_from`` is not a known source.
+                reviewer is not an eligible USER_ADMIN holder,
+                ``raised_from`` is not a known source, or ``application_id``
+                is given for another source or is not the target's.
             ConflictError: If a request against this person is already
                 awaiting a decision.
         """
@@ -447,6 +456,10 @@ class BlockService:
         if raised_from not in RAISE_PERMISSION_BY_SOURCE:
             raise ValueError(f"Unknown raised_from: {raised_from!r}")
         self._refuse_target_as_reviewer(reviewer_id, user_id)
+        payload = {"raised_from": raised_from}
+        if application_id is not None:
+            await self._check_raised_on(session, raised_from, application_id, user_id)
+            payload["application_id"] = application_id
         # The approval service checks the reviewer before the target on
         # purpose: answered first, "already blocked" would report any user's
         # block state to any raiser who names a bogus reviewer. The refusal
@@ -456,11 +469,22 @@ class BlockService:
             action=BLOCK_USER,
             raised_by=actor_id,
             target_id=str(user_id),
-            payload={"raised_from": raised_from},
+            payload=payload,
             reason=reason,
             reviewer_id=reviewer_id,
         )
         return await self._to_dto(session, row)
+
+    async def _check_raised_on(
+        self, session, raised_from: str, application_id: int, user_id: int
+    ) -> None:
+        """Refuse an application that is not the page the request came from:
+        one named from another source, or one that is not the target's."""
+        if raised_from != RECRUITING_APPLICATION_SOURCE:
+            raise ValueError(f"An application is not a {raised_from} page")
+        application = await self._applications.get_by_id(session, application_id)
+        if application is None or application.user_id != user_id:
+            raise ValueError("The application is not this person's")
 
     async def reassign(
         self, session, *, actor_id: int, request_id: int, reviewer_id: int

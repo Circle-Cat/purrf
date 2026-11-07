@@ -5869,6 +5869,7 @@ describe("ApplicationDetailPage — block-request reads are deferred", () => {
       expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
         { userId: 5, reason: "spamming", reviewerId: 77 },
         "recruiting_application",
+        101,
       ),
     );
   });
