@@ -344,6 +344,17 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.requests.rows, [])
                 self.session.commit.assert_not_awaited()
 
+    async def test_whose_application_it_is_is_answered_after_the_reviewer(self):
+        """A bogus reviewer is refused before the application is read, so the
+        refusal cannot tell the raiser whose application an id is."""
+        self.perms_repo.get_active_users_with_permission = AsyncMock(return_value=[])
+
+        with self.assertRaises(ValueError):
+            await self._raise(application_id=OTHERS_APPLICATION)
+
+        self.app_repo.get_by_id.assert_not_awaited()
+        self.assertEqual(self.requests.rows, [])
+
     async def test_raise_refuses_an_application_from_a_mentorship_page(self):
         with self.assertRaises(ValueError):
             await self._raise(

@@ -92,6 +92,10 @@ def _path(base: str, **params) -> str:
     return f"{base}?{query}" if query else base
 
 
+def _application_page(application_id) -> str:
+    return f"/recruiting/applications/{application_id}"
+
+
 def _participant(user_id, round_id=None, review=None) -> str:
     """A person's mentorship page, as ``participantLink`` builds it."""
     return _path(
@@ -213,7 +217,7 @@ class NotificationLinks:
         """The application's page; in evaluate mode for a recipient who is
         there only as its current assignee."""
         application_id = event.subject_id
-        path = f"/recruiting/applications/{application_id}"
+        path = _application_page(application_id)
         if event.event_type not in _ASSIGNEE_AUDIENCE:
             return path
         job = await self._job_of_application(application_id)
@@ -311,7 +315,7 @@ class NotificationLinks:
         if source == MENTORSHIP_PARTICIPANT_SOURCE:
             return _participant(event.subject_id)
         if source == RECRUITING_APPLICATION_SOURCE and payload.get("application_id"):
-            return f"/recruiting/applications/{payload['application_id']}"
+            return _application_page(payload["application_id"])
         return None
 
 

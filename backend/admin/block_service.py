@@ -458,7 +458,9 @@ class BlockService:
         self._refuse_target_as_reviewer(reviewer_id, user_id)
         payload = {"raised_from": raised_from}
         if application_id is not None:
-            await self._check_raised_on(session, raised_from, application_id, user_id)
+            if raised_from != RECRUITING_APPLICATION_SOURCE:
+                raise ValueError(f"An application is not a {raised_from} page")
+            # Whose application it is, the handler checks after the reviewer.
             payload["application_id"] = application_id
         # The approval service checks the reviewer before the target on
         # purpose: answered first, "already blocked" would report any user's
@@ -474,17 +476,6 @@ class BlockService:
             reviewer_id=reviewer_id,
         )
         return await self._to_dto(session, row)
-
-    async def _check_raised_on(
-        self, session, raised_from: str, application_id: int, user_id: int
-    ) -> None:
-        """Refuse an application that is not the page the request came from:
-        one named from another source, or one that is not the target's."""
-        if raised_from != RECRUITING_APPLICATION_SOURCE:
-            raise ValueError(f"An application is not a {raised_from} page")
-        application = await self._applications.get_by_id(session, application_id)
-        if application is None or application.user_id != user_id:
-            raise ValueError("The application is not this person's")
 
     async def reassign(
         self, session, *, actor_id: int, request_id: int, reviewer_id: int
