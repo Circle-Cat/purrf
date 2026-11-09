@@ -2346,7 +2346,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 
     expect(
       screen.getByText(
-        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
+        "Assign an interviewer first with Reassign, then book the meeting on the Interview Meeting card.",
       ),
     ).toBeInTheDocument();
     expect(api.setApplicationSubStatus).not.toHaveBeenCalled();
@@ -2370,7 +2370,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 
     expect(
       screen.queryByText(
-        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
+        "Assign an interviewer first with Reassign, then book the meeting on the Interview Meeting card.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -2399,7 +2399,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     );
     expect(
       screen.queryByText(
-        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
+        "Assign an interviewer first with Reassign, then book the meeting on the Interview Meeting card.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -2428,7 +2428,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     );
     expect(
       screen.queryByText(
-        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
+        "Assign an interviewer first with Reassign, then book the meeting on the Interview Meeting card.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -5869,6 +5869,7 @@ describe("ApplicationDetailPage — block-request reads are deferred", () => {
       expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
         { userId: 5, reason: "spamming", reviewerId: 77 },
         "recruiting_application",
+        101,
       ),
     );
   });

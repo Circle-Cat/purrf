@@ -715,6 +715,7 @@ class TestAppDependencyBuilder(TestCase):
             evaluation_controller=ANY,
             audit_controller=ANY,
             recruiting_notification_controller=ANY,
+            guide_progress_controller=builder.guide_progress_controller,
             leave_admin_controller=ANY,
             training_admin_controller=ANY,
             training_content_controller=ANY,
@@ -750,6 +751,18 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(inbox._rounds, builder.mentorship_round_repository)
         self.assertIs(
             builder.board_service.person_email_service, builder.person_email_service
+        )
+        self.assertIs(
+            builder.guide_progress_controller.guide_progress_service,
+            builder.guide_progress_service,
+        )
+        self.assertIs(
+            builder.guide_progress_service.user_guide_progress_repository,
+            builder.user_guide_progress_repository,
+        )
+        self.assertIs(
+            builder.guide_progress_controller.database,
+            mock_database_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances

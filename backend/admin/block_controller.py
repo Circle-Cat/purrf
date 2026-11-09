@@ -149,6 +149,7 @@ class BlockController:
         current_user: UserContextDto,
         request_data: BlockRequestCreateDto,
         raised_from: str,
+        application_id: int | None = None,
     ):
         """
         Ask a named reviewer to block someone.
@@ -161,6 +162,9 @@ class BlockController:
                 ``"recruiting_application"``. A query parameter rather than a body
                 field because it describes where the caller is standing, not
                 what they are asking for -- and BaseRequestDto forbids extras.
+            application_id (int | None): The application page it came from,
+                for a ``recruiting_application`` request; a query parameter
+                for the same reason.
 
         Returns:
             A standardized API response wrapping the new ``BlockRequestDto``.
@@ -182,6 +186,7 @@ class BlockController:
                 reason=request_data.reason,
                 reviewer_id=request_data.reviewer_id,
                 raised_from=raised_from,
+                application_id=application_id,
             )
         return api_response(message="Block request raised.", data=view)
 

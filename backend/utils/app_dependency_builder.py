@@ -161,6 +161,13 @@ from backend.leave.leave_participants import LeaveParticipantResolver
 from backend.repository.leave_ledger_repository import LeaveLedgerRepository
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
+from backend.onboarding_guide.guide_progress_controller import (
+    GuideProgressController,
+)
+from backend.onboarding_guide.guide_progress_service import GuideProgressService
+from backend.repository.user_guide_progress_repository import (
+    UserGuideProgressRepository,
+)
 from backend.communication.notification_email_service import NotificationEmailService
 from backend.notification_management.notification_event_email_service import (
     NotificationEventEmailService,
@@ -1365,6 +1372,14 @@ class AppDependencyBuilder:
             self.recruiting_notification_service,
             self.database,
         )
+        self.user_guide_progress_repository = UserGuideProgressRepository()
+        self.guide_progress_service = GuideProgressService(
+            self.user_guide_progress_repository
+        )
+        self.guide_progress_controller = GuideProgressController(
+            self.guide_progress_service,
+            self.database,
+        )
         self.leave_holiday_repository = LeaveHolidayRepository()
         self.leave_calendar_service = LeaveCalendarService(
             logger=self.logger,
@@ -1533,6 +1548,7 @@ class AppDependencyBuilder:
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
+            guide_progress_controller=self.guide_progress_controller,
             leave_admin_controller=self.leave_admin_controller,
             training_admin_controller=self.training_admin_controller,
             training_content_controller=self.training_content_controller,
