@@ -85,7 +85,7 @@ export default function LedgerPage({
           </select>
         </div>
 
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           {LEAVE_CALENDAR_ZONE_LABEL}
         </div>
       </div>

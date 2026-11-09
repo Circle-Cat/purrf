@@ -169,40 +169,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(within(list).getByText(/cformer/i)).toBeInTheDocument();
   });
 
-  it("disables Previous button on the first page", () => {
-    mockUseLeaveLedger.mockReturnValue({
-      entries: [{ leaveLedgerId: 1 }],
-      totalEntries: 100,
-      isLoading: false,
-      loadError: false,
-    });
-
-    render(<LedgerPage {...defaultProps} page={1} />);
-
-    const prevBtn = screen.getByRole("button", { name: /Prev/i });
-    const nextBtn = screen.getByRole("button", { name: /Next/i });
-
-    expect(prevBtn).toBeDisabled();
-    expect(nextBtn).not.toBeDisabled();
-  });
-
-  it("triggers onPageChange when page buttons are clicked", () => {
-    mockUseLeaveLedger.mockReturnValue({
-      entries: [{ leaveLedgerId: 1 }],
-      totalEntries: 100,
-      isLoading: false,
-      loadError: false,
-    });
-
-    render(<LedgerPage {...defaultProps} page={1} />);
-
-    const nextBtn = screen.getByRole("button", { name: /Next/i });
-    fireEvent.click(nextBtn);
-
-    expect(defaultProps.onPageChange).toHaveBeenCalledWith(2);
-  });
-
-  it("case 1: page 1 of 120 entries", () => {
+  it("shows 1–50 of 120 and disables Prev on the first page", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: sampleEntries,
       totalEntries: 120,
@@ -217,7 +184,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(screen.getByRole("button", { name: /Next/i })).not.toBeDisabled();
   });
 
-  it("case 2: page 2 of 120 entries", () => {
+  it("shows 51–100 of 120 and enables both Prev and Next on a middle page", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: sampleEntries,
       totalEntries: 120,
@@ -232,7 +199,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(screen.getByRole("button", { name: /Next/i })).not.toBeDisabled();
   });
 
-  it("case 3: page 3 of 120 entries (partial last page)", () => {
+  it("shows 101–120 of 120 and disables Next on a partial last page", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: sampleEntries,
       totalEntries: 120,
@@ -247,7 +214,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(screen.getByRole("button", { name: /Next/i })).toBeDisabled();
   });
 
-  it("case 4: 0 entries", () => {
+  it("shows 0–0 of 0, disables pagination, and renders empty state message when there are no entries", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: [],
       totalEntries: 0,
@@ -265,7 +232,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     ).toBeInTheDocument();
   });
 
-  it("case 5: displays calendar zone label and removes 'Showing' text", () => {
+  it("displays calendar zone label and removes 'Showing' text", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: sampleEntries,
       totalEntries: 120,
@@ -279,7 +246,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(screen.queryByText(/Showing/i)).not.toBeInTheDocument();
   });
 
-  it("case 6: clicking Prev and Next on page 2 calls onPageChange with correct values", () => {
+  it("clicking Prev and Next on page 2 calls onPageChange with correct values", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: sampleEntries,
       totalEntries: 120,
