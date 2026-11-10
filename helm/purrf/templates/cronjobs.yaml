@@ -1,4 +1,4 @@
-{{- range .Values.cronjobs }}
+{{- range concat .Values.cronjobs (.Values.extraCronjobs | default list) }}
 ---
 apiVersion: batch/v1
 kind: CronJob
