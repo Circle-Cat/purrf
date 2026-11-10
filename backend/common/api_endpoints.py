@@ -17,6 +17,7 @@ EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT = (
 )
 GOOGLE_CHAT_SUBSCRIBE_ENDPOINT = "/google/chat/spaces/subscribe"
 MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT = "/microsoft/chat/subscribe"
+CHAT_SUBSCRIPTIONS_CHECK_ENDPOINT = "/notifications/chat-subscriptions/check"
 
 MICROSOFT_BACKFILL_LDAPS_ENDPOINT = "/microsoft/backfill/ldaps"
 MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT = "/microsoft/backfill/chat/messages/{chatId}"
