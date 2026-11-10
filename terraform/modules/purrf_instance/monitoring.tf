@@ -458,3 +458,86 @@ resource "google_monitoring_alert_policy" "backend_5xx" {
     content   = "The backend answered several requests with a 5xx. The access lines are in Logs Explorer under namespace ${local.name_prefix}; the matching ERROR lines usually sit just before them."
   }
 }
+
+# ---------------------------------------------------------------------------
+# CronJobs (cluster project)
+# ---------------------------------------------------------------------------
+
+# Fires only once Kubernetes has given up retrying, not on each cron.failed.
+resource "google_monitoring_alert_policy" "cron_job_failed" {
+  count                 = local.alerting_enabled ? 1 : 0
+  project               = var.k8s_project_id
+  display_name          = "${local.name_prefix}: cron job failed after retries"
+  combiner              = "OR"
+  notification_channels = local.alert_k8s_channels
+
+  conditions {
+    display_name = "Kubernetes event: BackoffLimitExceeded or DeadlineExceeded on a Job"
+    condition_matched_log {
+      filter = "logName=\"projects/${var.k8s_project_id}/logs/events\" AND jsonPayload.involvedObject.namespace=\"${local.name_prefix}\" AND jsonPayload.involvedObject.kind=\"Job\" AND jsonPayload.reason=(\"BackoffLimitExceeded\" OR \"DeadlineExceeded\")"
+      label_extractors = {
+        job = "EXTRACT(jsonPayload.involvedObject.name)"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "A cron job still failed after Kubernetes retried it. The job name is in the alert labels. Its `cron.failed` lines in Logs Explorer (namespace ${local.name_prefix}, jsonPayload.monitor_event=\"cron.failed\") give curl's exit code: 22 means the backend answered 4xx or 5xx, 7 that it could not connect, 28 a timeout. The backend's own logs at that time give the cause."
+  }
+}
+
+resource "google_logging_metric" "cron_succeeded" {
+  count   = local.alerting_enabled ? 1 : 0
+  project = var.k8s_project_id
+  name    = "${local.name_prefix}-cron-succeeded"
+  filter  = "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"${local.name_prefix}\" AND jsonPayload.monitor_event=\"cron.succeeded\""
+
+  label_extractors = {
+    job = "EXTRACT(jsonPayload.job)"
+  }
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+    labels {
+      key        = "job"
+      value_type = "STRING"
+    }
+  }
+}
+
+# Only the two-hourly job fits an absence window, which is capped at one day.
+resource "google_monitoring_alert_policy" "cron_stopped" {
+  count                 = local.alerting_enabled ? 1 : 0
+  project               = var.k8s_project_id
+  display_name          = "${local.name_prefix}: cron jobs stopped running"
+  combiner              = "OR"
+  notification_channels = local.alert_k8s_channels
+
+  conditions {
+    display_name = "No successful sync-meet-attendance run for 6 hours"
+    condition_absent {
+      filter   = "resource.type=\"k8s_container\" AND metric.type=\"logging.googleapis.com/user/${google_logging_metric.cron_succeeded[0].name}\" AND metric.labels.job=\"sync-meet-attendance\""
+      duration = "21600s"
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "sync-meet-attendance, which runs every two hours, has not succeeded for six hours. Either it keeps failing (look for the failed-after-retries alert), or no cron job is being scheduled: check `kubectl -n ${local.name_prefix} get cronjobs` for suspended jobs and the cluster for trouble."
+  }
+}
