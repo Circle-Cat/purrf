@@ -14,7 +14,7 @@ envFrom:
       name: purrf-prod
 extraCronjobs:
   - name: check-chat-subscriptions
-    schedule: "30 11 * * *"   # 11:30 UTC daily
+    schedule: "30 11 * * *" # 11:30 UTC daily
     url: "/api/notifications/chat-subscriptions/check"
 ingress:
   enabled: true
@@ -35,4 +35,4 @@ ingress:
 # Deployment untouched. Lives on the prod branch only, like staging's.
 migrate:
   enabled: true
-releaseTag: release/2026.11.10.2
+releaseTag: release/2026.11.10.3
