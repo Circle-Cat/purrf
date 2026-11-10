@@ -6,6 +6,7 @@ from http import HTTPStatus
 
 from backend.common.permissions import Permission
 from backend.common.api_endpoints import (
+    CHAT_SUBSCRIPTIONS_CHECK_ENDPOINT,
     GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
     MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
 )
@@ -23,11 +24,14 @@ class TestNotificationIntegration(unittest.TestCase):
         # Mock the business services (we only test the web integration layer)
         self.microsoft_service = AsyncMock()
         self.google_service = MagicMock()
+        self.check_service = MagicMock()
+        self.check_service.check = AsyncMock()
 
         # Initialize the controller
         self.controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_service,
             google_chat_subscription_service=self.google_service,
+            chat_subscription_check_service=self.check_service,
         )
 
         # Mock async DB session + user identity service for middleware bootstrap
@@ -159,6 +163,36 @@ class TestNotificationIntegration(unittest.TestCase):
         # Verify middleware returns 400 Bad Request (as defined in middleware logic)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
         self.assertEqual(response.json()["message"], "Invalid token")
+
+    def test_check_chat_subscriptions_returns_the_check_result(self):
+        self._set_authenticated_user(permissions=[Permission.SYSTEM_SYNC])
+        checked = {
+            "teams": [{"target": "19:a", "status": "ok", "expiresAt": None}],
+            "googleChat": [
+                {"target": "spaces/b", "status": "missing", "expiresAt": None}
+            ],
+        }
+        self.check_service.check.return_value = checked
+
+        response = self.client.post(
+            CHAT_SUBSCRIPTIONS_CHECK_ENDPOINT,
+            headers={"Authorization": "Bearer mock-token"},
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json()["data"], checked)
+        self.check_service.check.assert_awaited_once()
+
+    def test_check_chat_subscriptions_requires_system_sync(self):
+        self._set_authenticated_user(permissions=[Permission.SYSTEM_SUBSCRIBE])
+
+        response = self.client.post(
+            CHAT_SUBSCRIPTIONS_CHECK_ENDPOINT,
+            headers={"Authorization": "Bearer mock-token"},
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.check_service.check.assert_not_called()
 
 
 if __name__ == "__main__":

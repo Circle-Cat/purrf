@@ -5,6 +5,7 @@ from backend.common.fast_api_response_wrapper import api_response
 from backend.common.constants import SINGLE_GOOGLE_CHAT_EVENT_TYPES
 from backend.common.permissions import Permission
 from backend.common.api_endpoints import (
+    CHAT_SUBSCRIPTIONS_CHECK_ENDPOINT,
     GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
     MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
 )
@@ -28,6 +29,7 @@ class NotificationController:
         self,
         microsoft_chat_subscription_service,
         google_chat_subscription_service,
+        chat_subscription_check_service,
     ):
         """
         Initialize the NotificationController with required dependencies.
@@ -35,6 +37,7 @@ class NotificationController:
         Args:
             microsoft_chat_subscription_service: MicrosoftChatSubscriptionService instance.
             google_chat_subscription_service: GoogleChatSubscriptionService instance.
+            chat_subscription_check_service: ChatSubscriptionCheckService instance.
         """
         if not microsoft_chat_subscription_service:
             raise ValueError("MicrosoftChatSubscriptionService instances is required.")
@@ -43,6 +46,7 @@ class NotificationController:
 
         self.microsoft_chat_subscription_service = microsoft_chat_subscription_service
         self.google_chat_subscription_service = google_chat_subscription_service
+        self.chat_subscription_check_service = chat_subscription_check_service
 
         self.router = APIRouter(tags=["notification"])
 
@@ -61,6 +65,14 @@ class NotificationController:
             ),
             methods=["POST"],
             response_model=dict,
+        )
+        self.router.add_api_route(
+            CHAT_SUBSCRIPTIONS_CHECK_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
+                self.check_chat_subscriptions
+            ),
+            methods=["POST"],
+            response_model=None,
         )
 
     async def subscribe_microsoft_chat_messages(
@@ -123,3 +135,12 @@ class NotificationController:
             data=response,
             status_code=HTTPStatus.CREATED,
         )
+
+    async def check_chat_subscriptions(self):
+        """Log the status of every chat subscription this environment should hold.
+
+        Called by a CronJob. Problems are reported through the log, not the
+        status code; a failing API call propagates so the job fails.
+        """
+        data = await self.chat_subscription_check_service.check()
+        return api_response(message="Chat subscriptions checked.", data=data)

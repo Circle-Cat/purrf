@@ -162,6 +162,7 @@ py_library(
         "//backend/leave:leave_request_handler",
         "//backend/leave:leave_request_service",
         "//backend/mentorship",
+        "//backend/notification_management:chat_subscription_check_service",
         "//backend/notification_management:delivery_controller",
         "//backend/notification_management:delivery_service",
         "//backend/notification_management:google_chat_subscription_service",
