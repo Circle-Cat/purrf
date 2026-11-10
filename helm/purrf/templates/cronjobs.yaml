@@ -48,6 +48,16 @@ spec:
                     -d @/tmp/post_body.json \
                     {{- end }}
                     "http://{{ include "purrf.fullname" $ }}:{{ $.Values.service.port }}{{ .url }}"
+                  STATUS=$?
+
+                  # One JSON line per run for Cloud Monitoring to count. The
+                  # leading newline keeps it off the end of curl's response body.
+                  if [ "$STATUS" -eq 0 ]; then
+                    printf '\n{"severity":"INFO","message":"Cron job succeeded","monitor_event":"cron.succeeded","job":"%s"}\n' "{{ .name }}"
+                  else
+                    printf '\n{"severity":"ERROR","message":"Cron job failed","monitor_event":"cron.failed","job":"%s","curl_exit_code":%d}\n' "{{ .name }}" "$STATUS"
+                  fi
+                  exit "$STATUS"
 
               resources:
                 {{- if .resources }}
