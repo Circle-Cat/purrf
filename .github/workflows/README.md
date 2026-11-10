@@ -130,12 +130,15 @@ Run **Promote** with:
 
 With `commits` empty it cherry-picks the staging commits **after the release prod
 is running, up to the tag**, oldest first by ancestry (skipping staging's
-env-pin commits). The running release is the `release/*` tag whose
-`values-staging.yaml` image matches `values-prod.yaml` on `prod`; when none
-matches, or that tag is not an ancestor of the new one because staging's history
-was rewritten, the run stops and asks for `commits` instead. It then
-reads the tested image tag from `values-staging.yaml@<tag>`, and pins
-`values-prod.yaml` to it — all in one PR. `promotion-guard` + `lint-and-test` +
+env-pin commits). The running release is the one `values-prod.yaml` on `prod`
+records as `releaseTag`. Before that field existed it was found by image: the
+`release/*` tag whose `values-staging.yaml` image matches `values-prod.yaml`.
+When neither works, or that tag is not an ancestor of the new one because
+staging's history was rewritten, the run stops and asks for `commits` instead.
+It then reads the tested image tag from `values-staging.yaml@<tag>`, and pins
+`values-prod.yaml` to it and to the new `releaseTag` — all in one PR. A release
+that changes only Helm or config keeps prod's image; the PR title then says
+`image unchanged`. `promotion-guard` + `lint-and-test` +
 maintainer review, then merge with a **merge commit**. ArgoCD prod pulls the
 exact staging-tested image; the frontend rebuilds from the `prod` branch.
 

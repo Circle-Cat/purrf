@@ -121,6 +121,7 @@ jobs:
               exit 1
             fi
             export IMAGE_TAG
+            PROD_IMAGE=$(git show "origin/prod:helm/purrf/values-prod.yaml" | yq '.image.tag')
             echo "Releasing $RELEASE_TAG to prod; reusing staging-tested image tag: $IMAGE_TAG"
           else
             ANCHOR="origin/$UPSTREAM"
@@ -143,28 +144,37 @@ jobs:
             candidates=$(git rev-list --reverse --topo-order "$ANCHOR" \
               | grep -Fx -f <(printf '%s\n' $wanted))
           elif [ "$TARGET" = "prod" ]; then
-            # Every staging commit since the release prod is running. That
-            # release is found by image rather than by history: each prod
-            # release pins values-prod.yaml to the image in values-staging.yaml
-            # at its tag, while prod's own history stopped lining up with
-            # staging's long ago, so git cherry would list released commits as
-            # pending.
-            PROD_IMAGE=$(git show "origin/prod:helm/purrf/values-prod.yaml" | yq '.image.tag')
-            if [ "$PROD_IMAGE" = "$IMAGE_TAG" ]; then
-              echo "::error::prod already runs $IMAGE_TAG, the image at $RELEASE_TAG."
-              exit 1
-            fi
-            PREVIOUS_TAG=""
-            for tag in $(git tag -l 'release/*' --sort=-creatordate); do
-              [ "$tag" = "$RELEASE_TAG" ] && continue
-              if [ "$(git show "refs/tags/$tag:helm/purrf/values-staging.yaml" 2>/dev/null | yq '.image.tag')" = "$PROD_IMAGE" ]; then
-                PREVIOUS_TAG="$tag"
-                break
+            # Every staging commit since the release prod is running. Prod's own
+            # history stopped lining up with staging's long ago, so git cherry
+            # would list released commits as pending; the release is read from
+            # values-prod.yaml instead, where each release records its tag.
+            PREVIOUS_TAG=$(git show "origin/prod:helm/purrf/values-prod.yaml" | yq '.releaseTag // ""')
+            if [ -n "$PREVIOUS_TAG" ]; then
+              if [ "$PREVIOUS_TAG" = "$RELEASE_TAG" ]; then
+                echo "::error::prod already runs $RELEASE_TAG."
+                exit 1
               fi
-            done
-            if [ -z "$PREVIOUS_TAG" ]; then
-              echo "::error::No release tag carries prod's image $PROD_IMAGE, so the range cannot be worked out. Pass commits explicitly."
-              exit 1
+              if ! git rev-parse -q --verify "refs/tags/$PREVIOUS_TAG^{commit}" >/dev/null; then
+                echo "::error::values-prod.yaml records release $PREVIOUS_TAG, but no such tag exists. Pass commits explicitly."
+                exit 1
+              fi
+            else
+              # Releases made before the tag was recorded are found by image:
+              # each pinned values-prod.yaml to the image in values-staging.yaml
+              # at its tag. The newest tag carrying prod's image is taken, which
+              # is ambiguous only between tags sharing an image -- the case the
+              # recorded tag exists to settle.
+              for tag in $(git tag -l 'release/*' --sort=-creatordate); do
+                [ "$tag" = "$RELEASE_TAG" ] && continue
+                if [ "$(git show "refs/tags/$tag:helm/purrf/values-staging.yaml" 2>/dev/null | yq '.image.tag')" = "$PROD_IMAGE" ]; then
+                  PREVIOUS_TAG="$tag"
+                  break
+                fi
+              done
+              if [ -z "$PREVIOUS_TAG" ]; then
+                echo "::error::No release tag carries prod's image $PROD_IMAGE, so the range cannot be worked out. Pass commits explicitly."
+                exit 1
+              fi
             fi
             if ! git merge-base --is-ancestor "refs/tags/$PREVIOUS_TAG^{commit}" "refs/tags/$RELEASE_TAG^{commit}"; then
               echo "::error::$PREVIOUS_TAG, the release prod is running, is not an ancestor of $RELEASE_TAG: staging's history was rewritten in between. Pass commits explicitly."
@@ -192,6 +202,11 @@ jobs:
             picks="$picks $sha"
           done
 
+          if [ "$TARGET" = "prod" ] && [ -z "$picks" ] && [ "$PROD_IMAGE" = "$IMAGE_TAG" ]; then
+            echo "::error::Nothing to promote: $RELEASE_TAG adds no commits and no new image over what prod runs."
+            exit 1
+          fi
+
           git checkout -b "$BRANCH" "origin/$TARGET"
           for sha in $picks; do
             if ! git cherry-pick -x "$sha"; then
@@ -201,12 +216,18 @@ jobs:
             fi
           done
 
-          # Prod: pin the reused, staging-tested image into values-prod.yaml as one
-          # extra commit (promotion-guard exempts it -- touches only values-prod.yaml).
+          # Prod: pin the reused, staging-tested image into values-prod.yaml and
+          # record the release tag the next release starts from, as one extra
+          # commit (promotion-guard exempts it -- touches only values-prod.yaml).
+          # A release that changes only Helm or config keeps prod's image.
           if [ "$TARGET" = "prod" ]; then
-            yq -i '.image.tag = strenv(IMAGE_TAG)' helm/purrf/values-prod.yaml
+            yq -i '.image.tag = strenv(IMAGE_TAG) | .releaseTag = strenv(RELEASE_TAG)' helm/purrf/values-prod.yaml
             if ! git diff --quiet helm/purrf/values-prod.yaml; then
-              git commit -am "chore(prod): pin image to ${IMAGE_TAG}"
+              if [ "$PROD_IMAGE" = "$IMAGE_TAG" ]; then
+                git commit -am "chore(prod): record release ${RELEASE_TAG}"
+              else
+                git commit -am "chore(prod): pin image to ${IMAGE_TAG} for ${RELEASE_TAG}"
+              fi
             fi
           fi
 
@@ -221,7 +242,11 @@ jobs:
 
           {
             if [ "$TARGET" = "prod" ]; then
-              echo "Releases \`$RELEASE_TAG\` from \`staging\` to \`prod\`, reusing the staging-tested image \`$IMAGE_TAG\`."
+              if [ "$PROD_IMAGE" = "$IMAGE_TAG" ]; then
+                echo "Releases \`$RELEASE_TAG\` from \`staging\` to \`prod\`. The image is unchanged: prod keeps \`$IMAGE_TAG\`."
+              else
+                echo "Releases \`$RELEASE_TAG\` from \`staging\` to \`prod\`, reusing the staging-tested image \`$IMAGE_TAG\`."
+              fi
             else
               echo "Promotes the following commits from \`$UPSTREAM\` to \`$TARGET\`:"
             fi
@@ -254,7 +279,11 @@ jobs:
 
           count=$(git rev-list --count "origin/$TARGET..$BRANCH")
           if [ "$TARGET" = "prod" ]; then
-            title="Release $RELEASE_TAG to prod ($count commit(s), image $IMAGE_TAG)"
+            if [ "$PROD_IMAGE" = "$IMAGE_TAG" ]; then
+              title="Release $RELEASE_TAG to prod ($count commit(s), image unchanged)"
+            else
+              title="Release $RELEASE_TAG to prod ($count commit(s), image $IMAGE_TAG)"
+            fi
           else
             title="Promote $count commit(s) from $UPSTREAM to $TARGET"
           fi
