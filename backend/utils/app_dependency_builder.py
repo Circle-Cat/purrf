@@ -19,6 +19,9 @@ from backend.notification_management.google_chat_subscription_service import (
     GoogleChatSubscriptionService,
 )
 
+from backend.notification_management.chat_subscription_check_service import (
+    ChatSubscriptionCheckService,
+)
 from backend.notification_management.notification_controller import (
     NotificationController,
 )
@@ -70,6 +73,10 @@ from backend.internal_activity_service.activity_query_cache import (
     ActivityQueryCache,
 )
 from backend.common.environment_constants import (
+    EXPECTED_GOOGLE_CHAT_SPACES,
+    EXPECTED_TEAMS_CHATS,
+    GOOGLE_CHAT_EVENTS_TOPIC,
+    TEAMS_CHAT_NOTIFICATION_URL,
     GMAIL_SENDER_RECRUITING,
     GMAIL_SENDER_NOTIFICATION,
     GMAIL_WATCH_TOPIC,
@@ -424,9 +431,28 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             google_workspaceevents_client=self.google_workspaceevents_client,
         )
+        self.chat_subscription_check_service = ChatSubscriptionCheckService(
+            logger=self.logger,
+            microsoft_service=self.microsoft_service,
+            google_workspaceevents_client=self.google_workspaceevents_client,
+            retry_utils=self.retry_utils,
+            expected_teams_chats=[
+                chat.strip()
+                for chat in (os.getenv(EXPECTED_TEAMS_CHATS) or "").split(",")
+                if chat.strip()
+            ],
+            expected_google_chat_spaces=[
+                space.strip()
+                for space in (os.getenv(EXPECTED_GOOGLE_CHAT_SPACES) or "").split(",")
+                if space.strip()
+            ],
+            teams_notification_url=os.getenv(TEAMS_CHAT_NOTIFICATION_URL) or "",
+            google_chat_events_topic=os.getenv(GOOGLE_CHAT_EVENTS_TOPIC) or "",
+        )
         self.notification_controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
             google_chat_subscription_service=self.google_chat_subscription_service,
+            chat_subscription_check_service=self.chat_subscription_check_service,
         )
         self.date_time_util = DateTimeUtil(logger=self.logger)
         self.microsoft_chat_message_util = MicrosoftChatMessageUtil(

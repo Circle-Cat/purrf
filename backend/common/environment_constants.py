@@ -162,3 +162,13 @@ MATCHER_JOB_RESOURCE = "MATCHER_JOB_RESOURCE"
 TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
 TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"
 KIT_API_KEY = "KIT_API_KEY"
+
+# The chat subscriptions this environment should hold, for the subscription
+# check: comma-separated Teams chat ids and Google Chat space names
+# (spaces/<id>), plus where this environment's own subscriptions deliver, so a
+# subscription another environment made on the same chat is not counted. Unset
+# means nothing is checked.
+EXPECTED_TEAMS_CHATS = "EXPECTED_TEAMS_CHATS"
+EXPECTED_GOOGLE_CHAT_SPACES = "EXPECTED_GOOGLE_CHAT_SPACES"
+TEAMS_CHAT_NOTIFICATION_URL = "TEAMS_CHAT_NOTIFICATION_URL"
+GOOGLE_CHAT_EVENTS_TOPIC = "GOOGLE_CHAT_EVENTS_TOPIC"

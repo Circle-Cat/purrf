@@ -19,6 +19,10 @@ from backend.common.environment_constants import (
     INTERVIEW_CALENDAR_ID,
     NOTIFICATION_TOPIC,
     USER_EMAIL,
+    EXPECTED_TEAMS_CHATS,
+    EXPECTED_GOOGLE_CHAT_SPACES,
+    TEAMS_CHAT_NOTIFICATION_URL,
+    GOOGLE_CHAT_EVENTS_TOPIC,
 )
 
 
@@ -258,6 +262,10 @@ class TestAppDependencyBuilder(TestCase):
             INTERVIEW_CALENDAR_ID: "cal-interview",
             NOTIFICATION_TOPIC: "projects/test-project/topics/notifications",
             USER_EMAIL: "purrf@circlecat.org",
+            EXPECTED_TEAMS_CHATS: "19:a@thread.v2, 19:b@thread.v2,",
+            EXPECTED_GOOGLE_CHAT_SPACES: "spaces/C",
+            TEAMS_CHAT_NOTIFICATION_URL: "https://cf.example/teams",
+            GOOGLE_CHAT_EVENTS_TOPIC: "projects/p/topics/chat-events",
         }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
@@ -303,6 +311,21 @@ class TestAppDependencyBuilder(TestCase):
         mock_notification_controller.assert_called_once_with(
             microsoft_chat_subscription_service=mock_microsoft_chat_subscription_service.return_value,
             google_chat_subscription_service=mock_google_chat_subscription_service.return_value,
+            chat_subscription_check_service=builder.chat_subscription_check_service,
+        )
+        check_service = builder.chat_subscription_check_service
+        self.assertEqual(
+            check_service.expected_teams_chats, ["19:a@thread.v2", "19:b@thread.v2"]
+        )
+        self.assertEqual(check_service.expected_google_chat_spaces, ["spaces/C"])
+        self.assertEqual(
+            check_service.teams_notification_url, "https://cf.example/teams"
+        )
+        self.assertEqual(
+            check_service.google_chat_events_topic, "projects/p/topics/chat-events"
+        )
+        self.assertIs(
+            check_service.microsoft_service, mock_microsoft_service.return_value
         )
         mock_date_time_util_cls.assert_called_once_with(logger=mock_logger)
 
