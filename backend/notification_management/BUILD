@@ -125,6 +125,14 @@ py_library(
 )
 
 py_library(
+    name = "chat_subscription_check_service",
+    srcs = ["chat_subscription_check_service.py"],
+    deps = [
+        "//backend/common:constants",
+    ],
+)
+
+py_library(
     name = "gerrit_webhook_lib",
     srcs = ["gerrit_webhook_lib.py"],
     deps = [
