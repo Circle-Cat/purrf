@@ -8,7 +8,7 @@ image:
   # CI-built image, promoted from staging (prod never rebuilds; the tag below
   # is pinned by the prod promotion to the staging-tested build).
   repository: ghcr.io/circle-cat/purrf
-  tag: "ed246796e0ed3fdc58dd37eda8dc5b79b0589eef"
+  tag: "0c24f2f47c07f7ffbae7aafd8d7340cdc4be08d2"
 envFrom:
   - secretRef:
       name: purrf-prod
@@ -31,4 +31,4 @@ ingress:
 # Deployment untouched. Lives on the prod branch only, like staging's.
 migrate:
   enabled: true
-releaseTag: release/2026.11.10
+releaseTag: release/2026.11.10.2
