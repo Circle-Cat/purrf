@@ -21,6 +21,14 @@ py_test(
 )
 
 py_test(
+    name = "chat_subscription_check_service_test",
+    srcs = ["chat_subscription_check_service_test.py"],
+    deps = [
+        "//backend/notification_management:chat_subscription_check_service",
+    ],
+)
+
+py_test(
     name = "google_chat_subscription_service_test",
     srcs = ["google_chat_subscription_service_test.py"],
     deps = [
