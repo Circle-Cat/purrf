@@ -31,3 +31,4 @@ ingress:
 # Deployment untouched. Lives on the prod branch only, like staging's.
 migrate:
   enabled: true
+releaseTag: release/2026.11.10
