@@ -13,6 +13,10 @@ image:
 envFrom:
   - secretRef:
       name: purrf-prod
+extraCronjobs:
+  - name: check-chat-subscriptions
+    schedule: "30 11 * * *"   # 11:30 UTC daily
+    url: "/api/notifications/chat-subscriptions/check"
 ingress:
   enabled: true
   className: cloudflare2-tunnel
