@@ -69,4 +69,10 @@ module "purrf_instance" {
   # the matcher LLM key secret before the job can be created; see the module.
   enable_matcher    = true
   matcher_image_tag = "a88afa5237a2aabfba6887ad025a33ceee54887b"
+
+  # The Chat space has the Google Cloud Monitoring app installed.
+  alerting = {
+    email      = "yuji@circlecat.org"
+    chat_space = "AAQAH6XrNyM"
+  }
 }
