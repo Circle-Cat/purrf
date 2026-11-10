@@ -234,3 +234,7 @@ cronjobs:
     # real run, comfortably shorter than the 2-hour schedule interval, so a
     # wedged run under concurrencyPolicy: Forbid is killed before the next
     # trigger instead of skipping every future run forever.
+
+# Jobs only some environments run, set in that environment's values file.
+# Same fields as cronjobs; kept apart because Helm replaces a list as a whole.
+extraCronjobs: []
