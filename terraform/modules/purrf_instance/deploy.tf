@@ -110,6 +110,14 @@ resource "kubernetes_secret" "purrf_app" {
     # refuse a TRAINING_CONTENT_HOST that matches one of them. Course hosting
     # stays disabled until this is set.
     APP_ORIGINS = "https://${local.domains.main},https://${local.domains.api}"
+
+    # For the daily chat subscription check: the chats to stay subscribed to,
+    # and where this environment's subscriptions deliver, so another
+    # environment's subscription on the same chat is not counted.
+    EXPECTED_TEAMS_CHATS        = join(",", var.expected_chat_subscriptions.teams_chats)
+    EXPECTED_GOOGLE_CHAT_SPACES = join(",", var.expected_chat_subscriptions.google_chat_spaces)
+    TEAMS_CHAT_NOTIFICATION_URL = "https://${local.domains.cf}/${google_cloudfunctions_function.functions["microsoft-chat"].name}"
+    GOOGLE_CHAT_EVENTS_TOPIC    = google_pubsub_topic.topics["chat-google-events"].id
   }
 }
 

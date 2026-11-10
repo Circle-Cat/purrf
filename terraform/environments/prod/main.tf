@@ -75,4 +75,9 @@ module "purrf_instance" {
     email      = "yuji@circlecat.org"
     chat_space = "AAQAH6XrNyM"
   }
+
+  expected_chat_subscriptions = {
+    teams_chats        = ["19:meeting_OWJmOWJiYWMtNWQyOS00YzExLTgxNTUtMzA1NWY4MDlhZjVl@thread.v2"]
+    google_chat_spaces = ["spaces/AAAA84ojBJY"]
+  }
 }

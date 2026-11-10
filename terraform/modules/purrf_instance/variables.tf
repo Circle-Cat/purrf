@@ -271,3 +271,15 @@ variable "alerting" {
   })
   default = null
 }
+
+variable "expected_chat_subscriptions" {
+  description = "Chats this environment must stay subscribed to, checked daily: Teams chat ids and Google Chat spaces as spaces/<id>. Empty lists check nothing."
+  type = object({
+    teams_chats        = list(string)
+    google_chat_spaces = list(string)
+  })
+  default = {
+    teams_chats        = []
+    google_chat_spaces = []
+  }
+}
