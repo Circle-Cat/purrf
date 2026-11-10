@@ -463,10 +463,7 @@ resource "google_monitoring_alert_policy" "backend_5xx" {
 # CronJobs (cluster project)
 # ---------------------------------------------------------------------------
 
-# Kubernetes retries a failed run until the Job's backoff limit, then records
-# BackoffLimitExceeded; a run past activeDeadlineSeconds records
-# DeadlineExceeded. Alerting on these, not on each cron.failed line, reports
-# only runs that still failed after every retry.
+# Fires only once Kubernetes has given up retrying, not on each cron.failed.
 resource "google_monitoring_alert_policy" "cron_job_failed" {
   count                 = local.alerting_enabled ? 1 : 0
   project               = var.k8s_project_id
@@ -518,10 +515,7 @@ resource "google_logging_metric" "cron_succeeded" {
   }
 }
 
-# sync-meet-attendance runs every two hours, so six hours without a success
-# means the cron jobs as a whole have stopped running, which no failure event
-# would report. The other jobs run daily or less often, beyond the one-day
-# limit of an absence condition.
+# Only the two-hourly job fits an absence window, which is capped at one day.
 resource "google_monitoring_alert_policy" "cron_stopped" {
   count                 = local.alerting_enabled ? 1 : 0
   project               = var.k8s_project_id
