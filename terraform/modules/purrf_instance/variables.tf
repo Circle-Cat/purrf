@@ -262,3 +262,12 @@ variable "kit_api_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "alerting" {
+  description = "Where Cloud Monitoring alerts go: a mailbox, and the ID of a Google Chat space that has the Google Cloud Monitoring app installed (empty: email only). Null creates no alerting at all. Policies are made in the GCP project and, for the backend's pods and logs, in k8s_project_id."
+  type = object({
+    email      = string
+    chat_space = string
+  })
+  default = null
+}
