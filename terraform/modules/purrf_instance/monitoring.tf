@@ -541,3 +541,39 @@ resource "google_monitoring_alert_policy" "cron_stopped" {
     content   = "sync-meet-attendance, which runs every two hours, has not succeeded for six hours. Either it keeps failing (look for the failed-after-retries alert), or no cron job is being scheduled: check `kubectl -n ${local.name_prefix} get cronjobs` for suspended jobs and the cluster for trouble."
   }
 }
+
+# ---------------------------------------------------------------------------
+# Chat subscriptions (cluster project)
+# ---------------------------------------------------------------------------
+
+resource "google_monitoring_alert_policy" "chat_subscription_unhealthy" {
+  count                 = local.alerting_enabled ? 1 : 0
+  project               = var.k8s_project_id
+  display_name          = "${local.name_prefix}: chat subscription missing or unhealthy"
+  combiner              = "OR"
+  notification_channels = local.alert_k8s_channels
+
+  conditions {
+    display_name = "Daily check found a subscription that is not ok"
+    condition_matched_log {
+      filter = "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"${local.name_prefix}\" AND jsonPayload.monitor_event=\"subscription.status\" AND jsonPayload.status!=\"ok\""
+      label_extractors = {
+        provider = "EXTRACT(jsonPayload.provider)"
+        target   = "EXTRACT(jsonPayload.target)"
+        status   = "EXTRACT(jsonPayload.status)"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "A chat this environment should receive has no healthy subscription, so its messages are not arriving. The labels give the provider, chat and status. Teams: subscribe the chat again with POST /api/microsoft/chat/subscribe. Google Chat: POST /api/google/chat/spaces/subscribe, or reactivate a suspended subscription. Never subscribe from a non-prod environment against a real chat."
+  }
+}
