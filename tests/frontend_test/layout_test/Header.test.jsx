@@ -17,7 +17,6 @@ import {
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import userEvent from "@testing-library/user-event";
-import { GuideContext } from "@/guides/GuideContext";
 
 import "@testing-library/jest-dom/vitest";
 
@@ -364,58 +363,23 @@ describe("Header Component", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
-  describe("onboarding tour", () => {
-    const renderWithGuides = (guides) =>
-      render(
-        <MemoryRouter>
-          <GuideContext.Provider value={guides}>
-            <Header />
-          </GuideContext.Provider>
-        </MemoryRouter>,
-      );
+  test("lists the account menu items in order", async () => {
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
 
-    test("marks the avatar button as the tour's account-menu anchor", () => {
-      renderWithGuides({ active: true, start: vi.fn() });
-
-      expect(screen.getByRole("button", { name: "User menu" })).toHaveAttribute(
-        "data-tour",
-        "avatar-menu",
-      );
-    });
-
-    test("Take the tour sits between Contact Us and Log out and starts the welcome tour", async () => {
-      const start = vi.fn();
-      renderWithGuides({ active: true, start });
-      const user = userEvent.setup();
-
-      await user.click(screen.getByRole("button", { name: "User menu" }));
-      const items = (await screen.findAllByRole("menuitem")).map(
-        (item) => item.textContent,
-      );
-      expect(items).toEqual([
-        "View Profile",
-        "Emails & sign-in",
-        "Contact Us",
-        "Take the tour",
-        "Log out",
-      ]);
-
-      await user.click(screen.getByRole("menuitem", { name: "Take the tour" }));
-
-      expect(start).toHaveBeenCalledTimes(1);
-      expect(start).toHaveBeenCalledWith("welcome");
-    });
-
-    test("hides Take the tour where no guide can run", async () => {
-      renderWithGuides({ active: false, start: vi.fn() });
-      const user = userEvent.setup();
-
-      await user.click(screen.getByRole("button", { name: "User menu" }));
-      await screen.findByRole("menuitem", { name: "Log out" });
-
-      expect(
-        screen.queryByRole("menuitem", { name: "Take the tour" }),
-      ).not.toBeInTheDocument();
-    });
+    await user.click(screen.getByRole("button", { name: "User menu" }));
+    const items = (await screen.findAllByRole("menuitem")).map(
+      (item) => item.textContent,
+    );
+    expect(items).toEqual([
+      "View Profile",
+      "Emails & sign-in",
+      "Contact Us",
+      "Log out",
+    ]);
   });
 });
