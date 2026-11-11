@@ -44,7 +44,7 @@ describe("Sidebar Component", () => {
   };
 
   const groupWrapper = (key) =>
-    document.querySelector(`[data-tour="nav-group-${key}"]`);
+    document.querySelector(`[data-nav-group="${key}"]`);
 
   const linkLabels = (element) =>
     Array.from(element.querySelectorAll("a")).map((a) => a.textContent);
@@ -91,17 +91,10 @@ describe("Sidebar Component", () => {
       "Training Administration",
     ]);
     expect(
-      Array.from(document.querySelectorAll("[data-tour]")).map((el) =>
-        el.getAttribute("data-tour"),
+      Array.from(document.querySelectorAll("[data-nav-group]")).map((el) =>
+        el.getAttribute("data-nav-group"),
       ),
-    ).toEqual([
-      "nav-group-me",
-      "nav-group-apply",
-      "nav-group-recruiting",
-      "nav-group-mentorship",
-      "nav-group-activity",
-      "nav-group-admin",
-    ]);
+    ).toEqual(["me", "apply", "recruiting", "mentorship", "activity", "admin"]);
   });
 
   test("wraps only the groups that have a visible entry, around just those entries", () => {
@@ -124,17 +117,6 @@ describe("Sidebar Component", () => {
     expect(linkLabels(groupWrapper("mentorship"))).toEqual([
       "Mentorship Management",
     ]);
-  });
-
-  test("no longer marks Open Positions with its own tour anchor", () => {
-    renderSidebar([]);
-
-    expect(
-      document.querySelector('[data-tour="nav-open-positions"]'),
-    ).toBeNull();
-    expect(screen.getByText("Open Positions").closest("a")).not.toHaveAttribute(
-      "data-tour",
-    );
   });
 
   test("hides Applications Board for a user with no permissions", () => {

@@ -1,10 +1,6 @@
 import { describe, test, expect } from "vitest";
 
-import {
-  NAV_GROUPS,
-  isNavItemVisible,
-  visibleNavItems,
-} from "@/components/layout/navItems";
+import { NAV_GROUPS, isNavItemVisible } from "@/components/layout/navItems";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { PERMISSIONS } from "@/constants/Permissions";
 
@@ -18,14 +14,6 @@ describe("NAV_GROUPS", () => {
       "activity",
       "admin",
     ]);
-  });
-
-  test("gives every entry a tour sentence that starts with its label", () => {
-    for (const group of NAV_GROUPS) {
-      for (const item of group.items) {
-        expect(item.tourText).toMatch(new RegExp(`^${item.label} .+\\.$`));
-      }
-    }
   });
 });
 
@@ -66,28 +54,5 @@ describe("isNavItemVisible", () => {
         flags: { [FEATURE_FLAGS.LEAVE_MANAGEMENT]: true },
       }),
     ).toBe(true);
-  });
-});
-
-describe("visibleNavItems", () => {
-  test("returns the group's visible items in order", () => {
-    const items = visibleNavItems("admin", {
-      permissions: [PERMISSIONS.TRAINING_ADMIN_READ, PERMISSIONS.USER_ADMIN],
-      flags: {},
-    });
-
-    expect(items.map((i) => i.label)).toEqual([
-      "Accounts",
-      "Training Administration",
-    ]);
-  });
-
-  test("returns nothing for an unknown group", () => {
-    expect(
-      visibleNavItems("nope", {
-        permissions: Object.values(PERMISSIONS),
-        flags: {},
-      }),
-    ).toEqual([]);
   });
 });
