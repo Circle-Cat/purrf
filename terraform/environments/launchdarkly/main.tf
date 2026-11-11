@@ -89,6 +89,15 @@ locals {
       off_in      = ["production", "staging"]
       public_in   = ["test"]
     }
+    # Gates the What's new panel, its dot on the avatar and the first-login
+    # pointer to it.
+    whats_new = {
+      key         = "whats-new"
+      name        = "What's New"
+      description = "Shows the What's new panel in the account menu and the unread dot on the avatar"
+      off_in      = ["production", "staging"]
+      public_in   = ["test"]
+    }
   }
 
   flag_env_matrix = {
