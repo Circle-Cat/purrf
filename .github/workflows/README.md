@@ -71,6 +71,15 @@ to staging's build).
 
 ## Releasing
 
+### 0. Date the What's new entries
+
+If any commit in this release adds an entry to
+`frontend/src/whatsNew/entries.js`, open a PR on `main` that sets that entry's
+`date` to the day you will cut the tag in step 3 (`YYYY-MM-DD`), merge it, and
+include it in the commits you promote in step 1. Entries without a date still
+show in the What's new panel, just undated, so a missed entry can be dated in
+the next release.
+
 ### 1. Promote to staging
 
 Run **Promote** (Actions → Promote → Run workflow):

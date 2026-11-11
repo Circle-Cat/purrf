@@ -145,6 +145,7 @@ const SignInSecurity = () => {
               size="sm"
               variant="outline"
               onClick={() => setAddOpen(true)}
+              data-whats-new="add-email"
             >
               Add email
             </Button>
