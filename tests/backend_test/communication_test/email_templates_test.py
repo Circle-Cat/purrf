@@ -6,6 +6,7 @@ import unittest
 from backend.communication.email_templates import (
     EMAIL_TEMPLATES,
     ONBOARDING_FORM_URL,
+    OPT_HOURS_URL,
     PLACEHOLDER_KEYS,
     render_all_templates,
     render_signature,
@@ -13,22 +14,24 @@ from backend.communication.email_templates import (
 )
 
 _EXPECTED_KEYS = [
+    "background_check_rejection",
     "screening_passed_cultural_invite",
-    "cultural_interview_scheduled",
-    "interview_rescheduled",
     "cultural_passed_technical_invite",
-    "technical_interview_scheduled",
+    "interview_scheduled",
+    "interview_rescheduled",
+    "rejection",
+    "work_authorization_confirmation",
     "feedback_complete_ask_start_date",
     "offer_onboarding",
-    "rejection",
 ]
 
 _EXPECTED_SUBJECTS = {
+    "background_check_rejection": "Your Application to Circle Cat",
     "screening_passed_cultural_invite": "Circle Cat Program - Interview Availability",
-    "cultural_interview_scheduled": "Your Circle Cat Behavioral Interview is Scheduled",
-    "interview_rescheduled": "Your Circle Cat Interview — Updated Time",
     "cultural_passed_technical_invite": "Circle Cat — Technical Interview Availability",
-    "technical_interview_scheduled": "Your Circle Cat Technical Interview is Scheduled",
+    "interview_scheduled": "Your Circle Cat Interview is Scheduled",
+    "interview_rescheduled": "Your Circle Cat Interview — Updated Time",
+    "work_authorization_confirmation": "Circle Cat — Work Authorization Confirmation",
     "feedback_complete_ask_start_date": "Circle Cat — Next Steps",
     "offer_onboarding": "Welcome to Circle Cat — Onboarding & Next Steps",
     "rejection": "Your Application to Circle Cat",
@@ -54,12 +57,21 @@ _SUBHEADINGS = {
         "Accommodations",
         "What equipment will I need?",
     ],
-    "offer_onboarding": ["Onboard to corp resources"],
+    "offer_onboarding": [
+        "Onboard to corp resources",
+        "Employment verifications",
+        "Maintain F1-OPT status",
+    ],
 }
+
+# The bracket syntax the composer highlights and warns about before sending
+# (``BRACKET_RE`` in ComposeEmailDialog.jsx). A marker outside it would go out
+# unfilled without a warning.
+_COMPOSER_BRACKET_RE = re.compile(r"\[[A-Z0-9][A-Z0-9 /]*\]")
 
 
 class EmailTemplatesCatalogTest(unittest.TestCase):
-    def test_catalog_has_eight_templates_in_spec_order(self):
+    def test_catalog_is_in_spec_order(self):
         self.assertEqual([t.key for t in EMAIL_TEMPLATES], _EXPECTED_KEYS)
 
     def test_subjects_match_the_catalog_table(self):
@@ -81,15 +93,40 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
                     found <= PLACEHOLDER_KEYS, f"unknown: {found - PLACEHOLDER_KEYS}"
                 )
 
-    def test_only_templates_one_and_eight_use_position_title(self):
+    def test_position_title_users(self):
         using = {t.key for t in EMAIL_TEMPLATES if "{{position_title}}" in t.body_html}
-        self.assertEqual(using, {"screening_passed_cultural_invite", "rejection"})
+        self.assertEqual(
+            using,
+            {
+                "background_check_rejection",
+                "screening_passed_cultural_invite",
+                "rejection",
+                "work_authorization_confirmation",
+                "offer_onboarding",
+            },
+        )
 
-    def test_every_bracket_marker_is_uppercase(self):
+    def test_every_bracket_marker_is_one_the_composer_recognises(self):
         for template in EMAIL_TEMPLATES:
             for marker in re.findall(r"\[[^\]]+\]", template.body_html):
                 with self.subTest(key=template.key, marker=marker):
-                    self.assertEqual(marker, marker.upper())
+                    self.assertRegex(marker, f"^{_COMPOSER_BRACKET_RE.pattern}$")
+
+    def test_interview_invites_ask_for_the_time_window(self):
+        window = "[9 AM TO 4 PM BJT / 8 PM TO 3 AM ET / 5 PM TO 12 AM PT]"
+        for key in (
+            "screening_passed_cultural_invite",
+            "cultural_passed_technical_invite",
+        ):
+            template = next(t for t in EMAIL_TEMPLATES if t.key == key)
+            with self.subTest(key=key):
+                self.assertIn(f"from {window}.", template.body_html)
+
+    def test_us_only_templates_say_so_in_the_label(self):
+        for key in ("offer_onboarding", "work_authorization_confirmation"):
+            template = next(t for t in EMAIL_TEMPLATES if t.key == key)
+            with self.subTest(key=key):
+                self.assertIn("(North America)", template.label)
 
     def test_new_interview_marker_was_merged_away(self):
         for template in EMAIL_TEMPLATES:
@@ -103,8 +140,8 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
     def test_signature_block_present_in_every_template(self):
         for template in EMAIL_TEMPLATES:
             with self.subTest(key=template.key):
-                self.assertIn("Director of People Operations", template.body_html)
-                self.assertIn("Circle Cat Inc", template.body_html)
+                self.assertNotIn("Director of People Operations", template.body_html)
+                self.assertIn("Circle Cat Inc.", template.body_html)
 
     def test_signature_starts_at_best_with_no_dash_delimiter(self):
         # The signature used to open with a bare "--" line. That is not the
@@ -157,19 +194,8 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
 
     def test_offer_template_links_the_onboarding_form(self):
         offer = next(t for t in EMAIL_TEMPLATES if t.key == "offer_onboarding")
-        self.assertIn(f'<a href="{ONBOARDING_FORM_URL}">this form</a>', offer.body_html)
-
-    def test_known_typos_are_preserved_verbatim(self):
-        technical = next(
-            t for t in EMAIL_TEMPLATES if t.key == "cultural_passed_technical_invite"
-        )
-        self.assertIn("during yourinterview", technical.body_html)
-        self.assertIn("a google doc", technical.body_html)
-        screening = next(
-            t for t in EMAIL_TEMPLATES if t.key == "screening_passed_cultural_invite"
-        )
-        self.assertIn("over the Google Meet", screening.body_html)
-        self.assertIn("from a colleague", screening.body_html)
+        self.assertIn(f'this <a href="{ONBOARDING_FORM_URL}">form</a>', offer.body_html)
+        self.assertIn(f'<a href="{OPT_HOURS_URL}">', offer.body_html)
 
 
 class RenderSignatureTest(unittest.TestCase):
@@ -230,9 +256,9 @@ class RenderTemplateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_template("rejection", {"candidate_name": "Ana"})
 
-    def test_render_all_returns_eight_rendered_templates(self):
+    def test_render_all_returns_every_rendered_template(self):
         rendered = render_all_templates(_VALUES)
-        self.assertEqual(len(rendered), 8)
+        self.assertEqual(len(rendered), len(EMAIL_TEMPLATES))
         for template, subject, body in rendered:
             with self.subTest(key=template.key):
                 self.assertEqual(subject, template.subject)

@@ -551,7 +551,7 @@ class BoardService:
             application_id (int): The application being emailed about.
 
         Returns:
-            EmailTemplateCatalogDto: All eight templates in catalog order,
+            EmailTemplateCatalogDto: Every template in catalog order,
                 plus the signature block on its own for prefilling.
 
         Raises:

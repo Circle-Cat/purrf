@@ -459,7 +459,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, current_user, 42
         )
 
-        self.assertEqual(len(result.templates), 8)
+        self.assertEqual(len(result.templates), 9)
         rejection = next(t for t in result.templates if t.key == "rejection")
         self.assertEqual(rejection.subject, "Your Application to Circle Cat")
         self.assertIn("Dear Ana,", rejection.body_html)
@@ -537,8 +537,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     async def test_sender_name_renders_a_marker_when_nobody_knows_it(self):
         # Signing in with a one-time code carries no given_name/family_name, so
         # an advancer who never filled a profile has no name anywhere. Rendering
-        # an empty bold line put a blank gap above "Director of People
-        # Operations"; a bracket marker is caught by the composer's
+        # an empty bold line put a blank gap above "Circle Cat Inc."; a
+        # bracket marker is caught by the composer's
         # unfilled-marker warning instead, so the sender is told to fix it.
         application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
         self.service._require_application_owner = AsyncMock(return_value=application)
