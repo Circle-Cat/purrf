@@ -5,4 +5,5 @@ export const FEATURE_FLAGS = Object.freeze({
   MATCHING_RUN: "matching-run",
   MENTORSHIP_KIT_EMAIL: "mentorship-kit-email",
   ONBOARDING_GUIDES: "onboarding-guides",
+  WHATS_NEW: "whats-new",
 });
