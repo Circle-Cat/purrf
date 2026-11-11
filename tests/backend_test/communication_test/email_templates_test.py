@@ -53,7 +53,7 @@ _SUBHEADINGS = {
     ],
     "cultural_passed_technical_invite": [
         "What's next?",
-        "Prep materials",
+        "PREP MATERIALS",
         "Accommodations",
         "What equipment will I need?",
     ],
@@ -173,16 +173,13 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
             "<p>The most popular prep websites are below:</p>", prep.body_html
         )
 
-    def test_subheading_casing_is_sentence_case_throughout(self):
-        # The source copy wrote one heading two ways ("What's next" in one
-        # template, "What's Next?" in another) and title-cased another ("Prep
-        # Materials"). Sentence case was already the majority, so the two
-        # outliers moved to it and the shared heading now reads identically in
-        # both templates.
+    def test_whats_next_heading_reads_the_same_in_both_invites(self):
+        # The source copy wrote this heading two ways ("What's next" in one
+        # template, "What's Next?" in the other); both use the sentence-case
+        # form. "PREP MATERIALS" stays all caps as the source has it.
         for template in EMAIL_TEMPLATES:
             with self.subTest(key=template.key):
                 self.assertNotIn("What's Next", template.body_html)
-                self.assertNotIn("Prep Materials", template.body_html)
 
     def test_sender_name_is_bold_in_the_signature(self):
         for template in EMAIL_TEMPLATES:

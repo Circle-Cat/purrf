@@ -116,7 +116,7 @@ _CULTURAL_PASSED_TECHNICAL_INVITE = EmailTemplate(
         + _TIME_WINDOW
         + ". Please provide 5-6 dates/times over the next 1-2 weeks that will work for "
         "your schedule.</p>"
-        "<p><strong>Prep materials</strong></p>"
+        "<p><strong>PREP MATERIALS</strong></p>"
         "<p>The most popular prep websites are below:</p>"
         "<ul>"
         '<li><a href="http://geeksforgeeks.org/">GeeksForGeeks.org</a></li>'
