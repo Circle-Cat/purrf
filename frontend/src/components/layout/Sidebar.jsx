@@ -25,7 +25,7 @@ const Sidebar = () => {
       <nav className="p-4">
         <ul className="m-0 list-none p-0">
           {groups.map((group) => (
-            <li key={group.key} data-tour={`nav-group-${group.key}`}>
+            <li key={group.key} data-nav-group={group.key}>
               <ul className="m-0 list-none p-0">
                 {group.items.map((item) => (
                   <li key={item.to} className="mb-[5px]">
