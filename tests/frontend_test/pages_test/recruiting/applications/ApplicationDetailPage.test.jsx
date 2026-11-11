@@ -41,7 +41,7 @@ const OWNER_ID = 500;
 // The signature block the templates endpoint now ships on its own, so the
 // composer can prefill it into an empty body.
 const SIGNATURE_HTML =
-  "<p>Best,<br><strong>Jane Smith</strong><br>Director of People Operations<br>Circle Cat Inc</p>";
+  "<p>Best,<br><strong>Jane Smith</strong><br>Circle Cat Inc.</p>";
 const ASSIGNEE_ID = 10;
 
 /** The interview-evaluator pool offered by the owner-side pickers. */
@@ -4084,7 +4084,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
   const editorEl = () => screen.getByRole("textbox", { name: "Message" });
 
   it("prefills the signature into a new email", async () => {
-    // The signature only ever lived inside the eight templates, so anything
+    // The signature only ever lived inside the templates, so anything
     // written from scratch went out unsigned.
     api.getApplicationEmails.mockResolvedValue({
       data: { threads: [], defaultTo: "cand@x.com" },
@@ -4101,7 +4101,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     // send-time warning already counts it, but it has to be *visible* too —
     // that is the whole reason the backend renders a marker instead of a blank.
     const unnamed =
-      "<p>Best,<br><strong>[YOUR NAME]</strong><br>Director of People Operations</p>";
+      "<p>Best,<br><strong>[YOUR NAME]</strong><br>Circle Cat Inc.</p>";
     api.getApplicationEmails.mockResolvedValue({
       data: { threads: [], defaultTo: "cand@x.com" },
     });
@@ -4189,7 +4189,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { templates: [], signatureHtml: SIGNATURE_HTML },
     });
     await waitFor(() => expect(editorEl().innerHTML).toContain("my own draft"));
-    expect(editorEl().innerHTML).not.toContain("Director of People Operations");
+    expect(editorEl().innerHTML).not.toContain("Circle Cat Inc.");
   });
 
   it("sends the contenteditable HTML, not escaped text", async () => {
