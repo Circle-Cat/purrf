@@ -195,7 +195,7 @@ _REJECTION = EmailTemplate(
 
 _WORK_AUTHORIZATION_CONFIRMATION = EmailTemplate(
     key="work_authorization_confirmation",
-    label="Confirm OPT/CPT sponsorship (North America)",
+    label="Confirm OPT/CPT sponsorship (US)",
     subject="Circle Cat — Work Authorization Confirmation",
     body_html=(
         "<p>Dear {{candidate_name}},</p>"
@@ -227,7 +227,7 @@ _FEEDBACK_COMPLETE_ASK_START_DATE = EmailTemplate(
 
 _OFFER_ONBOARDING = EmailTemplate(
     key="offer_onboarding",
-    label="Offer and onboarding (North America)",
+    label="Offer and onboarding (US)",
     subject="Welcome to Circle Cat — Onboarding & Next Steps",
     body_html=(
         "<p>Dear {{candidate_name}},</p>"

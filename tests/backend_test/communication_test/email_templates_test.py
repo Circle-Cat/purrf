@@ -126,7 +126,7 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
         for key in ("offer_onboarding", "work_authorization_confirmation"):
             template = next(t for t in EMAIL_TEMPLATES if t.key == key)
             with self.subTest(key=key):
-                self.assertIn("(North America)", template.label)
+                self.assertIn("(US)", template.label)
 
     def test_new_interview_marker_was_merged_away(self):
         for template in EMAIL_TEMPLATES:
