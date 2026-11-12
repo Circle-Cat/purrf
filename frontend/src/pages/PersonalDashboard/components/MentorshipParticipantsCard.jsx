@@ -38,10 +38,15 @@ import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
  *   participantDetails: {
  *     roundInfo: Object | null,
  *     partnerMeetingOverview: Array,
- *     participantRole: string | null
+ *     participantRole: string | null,
+ *     isRegistered?: boolean,
+ *     isRegistrationRound?: boolean
  *   },
- *   refreshMeetings: () => void
- * }} props
+ *   refreshMeetings: () => void,
+ *   isRegistrationOpen?: boolean
+ * }} props - `isRegistrationRound` is whether the selected round is the one
+ *   taking registrations; with `isRegistrationOpen` it decides whether the
+ *   empty state points the viewer at the banner's register button.
  */
 export default function MentorshipParticipantsCard({
   roundSelectionData,
@@ -51,6 +56,7 @@ export default function MentorshipParticipantsCard({
   participantDetails,
   refreshMeetings,
   userTimezone,
+  isRegistrationOpen = false,
 }) {
   // The meeting awaiting a new slot, and which partner's row it came from.
   // `meetingToReschedule` is a `meetingTimeList` entry, which carries only
@@ -112,6 +118,8 @@ export default function MentorshipParticipantsCard({
   const selectedRound = roundSelectionData?.sortedRounds?.find(
     (round) => Number(round.id) === Number(selectedRoundId),
   );
+  // A finished round is looked back on, so its empty state speaks in the past.
+  const isPastRound = selectedRound?.status === MentorshipRoundStatus.COMPLETED;
   // Booking needs a live partner as well as a running round; the dialog's
   // partner list already leaves ended pairings out, so with none left the
   // entry point says why instead of opening onto an empty list.
@@ -270,9 +278,15 @@ export default function MentorshipParticipantsCard({
         ) : !hasParticipation ? (
           <div className="text-center py-8 text-gray-500">
             <GraduationCap className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-            {participantDetails?.isRegistered
-              ? "You are registered for this round but have not been matched yet."
-              : "You have not participated in the mentorship program in this round."}
+            {isPastRound
+              ? participantDetails?.isRegistered
+                ? "You registered for this round but weren't matched."
+                : "You didn't take part in this round."
+              : participantDetails?.isRegistered
+                ? "You are registered for this round but have not been matched yet."
+                : participantDetails?.isRegistrationRound && isRegistrationOpen
+                  ? "Register for this round from the banner above to get matched with a partner."
+                  : "You're not taking part in this round. When registration for a round opens, you can register from this page."}
           </div>
         ) : (
           <>

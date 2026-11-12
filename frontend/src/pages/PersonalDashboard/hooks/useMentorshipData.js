@@ -395,14 +395,15 @@ export const useMentorshipData = ({
       );
 
       if (!partnersInfo || partnersInfo.length === 0) {
-        const isRegisteredForRound =
-          selectedRoundId?.toString() === roundStatus.regRoundId?.toString() &&
-          registration?.isRegistered === true;
+        const isRegistrationRound =
+          selectedRoundId?.toString() === roundStatus.regRoundId?.toString();
         setParticipantDetails({
           roundInfo: currentRound,
           partnerMeetingOverview: [],
           participantRole: null,
-          isRegistered: isRegisteredForRound,
+          isRegistered:
+            isRegistrationRound && registration?.isRegistered === true,
+          isRegistrationRound,
         });
         return;
       }

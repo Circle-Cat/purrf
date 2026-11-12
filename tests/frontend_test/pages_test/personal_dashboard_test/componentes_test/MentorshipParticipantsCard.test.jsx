@@ -170,7 +170,7 @@ describe("MentorshipParticipantsCard", () => {
     expect(screen.getByText(/Loading participation data/)).toBeInTheDocument();
   });
 
-  it("should show 'not participated' message when the user has no participation", () => {
+  it("says the viewer is not taking part when they have no participation", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -181,7 +181,65 @@ describe("MentorshipParticipantsCard", () => {
         }}
       />,
     );
-    expect(screen.getByText(/You have not participated/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/You're not taking part in this round/),
+    ).toBeInTheDocument();
+  });
+
+  it("points an unregistered viewer at the banner while the selected round takes registrations", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        isRegistrationOpen
+        participantDetails={{
+          roundInfo: null,
+          partnerMeetingOverview: [],
+          participantRole: null,
+          isRegistered: false,
+          isRegistrationRound: true,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(/Register for this round from the banner above/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not ask the viewer to register for a selected round that is not the one taking registrations", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        isRegistrationOpen
+        participantDetails={{
+          roundInfo: null,
+          partnerMeetingOverview: [],
+          participantRole: null,
+          isRegistered: false,
+          isRegistrationRound: false,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(/You're not taking part in this round/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Register for this round/)).toBeNull();
+  });
+
+  it("does not ask the viewer to register while registration is closed", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        isRegistrationOpen={false}
+        participantDetails={{
+          roundInfo: null,
+          partnerMeetingOverview: [],
+          participantRole: null,
+          isRegistered: false,
+          isRegistrationRound: true,
+        }}
+      />,
+    );
+    expect(screen.queryByText(/Register for this round/)).toBeNull();
   });
 
   it("should show 'registered but not matched' message when user is registered with no partners", () => {
@@ -201,6 +259,60 @@ describe("MentorshipParticipantsCard", () => {
         /You are registered for this round but have not been matched yet/,
       ),
     ).toBeInTheDocument();
+  });
+
+  describe("on a finished round", () => {
+    const pastRound = {
+      roundSelectionData: {
+        sortedRounds: [
+          { id: "1", name: "2026 Spring", status: "active" },
+          { id: "7", name: "2025 Fall", status: "completed" },
+        ],
+      },
+      selectedRoundId: "7",
+    };
+
+    it("says a registered viewer was not matched, in the past tense", () => {
+      render(
+        <MentorshipParticipantsCard
+          {...baseProps}
+          {...pastRound}
+          isRegistrationOpen
+          participantDetails={{
+            roundInfo: null,
+            partnerMeetingOverview: [],
+            participantRole: null,
+            isRegistered: true,
+            isRegistrationRound: true,
+          }}
+        />,
+      );
+      expect(
+        screen.getByText("You registered for this round but weren't matched."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/have not been matched yet/)).toBeNull();
+    });
+
+    it("says an unregistered viewer did not take part, without asking them to register", () => {
+      render(
+        <MentorshipParticipantsCard
+          {...baseProps}
+          {...pastRound}
+          isRegistrationOpen
+          participantDetails={{
+            roundInfo: null,
+            partnerMeetingOverview: [],
+            participantRole: null,
+            isRegistered: false,
+            isRegistrationRound: true,
+          }}
+        />,
+      );
+      expect(
+        screen.getByText("You didn't take part in this round."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Register for this round/)).toBeNull();
+    });
   });
 
   it("should offer logging a past meeting to mentees", () => {
