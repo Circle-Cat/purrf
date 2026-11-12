@@ -65,7 +65,7 @@ const MyEvaluations = () => {
       {evaluations.length === 0 ? (
         <EmptyState
           what="Interviews you've been assigned to appear here."
-          how="A recruiter assigns you to an interview session from their applications board."
+          how="A recruiter assigns you to an interview session from the application page."
           who="You can't add yourself — ask the posting's recruiter."
         />
       ) : (
