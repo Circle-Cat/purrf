@@ -232,7 +232,6 @@ class TestInboxRoutingOnARealSession(BaseRepositoryTestLib):
         result = await self.router.route(self.session, _NEW_THREAD, _MAILBOX)
 
         self.assertEqual(result.thread.thread_id, existing.thread_id)
-        self.assertFalse(result.unrouted)
         await self.session.commit()
         self.assertEqual(len(await self._rows()), 1)
 

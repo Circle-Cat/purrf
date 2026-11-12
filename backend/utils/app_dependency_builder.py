@@ -1154,6 +1154,7 @@ class AppDependencyBuilder:
         for context_type in (
             ContextType.RECRUITING_INBOX,
             ContextType.INQUIRIES_INBOX,
+            ContextType.UNSORTED_INBOX,
         ):
             self.email_context_registry.register(
                 context_type, self.inbox_sync_handler.alias_without_resync()
@@ -1274,6 +1275,8 @@ class AppDependencyBuilder:
             person_email_service=self.person_email_service,
             round_participants_repository=self.mentorship_round_participants_repo,
             rounds_service=self.rounds_service,
+            gmail_client=self.gmail_client,
+            logger=self.logger,
         )
         self.inbox_controller = InboxController(
             inbox_thread_service=self.inbox_thread_service,

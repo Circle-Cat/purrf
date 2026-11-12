@@ -51,7 +51,7 @@ def _now():
 
 
 def _empty_summary():
-    return {"threads": 0, "newMessages": 0, "failed": 0, "unrouted": []}
+    return {"threads": 0, "newMessages": 0, "failed": 0}
 
 
 def _list_threads(gmail_thread_ids):
@@ -313,16 +313,6 @@ class GmailSyncService:
                 kind="sync_failed",
                 detail=_failure_detail(failures),
             )
-        if summary["unrouted"]:
-            await self._alerts.raise_alert(
-                session,
-                state=state,
-                kind="unrouted_mail",
-                detail=(
-                    f"New mail in Gmail threads {_list_threads(summary['unrouted'])} "
-                    "was addressed to no Inbox alias and stays in Gmail only."
-                ),
-            )
         await session.commit()
         return PushOutcome.ACK, summary
 
@@ -353,8 +343,6 @@ class GmailSyncService:
                         session, gmail_thread_id, mailbox_address
                     )
                     claiming = False
-                    if routed.unrouted:
-                        summary["unrouted"].append(gmail_thread_id)
                     thread = routed.thread
                     if thread is None:
                         continue

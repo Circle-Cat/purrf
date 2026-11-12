@@ -120,6 +120,12 @@ GMAIL_SENDER_INQUIRIES = "GMAIL_SENDER_INQUIRIES"
 # same mail.
 GMAIL_INBOX_ENABLED = "GMAIL_INBOX_ENABLED"
 
+# "true", together with GMAIL_INBOX_ENABLED, makes this environment claim new
+# mail sent to no Send-As alias at all (straight to the mailbox) for its
+# Unsorted inbox. Every environment on a mailbox sees that mail, whatever its
+# aliases, so only one of them may turn it on.
+GMAIL_INBOX_UNSORTED_ENABLED = "GMAIL_INBOX_UNSORTED_ENABLED"
+
 # Fully qualified Pub/Sub topic that Gmail users.watch publishes this
 # mailbox's changes to. One topic per mailbox: environments sharing a mailbox
 # must pass the same topic, or each watch call replaces the other's.

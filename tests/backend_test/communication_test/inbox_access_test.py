@@ -24,16 +24,18 @@ class InboxAccessTest(unittest.TestCase):
                 InboxService.MENTORSHIP: Permission.MENTORSHIP_ADMIN_WRITE,
                 InboxService.RECRUITING: Permission.RECRUITING_APPLICATION_ADVANCE,
                 InboxService.INQUIRIES: Permission.INQUIRIES_MANAGE,
+                InboxService.UNSORTED: Permission.OPS_MAINTAIN,
             },
         )
 
-    def test_the_gate_is_any_of_the_three(self):
+    def test_the_gate_is_any_of_the_four(self):
         self.assertEqual(
             INBOX_GATE,
             [
                 Permission.MENTORSHIP_ADMIN_WRITE,
                 Permission.RECRUITING_APPLICATION_ADVANCE,
                 Permission.INQUIRIES_MANAGE,
+                Permission.OPS_MAINTAIN,
             ],
         )
 
@@ -42,6 +44,11 @@ class InboxAccessTest(unittest.TestCase):
 
         self.assertEqual(
             visible_services(user), [InboxService.MENTORSHIP, InboxService.INQUIRIES]
+        )
+
+    def test_ops_maintain_sees_unsorted(self):
+        self.assertEqual(
+            visible_services(_user(Permission.OPS_MAINTAIN)), [InboxService.UNSORTED]
         )
 
     def test_read_only_mentorship_admin_sees_nothing(self):

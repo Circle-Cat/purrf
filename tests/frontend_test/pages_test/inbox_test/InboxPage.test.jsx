@@ -20,6 +20,7 @@ vi.mock("@/api/inboxApi", () => ({
   unarchiveInboxThread: vi.fn(),
   assignInboxThread: vi.fn(),
   moveInboxThread: vi.fn(),
+  deleteInboxThreads: vi.fn(),
   getInboxAssignOptions: vi.fn(),
   searchInboxPeople: vi.fn(),
   inboxAttachmentUrl: (id, messageId, index) =>
@@ -700,5 +701,261 @@ describe("InboxPage thread detail", () => {
     });
     fireEvent.click(within(pane).getByRole("button", { name: "Send reply" }));
     await waitFor(() => expect(errorSpy).toHaveBeenCalledWith("boom"));
+  });
+});
+
+describe("InboxPage Unsorted", () => {
+  const unsortedRow = (threadId, subject) =>
+    row({
+      threadId,
+      service: "unsorted",
+      subject,
+      sender: `noreply${threadId}@example.com`,
+      person: null,
+      noMatchingUser: true,
+      needsReply: false,
+    });
+
+  const withUnsorted = (threads) =>
+    listData(threads, {
+      counts: { needsReply: 0 },
+      services: [
+        { key: "mentorship", needsReply: 1 },
+        { key: "recruiting", needsReply: 1 },
+        { key: "inquiries", needsReply: 0 },
+        { key: "unsorted", needsReply: 0 },
+      ],
+    });
+
+  let server;
+  let successSpy;
+
+  beforeEach(() => {
+    server = [
+      unsortedRow(31, "Your invoice is ready"),
+      unsortedRow(32, "Weekly digest"),
+      unsortedRow(33, "Limited time offer"),
+    ];
+    successSpy = vi.spyOn(toast, "success").mockImplementation(() => {});
+    api.listInboxThreads.mockImplementation(async () =>
+      withUnsorted([...server]),
+    );
+    api.getInboxThread.mockImplementation(async (id) => ({
+      data: detail({
+        ...server.find((t) => t.threadId === id),
+        canAssign: false,
+        replyAlias: null,
+      }),
+    }));
+    api.deleteInboxThreads.mockImplementation(async (ids) => {
+      server = server.filter((t) => !ids.includes(t.threadId));
+      return { success: true, message: "", data: { deleted: ids.length } };
+    });
+  });
+
+  const rowButton = (subject) =>
+    screen.queryByRole("button", { name: `Open thread ${subject}` });
+  const box = (subject) =>
+    screen.getByRole("checkbox", { name: `Select ${subject}` });
+
+  it("shows the Unsorted tab only when the API lists it", async () => {
+    api.listInboxThreads.mockResolvedValue(listData([row()]));
+    renderAt();
+    const services = await screen.findByRole("group", { name: "Services" });
+    await within(services).findByRole("button", { name: /^Recruiting/ });
+    expect(
+      within(services).queryByRole("button", { name: /^Unsorted/ }),
+    ).toBeNull();
+  });
+
+  it("opens the Unsorted tab and asks for the unsorted service", async () => {
+    const router = renderAt();
+    fireEvent.click(
+      await within(
+        await screen.findByRole("group", { name: "Services" }),
+      ).findByRole("button", { name: /^Unsorted/ }),
+    );
+    await waitFor(() =>
+      expect(lastListParams()).toEqual({ service: "unsorted" }),
+    );
+    expect(router.state.location.search).toBe("?service=unsorted");
+  });
+
+  it("has no checkboxes or Delete outside Unsorted", async () => {
+    api.listInboxThreads.mockResolvedValue(withUnsorted([row()]));
+    api.getInboxThread.mockResolvedValue({ data: detail() });
+    renderAt("/inbox?service=mentorship");
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    expect(screen.queryAllByRole("checkbox", { name: /^Select/ })).toEqual([]);
+    expect(screen.queryByRole("button", { name: /^Delete/ })).toBeNull();
+    open("Question about meeting cadence");
+    const pane = await thread();
+    await within(pane).findByRole("button", { name: "Archive" });
+    expect(within(pane).queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("deletes the checked conversations after confirming", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    const del = screen.getByRole("button", { name: "Delete (0)" });
+    expect(del).toBeDisabled();
+    fireEvent.click(box("Your invoice is ready"));
+    fireEvent.click(box("Limited time offer"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (2)" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Delete 2 conversations?"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "They are removed from Purrf. The original emails stay in the Gmail mailbox.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(successSpy).toHaveBeenCalledWith("Deleted 2 conversations."),
+    );
+    expect(api.deleteInboxThreads).toHaveBeenCalledWith([31, 33]);
+    expect(rowButton("Your invoice is ready")).toBeNull();
+    expect(rowButton("Limited time offer")).toBeNull();
+    expect(rowButton("Weekly digest")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does nothing when the confirmation is cancelled", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    fireEvent.click(box("Weekly digest"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Delete 1 conversation?")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.deleteInboxThreads).not.toHaveBeenCalled();
+    expect(box("Weekly digest")).toBeChecked();
+  });
+
+  it("selects every row on the page and clears them again", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    const all = screen.getByRole("checkbox", {
+      name: "Select all on this page",
+    });
+    fireEvent.click(all);
+    expect(screen.getByRole("button", { name: "Delete (3)" })).toBeEnabled();
+    expect(box("Weekly digest")).toBeChecked();
+    fireEvent.click(all);
+    expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled();
+  });
+
+  it("clears the open thread when it is deleted", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    open("Weekly digest");
+    await within(await thread()).findByText("Weekly digest");
+    fireEvent.click(box("Weekly digest"));
+    fireEvent.click(box("Your invoice is ready"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (2)" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Thread" })).toBeNull(),
+    );
+    expect(screen.getByText("Select a thread to read it.")).toBeInTheDocument();
+  });
+
+  it("deletes one conversation from its detail", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    open("Limited time offer");
+    const pane = await thread();
+    fireEvent.click(
+      await within(pane).findByRole("button", { name: "Delete" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Delete 1 conversation?")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(successSpy).toHaveBeenCalledWith("Deleted 1 conversation."),
+    );
+    expect(api.deleteInboxThreads).toHaveBeenCalledWith([33]);
+    expect(rowButton("Limited time offer")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Thread" })).toBeNull();
+  });
+
+  it("keeps the selection and toasts when the delete fails", async () => {
+    api.deleteInboxThreads.mockRejectedValue({
+      response: { status: 400 },
+      message: "Not an Unsorted thread",
+    });
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    fireEvent.click(box("Weekly digest"));
+    fireEvent.click(box("Your invoice is ready"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (2)" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete",
+      }),
+    );
+    await waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith("Not an Unsorted thread"),
+    );
+    expect(successSpy).not.toHaveBeenCalled();
+    expect(rowButton("Weekly digest")).toBeInTheDocument();
+    expect(box("Weekly digest")).toBeChecked();
+    expect(box("Your invoice is ready")).toBeChecked();
+    expect(screen.getByRole("button", { name: "Delete (2)" })).toBeEnabled();
+  });
+
+  it("resets the selection when a filter changes", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    fireEvent.click(box("Weekly digest"));
+    expect(screen.getByRole("button", { name: "Delete (1)" })).toBeEnabled();
+    fireEvent.click(screen.getByLabelText("Show archived"));
+    await waitFor(() => expect(lastListParams().archived).toBe(true));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled(),
+    );
+    expect(box("Weekly digest")).not.toBeChecked();
+  });
+
+  it("transfers out of Unsorted but never offers Unsorted as a target", async () => {
+    renderAt("/inbox?service=unsorted");
+    await screen.findByRole("button", { name: "Open thread Weekly digest" });
+    open("Weekly digest");
+    const options = (pane) =>
+      within(within(pane).getByLabelText("Transfer to"))
+        .getAllByRole("option")
+        .map((o) => o.value);
+    const pane = await thread();
+    await within(pane).findByLabelText("Transfer to");
+    expect(options(pane)).toEqual([
+      "",
+      "mentorship",
+      "recruiting",
+      "inquiries",
+    ]);
+  });
+
+  it("offers no Unsorted target when transferring other threads", async () => {
+    api.listInboxThreads.mockResolvedValue(withUnsorted([row()]));
+    api.getInboxThread.mockResolvedValue({ data: detail() });
+    renderAt();
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    open("Question about meeting cadence");
+    const select = await within(await thread()).findByLabelText("Transfer to");
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((o) => o.value),
+    ).toEqual(["", "recruiting", "inquiries"]);
   });
 });

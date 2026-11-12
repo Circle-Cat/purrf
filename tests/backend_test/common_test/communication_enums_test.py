@@ -17,6 +17,7 @@ class CommunicationEnumsTest(unittest.TestCase):
                 InboxService.MENTORSHIP: "mentorship_inbox",
                 InboxService.RECRUITING: "recruiting_inbox",
                 InboxService.INQUIRIES: "inquiries_inbox",
+                InboxService.UNSORTED: "unsorted_inbox",
             },
         )
 

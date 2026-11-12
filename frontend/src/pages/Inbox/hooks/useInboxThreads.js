@@ -11,11 +11,13 @@ const EMPTY = {
 
 /**
  * Loads the Inbox thread list for the given filters; unset filters are not
- * sent. Responses from superseded requests are dropped.
+ * sent. Responses from superseded requests are dropped. `drop` takes rows out
+ * of the list at once, ahead of the next refresh.
  *
  * @param {{service?: string, needsReply?: boolean, archived?: boolean,
  *   q?: string, userId?: string}} filters
- * @returns {{data: object, loading: boolean, refresh: () => Promise<void>}}
+ * @returns {{data: object, loading: boolean, refresh: () => Promise<void>,
+ *   drop: (threadIds: number[]) => void}}
  */
 export const useInboxThreads = ({
   service,
@@ -50,5 +52,13 @@ export const useInboxThreads = ({
     refresh();
   }, [refresh]);
 
-  return { data, loading, refresh };
+  const drop = useCallback((threadIds) => {
+    const gone = new Set(threadIds);
+    setData((cur) => ({
+      ...cur,
+      threads: cur.threads.filter((t) => !gone.has(t.threadId)),
+    }));
+  }, []);
+
+  return { data, loading, refresh, drop };
 };
