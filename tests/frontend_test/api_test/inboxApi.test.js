@@ -10,6 +10,7 @@ import {
   unarchiveInboxThread,
   assignInboxThread,
   moveInboxThread,
+  deleteInboxThreads,
   getInboxAssignOptions,
   searchInboxPeople,
   inboxAttachmentUrl,
@@ -84,6 +85,13 @@ describe("inboxApi", () => {
     });
   });
 
+  it("deleteInboxThreads POSTs {threadIds} to /inbox/threads/delete", async () => {
+    await deleteInboxThreads([31, 33]);
+    expect(request.post).toHaveBeenCalledWith("/inbox/threads/delete", {
+      threadIds: [31, 33],
+    });
+  });
+
   it("getInboxAssignOptions GETs /assign-options with userId", async () => {
     await getInboxAssignOptions(5, 9);
     expect(request.get).toHaveBeenCalledWith(
@@ -112,6 +120,7 @@ describe("inboxApi", () => {
       "mentorship.admin.write",
       "recruiting.application.advance",
       "inquiries.manage",
+      "ops.maintain",
     ]);
   });
 });

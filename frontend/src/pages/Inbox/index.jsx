@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import { deleteInboxThreads } from "@/api/inboxApi";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import AssignDialog from "@/pages/Inbox/AssignDialog";
+import DeleteThreadsDialog from "@/pages/Inbox/DeleteThreadsDialog";
 import ThreadDetail from "@/pages/Inbox/ThreadDetail";
 import ThreadList from "@/pages/Inbox/ThreadList";
-import { SERVICES, serviceOf } from "@/pages/Inbox/inboxDisplay";
+import { SERVICES, conversations, serviceOf } from "@/pages/Inbox/inboxDisplay";
 import { useInboxThread } from "@/pages/Inbox/hooks/useInboxThread";
 import { useInboxThreads } from "@/pages/Inbox/hooks/useInboxThreads";
 
@@ -27,8 +32,10 @@ const notifySidebar = () => window.dispatchEvent(new Event("inbox:changed"));
  * Threads that someone else started and that are not assigned yet, for every
  * service the viewer may see, in one list. Staff filter, search, open a
  * thread, reply, archive, move it to another service and assign Mentorship
- * and Recruiting threads; an assigned thread leaves the Inbox. Which threads,
- * counts and actions are available all come from the API.
+ * and Recruiting threads; an assigned thread leaves the Inbox. In a service
+ * whose threads can be deleted (Unsorted), rows get checkboxes and a bulk
+ * Delete. Which threads, counts and actions are available all come from the
+ * API.
  *
  * @returns {JSX.Element}
  */
@@ -42,6 +49,9 @@ const InboxPage = () => {
   const [userId, setUserId] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [assigning, setAssigning] = useState(false);
+  const [checked, setChecked] = useState(() => new Set());
+  const [deleting, setDeleting] = useState(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   const serviceParam = params.get("service");
   const service = SERVICES.some((s) => s.key === serviceParam)
@@ -53,6 +63,10 @@ const InboxPage = () => {
     setSelectedId(null);
     setAssigning(false);
   }, [service]);
+
+  useEffect(() => {
+    setChecked(new Set());
+  }, [service, needsReply, archived, q, userId]);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(term.trim()), SEARCH_DEBOUNCE_MS);
@@ -67,6 +81,7 @@ const InboxPage = () => {
   const {
     data: { threads, counts, services },
     refresh,
+    drop,
   } = useInboxThreads({
     service: service === ALL ? undefined : service,
     needsReply,
@@ -89,6 +104,47 @@ const InboxPage = () => {
 
   const detail = useInboxThread(selectedId, { onChanged, onGone });
   const { thread } = detail;
+
+  const deletable = service !== ALL && serviceOf(service).deletable === true;
+  const checkedIds = threads
+    .map((t) => t.threadId)
+    .filter((id) => checked.has(id));
+  const allChecked = threads.length > 0 && checkedIds.length === threads.length;
+
+  const toggle = (id) =>
+    setChecked((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAll = () =>
+    setChecked(
+      allChecked ? new Set() : new Set(threads.map((t) => t.threadId)),
+    );
+
+  const confirmDelete = async () => {
+    const ids = deleting;
+    setDeletePending(true);
+    try {
+      const { data } = await deleteInboxThreads(ids);
+      drop(ids);
+      setChecked((cur) => new Set([...cur].filter((id) => !ids.includes(id))));
+      if (ids.includes(selectedId)) {
+        setSelectedId(null);
+        setAssigning(false);
+      }
+      toast.success(`Deleted ${conversations(data?.deleted ?? ids.length)}.`);
+      refresh();
+      notifySidebar();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setDeletePending(false);
+      setDeleting(null);
+    }
+  };
 
   const pickService = (key) =>
     setParams(key === ALL ? {} : { service: key }, { replace: true });
@@ -191,16 +247,51 @@ const InboxPage = () => {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <ThreadList
-          threads={threads}
-          selectedId={selectedId}
-          onOpen={setSelectedId}
-          emptyText={
-            q
-              ? `No threads match "${q}" with these filters.`
-              : "No threads match these filters."
-          }
-        />
+        <div className="flex min-w-0 flex-col gap-2">
+          {deletable && (
+            <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2">
+              <Checkbox
+                aria-label="Select all on this page"
+                checked={
+                  allChecked
+                    ? true
+                    : checkedIds.length > 0
+                      ? "indeterminate"
+                      : false
+                }
+                disabled={!threads.length}
+                onCheckedChange={toggleAll}
+                className="border-slate-400 bg-white"
+              />
+              <span className="text-sm text-slate-600">
+                {checkedIds.length
+                  ? `${checkedIds.length} selected`
+                  : "Select all"}
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="ml-auto"
+                disabled={!checkedIds.length}
+                onClick={() => setDeleting(checkedIds)}
+              >
+                Delete ({checkedIds.length})
+              </Button>
+            </div>
+          )}
+          <ThreadList
+            threads={threads}
+            selectedId={selectedId}
+            onOpen={setSelectedId}
+            checked={deletable ? checked : undefined}
+            onToggle={toggle}
+            emptyText={
+              q
+                ? `No threads match "${q}" with these filters.`
+                : "No threads match these filters."
+            }
+          />
+        </div>
         {thread ? (
           <ThreadDetail
             key={thread.threadId}
@@ -212,6 +303,11 @@ const InboxPage = () => {
             onUnarchive={detail.unarchive}
             onAssign={() => setAssigning(true)}
             onMove={detail.move}
+            onDelete={
+              serviceOf(thread.service).deletable
+                ? () => setDeleting([thread.threadId])
+                : undefined
+            }
           />
         ) : (
           <p className="hidden rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500 lg:block">
@@ -219,6 +315,15 @@ const InboxPage = () => {
           </p>
         )}
       </div>
+
+      {deleting && (
+        <DeleteThreadsDialog
+          count={deleting.length}
+          pending={deletePending}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
 
       {assigning && thread && (
         <AssignDialog

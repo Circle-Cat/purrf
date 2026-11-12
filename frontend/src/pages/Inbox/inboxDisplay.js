@@ -1,4 +1,8 @@
-/** Display metadata for the three Inbox services. */
+/**
+ * Display metadata for the Inbox services. Unsorted holds mail sent straight
+ * to the shared mailbox: it cannot receive transfers, and its threads can be
+ * deleted.
+ */
 export const SERVICES = [
   {
     key: "mentorship",
@@ -25,6 +29,13 @@ export const SERVICES = [
     label: "Inquiries",
     badgeClass: "border-stone-300 bg-stone-100 text-stone-700",
   },
+  {
+    key: "unsorted",
+    label: "Unsorted",
+    badgeClass: "border-zinc-300 bg-zinc-50 text-zinc-600",
+    transferTarget: false,
+    deletable: true,
+  },
 ];
 
 /**
@@ -33,7 +44,8 @@ export const SERVICES = [
  *
  * @param {string} key - Service key.
  * @returns {{key: string, label: string, badgeClass: string,
- *   file?: {action: string, title: string, done: string}}}
+ *   file?: {action: string, title: string, done: string},
+ *   transferTarget?: boolean, deletable?: boolean}}
  */
 export const serviceOf = (key) =>
   SERVICES.find((s) => s.key === key) ?? {
@@ -41,6 +53,14 @@ export const serviceOf = (key) =>
     label: key,
     badgeClass: "border-slate-300 bg-slate-50 text-slate-700",
   };
+
+/**
+ * `1 conversation`, `3 conversations`.
+ *
+ * @param {number} n - Count.
+ * @returns {string}
+ */
+export const conversations = (n) => `${n} conversation${n === 1 ? "" : "s"}`;
 
 /** Label of each machine-generated mail kind. */
 export const MACHINE_TAG_LABELS = {
