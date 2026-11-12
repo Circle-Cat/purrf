@@ -146,6 +146,7 @@ class GmailClient:
         self._logger = logger
         self._retry_utils = retry_utils
         self._local = threading.local()
+        self._mailbox_address = None
 
         if not self._client_id:
             raise ValueError("Missing environment variable: GMAIL_CLIENT_ID")
@@ -166,6 +167,7 @@ class GmailClient:
         Answers "is this us?" for a synced message's ``From`` (OUTBOUND when
         True, INBOUND otherwise). A raw header is fine: a display name is
         stripped and case is ignored. Blank or unparseable input is not ours.
+        The mailbox's own address counts once ``get_profile`` has read it.
 
         Args:
             address (str | None): An address or a full ``From`` header value.
@@ -173,7 +175,24 @@ class GmailClient:
         Returns:
             bool: True when the address is configured on this client.
         """
-        return parseaddr(address or "")[1].lower() in self._sender_addresses
+        bare = parseaddr(address or "")[1].lower()
+        if not bare:
+            return False
+        return bare in self._sender_addresses or bare == self._mailbox_address
+
+    def mailbox_address(self):
+        """The mailbox's own (primary) address, read from Gmail once and kept.
+
+        Returns:
+            str: The lower-cased address.
+
+        Raises:
+            GmailUnavailableError, RateLimitedError, RuntimeError: From
+                ``get_profile`` on the first call.
+        """
+        if self._mailbox_address is None:
+            self._mailbox_address = self.get_profile()["email_address"]
+        return self._mailbox_address
 
     def send_message(
         self,
@@ -450,6 +469,8 @@ class GmailClient:
     def get_profile(self):
         """Read the mailbox address and its current history cursor.
 
+        The address is kept, so ``owns_address`` counts it from then on.
+
         Returns:
             dict: ``email_address`` (lower-cased str) and ``history_id`` (int).
 
@@ -464,8 +485,9 @@ class GmailClient:
             .getProfile(userId=_GMAIL_USER, fields="emailAddress,historyId")
         )
         response = self._execute(request, "get_profile")
+        self._mailbox_address = response["emailAddress"].lower()
         return {
-            "email_address": response["emailAddress"].lower(),
+            "email_address": self._mailbox_address,
             "history_id": int(response["historyId"]),
         }
 

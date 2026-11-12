@@ -13,6 +13,7 @@ from backend.common.api_endpoints import (
     INBOX_THREAD_MOVE_ENDPOINT,
     INBOX_THREAD_REPLY_ENDPOINT,
     INBOX_THREAD_UNARCHIVE_ENDPOINT,
+    INBOX_THREADS_DELETE_ENDPOINT,
     INBOX_THREADS_ENDPOINT,
 )
 from backend.common.communication_enums import InboxService
@@ -22,6 +23,7 @@ from backend.communication.attachment_download import attachment_response
 from backend.communication.inbox_access import INBOX_GATE, SERVICE_PERMISSION
 from backend.dto.inbox_dto import (
     InboxAssignRequestDto,
+    InboxDeleteRequestDto,
     InboxMoveRequestDto,
     InboxQueryDto,
     InboxReplyRequestDto,
@@ -33,6 +35,7 @@ from backend.utils.permission_decorators import authenticate
 PEOPLE_GATE: list[Permission] = [
     SERVICE_PERMISSION[s] for s in (InboxService.MENTORSHIP, InboxService.RECRUITING)
 ]
+DELETE_GATE: list[Permission] = [SERVICE_PERMISSION[InboxService.UNSORTED]]
 
 
 class InboxController:
@@ -62,6 +65,7 @@ class InboxController:
             (INBOX_THREAD_UNARCHIVE_ENDPOINT, "POST", self.unarchive, INBOX_GATE),
             (INBOX_THREAD_ASSIGNMENT_ENDPOINT, "PUT", self.assign, INBOX_GATE),
             (INBOX_THREAD_MOVE_ENDPOINT, "POST", self.move, INBOX_GATE),
+            (INBOX_THREADS_DELETE_ENDPOINT, "POST", self.delete, DELETE_GATE),
             (
                 INBOX_THREAD_ASSIGN_OPTIONS_ENDPOINT,
                 "GET",
@@ -177,6 +181,16 @@ class InboxController:
                 session, current_user, thread_id, payload.service
             )
         return api_response(message="Thread moved.", data=result)
+
+    async def delete(
+        self, current_user: UserContextDto, payload: InboxDeleteRequestDto
+    ):
+        """Delete Unsorted threads, all or none; Gmail keeps the mail."""
+        async with self.database.session() as session:
+            deleted = await self.inbox_thread_service.delete(
+                session, current_user, payload.thread_ids
+            )
+        return api_response(message="Threads deleted.", data={"deleted": deleted})
 
     async def assign_options(
         self,

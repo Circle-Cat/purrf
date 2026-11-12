@@ -7,6 +7,7 @@ _DIRECT = {
     ContextType.MENTORSHIP_INBOX: InboxService.MENTORSHIP,
     ContextType.RECRUITING_INBOX: InboxService.RECRUITING,
     ContextType.INQUIRIES_INBOX: InboxService.INQUIRIES,
+    ContextType.UNSORTED_INBOX: InboxService.UNSORTED,
     ContextType.ACTIVITY: InboxService.MENTORSHIP,
 }
 
