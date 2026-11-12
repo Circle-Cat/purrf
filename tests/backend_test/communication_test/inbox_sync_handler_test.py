@@ -84,6 +84,7 @@ class InboxSyncHandlerTest(unittest.IsolatedAsyncioTestCase):
                 ContextType.MENTORSHIP_INBOX,
                 ContextType.RECRUITING_INBOX,
                 ContextType.INQUIRIES_INBOX,
+                ContextType.UNSORTED_INBOX,
             ],
         )
         self.assertEqual(events, [("sync", 1), ("commit",), ("sync", 2), ("commit",)])

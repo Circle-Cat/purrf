@@ -23,6 +23,7 @@ _SERVICE_NAMES = {
     InboxService.MENTORSHIP: "Mentorship",
     InboxService.RECRUITING: "Recruiting",
     InboxService.INQUIRIES: "Inquiries",
+    InboxService.UNSORTED: "Unsorted",
 }
 
 

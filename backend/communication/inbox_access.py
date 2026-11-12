@@ -8,6 +8,7 @@ SERVICE_PERMISSION: dict[InboxService, Permission] = {
     InboxService.MENTORSHIP: Permission.MENTORSHIP_ADMIN_WRITE,
     InboxService.RECRUITING: Permission.RECRUITING_APPLICATION_ADVANCE,
     InboxService.INQUIRIES: Permission.INQUIRIES_MANAGE,
+    InboxService.UNSORTED: Permission.OPS_MAINTAIN,
 }
 
 # Any one of these opens the Inbox; each thread is then checked by its service.

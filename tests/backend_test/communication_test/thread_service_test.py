@@ -21,6 +21,7 @@ class ThreadServiceResolverTest(unittest.IsolatedAsyncioTestCase):
             ContextType.MENTORSHIP_INBOX: InboxService.MENTORSHIP,
             ContextType.RECRUITING_INBOX: InboxService.RECRUITING,
             ContextType.INQUIRIES_INBOX: InboxService.INQUIRIES,
+            ContextType.UNSORTED_INBOX: InboxService.UNSORTED,
         }
         for context_type, service in expected.items():
             with self.subTest(context_type=context_type):
