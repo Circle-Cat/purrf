@@ -77,6 +77,32 @@ class MentorshipRoundParticipantsRepository:
 
         return result.scalars().one_or_none()
 
+    async def list_by_round_id_and_user_ids(
+        self, session: AsyncSession, round_id: int, user_ids: list[int]
+    ) -> list[MentorshipRoundParticipantsEntity]:
+        """
+        Retrieve the participant rows of several users in one round.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+            user_ids (list[int]): Users whose rows are wanted.
+
+        Returns:
+            list[MentorshipRoundParticipantsEntity]: One row per user who is
+                registered for the round; users without one are left out.
+        """
+        if not user_ids:
+            return []
+
+        result = await session.execute(
+            select(MentorshipRoundParticipantsEntity).where(
+                MentorshipRoundParticipantsEntity.round_id == round_id,
+                MentorshipRoundParticipantsEntity.user_id.in_(user_ids),
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_recent_participant_by_user_id(
         self, session: AsyncSession, user_id: int
     ) -> MentorshipRoundParticipantsEntity | None:

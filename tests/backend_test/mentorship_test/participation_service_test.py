@@ -43,6 +43,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             AsyncMock()
         )
         self.mock_round_participants_repo.get_by_user_id_and_round_id = AsyncMock()
+        self.mock_round_participants_repo.list_by_round_id_and_user_ids = AsyncMock(
+            return_value=[]
+        )
         self.mock_round_participants_repo.upsert_participant = AsyncMock()
         self.mock_round_participants_repo.get_average_program_rating_by_round_and_role = AsyncMock(
             return_value=4.0
@@ -1215,6 +1218,202 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_round_repo.update_mentee_average_score.assert_not_awaited()
 
 
+class TestPartnerLinkedinLink(unittest.IsolatedAsyncioTestCase):
+    """In the match result, a partner's LinkedIn link is shown under the same
+    rule as their email, and only when the partner chose to share it for the
+    round. Nowhere else carries it."""
+
+    VIEWER_ID = 123
+    ROUND_ID = 7
+
+    def setUp(self):
+        # Two partners with different links, so a link read off the wrong
+        # partner shows up as a wrong value rather than a matching one.
+        self.ann = UsersEntity(
+            user_id=456,
+            first_name="Ann",
+            last_name="Lee",
+            linkedin_link="https://www.linkedin.com/in/ann-lee",
+        )
+        self.ben = UsersEntity(
+            user_id=789,
+            first_name="Ben",
+            last_name="Ito",
+            linkedin_link="https://www.linkedin.com/in/ben-ito",
+        )
+        self.ann_pair = MentorshipPairsEntity(
+            mentor_id=self.VIEWER_ID,
+            mentee_id=self.ann.user_id,
+            round_id=self.ROUND_ID,
+            status=PairStatus.ACTIVE,
+        )
+        self.ben_pair = MentorshipPairsEntity(
+            mentor_id=self.VIEWER_ID,
+            mentee_id=self.ben.user_id,
+            round_id=self.ROUND_ID,
+            status=PairStatus.ACTIVE,
+        )
+
+        self.pairs = MagicMock()
+        self.pairs.get_pairs_with_partner_info = AsyncMock(
+            return_value=[(self.ann_pair, self.ann), (self.ben_pair, self.ben)]
+        )
+        self.participants = MagicMock()
+        self.participants.get_by_user_id_and_round_id = AsyncMock(
+            return_value=self._row(self.VIEWER_ID, None, ApprovalStatus.MATCHED)
+        )
+        self.participants.list_by_round_id_and_user_ids = AsyncMock(
+            return_value=[
+                self._row(self.ann.user_id, True),
+                self._row(self.ben.user_id, True),
+            ]
+        )
+        rounds = MagicMock()
+        rounds.get_by_round_id = AsyncMock(
+            return_value=MentorshipRoundEntity(
+                round_id=self.ROUND_ID,
+                name="round",
+                onboarding_deadline_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+        )
+        emails = MagicMock()
+        emails.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={456: "ann@example.com", 789: "ben@example.com"}
+        )
+        self.service = ParticipationService(
+            logger=MagicMock(),
+            users_repository=MagicMock(),
+            mentorship_pairs_repository=self.pairs,
+            mentorship_round_participants_repo=self.participants,
+            mentorship_round_repository=rounds,
+            mentorship_mapper=MagicMock(),
+            user_emails_repository=emails,
+        )
+        self.session = AsyncMock()
+        self.user = MagicMock(spec=UserContextDto, user_id=self.VIEWER_ID)
+
+    def _row(self, user_id, share_linkedin, approval_status=ApprovalStatus.MATCHED):
+        return MentorshipRoundParticipantsEntity(
+            user_id=user_id,
+            round_id=self.ROUND_ID,
+            approval_status=approval_status,
+            share_linkedin=share_linkedin,
+        )
+
+    async def _links(self):
+        """Partner id to LinkedIn link, as the match result reports them."""
+        result = await self.service.get_my_match_result_by_round_id(
+            self.session, self.user, self.ROUND_ID
+        )
+        return {p.id: p.linkedin_link for p in result.partners}
+
+    async def test_shared_links_are_shown_for_each_partner(self):
+        links = await self._links()
+
+        self.assertEqual(
+            links,
+            {
+                456: "https://www.linkedin.com/in/ann-lee",
+                789: "https://www.linkedin.com/in/ben-ito",
+            },
+        )
+
+    async def test_partner_rows_are_read_once_for_the_round(self):
+        await self.service.get_my_match_result_by_round_id(
+            self.session, self.user, self.ROUND_ID
+        )
+
+        self.participants.list_by_round_id_and_user_ids.assert_awaited_once_with(
+            session=self.session, round_id=self.ROUND_ID, user_ids=[456, 789]
+        )
+
+    async def test_a_profile_link_that_is_not_a_safe_linkedin_url_is_not_shown(self):
+        # The profile page saves links unchecked; a script URL mentioning
+        # linkedin.com must never reach the partner's <a href>.
+        self.ann.linkedin_link = "javascript:alert(1)//linkedin.com"
+        self.ben.linkedin_link = "www.linkedin.com/in/ben-ito"
+
+        links = await self._links()
+
+        self.assertEqual(
+            links,
+            {456: None, 789: "https://www.linkedin.com/in/ben-ito"},
+        )
+
+    async def test_partner_who_said_no_is_not_shown(self):
+        self.participants.list_by_round_id_and_user_ids.return_value = [
+            self._row(self.ann.user_id, False),
+            self._row(self.ben.user_id, True),
+        ]
+
+        links = await self._links()
+
+        self.assertEqual(links, {456: None, 789: "https://www.linkedin.com/in/ben-ito"})
+
+    async def test_partner_who_never_answered_is_not_shown(self):
+        self.participants.list_by_round_id_and_user_ids.return_value = [
+            self._row(self.ann.user_id, None),
+            self._row(self.ben.user_id, True),
+        ]
+
+        links = await self._links()
+
+        self.assertEqual(links, {456: None, 789: "https://www.linkedin.com/in/ben-ito"})
+
+    async def test_partner_without_a_profile_link_is_not_shown(self):
+        self.ann.linkedin_link = None
+        self.ben.linkedin_link = "  "
+
+        links = await self._links()
+
+        self.assertEqual(links, {456: None, 789: None})
+
+    async def test_ended_pair_is_not_shown(self):
+        self.ann_pair.status = PairStatus.INACTIVE
+
+        links = await self._links()
+
+        self.assertEqual(links, {456: None, 789: "https://www.linkedin.com/in/ben-ito"})
+        self.participants.list_by_round_id_and_user_ids.assert_awaited_once_with(
+            session=self.session, round_id=self.ROUND_ID, user_ids=[789]
+        )
+
+    async def test_viewer_not_matched_sees_no_link(self):
+        self.participants.get_by_user_id_and_round_id.return_value = self._row(
+            self.VIEWER_ID, None, ApprovalStatus.UN_MATCHED
+        )
+
+        links = await self._links()
+
+        self.assertEqual(links, {456: None, 789: None})
+        self.participants.list_by_round_id_and_user_ids.assert_not_awaited()
+
+    async def test_round_partner_list_carries_no_link(self):
+        partners = await self.service.get_partners_for_user(
+            session=self.session, user_context=self.user, round_id=self.ROUND_ID
+        )
+
+        self.assertEqual(
+            [(p.id, p.linkedin_link) for p in partners], [(456, None), (789, None)]
+        )
+        self.participants.list_by_round_id_and_user_ids.assert_not_awaited()
+
+    async def test_partners_across_rounds_carry_no_link(self):
+        self.pairs.get_all_partner_ids = AsyncMock(return_value=[456])
+        users = MagicMock()
+        users.get_all_by_ids = AsyncMock(return_value=[self.ann])
+        self.service.users_repository = users
+        self.service.mentorship_round_repository.get_all_rounds = AsyncMock(
+            return_value=[]
+        )
+
+        partners = await self.service.get_partners_for_user(
+            session=self.session, user_context=self.user
+        )
+
+        self.assertIsNone(partners[0].linkedin_link)
+
+
 class TestPairingsHiddenUntilAnnounced(unittest.IsolatedAsyncioTestCase):
     """Before a round's match notification, members see none of its pairings."""
 
@@ -1266,6 +1465,7 @@ class TestPairingsHiddenUntilAnnounced(unittest.IsolatedAsyncioTestCase):
                 approval_status=ApprovalStatus.MATCHED,
             )
         )
+        self.participants.list_by_round_id_and_user_ids = AsyncMock(return_value=[])
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[self.partner])
         emails = MagicMock()

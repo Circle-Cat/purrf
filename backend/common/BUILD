@@ -68,6 +68,11 @@ py_library(
 )
 
 py_library(
+    name = "linkedin_url",
+    srcs = ["linkedin_url.py"],
+)
+
+py_library(
     name = "html_text",
     srcs = ["html_text.py"],
 )
