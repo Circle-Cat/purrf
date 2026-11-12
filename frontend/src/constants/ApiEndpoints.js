@@ -216,6 +216,7 @@ export const API_ENDPOINTS = {
   TRAINING_USER_ASSIGNMENTS: (userId) =>
     `/training/users/${userId}/assignments`,
   INBOX_THREADS: "/inbox/threads",
+  INBOX_THREADS_DELETE: "/inbox/threads/delete",
   INBOX_COUNT: "/inbox/count",
   INBOX_THREAD: (id) => `/inbox/threads/${id}`,
   INBOX_THREAD_REPLY: (id) => `/inbox/threads/${id}/reply`,
