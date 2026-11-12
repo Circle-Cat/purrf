@@ -417,3 +417,17 @@ py_test(
     env_inherit = ["DATABASE_URL"],
     deps = [":base_repository_test_lib"],
 )
+
+py_test(
+    name = "user_guide_progress_repository_test",
+    srcs = ["user_guide_progress_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:onboarding_guide_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)

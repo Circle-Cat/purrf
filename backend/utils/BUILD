@@ -169,6 +169,8 @@ py_library(
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
         "//backend/notification_management:notification_event_email_service",
+        "//backend/onboarding_guide:guide_progress_controller",
+        "//backend/onboarding_guide:guide_progress_service",
         "//backend/profile",
         "//backend/recruiting",
         "//backend/repository:repositories",

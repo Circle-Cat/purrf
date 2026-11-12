@@ -245,6 +245,11 @@ py_library(
 )
 
 py_library(
+    name = "onboarding_guide_enums",
+    srcs = ["onboarding_guide_enums.py"],
+)
+
+py_library(
     name = "identity_type",
     srcs = [
         "identity_type.py",

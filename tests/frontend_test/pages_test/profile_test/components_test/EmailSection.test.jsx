@@ -54,7 +54,7 @@ describe("EmailSection Component", () => {
     renderWithRouter(<EmailSection info={INFO_WITH_PRIMARY} />);
 
     const manageLink = screen.getByRole("link", {
-      name: /manage in settings/i,
+      name: /manage emails/i,
     });
     expect(manageLink).toHaveAttribute("href", ROUTE_PATHS.SIGN_IN_SECURITY);
   });

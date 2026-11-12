@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import Sidebar from "@/components/layout/Sidebar";
 import { useAuth } from "@/context/auth";
+import { FlagsContext } from "@/context/flags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
@@ -24,14 +26,28 @@ describe("Sidebar Component", () => {
    * @param {string[]} permissions - The permissions assigned to the current user.
    * @param {string} [initialPath="/"] - The current active route path (for testing active states).
    */
-  const renderSidebar = (permissions = [], initialPath = ROUTE_PATHS.ROOT) => {
+  const renderSidebar = (
+    permissions = [],
+    initialPath = ROUTE_PATHS.ROOT,
+    flags = {},
+  ) => {
     useAuth.mockReturnValue({ permissions });
     return render(
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Sidebar />
-      </MemoryRouter>,
+      <FlagsContext.Provider
+        value={{ flags, setFlags: () => {}, ready: true, setReady: () => {} }}
+      >
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Sidebar />
+        </MemoryRouter>
+      </FlagsContext.Provider>,
     );
   };
+
+  const groupWrapper = (key) =>
+    document.querySelector(`[data-nav-group="${key}"]`);
+
+  const linkLabels = (element) =>
+    Array.from(element.querySelectorAll("a")).map((a) => a.textContent);
 
   test("renders only Personal Dashboard for a user with no permissions", () => {
     renderSidebar([]);
@@ -51,6 +67,56 @@ describe("Sidebar Component", () => {
       "href",
       ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
     );
+  });
+
+  test("lists every entry in group order for a user who sees everything", () => {
+    renderSidebar(Object.values(PERMISSIONS), ROUTE_PATHS.ROOT, {
+      [FEATURE_FLAGS.LEAVE_MANAGEMENT]: true,
+    });
+
+    expect(linkLabels(document.querySelector("nav"))).toEqual([
+      "Personal Dashboard",
+      "Open Positions",
+      "Inbox",
+      "Applications Board",
+      "My Interview Evaluations",
+      "Job Postings",
+      "Recruiting Audit",
+      "Mentorship Management",
+      "Dashboard",
+      "DataSearch",
+      "Accounts",
+      "User Permissions",
+      "Leave Administration",
+      "Training Administration",
+    ]);
+    expect(
+      Array.from(document.querySelectorAll("[data-nav-group]")).map((el) =>
+        el.getAttribute("data-nav-group"),
+      ),
+    ).toEqual(["me", "apply", "recruiting", "mentorship", "activity", "admin"]);
+  });
+
+  test("wraps only the groups that have a visible entry, around just those entries", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_AUDIT_READ, PERMISSIONS.USER_ADMIN]);
+
+    expect(linkLabels(groupWrapper("me"))).toEqual(["Personal Dashboard"]);
+    expect(linkLabels(groupWrapper("apply"))).toEqual(["Open Positions"]);
+    expect(linkLabels(groupWrapper("recruiting"))).toEqual([
+      "Recruiting Audit",
+    ]);
+    expect(linkLabels(groupWrapper("admin"))).toEqual(["Accounts"]);
+    expect(groupWrapper("mentorship")).toBeNull();
+    expect(groupWrapper("activity")).toBeNull();
+  });
+
+  test("leaves out a group whose only entries are behind an off flag", () => {
+    renderSidebar([PERMISSIONS.LEAVE_ADMIN, PERMISSIONS.MENTORSHIP_ADMIN_READ]);
+
+    expect(groupWrapper("admin")).toBeNull();
+    expect(linkLabels(groupWrapper("mentorship"))).toEqual([
+      "Mentorship Management",
+    ]);
   });
 
   test("hides Applications Board for a user with no permissions", () => {

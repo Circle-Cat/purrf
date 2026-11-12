@@ -10,6 +10,7 @@ py_library(
         "//backend/common:communication_enums",
         "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",
+        "//backend/common:onboarding_guide_enums",
         "//backend/common:user_enums",
         "//backend/dto",
         "//backend/entity:entities",
