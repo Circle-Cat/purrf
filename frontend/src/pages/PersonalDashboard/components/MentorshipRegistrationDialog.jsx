@@ -64,6 +64,7 @@ const POST_REGISTRATION_TOAST_MESSAGE =
  * @param {boolean} props.isLocked - Whether this role's window has closed,
  *   making the form read-only.
  * @param {(data: Object) => Promise<any>} props.onSave - Submits the registration.
+ * @param {string} [props.triggerClassName] - Extra classes for the trigger button.
  * @returns {JSX.Element}
  */
 export default function MentorshipRegistrationDialog({
@@ -76,6 +77,7 @@ export default function MentorshipRegistrationDialog({
   refreshRegistration,
   isLocked,
   onSave,
+  triggerClassName,
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -344,7 +346,11 @@ export default function MentorshipRegistrationDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="default" disabled={isPartnersLoading}>
+        <Button
+          variant="default"
+          disabled={isPartnersLoading}
+          className={triggerClassName}
+        >
           {isLocked
             ? "View Registration"
             : isUpdating
