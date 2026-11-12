@@ -60,6 +60,9 @@ module "purrf_instance" {
   gmail_watch_topic_name  = "purrf-gmail-nonprod"
   gmail_watch_topic_owner = false
   gmail_inbox_enabled     = true
+  # Mail sent straight to the shared mailbox (no alias) is real mail for
+  # prod; only one environment on the mailbox may claim it.
+  gmail_inbox_unsorted_enabled = true
 
   # The backend no longer pulls these subscriptions, so without push their
   # events wait in Pub/Sub until the seven-day retention drops them.
