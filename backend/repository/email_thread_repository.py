@@ -1,4 +1,4 @@
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.communication_enums import EmailDirection, InboundKind
@@ -209,6 +209,25 @@ class EmailThreadRepository:
             .order_by(EmailThreadEntity.thread_id.asc())
         )
         return list(result.scalars().all())
+
+    async def delete_by_ids(self, session: AsyncSession, thread_ids: list[int]) -> int:
+        """Delete threads by id. Does not commit.
+
+        Their messages go with them: ``email_message.thread_id`` cascades.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            thread_ids (list[int]): The threads.
+
+        Returns:
+            int: How many threads were deleted; 0, without a query, for no ids.
+        """
+        if not thread_ids:
+            return 0
+        result = await session.execute(
+            delete(EmailThreadEntity).where(EmailThreadEntity.thread_id.in_(thread_ids))
+        )
+        return result.rowcount
 
     async def mark_synced(self, session: AsyncSession, thread_id: int) -> None:
         """Stamp ``synced_at`` to the DB clock after a successful sync.

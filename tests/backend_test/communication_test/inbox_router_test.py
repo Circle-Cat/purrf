@@ -43,7 +43,9 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
         self.threads = AsyncMock()
         self.created = Mock(thread_id=7)
         self.threads.create.return_value = self.created
-        self.aliases = InboxAliases(mentorship="mentorship-test@example.com")
+        self.aliases = InboxAliases(
+            mentorship="mentorship-test@example.com", unsorted_enabled=True
+        )
         self.logger = Mock()
         self.session = AsyncMock()
         self.session.begin_nested = Mock(return_value=_Nested())
@@ -77,7 +79,6 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
             result,
             RouteResult(
                 thread=self.created,
-                unrouted=False,
                 messages=self.gmail.get_messages.return_value,
             ),
         )
@@ -119,34 +120,96 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
             )
         )
         result = await self._route()
-        self.assertEqual(result, RouteResult(thread=None, unrouted=False))
+        self.assertEqual(result, RouteResult(thread=None))
         self.threads.create.assert_not_awaited()
         self.logger.warning.assert_not_called()
 
-    async def test_mail_to_no_send_as_alias_is_unrouted_and_logged(self):
-        self._messages(_message("Wang <w@ext.com>", ["someone@example.com"], 1000))
-        result = await self._route("g-lost")
-        self.assertEqual(result, RouteResult(thread=None, unrouted=True))
-        self.threads.create.assert_not_awaited()
-        self.logger.warning.assert_called_once()
-        logged = " ".join(str(a) for a in self.logger.warning.call_args.args)
-        self.assertIn("g-lost", logged)
-        self.assertIn("w@ext.com", logged)
+    async def test_mail_to_no_send_as_alias_goes_to_unsorted(self):
+        self._messages(
+            _message("Wang <w@ext.com>", ["someone@example.com"], 1000, "Hi")
+        )
+        result = await self._route("g-direct")
+        self.assertEqual(
+            result,
+            RouteResult(
+                thread=self.created, messages=self.gmail.get_messages.return_value
+            ),
+        )
+        self.threads.create.assert_awaited_once_with(
+            self.session,
+            user_id=None,
+            gmail_thread_id="g-direct",
+            subject="Hi",
+            context_type=ContextType.UNSORTED_INBOX,
+            context_id=None,
+        )
+        self.logger.warning.assert_not_called()
 
-    async def test_primary_address_alone_in_delivered_to_is_unrouted(self):
+    async def test_primary_address_alone_in_delivered_to_goes_to_unsorted(self):
         self._messages(
             _message("w@ext.com", ["someone@example.com", "purrf@example.com"], 1000)
         )
         result = await self._route()
-        self.assertEqual(result, RouteResult(thread=None, unrouted=True))
+        self.assertIs(result.thread, self.created)
+        self.assertEqual(
+            self.threads.create.await_args.kwargs["context_type"],
+            ContextType.UNSORTED_INBOX,
+        )
+
+    async def test_mail_to_no_alias_is_skipped_quietly_unless_both_switches_are_on(
+        self,
+    ):
+        for claims_new_mail, unsorted_enabled in ((False, True), (True, False)):
+            with self.subTest(inbox=claims_new_mail, unsorted=unsorted_enabled):
+                self.threads.create.reset_mock()
+                self.logger.reset_mock()
+                self.router = InboxRouter(
+                    gmail_client=self.gmail,
+                    thread_repository=self.threads,
+                    aliases=InboxAliases(
+                        mentorship="mentorship-test@example.com",
+                        claims_new_mail=claims_new_mail,
+                        unsorted_enabled=unsorted_enabled,
+                    ),
+                    logger=self.logger,
+                )
+                self._messages(_message("w@ext.com", ["purrf@example.com"], 1000))
+                result = await self._route("g-off")
+                self.assertEqual(result, RouteResult(thread=None))
+                self.threads.create.assert_not_awaited()
+                self.logger.warning.assert_not_called()
+                self.logger.info.assert_called_once()
+                self.assertIn("g-off", self.logger.info.call_args.args)
+
+    async def test_mail_to_a_claimed_alias_is_routed_with_the_unsorted_switch_off(self):
+        self.router = InboxRouter(
+            gmail_client=self.gmail,
+            thread_repository=self.threads,
+            aliases=InboxAliases(mentorship="mentorship-test@example.com"),
+            logger=self.logger,
+        )
+        self._messages(_message("w@ext.com", ["mentorship-test@example.com"], 1000))
+        result = await self._route()
+        self.assertIs(result.thread, self.created)
+        self.assertEqual(
+            self.threads.create.await_args.kwargs["context_type"],
+            ContextType.MENTORSHIP_INBOX,
+        )
+
+    async def test_mail_to_another_environments_alias_never_goes_to_unsorted(self):
+        self._messages(
+            _message("x@ext.com", ["mentorship@example.com", "other@ext.com"], 1000)
+        )
+        result = await self._route()
+        self.assertEqual(result, RouteResult(thread=None))
         self.threads.create.assert_not_awaited()
 
-    async def test_thread_with_only_our_messages_is_neither_created_nor_unrouted(self):
+    async def test_thread_with_only_our_messages_is_not_created(self):
         self._messages(
             _message("mentorship-test@example.com", ["x@ext.com"], 1000),
         )
         result = await self._route()
-        self.assertEqual(result, RouteResult(thread=None, unrouted=False))
+        self.assertEqual(result, RouteResult(thread=None))
         self.threads.create.assert_not_awaited()
         self.gmail.list_send_as_addresses.assert_not_called()
         self.logger.warning.assert_not_called()
@@ -163,7 +226,6 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
             result,
             RouteResult(
                 thread=existing,
-                unrouted=False,
                 messages=self.gmail.get_messages.return_value,
             ),
         )

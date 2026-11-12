@@ -152,3 +152,9 @@ class InboxAssignRequestDto(BaseDto):
 
 class InboxMoveRequestDto(BaseDto):
     service: InboxService
+
+
+class InboxDeleteRequestDto(BaseDto):
+    """Unsorted threads to delete, all or none."""
+
+    thread_ids: list[int] = Field(min_length=1)

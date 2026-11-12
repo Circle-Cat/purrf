@@ -5,6 +5,14 @@ import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 export const listInboxThreads = (params) =>
   request.get(API_ENDPOINTS.INBOX_THREADS, { params });
 
+/**
+ * Delete Unsorted threads from Purrf; Gmail keeps the mail. The server
+ * refuses the whole request if any id is not a visible Unsorted thread.
+ * Resolves with `data: {deleted}`.
+ */
+export const deleteInboxThreads = (threadIds) =>
+  request.post(API_ENDPOINTS.INBOX_THREADS_DELETE, { threadIds });
+
 /** Fetch the sidebar badge count. */
 export const getInboxCount = () => request.get(API_ENDPOINTS.INBOX_COUNT);
 

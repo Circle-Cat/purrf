@@ -112,11 +112,12 @@ const Message = ({ threadId, message }) => {
  * The whole conversation, the actions on it, and the reply box. The reply is
  * sent from the alias of the service that owns the thread now. Sending is
  * refused by the server when a message arrived after the thread was loaded;
- * `stale` then shows a warning and the draft stays.
+ * `stale` then shows a warning and the draft stays. `onDelete`, when given,
+ * adds a Delete action.
  *
  * @param {{thread: object, stale: boolean, pending: boolean, onReply: (html: string) => Promise<boolean>,
  *   onArchive: Function, onUnarchive: Function, onAssign: Function,
- *   onMove: (service: string) => void}} props
+ *   onMove: (service: string) => void, onDelete?: Function}} props
  * @returns {JSX.Element}
  */
 const ThreadDetail = ({
@@ -128,6 +129,7 @@ const ThreadDetail = ({
   onUnarchive,
   onAssign,
   onMove,
+  onDelete,
 }) => {
   const [draft, setDraft] = useState("");
   const [moveTarget, setMoveTarget] = useState("");
@@ -235,7 +237,9 @@ const ThreadDetail = ({
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
           >
             <option value="">Transfer to…</option>
-            {SERVICES.filter((s) => s.key !== thread.service).map((s) => (
+            {SERVICES.filter(
+              (s) => s.key !== thread.service && s.transferTarget !== false,
+            ).map((s) => (
               <option key={s.key} value={s.key}>
                 {s.label}
               </option>
@@ -253,6 +257,16 @@ const ThreadDetail = ({
             Transfer
           </Button>
         </span>
+        {onDelete && (
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={pending}
+            onClick={onDelete}
+          >
+            Delete
+          </Button>
+        )}
       </div>
 
       <p className="text-xs text-slate-500">

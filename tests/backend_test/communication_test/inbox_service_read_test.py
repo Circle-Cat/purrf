@@ -172,6 +172,10 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
         self.application_repo = Mock()
         self.conversation = SimpleNamespace()
         self.gmail = Mock()
+        self.logger = Mock()
+        self.aliases = InboxAliases(
+            mentorship=_MENTORSHIP_ALIAS, recruiting=_RECRUITING_ALIAS
+        )
         self.participant_repo = Mock()
         self.rounds_service = Mock()
         self.service = self._build_service()
@@ -186,9 +190,7 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
             round_repository=self.round_repo,
             event_repository=self.event_repo,
             thread_service_resolver=ThreadServiceResolver(job_repository=self.job_repo),
-            aliases=InboxAliases(
-                mentorship=_MENTORSHIP_ALIAS, recruiting=_RECRUITING_ALIAS
-            ),
+            aliases=self.aliases,
             person_email_service=PersonEmailService(
                 conversation_service=self.conversation,
                 thread_repository=self.thread_repo,
@@ -200,6 +202,8 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
             ),
             round_participants_repository=self.participant_repo,
             rounds_service=self.rounds_service,
+            gmail_client=self.gmail,
+            logger=self.logger,
         )
 
     async def _list(self, viewer=None, **query):
