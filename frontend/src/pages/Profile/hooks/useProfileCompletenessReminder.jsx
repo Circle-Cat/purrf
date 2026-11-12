@@ -26,10 +26,10 @@ const PROFILE_TOAST_PREFIX =
  * able to fire once the answer arrives.
  *
  * The sessionStorage key keeps navigating in and out of /profile from
- * re-nagging. The mentorship onboarding training reminder is a separate
- * concern and lives on the Personal Dashboard
- * (`useOnboardingTrainingReminder`), where a newly admitted participant
- * sees it without having to visit their profile first.
+ * re-nagging. The mentorship onboarding training prompt is a separate
+ * concern and lives in the Personal Dashboard's mentorship banner, where a
+ * newly admitted participant sees it without having to visit their profile
+ * first.
  */
 export const useProfileCompletenessReminder = ({
   enabled,

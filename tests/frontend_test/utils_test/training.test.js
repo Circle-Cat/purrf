@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   ONBOARDING_TRAINING_CATEGORIES,
   isIncompleteOnboarding,
+  isOnboardingDoneForRoles,
 } from "@/utils/training";
 
 describe("isIncompleteOnboarding", () => {
@@ -47,5 +48,30 @@ describe("isIncompleteOnboarding", () => {
       "mentorship_mentor_onboarding",
       "mentorship_mentee_onboarding",
     ]);
+  });
+});
+
+describe("isOnboardingDoneForRoles", () => {
+  const rows = [
+    { id: 1, category: "mentorship_mentor_onboarding", status: "in_progress" },
+    { id: 2, category: "mentorship_mentee_onboarding", status: "done" },
+    { id: 3, category: "security_basics", status: "done" },
+  ];
+
+  it("reads the row of the given role", () => {
+    expect(isOnboardingDoneForRoles(rows, ["mentee"])).toBe(true);
+    expect(isOnboardingDoneForRoles(rows, ["mentor"])).toBe(false);
+  });
+
+  it("needs every given role done", () => {
+    expect(isOnboardingDoneForRoles(rows, ["mentor", "mentee"])).toBe(false);
+  });
+
+  it("counts a role with no onboarding row as not done", () => {
+    expect(isOnboardingDoneForRoles([rows[2]], ["mentee"])).toBe(false);
+  });
+
+  it("is false with no roles", () => {
+    expect(isOnboardingDoneForRoles(rows, [])).toBe(false);
   });
 });
