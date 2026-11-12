@@ -25,6 +25,7 @@ class ContextType(StrEnum):
     MENTORSHIP_INBOX = "mentorship_inbox"
     RECRUITING_INBOX = "recruiting_inbox"
     INQUIRIES_INBOX = "inquiries_inbox"
+    UNSORTED_INBOX = "unsorted_inbox"
 
 
 class EmailDirection(StrEnum):
@@ -43,15 +44,21 @@ class InboundKind(StrEnum):
 
 
 class InboxService(StrEnum):
-    """The service an Inbox thread belongs to; each has one alias and one permission."""
+    """The service an Inbox thread belongs to; each has one permission.
+
+    Every service but UNSORTED has its own alias. UNSORTED holds mail sent to
+    the mailbox's own address, and replies from it.
+    """
 
     MENTORSHIP = "mentorship"
     RECRUITING = "recruiting"
     INQUIRIES = "inquiries"
+    UNSORTED = "unsorted"
 
 
 INBOX_CONTEXT: dict[InboxService, ContextType] = {
     InboxService.MENTORSHIP: ContextType.MENTORSHIP_INBOX,
     InboxService.RECRUITING: ContextType.RECRUITING_INBOX,
     InboxService.INQUIRIES: ContextType.INQUIRIES_INBOX,
+    InboxService.UNSORTED: ContextType.UNSORTED_INBOX,
 }

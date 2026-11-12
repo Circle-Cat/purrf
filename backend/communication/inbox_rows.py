@@ -132,8 +132,12 @@ def facts_of(thread, messages) -> ThreadFacts:
 
 
 def can_assign(service: InboxService, facts: ThreadFacts) -> bool:
-    """Inquiries are never about one person, and a tracked thread keeps its owner."""
-    return service != InboxService.INQUIRIES and not facts.tracked
+    """Only Mentorship and Recruiting threads are about one person, and a
+    tracked thread keeps its owner."""
+    return (
+        service in (InboxService.MENTORSHIP, InboxService.RECRUITING)
+        and not facts.tracked
+    )
 
 
 def matches_search(

@@ -107,6 +107,7 @@ class InboxControllerTest(unittest.TestCase):
             ("POST", "/inbox/threads/{thread_id}/unarchive"): INBOX_GATE,
             ("PUT", "/inbox/threads/{thread_id}/assignment"): INBOX_GATE,
             ("POST", "/inbox/threads/{thread_id}/move"): INBOX_GATE,
+            ("POST", "/inbox/threads/delete"): [Permission.OPS_MAINTAIN],
             ("GET", "/inbox/threads/{thread_id}/assign-options"): INBOX_GATE,
             ("GET", "/inbox/people"): people_gate,
             (
@@ -320,6 +321,42 @@ class InboxControllerTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["success"])
         self.assertIsNone(response.json()["data"])
+
+    def test_delete_reads_camel_case_ids_and_answers_the_count(self):
+        self._as(Permission.OPS_MAINTAIN)
+        self.service.delete.return_value = 2
+
+        response = self.client.post("/inbox/threads/delete", json={"threadIds": [3, 4]})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"], {"deleted": 2})
+        self.assertEqual(self.service.delete.await_args.args[2:], ([3, 4],))
+
+    def test_delete_needs_ops_maintain(self):
+        self._as(Permission.INQUIRIES_MANAGE)
+
+        response = self.client.post("/inbox/threads/delete", json={"threadIds": [3]})
+
+        self.assertEqual(response.status_code, 403)
+        self.service.delete.assert_not_called()
+
+    def test_delete_of_no_ids_is_400(self):
+        self._as(Permission.OPS_MAINTAIN)
+
+        response = self.client.post("/inbox/threads/delete", json={"threadIds": []})
+
+        self.assertEqual(response.status_code, 400)
+        self.service.delete.assert_not_called()
+
+    def test_delete_rejected_by_the_service_is_400(self):
+        self._as(Permission.OPS_MAINTAIN)
+        self.service.delete.side_effect = ValueError(
+            "thread 9 is not in the Unsorted inbox"
+        )
+
+        response = self.client.post("/inbox/threads/delete", json={"threadIds": [9]})
+
+        self.assertEqual(response.status_code, 400)
 
     def test_move_to_an_unknown_service_is_400(self):
         response = self.client.post("/inbox/threads/31/move", json={"service": "hr"})

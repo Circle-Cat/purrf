@@ -158,6 +158,15 @@ class InboxNotifierTest(unittest.IsolatedAsyncioTestCase):
         self.messages.list_by_thread.assert_not_awaited()
         self.services.service_of.assert_not_awaited()
 
+    async def test_unsorted_mail_tells_nobody_it_needs_a_reply(self):
+        self.thread.context_type = ContextType.UNSORTED_INBOX
+        self.services.service_of.return_value = InboxService.UNSORTED
+
+        recorded = await self._after_sync([], [_inbound(0)])
+
+        self.assertFalse(recorded)
+        self.assertEqual(self._events(InboxEvent.NEEDS_REPLY), [])
+
     async def test_the_service_comes_from_the_resolver(self):
         self.thread.context_type = ContextType.INQUIRIES_INBOX
         self.services.service_of.return_value = InboxService.INQUIRIES

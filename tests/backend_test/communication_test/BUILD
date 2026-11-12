@@ -290,6 +290,7 @@ py_test(
         "//backend/entity:entities",
         "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
     ],
 )
 
