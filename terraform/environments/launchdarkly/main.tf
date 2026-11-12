@@ -86,8 +86,8 @@ locals {
       key         = "whats-new"
       name        = "What's New"
       description = "Shows the What's new panel in the account menu and the unread dot on the avatar"
-      off_in      = ["production", "staging"]
-      public_in   = ["test"]
+      off_in      = []
+      public_in   = ["production", "staging", "test"]
     }
   }
 
