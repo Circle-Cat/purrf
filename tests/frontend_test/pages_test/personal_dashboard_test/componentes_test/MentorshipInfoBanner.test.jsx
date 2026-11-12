@@ -1,14 +1,19 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
+import { render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+import MentorshipInfoBanner, {
+  TRAINING_PATH,
+} from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
+import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
 
 vi.mock(
   "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog",
   () => ({
     default: vi.fn((props) => (
-      <div data-testid={`mock-registration-dialog-${props.role}`}>
-        Dialog Locked: {props.isLocked ? "Yes" : "No"} | Role: {props.role}
-      </div>
+      <button data-testid={`mock-registration-dialog-${props.role}`}>
+        {props.isLocked ? "View" : "Open"} {props.role}
+      </button>
     )),
   }),
 );
@@ -16,290 +21,319 @@ vi.mock(
 vi.mock("@/pages/PersonalDashboard/components/MatchingResultDialog", () => ({
   default: vi.fn((props) => (
     <div data-testid="mock-matching-dialog">
-      Round: {props.roundName} | Can View: {props.canViewMatch ? "Yes" : "No"} |
-      Status: {props.matchData?.currentStatus || "N/A"}
+      {props.roundName} | {props.matchData?.currentStatus}
     </div>
   )),
 }));
 
-const FUTURE = "2026-12-01T00:00:00Z";
-const PAST = "2026-01-01T00:00:00Z";
+const TZ = "America/New_York";
+
+// Shaped like GET /mentorship/rounds entries.
+const REG_ROUND = {
+  id: 42,
+  name: "2027 Spring",
+  timeline: {
+    promotionStartAt: "2026-12-18T08:00:00Z",
+    onboardingDeadlineAt: "2027-01-20T03:00:00Z", // Jan 19 in New York
+    matchNotificationAt: "2027-02-13T03:30:00Z", // Feb 12 in New York
+  },
+};
+const NEXT_ROUND = {
+  id: 44,
+  name: "2027 Summer",
+  timeline: { promotionStartAt: "2027-04-18T07:00:00Z" },
+};
+
+const OPEN_NOW = "2027-01-05T15:00:00Z";
+
+const baseProps = {
+  isLoading: false,
+  regRoundId: REG_ROUND.id,
+  regRoundName: REG_ROUND.name,
+  registration: { isRegistered: false, roundName: REG_ROUND.name },
+  isRegistrationOpen: true,
+  registrationDeadlineAt: REG_ROUND.timeline.onboardingDeadlineAt,
+  isTrainingDone: false,
+  roundSelectionData: { sortedRounds: [NEXT_ROUND, REG_ROUND] },
+  userTimezone: TZ,
+  registrationEntries: [
+    {
+      role: "mentee",
+      deadlineAt: REG_ROUND.timeline.onboardingDeadlineAt,
+      isOpen: true,
+    },
+  ],
+  registeredRole: null,
+  onSaveRegistration: vi.fn(),
+  loadRegistrationForRole: vi.fn(),
+  pastPartners: [],
+  isPartnersLoading: false,
+  onLoadPastPartners: vi.fn(),
+  refreshRegistration: vi.fn(),
+  matchResult: null,
+  matchResultRoundName: "2027 Spring Matches",
+  canViewMatch: false,
+};
+
+const registeredMentor = {
+  registration: {
+    isRegistered: true,
+    roundName: REG_ROUND.name,
+    roundPreferences: {
+      participantRole: "mentor",
+      goal: "Grow as a technical lead",
+    },
+  },
+  registeredRole: "mentor",
+  registrationEntries: [
+    {
+      role: "mentor",
+      deadlineAt: REG_ROUND.timeline.onboardingDeadlineAt,
+      isOpen: true,
+    },
+  ],
+};
+
+const renderBanner = (overrides = {}) =>
+  render(
+    <MemoryRouter>
+      <MentorshipInfoBanner {...baseProps} {...overrides} />
+    </MemoryRouter>,
+  );
+
+const nextBox = () => screen.getByTestId("mentorship-banner-next");
+const profileLine = () =>
+  screen.queryByText(/check that your profile is up to date/);
 
 describe("MentorshipInfoBanner", () => {
-  const defaultProps = {
-    registration: null,
-    isRegistrationOpen: true,
-    isFeedbackEnabled: false,
-    registrationEntries: [{ role: "mentee", deadlineAt: FUTURE, isOpen: true }],
-    registeredRole: null,
-    onSaveRegistration: vi.fn(),
-    loadRegistrationForRole: vi.fn(),
-    pastPartners: [],
-    isPartnersLoading: false,
-    onLoadPastPartners: vi.fn(),
-    matchResult: null,
-    matchResultRoundName: "Spring 2026",
-    canViewMatch: false,
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(OPEN_NOW));
   });
 
-  it("renders the MatchingResultDialog only when the user is registered", () => {
-    const { rerender } = render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: false }}
-      />,
-    );
-
-    expect(
-      screen.queryByTestId("mock-matching-dialog"),
-    ).not.toBeInTheDocument();
-
-    rerender(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: true }}
-        registeredRole="mentee"
-      />,
-    );
-
-    expect(screen.getByTestId("mock-matching-dialog")).toBeInTheDocument();
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("offers one dialog per open role when the user has not registered", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: false, roundName: "Spring" }}
-        registrationEntries={[
-          { role: "mentor", deadlineAt: FUTURE, isOpen: true },
-          { role: "mentee", deadlineAt: FUTURE, isOpen: true },
-        ]}
-      />,
-    );
+  it("renders nothing while its data is loading", () => {
+    const { container } = renderBanner({ isLoading: true });
 
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentor"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentee"),
-    ).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
-  // A closed window offers an unregistered user nothing to fill in and
-  // nothing to read back, so it offers no entry point at all.
-  it("hides the entry for a role whose deadline has passed", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: false, roundName: "Spring" }}
-        registrationEntries={[
-          { role: "mentor", deadlineAt: PAST, isOpen: false },
-          { role: "mentee", deadlineAt: FUTURE, isOpen: true },
-        ]}
-      />,
-    );
+  describe("no round open", () => {
+    it("says when the next round opens, with no bar, action or profile line", () => {
+      renderBanner({
+        regRoundId: null,
+        regRoundName: "",
+        registration: null,
+        isRegistrationOpen: false,
+        registrationEntries: [],
+      });
 
-    expect(
-      screen.queryByTestId("mock-registration-dialog-mentor"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentee"),
-    ).toBeInTheDocument();
+      expect(screen.getByText("Mentorship")).toBeInTheDocument();
+      expect(nextBox()).toHaveTextContent(
+        "Next: registration for 2027 Summer opens Apr 18. We'll email you when it does.",
+      );
+      expect(screen.queryByRole("list")).not.toBeInTheDocument();
+      expect(within(nextBox()).queryByRole("button")).not.toBeInTheDocument();
+      expect(profileLine()).not.toBeInTheDocument();
+    });
   });
 
-  it("offers no registration entry when every window has closed", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        isRegistrationOpen={false}
-        registration={{ isRegistered: false, roundName: "Spring" }}
-        registrationEntries={[
-          { role: "mentor", deadlineAt: PAST, isOpen: false },
-          { role: "mentee", deadlineAt: PAST, isOpen: false },
-        ]}
-      />,
-    );
+  describe("registration open, not registered", () => {
+    it("puts the registration dialog in the Next line, once", () => {
+      renderBanner();
 
-    expect(
-      screen.queryByTestId("mock-registration-dialog-mentor"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("mock-registration-dialog-mentee"),
-    ).not.toBeInTheDocument();
+      expect(screen.getByText("2027 Spring")).toBeInTheDocument();
+      expect(nextBox()).toHaveTextContent("Next: register by Jan 19.");
+      expect(
+        within(nextBox()).getByTestId("mock-registration-dialog-mentee"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getAllByTestId("mock-registration-dialog-mentee"),
+      ).toHaveLength(1);
+      expect(profileLine()).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Update profile →" }),
+      ).toHaveAttribute("href", "/profile");
+    });
+
+    it("offers one dialog per open role only", () => {
+      renderBanner({
+        registrationEntries: [
+          { role: "mentor", deadlineAt: null, isOpen: false },
+          {
+            role: "mentee",
+            deadlineAt: REG_ROUND.timeline.onboardingDeadlineAt,
+            isOpen: true,
+          },
+        ],
+      });
+
+      expect(
+        screen.queryByTestId("mock-registration-dialog-mentor"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("mock-registration-dialog-mentee"),
+      ).toBeInTheDocument();
+    });
+
+    it("goes amber and counts the days when the deadline is near", () => {
+      vi.setSystemTime(new Date("2027-01-18T12:00:00Z"));
+
+      renderBanner();
+
+      expect(nextBox()).toHaveAttribute("data-tone", "amber");
+      expect(nextBox()).toHaveTextContent(
+        "Next: register by Jan 19 (in 1 day).",
+      );
+      const [props] = MentorshipRegistrationDialog.mock.calls.at(-1);
+      expect(props.triggerClassName).toMatch(/amber/);
+    });
+
+    it("marks Register as the current step for assistive tech", () => {
+      renderBanner();
+
+      const list = screen.getByRole("list", { name: "Mentorship progress" });
+      const items = within(list).getAllByRole("listitem");
+      expect(items[0]).toHaveAttribute("aria-current", "step");
+      expect(items[1]).not.toHaveAttribute("aria-current");
+    });
+
+    it("shows the narrow-screen step line", () => {
+      renderBanner();
+
+      expect(screen.getByText("Register · step 1 of 3")).toBeInTheDocument();
+    });
   });
 
-  it("shows a single entry once registered", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: true, roundName: "Spring" }}
-        registrationEntries={[
-          { role: "mentee", deadlineAt: FUTURE, isOpen: true },
-        ]}
-        registeredRole="mentee"
-      />,
-    );
+  describe("registration closed, not registered", () => {
+    it("shows Register missed, no action and no profile line", () => {
+      vi.setSystemTime(new Date("2027-01-25T00:00:00Z"));
 
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentee"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("mock-registration-dialog-mentor"),
-    ).not.toBeInTheDocument();
+      renderBanner({
+        isRegistrationOpen: false,
+        registrationEntries: [
+          {
+            role: "mentee",
+            deadlineAt: REG_ROUND.timeline.onboardingDeadlineAt,
+            isOpen: false,
+          },
+        ],
+      });
+
+      expect(nextBox()).toHaveTextContent(
+        "Registration for 2027 Spring has closed. You can register when the next round opens. We'll email you when it does.",
+      );
+      expect(nextBox()).toHaveAttribute("data-tone", "muted");
+      expect(screen.getByText("(missed)")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("mock-registration-dialog-mentee"),
+      ).not.toBeInTheDocument();
+      expect(profileLine()).not.toBeInTheDocument();
+    });
   });
 
-  // The settled role stays readable after its window shuts -- that is the
-  // one closed entry a registered user still gets.
-  it("keeps the registered role's entry after its window closes", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        isRegistrationOpen={false}
-        registration={{ isRegistered: true, roundName: "Spring" }}
-        registrationEntries={[
-          { role: "mentee", deadlineAt: PAST, isOpen: false },
-        ]}
-        registeredRole="mentee"
-      />,
-    );
+  describe("registered, training not done", () => {
+    it("links to the training section and keeps Update registration in the header", () => {
+      renderBanner(registeredMentor);
 
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentee"),
-    ).toHaveTextContent("Dialog Locked: Yes");
+      expect(nextBox()).toHaveTextContent(
+        "Next: finish your onboarding training by Jan 19.",
+      );
+      expect(
+        within(nextBox()).getByRole("link", { name: "Go to training" }),
+      ).toHaveAttribute("href", TRAINING_PATH);
+      expect(TRAINING_PATH).toBe("/profile#training");
+      const dialog = screen.getByTestId("mock-registration-dialog-mentor");
+      expect(nextBox()).not.toContainElement(dialog);
+      expect(screen.getByText("Grow as a technical lead")).toBeInTheDocument();
+      expect(screen.getByText("Training · step 2 of 3")).toBeInTheDocument();
+      expect(profileLine()).toBeInTheDocument();
+    });
+
+    it("leads with Overdue once the deadline has passed", () => {
+      vi.setSystemTime(new Date("2027-01-25T00:00:00Z"));
+
+      renderBanner({
+        ...registeredMentor,
+        isRegistrationOpen: false,
+        registrationEntries: [
+          {
+            role: "mentor",
+            deadlineAt: REG_ROUND.timeline.onboardingDeadlineAt,
+            isOpen: false,
+          },
+        ],
+      });
+
+      expect(nextBox()).toHaveTextContent(
+        "Overdue: your onboarding training was due Jan 19. Finish it before matches are made on Feb 12, or you can't be matched this round.",
+      );
+      expect(
+        within(nextBox()).getByRole("link", { name: "Go to training" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("View mentor")).toBeInTheDocument();
+    });
   });
 
-  it("passes match data props correctly to MatchingResultDialog", () => {
-    const mockMatchData = { currentStatus: "matched" };
+  describe("registered and trained", () => {
+    it("names the announcement date with no action", () => {
+      renderBanner({ ...registeredMentor, isTrainingDone: true });
 
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: true }}
-        registeredRole="mentee"
-        matchResult={mockMatchData}
-        matchResultRoundName="Test Round"
-        canViewMatch={true}
-      />,
-    );
-
-    const dialog = screen.getByTestId("mock-matching-dialog");
-    expect(dialog).toHaveTextContent("Round: Test Round");
-    expect(dialog).toHaveTextContent("Can View: Yes");
-    expect(dialog).toHaveTextContent("Status: matched");
+      expect(nextBox()).toHaveTextContent(
+        "Next: matches are announced Feb 12.",
+      );
+      expect(within(nextBox()).queryByRole("link")).not.toBeInTheDocument();
+      expect(screen.getAllByText("(done)")).toHaveLength(2);
+      expect(profileLine()).toBeInTheDocument();
+    });
   });
 
-  it("does not render when registration is closed, no registration exists, and feedback is disabled", () => {
-    const { container } = render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        isRegistrationOpen={false}
-        registration={null}
-        registrationEntries={[]}
-        isFeedbackEnabled={false}
-      />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  it("renders the component even when registration is closed if historical registration data exists", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        isRegistrationOpen={false}
-        registration={{ id: 1, isRegistered: true }}
-        registrationEntries={[
-          { role: "mentee", deadlineAt: PAST, isOpen: false },
-        ]}
-        registeredRole="mentee"
-      />,
-    );
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentee"),
-    ).toBeInTheDocument();
-  });
-
-  it("displays the goal section when a goal exists", () => {
-    const registration = {
-      roundPreferences: { goal: "Learn React Testing" },
+  describe("matches announced", () => {
+    const announced = {
+      ...registeredMentor,
+      isTrainingDone: true,
+      isRegistrationOpen: false,
+      canViewMatch: true,
     };
-    render(
-      <MentorshipInfoBanner {...defaultProps} registration={registration} />,
-    );
 
-    expect(screen.getByText("Current Mentorship Goal")).toBeInTheDocument();
-    expect(screen.getByText("Learn React Testing")).toBeInTheDocument();
-  });
+    beforeEach(() => {
+      vi.setSystemTime(new Date("2027-02-14T00:00:00Z"));
+    });
 
-  // The round-level read carries no round preferences for someone who has
-  // not registered, so no earlier round's goal can leak into this one.
-  it("shows no goal to a user who has not registered", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{
-          isRegistered: false,
-          roundName: "Spring",
-          roundPreferences: null,
-        }}
-      />,
-    );
+    it("offers the matching result to a matched viewer, with no bar", () => {
+      renderBanner({
+        ...announced,
+        matchResult: { currentStatus: "matched", partners: [] },
+      });
 
-    expect(
-      screen.queryByText("Current Mentorship Goal"),
-    ).not.toBeInTheDocument();
-  });
+      expect(nextBox()).toHaveTextContent(
+        "Next: see who you're matched with. Your meetings for this round are in Mentorship Participation below.",
+      );
+      expect(
+        within(nextBox()).getByTestId("mock-matching-dialog"),
+      ).toHaveTextContent("2027 Spring Matches | matched");
+      expect(screen.queryByRole("list")).not.toBeInTheDocument();
+      expect(screen.queryByText(/step \d of 3/)).not.toBeInTheDocument();
+      expect(profileLine()).not.toBeInTheDocument();
+    });
 
-  it("does not render the goal section when the goal is empty", () => {
-    render(<MentorshipInfoBanner {...defaultProps} registration={null} />);
-    expect(
-      screen.queryByText("Current Mentorship Goal"),
-    ).not.toBeInTheDocument();
-  });
+    it("tells an unmatched viewer, with no action", () => {
+      renderBanner({
+        ...announced,
+        matchResult: { currentStatus: "unmatched", partners: [] },
+      });
 
-  it("leaves the dialog unlocked while the entry's window is open", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: true }}
-        registeredRole="mentor"
-        registrationEntries={[
-          { role: "mentor", deadlineAt: FUTURE, isOpen: true },
-        ]}
-      />,
-    );
-    expect(screen.getByText(/Dialog Locked: No/)).toBeInTheDocument();
-  });
-
-  // The invariant is the banner's own: once a role is settled, nothing
-  // else is on offer, whatever list of entries it was handed.
-  it("offers nothing but the registered role", () => {
-    render(
-      <MentorshipInfoBanner
-        {...defaultProps}
-        registration={{ isRegistered: true, roundName: "Spring" }}
-        registeredRole="mentee"
-        registrationEntries={[
-          { role: "mentor", deadlineAt: FUTURE, isOpen: true },
-          { role: "mentee", deadlineAt: FUTURE, isOpen: true },
-        ]}
-      />,
-    );
-
-    expect(
-      screen.getByTestId("mock-registration-dialog-mentee"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("mock-registration-dialog-mentor"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("does not offer feedback -- that lives on the participants card", () => {
-    render(<MentorshipInfoBanner {...defaultProps} isFeedbackEnabled={true} />);
-
-    expect(screen.queryByText(/Feedback/)).not.toBeInTheDocument();
+      expect(nextBox()).toHaveTextContent(
+        "You weren't matched this round. You can register again when the next round opens.",
+      );
+      expect(
+        screen.queryByTestId("mock-matching-dialog"),
+      ).not.toBeInTheDocument();
+      expect(profileLine()).not.toBeInTheDocument();
+    });
   });
 });

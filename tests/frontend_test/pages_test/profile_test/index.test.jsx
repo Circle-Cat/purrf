@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Profile from "@/pages/Profile";
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
@@ -124,6 +124,34 @@ describe("Profile Component", () => {
       render(<Profile />);
 
       expect(enabledFlag()).toBe(false);
+    });
+  });
+
+  describe("training anchor", () => {
+    afterEach(() => {
+      window.location.hash = "";
+      delete Element.prototype.scrollIntoView;
+    });
+
+    it("scrolls to the training card named by the hash once loaded", () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      window.location.hash = "#training";
+
+      render(<Profile />);
+
+      expect(document.getElementById("training")).toBeInTheDocument();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.instances[0].id).toBe("training");
+    });
+
+    it("does not scroll without a hash", () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      render(<Profile />);
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
     });
   });
 
