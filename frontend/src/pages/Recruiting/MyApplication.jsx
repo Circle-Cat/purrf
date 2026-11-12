@@ -114,6 +114,13 @@ const MyApplication = () => {
     load();
   }, [load]);
 
+  // The form sits on this very route, so "view my application" after a new
+  // submission is a reload rather than a navigation.
+  const viewSubmitted = () => {
+    setReapplying(false);
+    load();
+  };
+
   if (!loaded || !job) {
     return (
       <LoadGate
@@ -131,6 +138,7 @@ const MyApplication = () => {
           job={job}
           existing={application ?? undefined}
           onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
+          onViewApplication={viewSubmitted}
         />
       </div>
     );
@@ -144,6 +152,7 @@ const MyApplication = () => {
           seed={application.current}
           seedApplicationId={application.id}
           onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
+          onViewApplication={viewSubmitted}
         />
       </div>
     );

@@ -97,6 +97,9 @@ const JobDetailPage = () => {
         <ApplicationForm
           job={job}
           onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
+          onViewApplication={() =>
+            navigate(ROUTE_PATHS.RECRUITING_MY_APPLICATION(jobId))
+          }
         />
       </div>
     );
