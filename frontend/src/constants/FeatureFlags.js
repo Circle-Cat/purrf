@@ -4,4 +4,5 @@ export const FEATURE_FLAGS = Object.freeze({
   LEAVE_MANAGEMENT: "leave-management",
   MATCHING_RUN: "matching-run",
   MENTORSHIP_KIT_EMAIL: "mentorship-kit-email",
+  WHATS_NEW: "whats-new",
 });

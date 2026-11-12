@@ -19,6 +19,11 @@ import {
   DialogOverlay,
 } from "@radix-ui/react-dialog";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { Badge } from "@/components/ui/badge";
+import { useWhatsNew } from "@/whatsNew/WhatsNewContext";
+import WhatsNewIntro from "@/whatsNew/WhatsNewIntro";
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /**
  * Top navigation bar. Optionally renders a button that toggles the sidebar's
@@ -34,6 +39,12 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
   const [char, setChar] = useState("");
   const [pictureUrl, setPictureUrl] = useState(null);
   const navigate = useNavigate();
+  const {
+    enabled: whatsNewEnabled,
+    unreadCount,
+    openPanel: openWhatsNew,
+  } = useWhatsNew();
+  const hasUnread = whatsNewEnabled && unreadCount > 0;
 
   const goToProfile = () => {
     navigate(ROUTE_PATHS.PROFILE);
@@ -86,34 +97,47 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
       <div className="flex items-center gap-1">
         <NotificationBell />
         <Root>
-          <Trigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="User menu"
-              // The outline keeps a picture on a light background from
-              // dissolving into the header. `border-border` is named
-              // explicitly because an unqualified `border` inherits
-              // `currentColor`, which here is near-white.
-              className="overflow-hidden rounded-full border border-border bg-primary text-base font-bold text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
-            >
-              {pictureUrl ? (
-                <img
-                  data-testid="user-avatar"
-                  src={pictureUrl}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  // The URL comes from an identity-provider claim and those
-                  // rotate, so a load failure drops back to the initial
-                  // rather than leaving an empty circle.
-                  onError={() => setPictureUrl(null)}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span>{char}</span>
-              )}
-            </Button>
-          </Trigger>
+          <WhatsNewIntro>
+            <Trigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={
+                  hasUnread
+                    ? `User menu, ${plural(unreadCount, "unread update")}`
+                    : "User menu"
+                }
+                // The outline keeps a picture on a light background from
+                // dissolving into the header. `border-border` is named
+                // explicitly because an unqualified `border` inherits
+                // `currentColor`, which here is near-white.
+                className="overflow-hidden rounded-full border border-border bg-primary text-base font-bold text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
+              >
+                {pictureUrl ? (
+                  <img
+                    data-testid="user-avatar"
+                    src={pictureUrl}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    // The URL comes from an identity-provider claim and those
+                    // rotate, so a load failure drops back to the initial
+                    // rather than leaving an empty circle.
+                    onError={() => setPictureUrl(null)}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span>{char}</span>
+                )}
+              </Button>
+            </Trigger>
+            {hasUnread && (
+              <span
+                data-testid="whats-new-dot"
+                aria-hidden="true"
+                className="pointer-events-none absolute right-0 top-0 size-2.5 rounded-full bg-destructive ring-2 ring-background"
+              />
+            )}
+          </WhatsNewIntro>
           <Content
             align="end"
             side="bottom"
@@ -129,10 +153,28 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
             <Item
               onClick={goToSettings}
               className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
-              aria-label="Settings"
+              aria-label="Emails & sign-in"
             >
-              Settings
+              Emails &amp; sign-in
             </Item>
+            {whatsNewEnabled && (
+              <Item
+                onClick={openWhatsNew}
+                className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
+                aria-label={
+                  hasUnread
+                    ? `What's new, ${plural(unreadCount, "unread update")}`
+                    : "What's new"
+                }
+              >
+                What&apos;s new
+                {hasUnread && (
+                  <Badge variant="destructive" className="ml-auto">
+                    {unreadCount}
+                  </Badge>
+                )}
+              </Item>
+            )}
             <Item
               onClick={openContactUs}
               className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
@@ -143,9 +185,9 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
             <Item
               onClick={performGlobalLogout}
               className="relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent"
-              aria-label="Logout"
+              aria-label="Log out"
             >
-              Logout
+              Log out
             </Item>
           </Content>
         </Root>
