@@ -4,6 +4,7 @@ A thread we started never shows here, and an assigned one leaves: both are
 read where they belong (an application, a round).
 """
 
+import asyncio
 from dataclasses import dataclass, field
 
 from backend.common.communication_enums import INBOX_CONTEXT, InboxService
@@ -60,7 +61,8 @@ def _person_name(user, service: InboxService) -> str:
 class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
     """Reads and acts on Inbox threads; each call checks the thread's service.
 
-    The write side (reply, archive, assign, move) lives in ``InboxThreadWrites``.
+    The write side (reply, archive, assign, move, delete) lives in
+    ``InboxThreadWrites``.
     """
 
     def __init__(
@@ -77,6 +79,8 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         person_email_service,
         round_participants_repository,
         rounds_service,
+        gmail_client,
+        logger,
     ):
         """
         Args:
@@ -95,6 +99,9 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             round_participants_repository (MentorshipRoundParticipantsRepository):
                 Tells whether a person registered for a round.
             rounds_service (RoundsService): Names the current round.
+            gmail_client (GmailClient): The mailbox's own address, which
+                Unsorted replies from.
+            logger: Application logger.
         """
         self._threads = thread_repository
         self._messages = message_repository
@@ -108,13 +115,17 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         self._person_email = person_email_service
         self._participants = round_participants_repository
         self._rounds_service = rounds_service
+        self._gmail = gmail_client
+        self._logger = logger
 
     async def list_threads(self, session, user, query: InboxQueryDto) -> InboxListDto:
         """The threads the viewer may see, filtered, searched and ordered.
 
         Threads that need a reply come first, newest human mail first; the
         rest follow by latest activity. Counts cover the selected service (or
-        every visible one) without archived threads and ignore ``q``.
+        every visible one) without archived threads and ignore ``q``. Unsorted
+        is left out of the per-service counts where this environment does not
+        claim its mail, unless one of its threads was read.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -171,9 +182,17 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
                         row.needs_reply for _, row in rows if row.service == service
                     ),
                 )
-                for service in services
+                for service in self._listed_services(services, rows)
             ],
         )
+
+    def _listed_services(self, services, rows) -> list[InboxService]:
+        """Unsorted is listed only where it claims mail or still holds a thread."""
+        if self._aliases.claims_unsorted_mail or any(
+            row.service == InboxService.UNSORTED for _, row in rows
+        ):
+            return services
+        return [s for s in services if s != InboxService.UNSORTED]
 
     async def count_needs_reply(self, session, user) -> int:
         """How many visible threads need a reply, across every visible service.
@@ -214,7 +233,7 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             **dict(row),
             messages=[self._message(m, lookups.users) for m in facts.ordered],
             latest_message_id=facts.ordered[-1].message_id if facts.ordered else None,
-            reply_alias=self._aliases.alias_of(service),
+            reply_alias=await self._shown_reply_address(service),
             can_assign=self._can_assign(item),
             open_bounce=(
                 InboxOpenBounceDto(bounced_to=facts.open_bounce_to)
@@ -223,6 +242,27 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             ),
             moved_at=move.created_at if move else None,
         )
+
+    async def _reply_address(self, service: InboxService) -> str | None:
+        """The service's alias; for Unsorted, the mailbox's own address.
+
+        Raises:
+            GmailUnavailableError, RateLimitedError, RuntimeError: Unsorted
+                only, when Gmail cannot name the mailbox.
+        """
+        if service == InboxService.UNSORTED:
+            return await asyncio.to_thread(self._gmail.mailbox_address)
+        return self._aliases.alias_of(service)
+
+    async def _shown_reply_address(self, service: InboxService) -> str | None:
+        """``_reply_address`` for display: None instead of a Gmail error."""
+        try:
+            return await self._reply_address(service)
+        except Exception:
+            self._logger.warning(
+                "[Inbox] could not read the mailbox address for %s", service
+            )
+            return None
 
     async def _load_visible(self, session, user, thread_id):
         """Raises ValueError(f"thread {thread_id} not found") when missing or not visible.

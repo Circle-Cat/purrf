@@ -28,6 +28,10 @@ class InboxAliasesTest(unittest.TestCase):
         self.assertIsNone(self.aliases.service_for(["inquiries-test@circlecat.org"]))
         self.assertIsNone(self.aliases.alias_of(InboxService.INQUIRIES))
 
+    def test_unsorted_has_no_alias_and_is_never_claimed_by_one(self):
+        self.assertIsNone(self.aliases.alias_of(InboxService.UNSORTED))
+        self.assertIsNone(self.aliases.service_for(["purrf@circlecat.org"]))
+
     def test_addresses_are_lowercase_and_skip_unset(self):
         self.assertEqual(
             self.aliases.addresses(),
@@ -57,6 +61,27 @@ class InboxAliasesTest(unittest.TestCase):
                 aliases = InboxAliases.from_env()
             self.assertIsNone(aliases.service_for(["m@x.org"]), flag)
             self.assertEqual(aliases.alias_of(InboxService.MENTORSHIP), "m@x.org")
+
+    def test_unsorted_needs_both_switches(self):
+        cases = {
+            ("true", "true"): True,
+            ("true", ""): False,
+            ("true", "false"): False,
+            ("", "true"): False,
+            ("false", "true"): False,
+        }
+        for (inbox, unsorted), expected in cases.items():
+            env = {
+                "GMAIL_INBOX_ENABLED": inbox,
+                "GMAIL_INBOX_UNSORTED_ENABLED": unsorted,
+            }
+            with self.subTest(inbox=inbox, unsorted=unsorted):
+                with patch.dict(os.environ, env, clear=False):
+                    aliases = InboxAliases.from_env()
+                self.assertEqual(aliases.claims_unsorted_mail, expected)
+
+    def test_unsorted_is_off_by_default(self):
+        self.assertFalse(InboxAliases().claims_unsorted_mail)
 
     def test_service_for_is_case_insensitive(self):
         self.assertEqual(

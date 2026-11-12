@@ -1,4 +1,4 @@
-"""Inbox thread actions: reply, archive, assign and move.
+"""Inbox thread actions: reply, archive, assign, move and delete.
 
 Every public method is an entry point: it checks, writes, records an event,
 then commits, and answers with the thread as the viewer now sees it (None
@@ -23,6 +23,9 @@ class InboxThreadWrites:
     async def reply(self, session, user, thread_id, body, last_seen_message_id):
         """Send a reply from the thread's service alias. Commits.
 
+        An Unsorted thread has no alias and replies from the mailbox's own
+        address.
+
         Args:
             session (AsyncSession): The active DB session.
             user (UserContextDto): The sender.
@@ -37,9 +40,11 @@ class InboxThreadWrites:
             ValueError: Thread not found or not visible; no alias in this
                 environment; an empty or overlong body; nobody to reply to.
             ConflictError: ``THREAD_CHANGED`` when a newer message arrived.
+            GmailUnavailableError, RateLimitedError, RuntimeError: Gmail could
+                not name the mailbox for an Unsorted reply.
         """
         thread, service = await self._load_visible(session, user, thread_id)
-        alias = self._aliases.alias_of(service)
+        alias = await self._reply_address(service)
         if alias is None:
             raise ValueError("This environment has no alias for this inbox")
         await self._person_email.reply_into(
@@ -151,9 +156,11 @@ class InboxThreadWrites:
                 viewer cannot see the target service.
 
         Raises:
-            ValueError: Thread not found or not visible, tracked, or already
-                in ``target``.
+            ValueError: Thread not found or not visible, tracked, already in
+                ``target``, or ``target`` is Unsorted.
         """
+        if target == InboxService.UNSORTED:
+            raise ValueError("A thread cannot be moved to the Unsorted inbox")
         thread, service, facts = await self._load_for_write(session, user, thread_id)
         if facts.tracked:
             raise ValueError("A thread we started cannot be transferred")
@@ -191,6 +198,41 @@ class InboxThreadWrites:
         if target not in visible_services(user):
             return None
         return await self.get_thread(session, user, thread.thread_id)
+
+    async def delete(self, session, user, thread_ids):
+        """Delete Unsorted threads with their messages and events. Commits.
+
+        All or nothing: every id must be an Unsorted thread the viewer can
+        see, or nothing is deleted. Messages (and their attachment metadata)
+        go by cascade, and notifications with their events. Gmail is not
+        touched, so new mail in a deleted Gmail thread routes it into
+        Unsorted again.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            user (UserContextDto): The viewer.
+            thread_ids (list[int]): The threads; repeats count once.
+
+        Returns:
+            int: How many threads were deleted.
+
+        Raises:
+            ValueError: No ids, or one is missing, not visible or not Unsorted.
+        """
+        ids = sorted(set(thread_ids))
+        if not ids:
+            raise ValueError("No threads to delete")
+        for thread_id in ids:
+            _, service = await self._load_visible(session, user, thread_id)
+            if service != InboxService.UNSORTED:
+                raise ValueError(f"thread {thread_id} is not in the Unsorted inbox")
+        await self._events.delete_by_subjects(session, INBOX_SUBJECT_TYPE, ids)
+        deleted = await self._threads.delete_by_ids(session, ids)
+        await session.commit()
+        self._logger.info(
+            "[Inbox] user %s deleted Unsorted threads %s", user.user_id, ids
+        )
+        return deleted
 
     async def _load_for_write(self, session, user, thread_id):
         thread, service = await self._load_visible(session, user, thread_id)

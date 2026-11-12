@@ -811,6 +811,21 @@ class TestGmailClient(TestCase):
             {"email_address": "purrf@example.com", "history_id": 12345},
         )
 
+    def test_mailbox_address_is_read_once_and_then_owned(self):
+        get_profile = self.mock_service.users.return_value.getProfile
+        get_profile.return_value.execute.return_value = {
+            "emailAddress": "Purrf@Example.com",
+            "historyId": "1",
+        }
+        self.assertFalse(self.client.owns_address("purrf@example.com"))
+
+        self.assertEqual(self.client.mailbox_address(), "purrf@example.com")
+        self.assertEqual(self.client.mailbox_address(), "purrf@example.com")
+
+        self.assertEqual(get_profile.call_count, 1)
+        self.assertTrue(self.client.owns_address("Purrf <PURRF@example.com>"))
+        self.assertFalse(self.client.owns_address(""))
+
     def test_watch_filters_to_inbox_and_parses_expiration(self):
         watch = self.mock_service.users.return_value.watch
         watch.return_value.execute.return_value = {

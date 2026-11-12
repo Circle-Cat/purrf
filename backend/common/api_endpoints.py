@@ -284,6 +284,7 @@ TRAINING_PROGRESS_ENDPOINT = "/training/{training_id}/progress"
 TRAINING_CONTENT_ENDPOINT = "/p/{token}/{asset_path:path}"
 
 INBOX_THREADS_ENDPOINT = "/inbox/threads"
+INBOX_THREADS_DELETE_ENDPOINT = "/inbox/threads/delete"
 INBOX_COUNT_ENDPOINT = "/inbox/count"
 INBOX_THREAD_ENDPOINT = "/inbox/threads/{thread_id}"
 INBOX_THREAD_REPLY_ENDPOINT = "/inbox/threads/{thread_id}/reply"

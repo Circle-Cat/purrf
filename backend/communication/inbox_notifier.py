@@ -1,10 +1,11 @@
 """Turns newly synced mail on an Inbox thread into notification events.
 
 Application threads are skipped: PUR-717's ``email_received`` and
-``email_bounced`` already tell that thread's senders.
+``email_bounced`` already tell that thread's senders. Unsorted mail is mostly
+not for anyone, so it tells nobody that it needs a reply.
 """
 
-from backend.common.communication_enums import ContextType
+from backend.common.communication_enums import ContextType, InboxService
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.communication.thread_alerts import alerts_after_sync
 from backend.notification_management.event_recorder import record_event
@@ -24,7 +25,7 @@ class InboxNotifier:
         """Record the events these newly synced messages call for. Does not commit.
 
         NEEDS_REPLY is recorded once, when the new messages tip the thread
-        from not needing a reply into needing one. BOUNCED is recorded per
+        from not needing a reply into needing one, except for Unsorted. BOUNCED is recorded per
         new bounce, for whoever sent our newest message before it; a bounce
         whose sender is unknown records nothing.
 
@@ -60,6 +61,8 @@ class InboxNotifier:
         if alerts.needs_reply_from is None:
             return False
         service = await self._services.service_of(session, thread)
+        if service == InboxService.UNSORTED:
+            return False
         await record_event(
             session,
             subject_type=INBOX_SUBJECT_TYPE,

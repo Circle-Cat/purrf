@@ -7,6 +7,7 @@ from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, JobKind
+from backend.communication.inbox_aliases import InboxAliases
 from tests.backend_test.communication_test.inbox_service_read_test import (
     _ALL,
     _MENTORSHIP_ALIAS,
@@ -536,6 +537,159 @@ class MoveTest(_WriteFixture):
             )
 
         self._assert_nothing_written()
+
+
+_MAILBOX = "purrf@circlecat.org"
+_OPS = _viewer(Permission.OPS_MAINTAIN)
+
+
+class UnsortedTest(_WriteFixture):
+    def setUp(self):
+        super().setUp()
+        self.threads += [
+            _thread(10, ContextType.UNSORTED_INBOX),
+            _thread(11, ContextType.UNSORTED_INBOX),
+        ]
+        self.messages[10] = [_in(100, 0, sender="Ad <ads@ext.com>")]
+        self.messages[11] = [_in(110, 0, sender="Lee <lee@ext.com>")]
+        self.gmail.mailbox_address = Mock(return_value=_MAILBOX)
+        self.thread_repo.delete_by_ids = AsyncMock(
+            side_effect=lambda s, ids: self.calls.append(("delete threads", ids))
+            or len(ids)
+        )
+        self.event_repo.delete_by_subjects = AsyncMock(
+            side_effect=lambda s, subject_type, ids: self.calls.append((
+                "delete events",
+                subject_type,
+                ids,
+            ))
+        )
+
+    async def test_only_ops_sees_the_unsorted_inbox(self):
+        everyone_else = await self._list(_viewer(*_ALL))
+        ops = await self._list(_OPS)
+
+        self.assertNotIn(10, self._ids(everyone_else))
+        self.assertNotIn(InboxService.UNSORTED, [s.key for s in everyone_else.services])
+        self.assertEqual(sorted(self._ids(ops)), [10, 11])
+        self.assertEqual([s.key for s in ops.services], [InboxService.UNSORTED])
+        self.assertEqual({row.service for row in ops.threads}, {"unsorted"})
+        filtered = await self._list(_OPS, service=InboxService.UNSORTED)
+        self.assertEqual(sorted(self._ids(filtered)), [10, 11])
+        with self.assertRaisesRegex(ValueError, "thread 10 not found"):
+            await self.service.get_thread(self.session, _viewer(*_ALL), 10)
+
+    async def test_unsorted_is_listed_where_it_holds_threads_even_if_switched_off(
+        self,
+    ):
+        result = await self._list(_viewer(*_ALL, Permission.OPS_MAINTAIN))
+
+        self.assertIn(InboxService.UNSORTED, [s.key for s in result.services])
+
+    async def test_an_empty_unsorted_is_listed_only_where_it_claims_mail(self):
+        self.threads = [t for t in self.threads if t.thread_id not in (10, 11)]
+        viewer = _viewer(*_ALL, Permission.OPS_MAINTAIN)
+
+        off = await self._list(viewer)
+        self.aliases = InboxAliases(claims_new_mail=True, unsorted_enabled=True)
+        self.service = self._build_service()
+        on = await self._list(viewer)
+
+        self.assertEqual(
+            [s.key for s in off.services],
+            [InboxService.MENTORSHIP, InboxService.RECRUITING, InboxService.INQUIRIES],
+        )
+        self.assertEqual(
+            [s.key for s in on.services],
+            [
+                InboxService.MENTORSHIP,
+                InboxService.RECRUITING,
+                InboxService.INQUIRIES,
+                InboxService.UNSORTED,
+            ],
+        )
+
+    async def test_reply_goes_out_from_the_mailbox_address(self):
+        detail = await self.service.reply(self.session, _OPS, 11, "<p>hi</p>", 110)
+
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertEqual(kwargs["sender_address"], _MAILBOX)
+        self.assertEqual(kwargs["to"], ["lee@ext.com"])
+        self.assertEqual(kwargs["context_type"], ContextType.UNSORTED_INBOX)
+        self.assertEqual(detail.reply_alias, _MAILBOX)
+        self.assertEqual(self.calls, [("send",), ("commit",)])
+
+    async def test_detail_reads_without_a_reply_address_when_gmail_is_down(self):
+        self.gmail.mailbox_address.side_effect = RuntimeError("503")
+
+        detail = await self.service.get_thread(self.session, _OPS, 10)
+
+        self.assertIsNone(detail.reply_alias)
+        self.assertFalse(detail.can_assign)
+
+    async def test_archive_and_unarchive(self):
+        await self.service.archive(self.session, _OPS, 10)
+        self.assertIsNotNone(self._thread_of(10).archived_at)
+
+        await self.service.unarchive(self.session, _OPS, 10)
+        self.assertIsNone(self._thread_of(10).archived_at)
+
+    async def test_moves_out_to_another_service(self):
+        result = await self.service.move(self.session, _OPS, 10, InboxService.INQUIRIES)
+
+        self.assertIsNone(result)
+        self.assertEqual(self._thread_of(10).context_type, ContextType.INQUIRIES_INBOX)
+        moved = self.record_event.await_args_list[0].kwargs
+        self.assertEqual(moved["details"], {"from": "unsorted", "to": "inquiries"})
+
+    async def test_nothing_moves_into_unsorted(self):
+        viewer = _viewer(*_ALL, Permission.OPS_MAINTAIN)
+
+        with self.assertRaisesRegex(ValueError, "cannot be moved to the Unsorted"):
+            await self.service.move(self.session, viewer, 3, InboxService.UNSORTED)
+
+        self.assertEqual(self._thread_of(3).context_type, ContextType.INQUIRIES_INBOX)
+        self._assert_nothing_written()
+
+    async def test_an_unsorted_thread_cannot_be_assigned(self):
+        with self.assertRaisesRegex(ValueError, "cannot be filed"):
+            await self.service.assign(self.session, _OPS, 10, 40, round_id=8)
+
+        self._assert_nothing_written()
+
+    async def test_delete_removes_events_then_threads_then_commits(self):
+        deleted = await self.service.delete(self.session, _OPS, [11, 10, 11])
+
+        self.assertEqual(deleted, 2)
+        self.assertEqual(
+            self.calls,
+            [
+                ("delete events", INBOX_SUBJECT_TYPE, [10, 11]),
+                ("delete threads", [10, 11]),
+                ("commit",),
+            ],
+        )
+
+    async def test_delete_with_a_thread_of_another_service_deletes_nothing(self):
+        viewer = _viewer(*_ALL, Permission.OPS_MAINTAIN)
+
+        with self.assertRaisesRegex(ValueError, "thread 3 is not in the Unsorted"):
+            await self.service.delete(self.session, viewer, [10, 3])
+
+        self.thread_repo.delete_by_ids.assert_not_awaited()
+        self.event_repo.delete_by_subjects.assert_not_awaited()
+        self._assert_nothing_written()
+
+    async def test_delete_without_ops_finds_no_unsorted_thread(self):
+        with self.assertRaisesRegex(ValueError, "thread 10 not found"):
+            await self.service.delete(self.session, _viewer(*_ALL), [10])
+
+        self.thread_repo.delete_by_ids.assert_not_awaited()
+        self._assert_nothing_written()
+
+    async def test_delete_of_nothing_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "No threads to delete"):
+            await self.service.delete(self.session, _OPS, [])
 
 
 if __name__ == "__main__":

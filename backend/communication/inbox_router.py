@@ -3,7 +3,8 @@
 One mailbox serves every environment: each environment claims its own Send-As
 aliases. Mail to one of ours becomes an unassigned Inbox thread; mail to
 another environment's alias is left for that environment; mail to no Send-As
-alias at all is reported as unrouted so ops can look at it.
+alias at all goes to the Unsorted inbox in the one environment that claims
+it, and otherwise stays in Gmail only.
 """
 
 import asyncio
@@ -11,14 +12,13 @@ from dataclasses import dataclass
 
 from sqlalchemy.exc import IntegrityError
 
-from backend.common.communication_enums import INBOX_CONTEXT
+from backend.common.communication_enums import INBOX_CONTEXT, InboxService
 from backend.entity.email_thread_entity import EmailThreadEntity
 
 
 @dataclass(frozen=True)
 class RouteResult:
     thread: EmailThreadEntity | None
-    unrouted: bool  # True only when the mail hit no Send-As alias at all
     # Every message of a routed thread as read here, so its first sync need
     # not read them again. None when no thread is returned.
     messages: list[dict] | None = None
@@ -56,8 +56,7 @@ class InboxRouter:
 
         Returns:
             RouteResult: The thread (created or re-read) with the messages
-            read to route it, or None with ``unrouted`` set when the mail
-            matched no Send-As alias.
+            read to route it, or None when the thread is not ours to claim.
 
         Raises:
             GmailNotFoundError, RateLimitedError, RuntimeError: From Gmail.
@@ -74,7 +73,7 @@ class InboxRouter:
             m for m in messages if not self._gmail.owns_address(m.get("from_address"))
         ]
         if not inbound:
-            return RouteResult(thread=None, unrouted=False)
+            return RouteResult(thread=None)
 
         first = min(inbound, key=_sent_at)
         recipients = first.get("recipients") or []
@@ -90,14 +89,15 @@ class InboxRouter:
                     gmail_thread_id,
                     hit[0],
                 )
-                return RouteResult(thread=None, unrouted=False)
-            self._logger.warning(
-                "[InboxRouter] Gmail thread %s from %s was addressed to no "
-                "Send-As alias; it stays in Gmail only",
-                gmail_thread_id,
-                first.get("from_address"),
-            )
-            return RouteResult(thread=None, unrouted=True)
+                return RouteResult(thread=None)
+            if not self._aliases.claims_unsorted_mail:
+                self._logger.info(
+                    "[InboxRouter] Gmail thread %s was addressed to no Send-As "
+                    "alias and this environment does not claim such mail; skipped",
+                    gmail_thread_id,
+                )
+                return RouteResult(thread=None)
+            service = InboxService.UNSORTED
 
         try:
             async with session.begin_nested():
@@ -115,4 +115,4 @@ class InboxRouter:
             )
             if thread is None:
                 raise
-        return RouteResult(thread=thread, unrouted=False, messages=messages)
+        return RouteResult(thread=thread, messages=messages)

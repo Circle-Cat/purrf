@@ -104,6 +104,31 @@ class EventRepository:
         )
         return result.rowcount
 
+    async def delete_by_subjects(
+        self, session: AsyncSession, subject_type: str, subject_ids: list[int]
+    ) -> int:
+        """Delete every event about any of several subjects. Does not commit.
+
+        Notifications go with them: ``notification.event_id`` cascades.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            subject_type (str): What the events are about.
+            subject_ids (list[int]): Primary keys of those subjects.
+
+        Returns:
+            int: How many events were deleted; 0, without a query, for no ids.
+        """
+        if not subject_ids:
+            return 0
+        result = await session.execute(
+            delete(EventEntity).where(
+                EventEntity.subject_type == subject_type,
+                EventEntity.subject_id.in_(subject_ids),
+            )
+        )
+        return result.rowcount
+
     async def latest_by_subjects(
         self,
         session: AsyncSession,

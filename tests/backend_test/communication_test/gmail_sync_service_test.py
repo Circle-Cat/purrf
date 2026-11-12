@@ -60,7 +60,7 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
         self.fresh_session = AsyncMock()
         self.logger = Mock()
         self.router = AsyncMock()
-        self.router.route.return_value = RouteResult(thread=None, unrouted=False)
+        self.router.route.return_value = RouteResult(thread=None)
         self.service = self._service("projects/p/topics/gmail")
 
     def _service(self, watch_topic):
@@ -181,21 +181,17 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
     async def test_a_routed_thread_is_synced_by_its_handler(self):
         created = self._tracked("t2")
         self._history({"t2": None})
-        self.router.route.return_value = RouteResult(thread=created, unrouted=False)
+        self.router.route.return_value = RouteResult(thread=created)
         summary = await self.service.catch_up(self.session)
         self.handler.sync_tracked_thread.assert_awaited_once_with(self.session, created)
-        self.assertEqual(
-            summary, {"threads": 1, "newMessages": 1, "failed": 0, "unrouted": []}
-        )
+        self.assertEqual(summary, {"threads": 1, "newMessages": 1, "failed": 0})
 
     async def test_a_routed_thread_is_synced_from_the_messages_the_router_read(self):
         created = self._tracked("t2")
         tracked = self._tracked("t1")
         self._history({"t1": tracked, "t2": None})
         fetched = [{"gmail_message_id": "m1"}]
-        self.router.route.return_value = RouteResult(
-            thread=created, unrouted=False, messages=fetched
-        )
+        self.router.route.return_value = RouteResult(thread=created, messages=fetched)
         await self.service.catch_up(self.session)
         self.assertEqual(
             self.handler.sync_tracked_thread.await_args_list,
@@ -205,31 +201,7 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    async def test_unrouted_mail_raises_one_alert_before_the_commit(self):
-        self._history({"u1": None, "u2": None})
-        self.router.route.return_value = RouteResult(thread=None, unrouted=True)
-        order = []
-        self.alerts.raise_alert.side_effect = lambda *a, **k: order.append(k["kind"])
-        self.session.commit.side_effect = lambda: order.append("commit")
-        summary = await self.service.catch_up(self.session)
-        self.assertEqual(summary["unrouted"], ["u1", "u2"])
-        self.assertEqual(order, ["unrouted_mail", "commit"])
-        detail = self.alerts.raise_alert.await_args.kwargs["detail"]
-        self.assertIn("u1", detail)
-        self.assertIn("u2", detail)
-        self.assertEqual(self.state.last_history_id, 150)
-
-    async def test_unrouted_alert_follows_the_transient_alert(self):
-        self._failing_threads(RateLimitedError("429"), "t-rate")
-        self.threads.get_by_gmail_thread_id.side_effect = lambda session, gid: (
-            None if gid == "u1" else self._tracked(gid)
-        )
-        self.gmail.list_history.return_value["thread_ids"].add("u1")
-        self.router.route.return_value = RouteResult(thread=None, unrouted=True)
-        await self.service.handle_push(self.session, "purrf@example.com", 120)
-        self.assertEqual(self._alert_kinds(), ["sync_failed", "unrouted_mail"])
-
-    async def test_no_unrouted_alert_for_mail_skipped_as_another_environments(self):
+    async def test_a_thread_the_router_skips_raises_no_alert(self):
         self._history({"o1": None})
         await self.service.handle_push(self.session, "purrf@example.com", 120)
         self.alerts.raise_alert.assert_not_awaited()
@@ -487,9 +459,7 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
         self._three_threads()
         summary = await self.service.catch_up(self.session)
         self.gmail.list_history.assert_called_once_with(100)
-        self.assertEqual(
-            summary, {"threads": 1, "newMessages": 1, "failed": 0, "unrouted": []}
-        )
+        self.assertEqual(summary, {"threads": 1, "newMessages": 1, "failed": 0})
         self.assertIs(self.state.last_push_at, sentinel)
 
     async def test_catch_up_reraises_gmail_errors_after_recording(self):
@@ -512,9 +482,7 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
 
         self.handler.sync_tracked_thread.side_effect = sync
         summary = await self.service.catch_up(self.session)
-        self.assertEqual(
-            summary, {"threads": 1, "newMessages": 2, "failed": 1, "unrouted": []}
-        )
+        self.assertEqual(summary, {"threads": 1, "newMessages": 2, "failed": 1})
         self.assertEqual(self.state.last_error, "earlier failure")
         self.assertEqual(self.state.last_history_id, 150)
         self.alerts.raise_alert.assert_not_awaited()
@@ -545,9 +513,7 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
     async def test_catch_up_alerts_on_a_transient_thread_failure(self):
         self._failing_threads(GmailUnavailableError("503"), "t-5xx")
         summary = await self.service.catch_up(self.session)
-        self.assertEqual(
-            summary, {"threads": 1, "newMessages": 1, "failed": 1, "unrouted": []}
-        )
+        self.assertEqual(summary, {"threads": 1, "newMessages": 1, "failed": 1})
         self.assertEqual(self._alert_kinds(), ["sync_failed"])
         self.assertIn("t-5xx", self.alerts.raise_alert.await_args.kwargs["detail"])
 
@@ -593,7 +559,6 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
                 "threads": 0,
                 "newMessages": 0,
                 "failed": 0,
-                "unrouted": [],
                 "fullResync": [{"scanned": 4}],
             },
         )
