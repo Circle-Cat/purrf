@@ -40,12 +40,24 @@ describe("JobsBrowse page", () => {
     expect(screen.getByText("DETAIL PAGE")).toBeInTheDocument();
   });
 
+  it("says what the page lists under its heading", async () => {
+    api.listPublicJobs.mockResolvedValue({ data: [] });
+    renderPage();
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "All Circle Cat activities and job openings. Open one to read the details and apply.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it("shows the empty state when no jobs are published", async () => {
     api.listPublicJobs.mockResolvedValue({ data: [] });
     renderPage();
     await waitFor(() =>
       expect(
-        screen.getByText("No open positions right now."),
+        screen.getByText("No open positions right now. Check back later."),
       ).toBeInTheDocument(),
     );
   });

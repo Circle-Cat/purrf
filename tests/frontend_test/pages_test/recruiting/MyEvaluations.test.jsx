@@ -42,7 +42,7 @@ describe("MyEvaluations page", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "A recruiter assigns you to an interview session from their applications board.",
+        "A recruiter assigns you to an interview session from the application page.",
       ),
     ).toBeInTheDocument();
     expect(

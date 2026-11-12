@@ -2266,8 +2266,8 @@ const ApplicationDetailPage = () => {
             <DialogTitle>Assignee required</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-700">
-            Schedule this interview's meeting first — booking one (see the
-            Interview Meeting card above) assigns the interviewer automatically.
+            Assign an interviewer first with Reassign, then book the meeting on
+            the Interview Meeting card.
           </p>
           <DialogFooter>
             <Button onClick={() => setScheduleAssigneeWarningOpen(false)}>
