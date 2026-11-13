@@ -1057,6 +1057,41 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             (sorted([self.user.user_id, cid.user_id]), 2),
         )
 
+    async def test_list_by_round_id_and_user_ids_reads_the_named_users_in_the_round(
+        self,
+    ):
+        bob = self._make_user(first_name="Bob", email="bob@example.com")
+        cid = self._make_user(first_name="Cid", email="cid@example.com")
+        dee = self._make_user(first_name="Dee", email="dee@example.com")
+        await self.insert_entities([bob, cid, dee])
+        await self._register(self.user, bob, dee)
+        # Cid is registered only in the other round, so asking for him in
+        # round 0 must come back empty even though his user id is named.
+        await self._register(cid, round_index=1)
+
+        rows = await self.repo.list_by_round_id_and_user_ids(
+            self.session,
+            round_id=self.rounds[0].round_id,
+            user_ids=[bob.user_id, cid.user_id, dee.user_id],
+        )
+
+        self.assertEqual(
+            sorted((row.user_id, row.round_id) for row in rows),
+            sorted([
+                (bob.user_id, self.rounds[0].round_id),
+                (dee.user_id, self.rounds[0].round_id),
+            ]),
+        )
+
+    async def test_list_by_round_id_and_user_ids_with_no_users(self):
+        await self._register(self.user)
+
+        rows = await self.repo.list_by_round_id_and_user_ids(
+            self.session, round_id=self.rounds[0].round_id, user_ids=[]
+        )
+
+        self.assertEqual(rows, [])
+
     async def test_list_round_registrations_lists_the_round_only(self):
         bob = self._make_user(first_name="Bob", email="bob@example.com")
         await self.insert_entities([bob])

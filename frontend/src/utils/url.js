@@ -30,3 +30,19 @@ export function safeHttpUrl(raw) {
     return null;
   }
 }
+
+/**
+ * Normalize a user-supplied LinkedIn link: a safe http(s) URL (see
+ * `safeHttpUrl`) whose host is linkedin.com or a subdomain of it.
+ *
+ * @param {string} raw - The untrusted link.
+ * @returns {string|null} The safe link, or null if it is not a LinkedIn link.
+ */
+export function safeLinkedinUrl(raw) {
+  const safe = safeHttpUrl(raw);
+  if (!safe) return null;
+  const host = new URL(safe).hostname.toLowerCase();
+  return host === "linkedin.com" || host.endsWith(".linkedin.com")
+    ? safe
+    : null;
+}

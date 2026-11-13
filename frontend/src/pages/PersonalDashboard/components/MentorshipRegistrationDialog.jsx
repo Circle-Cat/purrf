@@ -16,6 +16,7 @@ import { Info } from "lucide-react";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import SurveyRadioQuestion from "@/pages/PersonalDashboard/components/SurveyRadioQuestion";
 import { userDisplayName } from "@/utils/userName";
+import { safeLinkedinUrl } from "@/utils/url";
 import {
   INDUSTRY_CONFIG,
   SKILLSET_CONFIG,
@@ -110,6 +111,10 @@ export default function MentorshipRegistrationDialog({
   const [targetRegionOther, setTargetRegionOther] = useState("");
   const [currentStage, setCurrentStage] = useState("");
   const [timeUrgency, setTimeUrgency] = useState("");
+  const [shareLinkedin, setShareLinkedin] = useState("");
+  const [linkedinLink, setLinkedinLink] = useState("");
+  // Whether the link came from the profile, which decides the helper text.
+  const [isLinkedinPrefilled, setIsLinkedinPrefilled] = useState(false);
   const [errors, setErrors] = useState({});
 
   const clearError = (field) =>
@@ -156,6 +161,9 @@ export default function MentorshipRegistrationDialog({
       setTargetRegionOther(formData.targetRegionOther);
       setCurrentStage(formData.currentStage);
       setTimeUrgency(formData.timeUrgency);
+      setShareLinkedin(formData.shareLinkedin);
+      setLinkedinLink(formData.linkedinLink);
+      setIsLinkedinPrefilled(Boolean(formData.linkedinLink));
     };
 
     // The server refuses a role the user was never admitted into, and a
@@ -226,6 +234,10 @@ export default function MentorshipRegistrationDialog({
       if (targetRegion === "other" && !targetRegionOther.trim())
         newErrors.targetRegionOther = "Please specify your target job market.";
     }
+    if (!shareLinkedin) newErrors.shareLinkedin = "This field is required.";
+    if (shareLinkedin === "yes" && !safeLinkedinUrl(linkedinLink))
+      newErrors.linkedinLink =
+        "Enter a linkedin.com link, like https://www.linkedin.com/in/your-name";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -254,6 +266,8 @@ export default function MentorshipRegistrationDialog({
         targetRegionOther,
         currentStage,
         timeUrgency,
+        shareLinkedin,
+        linkedinLink: safeLinkedinUrl(linkedinLink) ?? linkedinLink.trim(),
       },
       prefill ?? currentRegistration,
       role,
@@ -618,6 +632,82 @@ export default function MentorshipRegistrationDialog({
                 {(goal || "").length} / 300
               </div>
             </div>
+          </div>
+
+          {/* Sharing LinkedIn with the match */}
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-sm font-semibold">
+                Share your LinkedIn with your match?{" "}
+                <span className="text-destructive">*</span>
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Your match sees it with the matching results. No one else does.
+              </p>
+            </div>
+            <RadioGroup
+              disabled={isLocked}
+              value={shareLinkedin}
+              onValueChange={(val) => {
+                setShareLinkedin(val);
+                clearError("shareLinkedin");
+                if (val !== "yes") clearError("linkedinLink");
+              }}
+              className="flex flex-col gap-2"
+            >
+              {[
+                { id: "yes", label: "Yes" },
+                { id: "no", label: "No" },
+              ].map((opt) => (
+                <div key={opt.id} className="flex items-center space-x-2">
+                  <RadioGroupItem value={opt.id} id={`sl-${opt.id}`} />
+                  <Label
+                    htmlFor={`sl-${opt.id}`}
+                    className="font-normal cursor-pointer text-sm"
+                  >
+                    {opt.label}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+            {errors.shareLinkedin && (
+              <span className="text-destructive text-xs">
+                {errors.shareLinkedin}
+              </span>
+            )}
+            {shareLinkedin === "yes" && (
+              <div className="space-y-1">
+                <Label
+                  htmlFor="linkedin-link"
+                  className="text-sm font-semibold"
+                >
+                  Your LinkedIn profile link{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <input
+                  id="linkedin-link"
+                  type="url"
+                  disabled={isLocked}
+                  placeholder="https://www.linkedin.com/in/your-name"
+                  value={linkedinLink}
+                  onChange={(e) => {
+                    setLinkedinLink(e.target.value);
+                    clearError("linkedinLink");
+                  }}
+                  className={`w-full p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring${errors.linkedinLink ? " border-destructive" : ""}`}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {isLinkedinPrefilled
+                    ? "Filled in from your profile. Changes here are saved to your profile too."
+                    : "We'll also save it to your profile."}
+                </p>
+                {errors.linkedinLink && (
+                  <span className="text-destructive text-xs">
+                    {errors.linkedinLink}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Preference section hint */}

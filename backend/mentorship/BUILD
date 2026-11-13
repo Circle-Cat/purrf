@@ -18,6 +18,7 @@ py_library(
         "//backend/common:inbox_enums",
         "//backend/common:kit_client",
         "//backend/common:kit_html_checks",
+        "//backend/common:linkedin_url",
         "//backend/common:matching_job_client",
         "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",

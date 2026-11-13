@@ -30,6 +30,7 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
 )
 from backend.entity.training_entity import TrainingEntity
+from backend.entity.users_entity import UsersEntity
 from backend.common.exceptions import ConflictError
 
 
@@ -64,6 +65,16 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             return_value=MagicMock()
         )
 
+        # The profile already holds a link that differs from any submitted
+        # below, so a write-back that never happens cannot pass for one.
+        self.profile_link = "https://www.linkedin.com/in/profile-link"
+        self.user_row = UsersEntity(user_id=123, linkedin_link=self.profile_link)
+        self.mock_users_repo = MagicMock()
+        self.mock_users_repo.get_user_by_user_id = AsyncMock(return_value=self.user_row)
+        self.mock_users_repo.upsert_users = AsyncMock(
+            side_effect=lambda session, entity: entity
+        )
+
         self.service = RegistrationService(
             logger=self.mock_logger,
             preferences_repository=self.mock_preference_repo,
@@ -73,6 +84,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=self.mock_mapper,
             onboarding_training_service=self.mock_onboarding_training_service,
             application_repository=self.mock_application_repo,
+            users_repository=self.mock_users_repo,
         )
 
         self.sample_dto = RegistrationCreateDto(
@@ -856,6 +868,101 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         result = await self._register()
 
         self.assertFalse(result.is_onboarding_training_completed)
+
+    def _linkedin_dto(self, share_linkedin, linkedin_link=None):
+        return RegistrationCreateDto(
+            global_preferences=GlobalPreferencesDto(skillsets=SkillsetsDto()),
+            round_preferences=RoundPreferencesDto(
+                participant_role="mentee",
+                max_partners=1,
+                share_linkedin=share_linkedin,
+            ),
+            linkedin_link=linkedin_link,
+        )
+
+    async def test_round_preferences_store_the_answer(self):
+        for answer, link in (
+            (True, "https://www.linkedin.com/in/ann"),
+            (False, None),
+            (None, None),
+        ):
+            with self.subTest(answer=answer):
+                entity = MentorshipRoundParticipantsEntity(
+                    user_id=self.user_id,
+                    round_id=self.mock_round_id,
+                    participant_role=ParticipantRole.MENTEE,
+                    share_linkedin=not answer,
+                )
+                self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
+                    entity
+                )
+
+                await self.service._update_user_round_preferences(
+                    session=self.mock_session,
+                    user_id=self.user_id,
+                    round_id=self.mock_round_id,
+                    data=self._linkedin_dto(answer, link),
+                )
+
+                self.assertIs(entity.share_linkedin, answer)
+
+    async def test_sharing_saves_the_link_to_the_profile_before_commit(self):
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        self.sample_dto = self._linkedin_dto(
+            True, "https://www.linkedin.com/in/new-link"
+        )
+        order = MagicMock()
+        order.attach_mock(self.mock_users_repo.upsert_users, "upsert_users")
+        order.attach_mock(self.mock_session.commit, "commit")
+
+        result = await self._register()
+
+        self.assertEqual(
+            self.user_row.linkedin_link, "https://www.linkedin.com/in/new-link"
+        )
+        self.assertEqual(self.user_row.updated_timestamp, self.fixed_now)
+        self.mock_users_repo.upsert_users.assert_awaited_once_with(
+            session=self.mock_session, entity=self.user_row
+        )
+        self.assertEqual(
+            [c[0] for c in order.mock_calls if c[0] in ("upsert_users", "commit")],
+            ["upsert_users", "commit"],
+        )
+        self.assertEqual(result.linkedin_link, "https://www.linkedin.com/in/new-link")
+
+    async def test_not_sharing_leaves_the_profile_alone(self):
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        for answer in (False, None):
+            with self.subTest(answer=answer):
+                self.mock_users_repo.upsert_users.reset_mock()
+                self.sample_dto = self._linkedin_dto(
+                    answer, "https://www.linkedin.com/in/not-saved"
+                )
+
+                result = await self._register()
+
+                self.mock_users_repo.upsert_users.assert_not_awaited()
+                self.assertEqual(self.user_row.linkedin_link, self.profile_link)
+                self.assertEqual(result.linkedin_link, self.profile_link)
+
+    async def test_registration_info_carries_the_profile_link(self):
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+        self.mock_preference_repo.get_preferences_by_user_id.return_value = None
+        self.mock_participation_service.get_user_round_preferences.return_value = (
+            None,
+            False,
+        )
+
+        result = await self.service.get_registration_info(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=self.mock_round_id,
+        )
+
+        self.assertEqual(result.linkedin_link, self.profile_link)
+        self.mock_users_repo.get_user_by_user_id.assert_awaited_once_with(
+            session=self.mock_session, user_id=self.user_id
+        )
 
 
 if __name__ == "__main__":

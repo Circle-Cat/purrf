@@ -244,3 +244,11 @@ py_test(
         "//backend/common:html_text",
     ],
 )
+
+py_test(
+    name = "linkedin_url_test",
+    srcs = ["linkedin_url_test.py"],
+    deps = [
+        "//backend/common:linkedin_url",
+    ],
+)

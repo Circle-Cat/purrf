@@ -78,6 +78,74 @@ describe("MatchingResultDialog", () => {
     expect(screen.getByText(/Similar tech stack/i)).toBeInTheDocument();
   });
 
+  const openWithPartners = (partners) => {
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{ currentStatus: MatchStatus.MATCHED, partners }}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+  };
+
+  it("links the partner's LinkedIn profile when they shared it", () => {
+    openWithPartners([
+      {
+        id: "p1",
+        firstName: "John",
+        lastName: "Doe",
+        primaryEmail: "john@example.com",
+        participantRole: "mentor",
+        isActive: true,
+        linkedinLink: "https://www.linkedin.com/in/john-doe",
+      },
+    ]);
+
+    const link = screen.getByRole("link", { name: "LinkedIn profile" });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://www.linkedin.com/in/john-doe",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("shows no LinkedIn row for a link that is not a safe LinkedIn URL", () => {
+    openWithPartners([
+      {
+        id: "p1",
+        firstName: "John",
+        lastName: "Doe",
+        primaryEmail: "john@example.com",
+        participantRole: "mentor",
+        isActive: true,
+        linkedinLink: "javascript:alert(1)//linkedin.com",
+      },
+    ]);
+
+    expect(screen.getByText("john@example.com")).toBeInTheDocument();
+    expect(screen.queryByText("LinkedIn profile")).not.toBeInTheDocument();
+  });
+
+  it("shows no LinkedIn row for a partner without a shared link", () => {
+    openWithPartners([
+      {
+        id: "p1",
+        firstName: "John",
+        lastName: "Doe",
+        primaryEmail: "john@example.com",
+        participantRole: "mentor",
+        isActive: true,
+        linkedinLink: null,
+      },
+    ]);
+
+    expect(screen.getByText("john@example.com")).toBeInTheDocument();
+    expect(screen.queryByText("LinkedIn profile")).not.toBeInTheDocument();
+  });
+
   const endedPartner = {
     id: "p2",
     firstName: "Jane",

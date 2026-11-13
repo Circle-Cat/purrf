@@ -6,6 +6,7 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RegistrationDto
 from backend.entity.preference_entity import PreferenceEntity
+from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -40,6 +41,7 @@ class RegistrationService:
         mentorship_mapper,
         onboarding_training_service,
         application_repository,
+        users_repository,
     ):
         """
         Initialize the RegistrationService with its dependencies.
@@ -62,6 +64,9 @@ class RegistrationService:
                                     the submitted participant role against the user's
                                     approved (HIRED) activity application in that role,
                                     which gates registration.
+            users_repository (UsersRepository): Reads the user's profile
+                LinkedIn link to prefill the form, and saves the link shared
+                at registration back to it.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
@@ -71,6 +76,7 @@ class RegistrationService:
         self.mentorship_mapper = mentorship_mapper
         self.onboarding_training_service = onboarding_training_service
         self.application_repo = application_repository
+        self.users_repo = users_repository
 
     async def update_registration_info(
         self,
@@ -168,6 +174,9 @@ class RegistrationService:
             round_id=round_id,
             data=preferences_data,
         )
+        user = await self._save_shared_linkedin_link(
+            session=session, user_id=user_context.user_id, data=preferences_data
+        )
 
         category = (
             TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
@@ -202,6 +211,7 @@ class RegistrationService:
             is_registered=True,
             is_onboarding_training_completed=onboarding_training.status
             == TrainingStatus.DONE,
+            linkedin_link=user.linkedin_link if user else None,
         )
 
     async def _update_skill_and_industry_preferences(
@@ -331,6 +341,7 @@ class RegistrationService:
         entity.goal = round_pref.goal or ""
         entity.current_stage = round_pref.current_stage
         entity.time_urgency = round_pref.time_urgency
+        entity.share_linkedin = round_pref.share_linkedin
 
         result = await self.participants_repo.upsert_participant(
             session=session, entity=entity
@@ -343,6 +354,39 @@ class RegistrationService:
         )
 
         return result
+
+    async def _save_shared_linkedin_link(
+        self, session: AsyncSession, user_id: int, data: RegistrationCreateDto
+    ) -> UsersEntity | None:
+        """
+        Saves the LinkedIn link shared at registration to the user's profile.
+
+        The profile is left untouched unless the user chose to share; the
+        DTO has already required a linkedin.com link in that case.
+
+        Args:
+            session (AsyncSession): Active SQLAlchemy async session.
+            user_id (int): The ID of the registering user.
+            data (RegistrationCreateDto): The submitted registration.
+
+        Returns:
+            UsersEntity | None: The user row, or None if it does not exist.
+        """
+        user = await self.users_repo.get_user_by_user_id(
+            session=session, user_id=user_id
+        )
+        if user is None or not data.round_preferences.share_linkedin:
+            return user
+
+        if user.linkedin_link != data.linkedin_link:
+            user.linkedin_link = data.linkedin_link
+            user.updated_timestamp = datetime.now(timezone.utc)
+            user = await self.users_repo.upsert_users(session=session, entity=user)
+            self.logger.info(
+                "[RegistrationService] saved shared LinkedIn link to profile for user_id: %s",
+                user_id,
+            )
+        return user
 
     async def get_registration_info(
         self,
@@ -416,11 +460,16 @@ class RegistrationService:
             participant_role=role,
         )
 
+        user = await self.users_repo.get_user_by_user_id(
+            session=session, user_id=current_user_id
+        )
+
         return RegistrationDto(
             global_preferences=global_preferences,
             round_preferences=round_preferences,
             round_name=round_entity.name,
             is_registered=is_registered,
+            linkedin_link=user.linkedin_link if user else None,
         )
 
     async def _assert_admitted_as(

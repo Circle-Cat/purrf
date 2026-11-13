@@ -7,6 +7,12 @@ py_test(
 )
 
 py_test(
+    name = "registration_create_dto_test",
+    srcs = ["registration_create_dto_test.py"],
+    deps = ["//backend/dto"],
+)
+
+py_test(
     name = "job_config_dto_test",
     srcs = ["job_config_dto_test.py"],
     deps = ["//backend/dto"],
