@@ -703,6 +703,7 @@ class MentorshipAdminService:
                 name=round_entity.name,
                 required_meetings=round_entity.required_meetings,
                 in_progress=in_progress,
+                first_meeting_deadline_at=round_entity.first_meeting_deadline_at,
             ),
             registration=registration,
             exempted=round_id in exempted_rounds,

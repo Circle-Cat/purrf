@@ -7,6 +7,7 @@ import { userDisplayName } from "@/utils/userName";
 import {
   MEETING_TIMEZONE,
   attendanceIssueLines,
+  firstContactOverdueLine,
 } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { participantLink } from "@/pages/MentorshipManagement/utils/participantLink";
 import AttendanceMark from "@/pages/MentorshipManagement/components/AttendanceMark";
@@ -27,7 +28,9 @@ import { useMeetingLogEditor } from "@/pages/MentorshipManagement/hooks/useMeeti
  * are on the person's timeline.
  *
  * First contact is derived, not marked: the earliest meeting booked for the
- * pair, held or not. It is only worth showing while the round runs.
+ * pair, held or not. It is only worth showing while the round runs. A live
+ * pair with no meeting held by the round's first-contact date gets the red
+ * mark.
  *
  * The log is editable only by a writer, in a round in progress, on a v2 log;
  * the backend refuses edits to an ended round all the same.
@@ -35,7 +38,7 @@ import { useMeetingLogEditor } from "@/pages/MentorshipManagement/hooks/useMeeti
  * @param {{
  *   pair: Object,
  *   subject: {userId: number, name: string, role: "mentor"|"mentee"},
- *   round: {roundId: number, inProgress: boolean, requiredMeetings: number|null},
+ *   round: {roundId: number, inProgress: boolean, requiredMeetings: number|null, firstMeetingDeadlineAt?: string|null},
  *   canWrite: boolean,
  *   open: boolean,
  *   onToggle: () => void,
@@ -58,12 +61,22 @@ const PairSection = ({
     subject.role === "mentee"
       ? [partnerName, subject.name]
       : [subject.name, partnerName];
+  const overdue = firstContactOverdueLine(
+    {
+      isActive: pair.partner.isActive,
+      completedMeetingCount: pair.completedMeetingCount,
+    },
+    round,
+  );
   const issues = ended
     ? []
-    : attendanceIssueLines(pair.attendanceIssues ?? [], {
-        mentorName,
-        menteeName,
-      });
+    : [
+        ...attendanceIssueLines(pair.attendanceIssues ?? [], {
+          mentorName,
+          menteeName,
+        }),
+        ...(overdue ? [overdue] : []),
+      ];
 
   const { meetings, roundInProgress, loading, error, saveMeetingBatch } =
     useMeetingLog(pair.pairId, open);

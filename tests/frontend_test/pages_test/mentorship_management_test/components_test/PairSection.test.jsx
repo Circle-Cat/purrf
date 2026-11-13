@@ -125,6 +125,32 @@ describe("PairSection", () => {
     ).toBeInTheDocument();
   });
 
+  it("marks a live pair with no meeting held past the first-contact date", () => {
+    renderSection({
+      pair: pairOf({ completedMeetingCount: 0 }),
+      round: { ...ROUND, firstMeetingDeadlineAt: "2020-01-15T08:00:00Z" },
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "Attendance issues: No meeting held yet. First contact was due 2020-01-15.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not flag first contact in a round that is not in progress", () => {
+    renderSection({
+      pair: pairOf({ completedMeetingCount: 0 }),
+      round: {
+        ...ROUND,
+        inProgress: false,
+        firstMeetingDeadlineAt: "2020-01-15T08:00:00Z",
+      },
+    });
+    expect(
+      screen.queryByRole("button", { name: /Attendance issues/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("marks an ended pair and gives it no attendance mark", () => {
     renderSection({
       pair: pairOf({

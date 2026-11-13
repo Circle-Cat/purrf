@@ -149,6 +149,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             required_meetings=4,
             promotion_start_at=now - timedelta(days=10),
             onboarding_deadline_at=now + timedelta(days=10),
+            first_meeting_deadline_at=now + timedelta(days=30),
             meetings_completion_deadline_at=now + timedelta(days=80),
             feedback_deadline_at=now + timedelta(days=100),
         )
@@ -413,6 +414,10 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.assertEqual(detail.round.name, "Spring 2026")
         self.assertEqual(detail.round.required_meetings, 4)
         self.assertTrue(detail.round.in_progress)
+        self.assertEqual(
+            detail.round.first_meeting_deadline_at,
+            self.round.first_meeting_deadline_at,
+        )
         self.assertEqual(detail.registration.round_id, self.round.round_id)
         (pair,) = detail.registration.pairs
         self.assertEqual(pair.partner.id, self.mentor.user_id)
