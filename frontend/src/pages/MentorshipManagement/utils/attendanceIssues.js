@@ -31,3 +31,30 @@ export const attendanceIssueLines = (issues, names) =>
         .map((tag) => noteTagLabel(tag, names))
         .join("; ")}`,
   );
+
+/**
+ * The line flagging a live pair that has not held a meeting by the round's
+ * "First contact with mentor" date, or null. Only while the round is in
+ * progress; ended pairs and past rounds are never flagged.
+ *
+ * @param {{isActive?: boolean, completedMeetingCount?: number}} pair -
+ *   Whether the pairing is live (the partner's `isActive`) and how many of
+ *   its meetings were held.
+ * @param {{inProgress: boolean, firstMeetingDeadlineAt?: string|null}} round
+ * @param {Date} [now]
+ * @returns {string|null}
+ */
+export const firstContactOverdueLine = (
+  { isActive, completedMeetingCount },
+  { inProgress, firstMeetingDeadlineAt },
+  now = new Date(),
+) => {
+  if (!inProgress || !firstMeetingDeadlineAt) return null;
+  if (isActive === false || completedMeetingCount > 0) return null;
+  if (new Date(firstMeetingDeadlineAt) > now) return null;
+  return `No meeting held yet. First contact was due ${formatInTz(
+    firstMeetingDeadlineAt,
+    MEETING_TIMEZONE,
+    "yyyy-MM-dd",
+  )}.`;
+};
