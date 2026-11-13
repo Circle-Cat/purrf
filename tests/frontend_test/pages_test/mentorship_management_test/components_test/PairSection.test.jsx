@@ -54,6 +54,32 @@ describe("PairSection", () => {
     getMeetingLog.mockResolvedValue(log());
   });
 
+  it("shows why the pair was matched without opening the log", () => {
+    renderSection({
+      pair: pairOf({
+        partner: {
+          ...pairOf().partner,
+          recommendationReason: "Both work on backend systems.",
+        },
+      }),
+    });
+
+    expect(screen.getByText("Why matched:")).toBeInTheDocument();
+    expect(
+      screen.getByText("Both work on backend systems.", { exact: false }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no reason line for a pair without a reason", () => {
+    renderSection({
+      pair: pairOf({
+        partner: { ...pairOf().partner, recommendationReason: "  " },
+      }),
+    });
+
+    expect(screen.queryByText("Why matched:")).not.toBeInTheDocument();
+  });
+
   it("names the partner with their ID, linked to their page on this pair", () => {
     renderSection();
     const link = screen.getByRole("link", { name: "Bob Smith · ID 22" });

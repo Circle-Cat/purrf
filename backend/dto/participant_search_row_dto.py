@@ -12,6 +12,7 @@ class ParticipantSearchPairRow(BaseInternalDTO):
     mentee_id: int
     pair_status: PairStatus
     completed_count: int
+    recommendation_reason: str | None = None
 
 
 class PersonSearchRow(BaseInternalDTO):

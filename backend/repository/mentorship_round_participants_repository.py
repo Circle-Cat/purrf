@@ -845,6 +845,7 @@ class MentorshipRoundParticipantsRepository:
                 MentorshipPairsEntity.mentor_id,
                 MentorshipPairsEntity.mentee_id,
                 MentorshipPairsEntity.status,
+                MentorshipPairsEntity.recommendation_reason,
                 completed_count.label("completed_count"),
             )
             .where(
@@ -870,6 +871,7 @@ class MentorshipRoundParticipantsRepository:
                 mentee_id=pair.mentee_id,
                 pair_status=pair.status,
                 completed_count=pair.completed_count,
+                recommendation_reason=pair.recommendation_reason or None,
             )
             for user_id in (pair.mentor_id, pair.mentee_id):
                 key = (user_id, pair.round_id)
