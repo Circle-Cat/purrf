@@ -33,17 +33,6 @@ import {
 
 const REGISTRATION_SUCCESS_TOAST_ID = "registration-success-toast";
 const REGISTRATION_ERROR_TOAST_ID = "registration-error-toast";
-const POST_REGISTRATION_TOAST_ID = "post-registration-training-toast";
-const POST_REGISTRATION_TOAST_TITLE = "Complete onboarding training";
-const PROFILE_CHECK_TOAST_ID = "post-registration-profile-check-toast";
-const PROFILE_CHECK_SESSION_KEY = "post-registration-profile-check-shown";
-const PROFILE_CHECK_TOAST_TITLE = "Double-check your profile";
-const PROFILE_CHECK_TOAST_MESSAGE =
-  "We use your profile info to match you with the right partner — please make sure it's up to date in your Profile page.";
-// Matching leaves out anyone, mentor or mentee, whose onboarding course for
-// their role is not done, so the message states the consequence.
-const POST_REGISTRATION_TOAST_MESSAGE =
-  "You must complete the onboarding training in your Profile page to be eligible for matching this round.";
 
 /**
  * MentorshipRegistrationDialog
@@ -273,9 +262,8 @@ export default function MentorshipRegistrationDialog({
       role,
     );
 
-    let response;
     try {
-      response = await onSave(payload);
+      await onSave(payload);
     } catch (err) {
       // Same refusals as the prefill, reached here by a save that raced
       // another tab. The dialog stays open with the form as the user left
@@ -290,42 +278,14 @@ export default function MentorshipRegistrationDialog({
     }
     setIsOpen(false);
 
-    // Fire the success toast first so the training reminder, fired
-    // afterwards, ends up on top of sonner's stack (newest renders
-    // closest to the screen edge in `top-center`).
+    // Training and profile reminders live in the dashboard's mentorship
+    // banner, so only the outcome is reported here.
     showReminderToast({
       id: REGISTRATION_SUCCESS_TOAST_ID,
       type: "success",
       title: isUpdating ? "Registration Updated" : "Registration Completed",
       message: `Your preferences for ${currentRegistration?.roundName || "this round"} have been ${isUpdating ? "updated" : "submitted"} successfully.`,
     });
-
-    // Gate on the POST response (the freshly-saved RegistrationDto)
-    // rather than `currentRegistration`, so the reminder only fires
-    // after a successful register/update — opening the dialog to
-    // view existing registration never triggers it. Strict equality
-    // with `false` keeps the toast off until the backend explicitly
-    // reports training as not-yet-completed.
-    if (response?.data?.isOnboardingTrainingCompleted === false) {
-      showReminderToast({
-        id: POST_REGISTRATION_TOAST_ID,
-        title: POST_REGISTRATION_TOAST_TITLE,
-        message: POST_REGISTRATION_TOAST_MESSAGE,
-      });
-    }
-
-    // One-time-per-session nudge to review Profile — deliberately not
-    // gated on actual profile completeness (that would require this pure
-    // form dialog to own a profile-data fetch it otherwise has no need
-    // for), so it fires once regardless of whether anything is missing.
-    if (!sessionStorage.getItem(PROFILE_CHECK_SESSION_KEY)) {
-      showReminderToast({
-        id: PROFILE_CHECK_TOAST_ID,
-        title: PROFILE_CHECK_TOAST_TITLE,
-        message: PROFILE_CHECK_TOAST_MESSAGE,
-      });
-      sessionStorage.setItem(PROFILE_CHECK_SESSION_KEY, "1");
-    }
   };
 
   // Cross-filtered partner options
