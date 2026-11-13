@@ -11,8 +11,7 @@ import ReminderToastBody from "@/components/common/ReminderToastBody";
  * Pass a stable `id` so repeated calls replace the existing toast
  * rather than stacking duplicates. `type` chooses sonner's icon and
  * rich-color palette (defaults to `info`); use `success` for the
- * post-registration confirmation, `info` for the profile/training
- * reminders.
+ * post-registration confirmation, `info` for the profile reminder.
  */
 export const showReminderToast = ({ id, title, message, type = "info" }) => {
   toast[type](title, {
