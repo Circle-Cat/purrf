@@ -300,7 +300,7 @@ class MentorshipAdminService:
                         preferred_name=partner.preferred_name or "",
                         primary_email=None,
                         participant_role=None,
-                        recommendation_reason=None,
+                        recommendation_reason=pair.recommendation_reason,
                         is_active=pair.pair_status == PairStatus.ACTIVE,
                     ),
                     completed_meeting_count=pair.completed_count,
