@@ -79,6 +79,27 @@ describe("mentorshipRegistration utils", () => {
       expect(result.goal).toBe("");
       expect(result.currentStage).toBe("");
       expect(result.timeUrgency).toBe("");
+      expect(result.shareLinkedin).toBe("");
+      expect(result.linkedinLink).toBe("");
+    });
+
+    it("maps the LinkedIn answer, leaving an unanswered question unselected", () => {
+      const read = (shareLinkedin) =>
+        mapRegistrationToForm(
+          {
+            roundPreferences: { shareLinkedin },
+            linkedinLink: "https://www.linkedin.com/in/ann-lee",
+          },
+          [],
+        );
+
+      expect(read(true).shareLinkedin).toBe("yes");
+      expect(read(false).shareLinkedin).toBe("no");
+      expect(read(null).shareLinkedin).toBe("");
+      expect(read(undefined).shareLinkedin).toBe("");
+      expect(read(true).linkedinLink).toBe(
+        "https://www.linkedin.com/in/ann-lee",
+      );
     });
   });
 
@@ -190,6 +211,36 @@ describe("mentorshipRegistration utils", () => {
       );
 
       expect(result.roundPreferences.participantRole).toBe("mentor");
+    });
+
+    it("sends the LinkedIn answer, and the link only when sharing", () => {
+      const formData = (shareLinkedin) => ({
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 1,
+        goal: "",
+        selectedPartners: [],
+        excludedPartners: [],
+        shareLinkedin,
+        linkedinLink: "https://www.linkedin.com/in/ann-lee",
+      });
+      // The source carries the opposite answer, so a value inherited from it
+      // instead of stated by the form shows up here.
+      const yes = mapFormToApi(
+        formData("yes"),
+        { roundPreferences: { shareLinkedin: false } },
+        "mentee",
+      );
+      const no = mapFormToApi(
+        formData("no"),
+        { roundPreferences: { shareLinkedin: true } },
+        "mentee",
+      );
+
+      expect(yes.roundPreferences.shareLinkedin).toBe(true);
+      expect(yes.linkedinLink).toBe("https://www.linkedin.com/in/ann-lee");
+      expect(no.roundPreferences.shareLinkedin).toBe(false);
+      expect(no.linkedinLink).toBeUndefined();
     });
 
     it("tolerates a source carrying null round preferences", () => {

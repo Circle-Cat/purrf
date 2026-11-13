@@ -20,6 +20,9 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ROUND_SLOTS_ENDPOINT,
 )
 from backend.mentorship.mentorship_controller import MentorshipController
+from backend.common.fast_api_error_handler import register_exception_handlers
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
 
 
 class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
@@ -817,6 +820,75 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(routes), 1)
         self.assertEqual(routes[0].methods, {"GET"})
         self.assertIsNone(self._endpoint_permissions(routes[0].endpoint))
+
+
+class TestRegistrationRequestValidation(unittest.TestCase):
+    """The registration body is checked before the service is reached."""
+
+    def setUp(self):
+        self.registration_service = MagicMock()
+        self.registration_service.update_registration_info = AsyncMock(
+            return_value=RegistrationDto(
+                is_registered=True,
+                round_name="round",
+                global_preferences={"skillsets": {}},
+            )
+        )
+        database = MagicMock()
+        database.session.return_value.__aenter__.return_value = AsyncMock()
+        database.session.return_value.__aexit__.return_value = None
+        controller = MentorshipController(
+            rounds_service=MagicMock(),
+            participation_service=MagicMock(),
+            registration_service=self.registration_service,
+            meeting_service=MagicMock(),
+            launchdarkly_service=MagicMock(),
+            database=database,
+            meet_attendance_sync_service=MagicMock(),
+        )
+        app = FastAPI()
+
+        @app.middleware("http")
+        async def _inject(request: Request, call_next):
+            request.state.user = MagicMock(
+                permissions=set(),
+                user_id=9,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                sub="auth0|9",
+            )
+            return await call_next(request)
+
+        app.include_router(controller.router)
+        register_exception_handlers(app)
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    def _post(self, **extra):
+        body = {
+            "globalPreferences": {"skillsets": {}},
+            "roundPreferences": {
+                "participantRole": "mentee",
+                "maxPartners": 1,
+                "shareLinkedin": True,
+            },
+            **extra,
+        }
+        return self.client.post("/mentorship/rounds/7/registration", json=body)
+
+    def test_sharing_linkedin_without_a_linkedin_link_is_a_bad_request(self):
+        missing = self._post()
+        elsewhere = self._post(linkedinLink="https://github.com/ann-lee")
+
+        self.assertEqual(missing.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(elsewhere.status_code, HTTPStatus.BAD_REQUEST)
+        self.registration_service.update_registration_info.assert_not_awaited()
+
+    def test_sharing_linkedin_with_a_linkedin_link_reaches_the_service(self):
+        resp = self._post(linkedinLink="https://www.linkedin.com/in/ann-lee")
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.registration_service.update_registration_info.assert_awaited_once()
 
 
 if __name__ == "__main__":
