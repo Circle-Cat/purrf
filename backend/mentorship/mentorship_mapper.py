@@ -163,6 +163,7 @@ class MentorshipMapper:
             goal=participants_entity.goal or "",
             current_stage=participants_entity.current_stage,
             time_urgency=participants_entity.time_urgency,
+            share_linkedin=participants_entity.share_linkedin,
         )
 
     def map_to_meeting_dto(

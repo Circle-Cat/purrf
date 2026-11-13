@@ -8,6 +8,7 @@ class PartnerDto(BaseDto):
     last_name: str
     preferred_name: str | None = None
     primary_email: str | None = None
+    linkedin_link: str | None = None
     participant_role: ParticipantRole | None = None
     recommendation_reason: str | None = None
     # Whether this pairing is the user's current one. None when partners were

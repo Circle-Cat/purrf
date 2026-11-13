@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { safeHttpUrl } from "@/utils/url";
+import { safeHttpUrl, safeLinkedinUrl } from "@/utils/url";
 
 describe("safeHttpUrl", () => {
   it("returns https URLs unchanged", () => {
@@ -54,5 +54,28 @@ describe("safeHttpUrl", () => {
 
   it("rejects a scheme-only string with no host", () => {
     expect(safeHttpUrl("https://")).toBeNull();
+  });
+});
+
+describe("safeLinkedinUrl", () => {
+  it("keeps https LinkedIn links and upgrades bare ones", () => {
+    expect(safeLinkedinUrl("https://www.linkedin.com/in/ann")).toBe(
+      "https://www.linkedin.com/in/ann",
+    );
+    expect(safeLinkedinUrl(" linkedin.com/in/ann ")).toBe(
+      "https://linkedin.com/in/ann",
+    );
+  });
+
+  it("rejects script URLs that mention linkedin.com", () => {
+    expect(safeLinkedinUrl("javascript:alert(1)//linkedin.com")).toBeNull();
+  });
+
+  it("rejects other and lookalike hosts", () => {
+    expect(safeLinkedinUrl("https://github.com/ann")).toBeNull();
+    expect(
+      safeLinkedinUrl("https://linkedin.com.evil.example/in/ann"),
+    ).toBeNull();
+    expect(safeLinkedinUrl("https://evil.example/linkedin.com")).toBeNull();
   });
 });
