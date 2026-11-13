@@ -39,7 +39,19 @@ export const MENTORSHIP_BANNER_COPY = {
   matched:
     "see who you're matched with. Your meetings for this round are in Mentorship Participation below.",
   unmatched:
-    "You weren't matched this round. You can register again when the next round opens.",
+    "You weren't matched this round. You may still be matched with someone this round if a partner is available. You can register again when the next round opens.",
+  pairingEnded: (roundName) =>
+    `Your pairing for ${roundName} has ended. You can register again when the next round opens.`,
+  pairingEndedMayRematch: (roundName) =>
+    `Your pairing for ${roundName} has ended. You may be matched with someone new this round if a partner is available. Otherwise, you can register again when the next round opens.`,
+  participationEnded: (roundName) =>
+    `Your participation in ${roundName} has ended. You can register again when the next round opens.`,
+  notTakingPart: (roundName) =>
+    `You aren't taking part in ${roundName}. You can register again when the next round opens.`,
+  withdrawn: (roundName) =>
+    `You've withdrawn from ${roundName}. You can register again when the next round opens.`,
+  resultNotReady: (roundName) =>
+    `Your match result for ${roundName} isn't ready yet. Contact the mentorship team if you have questions.`,
   profileLine:
     "Before each round, check that your profile is up to date. We use your education and work history to find your match.",
   updateProfile: "Update profile →",

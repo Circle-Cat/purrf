@@ -110,6 +110,7 @@ export default function MentorshipInfoBanner({
     isTrainingDone,
     canViewMatch: Boolean(canViewMatch),
     matchStatus: matchResult?.currentStatus ?? null,
+    partners: matchResult?.partners ?? [],
     rounds,
   });
 
@@ -133,9 +134,10 @@ export default function MentorshipInfoBanner({
   );
 
   // A registration settles the round's role; its entry stays reachable
-  // (Update or View) for as long as the round is shown.
+  // (Update or View) while the round is shown, unless the viewer has left
+  // it or is not taking part.
   const headerEntries =
-    registeredRole && isRoundShown
+    registeredRole && isRoundShown && state.showRegistrationEntry
       ? registrationEntries.filter((entry) => entry.role === registeredRole)
       : [];
 
