@@ -52,7 +52,12 @@ def _make_row(**kwargs):
 
 
 def _search_pair(
-    pair_id, mentor_id, mentee_id, pair_status=PairStatus.ACTIVE, completed_count=0
+    pair_id,
+    mentor_id,
+    mentee_id,
+    pair_status=PairStatus.ACTIVE,
+    completed_count=0,
+    recommendation_reason=None,
 ):
     return ParticipantSearchPairRow(
         pair_id=pair_id,
@@ -60,6 +65,7 @@ def _search_pair(
         mentee_id=mentee_id,
         pair_status=pair_status,
         completed_count=completed_count,
+        recommendation_reason=recommendation_reason,
     )
 
 
@@ -1076,6 +1082,44 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         rows = {r.user_id: r for r in result.participant_rows}
         self.assertEqual(rows[1].pairs[0].partner.id, 2)
         self.assertEqual(rows[2].pairs[0].partner.id, 1)
+
+    async def test_each_pair_carries_its_own_match_reason(self):
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(
+                    user_id=1,
+                    participant_role=ParticipantRole.MENTOR,
+                    pairs=[
+                        _search_pair(98, 1, 2, recommendation_reason="Both like Go."),
+                        _search_pair(99, 1, 3),
+                    ],
+                ),
+            ],
+            1,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="F", last_name="L", preferred_name=""
+                )
+                for uid in (1, 2, 3)
+            },
+            {},
+        )
+        self.mock_rounds_repo.get_all_rounds.return_value = []
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = []
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        self.assertEqual(
+            [
+                (p.pair_id, p.partner.recommendation_reason)
+                for p in result.participant_rows[0].pairs
+            ],
+            [(98, "Both like Go."), (99, None)],
+        )
 
     async def test_onboarding_status_requires_done_training(self):
         """mentor/mentee_onboarding_status returns the raw TrainingStatus from the training record."""

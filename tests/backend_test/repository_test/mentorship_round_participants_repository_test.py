@@ -1384,11 +1384,12 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 status=status,
                 mentor_action_status=MentorActionStatus.CONFIRMED,
                 mentee_action_status=MenteeActionStatus.CONFIRMED,
-                recommendation_reason="test",
+                recommendation_reason=reason,
             )
-            for pair_id, mentee, status in (
-                (901, bea, PairStatus.ACTIVE),
-                (902, cid, PairStatus.INACTIVE),
+            # Pair 902 has an empty reason, as pairs made before the matcher do.
+            for pair_id, mentee, status, reason in (
+                (901, bea, PairStatus.ACTIVE, "Both build backend services."),
+                (902, cid, PairStatus.INACTIVE, ""),
             )
         ])
         now = datetime.now(timezone.utc)
@@ -1435,6 +1436,21 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual([p.pair_id for p in rows[1].pairs], [901])
         self.assertEqual([p.pair_id for p in rows[2].pairs], [902])
+
+    async def test_search_pairs_carry_their_match_reason(self):
+        await self._seed_mentor_with_two_mentees()
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(round_id=self.rounds[0].round_id),
+            limit=50,
+            offset=0,
+        )
+
+        self.assertEqual(
+            [(p.pair_id, p.recommendation_reason) for p in rows[0].pairs],
+            [(901, "Both build backend services."), (902, None)],
+        )
 
     async def test_search_pages_by_participant_not_by_pair(self):
         """A limit of 1 would have cut the mentor's rows in half when rows
