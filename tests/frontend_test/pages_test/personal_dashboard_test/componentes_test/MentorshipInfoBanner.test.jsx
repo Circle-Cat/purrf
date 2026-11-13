@@ -328,12 +328,70 @@ describe("MentorshipInfoBanner", () => {
       });
 
       expect(nextBox()).toHaveTextContent(
-        "You weren't matched this round. You can register again when the next round opens.",
+        "You weren't matched this round. You may still be matched with someone this round if a partner is available. You can register again when the next round opens.",
       );
       expect(
         screen.queryByTestId("mock-matching-dialog"),
       ).not.toBeInTheDocument();
       expect(profileLine()).not.toBeInTheDocument();
+    });
+
+    it("drops the result link and the registration entry for a withdrawn viewer", () => {
+      renderBanner({
+        ...announced,
+        matchResult: {
+          currentStatus: "withdrawn",
+          partners: [{ id: 7, isActive: false }],
+        },
+      });
+
+      expect(nextBox()).toHaveTextContent(
+        "You've withdrawn from 2027 Spring. You can register again when the next round opens.",
+      );
+      expect(
+        screen.queryByTestId("mock-matching-dialog"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("mock-registration-dialog-mentor"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps the registration entry but not the result link once a pairing ended", () => {
+      renderBanner({
+        ...announced,
+        matchResult: {
+          currentStatus: "matched",
+          partners: [{ id: 7, isActive: false }],
+        },
+      });
+
+      expect(nextBox()).toHaveTextContent(
+        "Your pairing for 2027 Spring has ended.",
+      );
+      expect(
+        screen.queryByTestId("mock-matching-dialog"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("mock-registration-dialog-mentor"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("rejected before matches are announced", () => {
+    it("says they are not taking part, with no training link, profile line or registration entry", () => {
+      renderBanner({
+        ...registeredMentor,
+        matchResult: { currentStatus: "rejected", partners: [] },
+      });
+
+      expect(nextBox()).toHaveTextContent(
+        "You aren't taking part in 2027 Spring. You can register again when the next round opens.",
+      );
+      expect(within(nextBox()).queryByRole("link")).not.toBeInTheDocument();
+      expect(profileLine()).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("mock-registration-dialog-mentor"),
+      ).not.toBeInTheDocument();
     });
   });
 });

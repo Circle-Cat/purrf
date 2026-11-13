@@ -14,6 +14,11 @@ export const BannerKind = Object.freeze({
   AWAITING_MATCHES: "awaitingMatches",
   MATCHED: "matched",
   UNMATCHED: "unmatched",
+  PAIRING_ENDED: "pairingEnded",
+  PARTICIPATION_ENDED: "participationEnded",
+  NOT_TAKING_PART: "notTakingPart",
+  WITHDRAWN: "withdrawn",
+  RESULT_NOT_READY: "resultNotReady",
 });
 
 export const BannerAction = Object.freeze({
@@ -113,6 +118,7 @@ const noRound = ({ rounds, nowMs, tz }) => {
       : COPY.nextRoundUnscheduled,
     action: null,
     showProfileLine: false,
+    showRegistrationEntry: false,
   };
 };
 
@@ -135,6 +141,8 @@ const noRound = ({ rounds, nowMs, tz }) => {
  *   is done.
  * @param {boolean} params.canViewMatch - Whether matches are viewable now.
  * @param {string|null} params.matchStatus - The viewer's match status.
+ * @param {Array<{isActive?: boolean|null}>} [params.partners] - The viewer's
+ *   partners in the round, as the match result reports them.
  * @param {Array<Object>} params.rounds - Every round, with timelines.
  * @returns {{
  *   kind: string,
@@ -145,6 +153,7 @@ const noRound = ({ rounds, nowMs, tz }) => {
  *   next: string,
  *   action: string|null,
  *   showProfileLine: boolean,
+ *   showRegistrationEntry: boolean,
  * }}
  */
 export function mentorshipBannerState({
@@ -159,6 +168,7 @@ export function mentorshipBannerState({
   isTrainingDone,
   canViewMatch,
   matchStatus,
+  partners = [],
   rounds,
 }) {
   const tz = timezone;
@@ -189,12 +199,31 @@ export function mentorshipBannerState({
   const deadlineDay = deadlineAt ? formatDay(deadlineAt, tz) : null;
   const inDays = () => COPY.inDays(calendarDaysUntil(now, deadlineAt, tz));
 
+  // Once matching is done, editing the profile no longer changes anything
+  // for this round, whatever the viewer's status.
   const base = {
     title,
     lead: COPY.leadNext,
     action: null,
-    showProfileLine: true,
+    showProfileLine: !matchDatePassed,
+    showRegistrationEntry: true,
   };
+
+  // A status that ends the viewer's part in the round: no bar, no action,
+  // no profile line, and the registration can no longer be updated.
+  const finished = (kind, next) => ({
+    ...base,
+    kind,
+    steps: null,
+    tone: BannerTone.MUTED,
+    lead: null,
+    next,
+    showProfileLine: false,
+    showRegistrationEntry: false,
+  });
+  const notTakingPart = () =>
+    finished(BannerKind.NOT_TAKING_PART, COPY.notTakingPart(title));
+  const withdrawn = () => finished(BannerKind.WITHDRAWN, COPY.withdrawn(title));
 
   const awaitingMatches = () => ({
     ...base,
@@ -241,7 +270,19 @@ export function mentorshipBannerState({
   }
 
   if (canViewMatch) {
+    const wasPaired = partners.length > 0;
+    const isEveryPairingEnded =
+      wasPaired && partners.every((partner) => partner.isActive === false);
+    // A pairing that has ended keeps the registration viewable, unlike
+    // leaving the round.
+    const pairingEnded = (next) => ({
+      ...finished(BannerKind.PAIRING_ENDED, next),
+      showRegistrationEntry: true,
+    });
+
+    if (matchStatus === MatchStatus.WITHDRAWN) return withdrawn();
     if (matchStatus === MatchStatus.MATCHED) {
+      if (isEveryPairingEnded) return pairingEnded(COPY.pairingEnded(title));
       return {
         ...base,
         kind: BannerKind.MATCHED,
@@ -253,6 +294,10 @@ export function mentorshipBannerState({
       };
     }
     if (matchStatus === MatchStatus.UNMATCHED) {
+      // Only a partner leaving or an admin ending the pair moves someone to
+      // un_matched (leaving themselves makes them withdrawn), and it puts
+      // them back in the pool, so a new match is still possible.
+      if (wasPaired) return pairingEnded(COPY.pairingEndedMayRematch(title));
       return {
         ...base,
         kind: BannerKind.UNMATCHED,
@@ -263,12 +308,33 @@ export function mentorshipBannerState({
         showProfileLine: false,
       };
     }
-    return awaitingMatches();
+    // The same rejected status covers an application turned down and
+    // someone who took part and left; only the latter has a pairing.
+    if (matchStatus === MatchStatus.REJECTED) {
+      return wasPaired
+        ? finished(
+            BannerKind.PARTICIPATION_ENDED,
+            COPY.participationEnded(title),
+          )
+        : notTakingPart();
+    }
+    // Still signed up (or unreadable) after the announcement: the result
+    // is late, not coming soon.
+    return {
+      ...finished(BannerKind.RESULT_NOT_READY, COPY.resultNotReady(title)),
+      showRegistrationEntry: true,
+    };
   }
 
   if (matchDatePassed) {
     return noRound({ rounds, nowMs, tz });
   }
+
+  // Rejected and withdrawn come from the viewer's own standing, so the
+  // server reports them before the announcement too. No pairing is shown
+  // yet, so a rejected viewer reads as not taking part.
+  if (matchStatus === MatchStatus.REJECTED) return notTakingPart();
+  if (matchStatus === MatchStatus.WITHDRAWN) return withdrawn();
 
   if (isTrainingDone) {
     return awaitingMatches();

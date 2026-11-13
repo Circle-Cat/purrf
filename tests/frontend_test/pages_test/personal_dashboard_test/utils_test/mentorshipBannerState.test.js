@@ -371,22 +371,170 @@ describe("mentorshipBannerState", () => {
       expect(state.tone).toBe(BannerTone.MUTED);
       expect(state.lead).toBeNull();
       expect(state.next).toBe(
-        "You weren't matched this round. You can register again when the next round opens.",
+        "You weren't matched this round. You may still be matched with someone this round if a partner is available. You can register again when the next round opens.",
       );
       expect(state.action).toBeNull();
       expect(state.showProfileLine).toBe(false);
     });
 
+    // Partners as the match result reports them: a pairing has ended when
+    // its partner is explicitly inactive.
+    const LIVE = { id: 7, isActive: true };
+    const ENDED = { id: 8, isActive: false };
+    const ENDED_TOO = { id: 9, isActive: false };
+
+    /** Asserts the shape every finished status shares. */
+    const expectFinished = (state) => {
+      expect(state.steps).toBeNull();
+      expect(state.tone).toBe(BannerTone.MUTED);
+      expect(state.lead).toBeNull();
+      expect(state.action).toBeNull();
+      expect(state.showProfileLine).toBe(false);
+    };
+
+    it("keeps a matched viewer on the result while any pairing is live", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "matched",
+        partners: [ENDED, LIVE],
+      });
+
+      expect(state.kind).toBe(BannerKind.MATCHED);
+      expect(state.action).toBe(BannerAction.MATCH_RESULT);
+    });
+
+    it("keeps a matched viewer on the result when partner activity is unknown", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "matched",
+        partners: [{ id: 7, isActive: null }],
+      });
+
+      expect(state.kind).toBe(BannerKind.MATCHED);
+    });
+
+    it("says a matched viewer's pairing ended once every pairing has, with no result link", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "matched",
+        partners: [ENDED, ENDED_TOO],
+      });
+
+      expect(state.kind).toBe(BannerKind.PAIRING_ENDED);
+      expectFinished(state);
+      expect(state.next).toBe(
+        "Your pairing for 2027 Spring has ended. You can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(true);
+    });
+
+    it("says an unmatched viewer who was paired had their pairing end, not that they went unmatched", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "unmatched",
+        partners: [ENDED],
+      });
+
+      expect(state.kind).toBe(BannerKind.PAIRING_ENDED);
+      expectFinished(state);
+      expect(state.next).toBe(
+        "Your pairing for 2027 Spring has ended. You may be matched with someone new this round if a partner is available. Otherwise, you can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(true);
+    });
+
+    it("tells a rejected viewer who was never paired they are not taking part", () => {
+      const state = build({ ...announced, matchStatus: "rejected" });
+
+      expect(state.kind).toBe(BannerKind.NOT_TAKING_PART);
+      expectFinished(state);
+      expect(state.next).toBe(
+        "You aren't taking part in 2027 Spring. You can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(false);
+    });
+
+    it("tells a rejected viewer who was paired that their participation ended", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "rejected",
+        partners: [ENDED],
+      });
+
+      expect(state.kind).toBe(BannerKind.PARTICIPATION_ENDED);
+      expectFinished(state);
+      expect(state.next).toBe(
+        "Your participation in 2027 Spring has ended. You can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(false);
+    });
+
+    it("tells a withdrawn viewer so, with no result link even after a pairing", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "withdrawn",
+        partners: [ENDED],
+      });
+
+      expect(state.kind).toBe(BannerKind.WITHDRAWN);
+      expectFinished(state);
+      expect(state.next).toBe(
+        "You've withdrawn from 2027 Spring. You can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(false);
+    });
+
     it.each(["pending", "unknown", null])(
-      "treats a %s status as still waiting for matches",
+      "says a %s result is not ready rather than coming soon",
       (matchStatus) => {
         const state = build({ ...announced, matchStatus });
 
-        expect(state.kind).toBe(BannerKind.AWAITING_MATCHES);
-        // The announcement date is behind us, so it is not repeated.
-        expect(state.next).toBe("matches will be announced soon.");
+        expect(state.kind).toBe(BannerKind.RESULT_NOT_READY);
+        expectFinished(state);
+        expect(state.next).toBe(
+          "Your match result for 2027 Spring isn't ready yet. Contact the mentorship team if you have questions.",
+        );
+        expect(state.showRegistrationEntry).toBe(true);
       },
     );
+  });
+
+  describe("left the round before matches are announced", () => {
+    it("tells a rejected viewer they are not taking part instead of asking for training", () => {
+      const state = build({ isRegistered: true, matchStatus: "rejected" });
+
+      expect(state.kind).toBe(BannerKind.NOT_TAKING_PART);
+      expect(state.steps).toBeNull();
+      expect(state.action).toBeNull();
+      expect(state.showProfileLine).toBe(false);
+      expect(state.showRegistrationEntry).toBe(false);
+    });
+
+    it("tells a withdrawn viewer so instead of naming the announcement date", () => {
+      const state = build({
+        isRegistered: true,
+        isTrainingDone: true,
+        isRegistrationOpen: false,
+        matchStatus: "withdrawn",
+      });
+
+      expect(state.kind).toBe(BannerKind.WITHDRAWN);
+      expect(state.next).toBe(
+        "You've withdrawn from 2027 Spring. You can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(false);
+    });
+
+    it("moves on to the next round once the round is over, whatever the status", () => {
+      const state = build({
+        now: new Date("2027-02-14T00:00:00Z"),
+        isRegistrationOpen: false,
+        isRegistered: true,
+        matchStatus: "withdrawn",
+      });
+
+      expect(state.kind).toBe(BannerKind.NO_ROUND);
+    });
   });
 
   it("does not show a round whose registration has not started", () => {
