@@ -845,6 +845,24 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(dto.current_stage)
         self.assertIsNone(dto.time_urgency)
 
+    def test_map_to_round_preference_dto_carries_the_linkedin_answer(self):
+        """The saved answer to sharing LinkedIn prefills the next form,
+        including no answer at all."""
+        for answer in (True, False, None):
+            with self.subTest(answer=answer):
+                entity = MentorshipRoundParticipantsEntity(
+                    user_id=1,
+                    round_id=1,
+                    participant_role=ParticipantRole.MENTEE,
+                    max_partners=1,
+                    goal="test goal",
+                    share_linkedin=answer,
+                )
+
+                dto = self.mapper.map_to_round_preference_dto(entity)
+
+                self.assertIs(dto.share_linkedin, answer)
+
     def test_map_to_meeting_v2_dto_excludes_legacy_rows(self):
         """LEGACY rows must never surface in the v2 list either, even if a
         caller somehow passed one in -- they carry no times and this method

@@ -168,6 +168,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
   });
 
@@ -301,6 +303,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
     const onSave = vi
       .fn()
@@ -361,6 +365,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
@@ -455,6 +461,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "job_searching",
       timeUrgency: "within_3_months",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} />);
@@ -485,6 +493,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "job_searching",
       timeUrgency: "within_3_months",
+      shareLinkedin: "no",
+      linkedinLink: "",
     };
 
     const validMentorForm = {
@@ -505,6 +515,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     };
 
     /**
@@ -530,7 +542,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     const callWithId = (id) =>
       showReminderToast.mock.calls.find(([args]) => args.id === id)?.[0];
 
-    it("fires the must-complete-or-no-match message for a mentee when the POST response says training is not completed", async () => {
+    it("tells a mentee training is required for matching when the POST response says training is not completed", async () => {
       mapFormToApi.mockReturnValue({ api: "data" });
       mapRegistrationToForm.mockReturnValue(validMenteeForm);
       const onSave = onSaveResolving(false);
@@ -547,10 +559,10 @@ describe("MentorshipRegistrationDialog Component", () => {
       expect(reminder.message).toMatch(
         /must complete the onboarding training/i,
       );
-      expect(reminder.message).toMatch(/eligible for mentor matching/i);
+      expect(reminder.message).toMatch(/eligible for matching this round/i);
     });
 
-    it("fires the soft mentoring-quality message for a mentor when the POST response says training is not completed", async () => {
+    it("tells a mentor training is required for matching too, since matching checks every role", async () => {
       mapFormToApi.mockReturnValue({ api: "data" });
       mapRegistrationToForm.mockReturnValue(validMentorForm);
       const onSave = onSaveResolving(false, "mentor");
@@ -567,8 +579,10 @@ describe("MentorshipRegistrationDialog Component", () => {
 
       const reminder = callWithId("post-registration-training-toast");
       expect(reminder).toBeDefined();
-      expect(reminder.message).toMatch(/get started as a mentor/i);
-      expect(reminder.message).not.toMatch(/eligible for mentor matching/i);
+      expect(reminder.message).toMatch(
+        /must complete the onboarding training/i,
+      );
+      expect(reminder.message).toMatch(/eligible for matching this round/i);
     });
 
     it("fires the success toast first so the training reminder lands on top of the sonner stack", async () => {
@@ -752,6 +766,8 @@ describe("MentorshipRegistrationDialog Component", () => {
         targetRegionOther: "",
         currentStage: "",
         timeUrgency: "",
+        shareLinkedin: "no",
+        linkedinLink: "",
       });
 
       render(<MentorshipRegistrationDialog {...defaultProps} />);
@@ -807,6 +823,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     rerender(
@@ -955,6 +973,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
@@ -986,6 +1006,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     const mockPayload = { api: "data" };
@@ -1060,6 +1082,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "job_searching",
       timeUrgency: "within_3_months",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} />);
@@ -1092,6 +1116,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
@@ -1167,5 +1193,162 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(
       screen.getByPlaceholderText("Please briefly describe..."),
     ).toHaveValue("");
+  });
+
+  describe("sharing LinkedIn with the match", () => {
+    const menteeForm = (overrides) => ({
+      industries: [{ label: "Tech", value: "tech" }],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "",
+      careerTransitionOther: "",
+      region: "",
+      regionOther: "",
+      externalMentoringExp: "",
+      currentBackground: "cs_grad",
+      currentBackgroundOther: "",
+      targetRegion: "us",
+      targetRegionOther: "",
+      currentStage: "job_searching",
+      timeUrgency: "within_3_months",
+      shareLinkedin: "",
+      linkedinLink: "",
+      ...overrides,
+    });
+    const LINK_ERROR =
+      "Enter a linkedin.com link, like https://www.linkedin.com/in/your-name";
+
+    const open = async (form) => {
+      mapRegistrationToForm.mockReturnValue(menteeForm(form));
+      mapFormToApi.mockReturnValue({ api: "data" });
+      render(<MentorshipRegistrationDialog {...defaultProps} />);
+      await user.click(screen.getByText("Toggle Dialog"));
+      await waitFor(() => expect(mapRegistrationToForm).toHaveBeenCalled());
+    };
+
+    it("asks the question as required, with nothing selected when never answered", async () => {
+      await open();
+
+      expect(
+        screen.getByText("Share your LinkedIn with your match?"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Your match sees it with the matching results. No one else does.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Yes" })).not.toBeChecked();
+      expect(screen.getByRole("radio", { name: "No" })).not.toBeChecked();
+      expect(
+        screen.queryByLabelText(/Your LinkedIn profile link/),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+
+      expect(screen.getAllByText("This field is required.")).toHaveLength(1);
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+    });
+
+    it("prefills Yes with the profile link and saves both", async () => {
+      await open({
+        shareLinkedin: "yes",
+        linkedinLink: "https://www.linkedin.com/in/ann-lee",
+      });
+
+      expect(screen.getByRole("radio", { name: "Yes" })).toBeChecked();
+      expect(screen.getByLabelText(/Your LinkedIn profile link/)).toHaveValue(
+        "https://www.linkedin.com/in/ann-lee",
+      );
+      expect(
+        screen.getByText(
+          "Filled in from your profile. Changes here are saved to your profile too.",
+        ),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+
+      expect(mapFormToApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shareLinkedin: "yes",
+          linkedinLink: "https://www.linkedin.com/in/ann-lee",
+        }),
+        expect.anything(),
+        "mentee",
+      );
+      expect(defaultProps.onSave).toHaveBeenCalledWith({ api: "data" });
+    });
+
+    it("prefills No and shows no link input", async () => {
+      await open({
+        shareLinkedin: "no",
+        linkedinLink: "https://www.linkedin.com/in/ann-lee",
+      });
+
+      expect(screen.getByRole("radio", { name: "No" })).toBeChecked();
+      expect(
+        screen.queryByLabelText(/Your LinkedIn profile link/),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+
+      expect(mapFormToApi).toHaveBeenCalledWith(
+        expect.objectContaining({ shareLinkedin: "no" }),
+        expect.anything(),
+        "mentee",
+      );
+    });
+
+    it("asks for a linkedin.com link when Yes is chosen without a profile link", async () => {
+      await open();
+
+      await user.click(screen.getByRole("radio", { name: "Yes" }));
+      const input = screen.getByLabelText(/Your LinkedIn profile link/);
+      expect(input).toHaveValue("");
+      expect(input).toHaveAttribute(
+        "placeholder",
+        "https://www.linkedin.com/in/your-name",
+      );
+      expect(
+        screen.getByText("We'll also save it to your profile."),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+      expect(screen.getByText(LINK_ERROR)).toBeInTheDocument();
+
+      await user.type(input, "https://github.com/ann-lee");
+      await user.click(screen.getByText("Register"));
+      expect(screen.getByText(LINK_ERROR)).toBeInTheDocument();
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+
+      await user.clear(input);
+      await user.type(input, "  https://www.LinkedIn.com/in/ann-lee ");
+      await user.click(screen.getByText("Register"));
+
+      expect(screen.queryByText(LINK_ERROR)).not.toBeInTheDocument();
+      expect(mapFormToApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shareLinkedin: "yes",
+          linkedinLink: "https://www.LinkedIn.com/in/ann-lee",
+        }),
+        expect.anything(),
+        "mentee",
+      );
+    });
+
+    it("hides the link input again when the answer turns to No", async () => {
+      await open({ shareLinkedin: "yes" });
+      expect(
+        screen.getByLabelText(/Your LinkedIn profile link/),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("radio", { name: "No" }));
+
+      expect(
+        screen.queryByLabelText(/Your LinkedIn profile link/),
+      ).not.toBeInTheDocument();
+    });
   });
 });

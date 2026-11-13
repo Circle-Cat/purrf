@@ -50,6 +50,7 @@ class MentorshipRoundParticipantsEntity(Base):
     goal: Mapped[str | None] = mapped_column(String(300))
     current_stage: Mapped[str | None] = mapped_column(String(100))
     time_urgency: Mapped[str | None] = mapped_column(String(100))
+    share_linkedin: Mapped[bool | None] = mapped_column(Boolean)
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

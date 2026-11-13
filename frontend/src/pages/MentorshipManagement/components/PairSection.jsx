@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { formatInTz } from "@/utils/dateTime";
@@ -7,6 +7,7 @@ import { userDisplayName } from "@/utils/userName";
 import {
   MEETING_TIMEZONE,
   attendanceIssueLines,
+  firstContactOverdueLine,
 } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { participantLink } from "@/pages/MentorshipManagement/utils/participantLink";
 import AttendanceMark from "@/pages/MentorshipManagement/components/AttendanceMark";
@@ -20,13 +21,16 @@ import { useMeetingLogEditor } from "@/pages/MentorshipManagement/hooks/useMeeti
 /**
  * One pair on a person's detail page: who the partner is (linked to their
  * own page, opened on this pair), whether the pairing is live, meetings held
- * against the round's requirement, and its meeting log below when open.
+ * against the round's requirement, why they were matched (when the pair has
+ * a reason), and its meeting log below when open.
  *
  * Only the meeting log lives here. Notes about the pair and status changes
  * are on the person's timeline.
  *
  * First contact is derived, not marked: the earliest meeting booked for the
- * pair, held or not. It is only worth showing while the round runs.
+ * pair, held or not. It is only worth showing while the round runs. A live
+ * pair with no meeting held by the round's first-contact date gets the red
+ * mark.
  *
  * The log is editable only by a writer, in a round in progress, on a v2 log;
  * the backend refuses edits to an ended round all the same.
@@ -34,7 +38,7 @@ import { useMeetingLogEditor } from "@/pages/MentorshipManagement/hooks/useMeeti
  * @param {{
  *   pair: Object,
  *   subject: {userId: number, name: string, role: "mentor"|"mentee"},
- *   round: {roundId: number, inProgress: boolean, requiredMeetings: number|null},
+ *   round: {roundId: number, inProgress: boolean, requiredMeetings: number|null, firstMeetingDeadlineAt?: string|null},
  *   canWrite: boolean,
  *   open: boolean,
  *   onToggle: () => void,
@@ -52,16 +56,27 @@ const PairSection = ({
 }) => {
   const ended = pair.partner.isActive === false;
   const partnerName = userDisplayName(pair.partner);
+  const reason = pair.partner.recommendationReason?.trim();
   const [mentorName, menteeName] =
     subject.role === "mentee"
       ? [partnerName, subject.name]
       : [subject.name, partnerName];
+  const overdue = firstContactOverdueLine(
+    {
+      isActive: pair.partner.isActive,
+      completedMeetingCount: pair.completedMeetingCount,
+    },
+    round,
+  );
   const issues = ended
     ? []
-    : attendanceIssueLines(pair.attendanceIssues ?? [], {
-        mentorName,
-        menteeName,
-      });
+    : [
+        ...attendanceIssueLines(pair.attendanceIssues ?? [], {
+          mentorName,
+          menteeName,
+        }),
+        ...(overdue ? [overdue] : []),
+      ];
 
   const { meetings, roundInProgress, loading, error, saveMeetingBatch } =
     useMeetingLog(pair.pairId, open);
@@ -113,6 +128,16 @@ const PairSection = ({
           </span>
         )}
       </header>
+      {reason && (
+        <p
+          className={`flex gap-1.5 px-4 pb-3 text-xs ${ended ? "text-slate-400" : "text-slate-600"}`}
+        >
+          <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            <span className="font-medium">Why matched:</span> {reason}
+          </span>
+        </p>
+      )}
 
       {open && (
         <div className="border-t border-slate-100 px-4 py-3">

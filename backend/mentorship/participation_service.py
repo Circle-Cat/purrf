@@ -7,6 +7,7 @@ from backend.dto.registration_dto import RoundPreferencesDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.exceptions import ConflictError
+from backend.common.linkedin_url import normalize_linkedin_profile_url
 from backend.common.mentorship_enums import ParticipantRole
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.mentorship_enums import (
@@ -278,7 +279,9 @@ class ParticipationService:
         retrieves the user's mentorship pairs for the round and constructs
         partner details for each counterpart. A pairing that has since ended is
         still who the user was matched with, so it is reported with
-        `is_active` false rather than left out; its contact email is withheld.
+        `is_active` false rather than left out; its contact email and
+        LinkedIn link are withheld. A LinkedIn link is shown only when the
+        partner chose to share it for this round.
 
         Until the round is announced (is_announced) no pairing is reported,
         and MATCHED / UNMATCHED read as PENDING.
@@ -360,11 +363,21 @@ class ParticipationService:
             for pair, p_user in pairs_data
             if pair.status == PairStatus.ACTIVE
         ]
+        reveal_contacts = bool(
+            live_partner_ids and current_status == MatchStatus.MATCHED
+        )
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, live_partner_ids
             )
-            if live_partner_ids and current_status == MatchStatus.MATCHED
+            if reveal_contacts
+            else {}
+        )
+        linkedin_by_user_id = (
+            await self._shared_linkedin_links(
+                session, round_id, pairs_data, live_partner_ids
+            )
+            if reveal_contacts
             else {}
         )
 
@@ -376,6 +389,7 @@ class ParticipationService:
                     first_name=p_user.first_name,
                     last_name=p_user.last_name,
                     primary_email=contact_by_user_id.get(p_user.user_id),
+                    linkedin_link=linkedin_by_user_id.get(p_user.user_id),
                     participant_role=ParticipantRole.MENTEE
                     if pair.mentor_id == uid
                     else ParticipantRole.MENTOR,
@@ -387,6 +401,43 @@ class ParticipationService:
         return MatchesDto(
             round_id=round_id, current_status=current_status, partners=partners
         )
+
+    async def _shared_linkedin_links(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        pairs_data: list,
+        live_partner_ids: list[int],
+    ) -> dict[int, str]:
+        """Profile LinkedIn links of the live partners who chose to share
+        them for this round, keyed by user id.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round the sharing choice belongs to.
+            pairs_data (list): (pair, partner user) tuples of the viewer.
+            live_partner_ids (list[int]): Partners in a live pair.
+
+        Returns:
+            dict[int, str]: Partner user id to LinkedIn link.
+        """
+        rows = (
+            await self.mentorship_round_participants_repo.list_by_round_id_and_user_ids(
+                session=session, round_id=round_id, user_ids=live_partner_ids
+            )
+        )
+        live = set(live_partner_ids)
+        sharing = {
+            row.user_id for row in rows if row.share_linkedin and row.user_id in live
+        }
+        links = {}
+        for _, p_user in pairs_data:
+            if p_user.user_id not in sharing:
+                continue
+            link = normalize_linkedin_profile_url(p_user.linkedin_link)
+            if link is not None:
+                links[p_user.user_id] = link
+        return links
 
     async def _is_round_announced(
         self, session: AsyncSession, round_id: int, now: datetime

@@ -741,6 +741,7 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             onboarding_training_service=self.onboarding_training_service,
             application_repository=self.application_repository,
+            users_repository=self.users_repository,
         )
         self.meeting_scheduling_service = MeetingSchedulingService(
             logger=self.logger,

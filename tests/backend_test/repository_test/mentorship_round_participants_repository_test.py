@@ -1057,6 +1057,41 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             (sorted([self.user.user_id, cid.user_id]), 2),
         )
 
+    async def test_list_by_round_id_and_user_ids_reads_the_named_users_in_the_round(
+        self,
+    ):
+        bob = self._make_user(first_name="Bob", email="bob@example.com")
+        cid = self._make_user(first_name="Cid", email="cid@example.com")
+        dee = self._make_user(first_name="Dee", email="dee@example.com")
+        await self.insert_entities([bob, cid, dee])
+        await self._register(self.user, bob, dee)
+        # Cid is registered only in the other round, so asking for him in
+        # round 0 must come back empty even though his user id is named.
+        await self._register(cid, round_index=1)
+
+        rows = await self.repo.list_by_round_id_and_user_ids(
+            self.session,
+            round_id=self.rounds[0].round_id,
+            user_ids=[bob.user_id, cid.user_id, dee.user_id],
+        )
+
+        self.assertEqual(
+            sorted((row.user_id, row.round_id) for row in rows),
+            sorted([
+                (bob.user_id, self.rounds[0].round_id),
+                (dee.user_id, self.rounds[0].round_id),
+            ]),
+        )
+
+    async def test_list_by_round_id_and_user_ids_with_no_users(self):
+        await self._register(self.user)
+
+        rows = await self.repo.list_by_round_id_and_user_ids(
+            self.session, round_id=self.rounds[0].round_id, user_ids=[]
+        )
+
+        self.assertEqual(rows, [])
+
     async def test_list_round_registrations_lists_the_round_only(self):
         bob = self._make_user(first_name="Bob", email="bob@example.com")
         await self.insert_entities([bob])
@@ -1349,11 +1384,12 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 status=status,
                 mentor_action_status=MentorActionStatus.CONFIRMED,
                 mentee_action_status=MenteeActionStatus.CONFIRMED,
-                recommendation_reason="test",
+                recommendation_reason=reason,
             )
-            for pair_id, mentee, status in (
-                (901, bea, PairStatus.ACTIVE),
-                (902, cid, PairStatus.INACTIVE),
+            # Pair 902 has an empty reason, as pairs made before the matcher do.
+            for pair_id, mentee, status, reason in (
+                (901, bea, PairStatus.ACTIVE, "Both build backend services."),
+                (902, cid, PairStatus.INACTIVE, ""),
             )
         ])
         now = datetime.now(timezone.utc)
@@ -1400,6 +1436,21 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual([p.pair_id for p in rows[1].pairs], [901])
         self.assertEqual([p.pair_id for p in rows[2].pairs], [902])
+
+    async def test_search_pairs_carry_their_match_reason(self):
+        await self._seed_mentor_with_two_mentees()
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(round_id=self.rounds[0].round_id),
+            limit=50,
+            offset=0,
+        )
+
+        self.assertEqual(
+            [(p.pair_id, p.recommendation_reason) for p in rows[0].pairs],
+            [(901, "Both build backend services."), (902, None)],
+        )
 
     async def test_search_pages_by_participant_not_by_pair(self):
         """A limit of 1 would have cut the mentor's rows in half when rows

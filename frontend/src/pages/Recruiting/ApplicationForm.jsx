@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
+import ApplicationNextStepsDialog from "@/pages/Recruiting/components/ApplicationNextStepsDialog";
 import { useAuth } from "@/context/auth/AuthContext.js";
 import {
   submitApplication,
@@ -121,6 +122,27 @@ const withFallback = (fromProfile, sent, blanks) => {
 };
 
 /**
+ * The line shown above an application that is in but still editable, so the
+ * form does not read as unsent. A first version says when it was submitted,
+ * a later one when it was last changed.
+ *
+ * @param {{current?: {version?: number, submittedAt?: string}}} existing
+ * @returns {string}
+ */
+const submittedNotice = (existing) => {
+  const at = existing.current?.submittedAt;
+  const verb = (existing.current?.version ?? 1) > 1 ? "Updated" : "Submitted";
+  const when = at
+    ? ` on ${new Date(at).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })}`
+    : "";
+  return `${verb}${when}. You can still edit your answers until we start reviewing it.`;
+};
+
+/**
  * Candidate application form for a published job. Owns the applicant's
  * profile/answers/resume state and submits it via `submitApplication`
  * (create) or `updateApplication` (edit, when `existing` is provided). Both
@@ -154,8 +176,16 @@ const withFallback = (fromProfile, sent, blanks) => {
  * only toasts a warning and never fails the submission -- `onSubmitted` still
  * fires.
  *
+ * A new application to a mentorship posting (an activity posting with a
+ * mentorship role) does not call `onSubmitted` straight away: it first
+ * explains what comes after applying, since admission alone gets nobody
+ * matched. That dialog leads to `onViewApplication` (falling back to
+ * `onSubmitted`) or to the Personal Dashboard. Edits and every other
+ * posting go straight to `onSubmitted`.
+ *
  * @param {{job: object, existing?: object, seed?: object, seedApplicationId?: number,
- *          onSubmitted: (app: object) => void}} props
+ *          onSubmitted: (app: object) => void,
+ *          onViewApplication?: () => void}} props
  */
 const ApplicationForm = ({
   job,
@@ -163,6 +193,7 @@ const ApplicationForm = ({
   seed,
   seedApplicationId,
   onSubmitted,
+  onViewApplication,
 }) => {
   const { user } = useAuth();
   const priorSubmission = existing?.current ?? seed ?? {};
@@ -202,6 +233,9 @@ const ApplicationForm = ({
   // asking whether to carry those changes over.
   const [pendingSync, setPendingSync] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // Set once a new mentorship application is in: `{app}` while the
+  // what-comes-next dialog is up.
+  const [nextStepsFor, setNextStepsFor] = useState(null);
   // Empty until the candidate tries to submit. Only ever cleared as fields are
   // fixed, never added to while typing, so a half-filled form does not turn
   // red under someone still working through it.
@@ -286,7 +320,9 @@ const ApplicationForm = ({
       await updateMyProfile(payload);
     } catch {
       toast.warning(
-        "Application submitted, but saving to your profile failed.",
+        existing
+          ? "Changes saved, but saving to your profile failed."
+          : "Application submitted, but saving to your profile failed.",
       );
     }
   };
@@ -381,9 +417,19 @@ const ApplicationForm = ({
       const res = existing
         ? await updateApplication(existing.id, base)
         : await submitApplication({ jobId: job.id, ...base });
-      toast.success("Application submitted.");
+      const submitted = res?.data ?? res;
+      const explainNextSteps =
+        !existing && job.kind === "activity" && Boolean(job.mentorshipRole);
+      // The dialog's own title says it was submitted; a toast would repeat it.
+      if (!explainNextSteps) {
+        toast.success(existing ? "Changes saved." : "Application submitted.");
+      }
       if (sync) await writeBackProfile();
-      onSubmitted(res?.data ?? res);
+      if (explainNextSteps) {
+        setNextStepsFor({ app: submitted });
+      } else {
+        onSubmitted(submitted);
+      }
     } catch (e) {
       if (ALREADY_APPLIED.test(e.message ?? "")) {
         // The application exists -- this is a create whose response was lost,
@@ -473,6 +519,14 @@ const ApplicationForm = ({
 
   return (
     <div className="space-y-4">
+      {existing && (
+        <p
+          role="status"
+          className="rounded-lg border bg-muted/40 px-4 py-3 text-sm"
+        >
+          {submittedNotice(existing)}
+        </p>
+      )}
       <PostingApplicantView
         title={job.title}
         questions={job.formSchema?.questions ?? []}
@@ -488,7 +542,11 @@ const ApplicationForm = ({
         existingResume={existingResume}
       />
       <Button onClick={submit} disabled={submitting || resumeUploading}>
-        {resumeUploading ? "Uploading résumé…" : "Submit application"}
+        {resumeUploading
+          ? "Uploading résumé…"
+          : existing
+            ? "Save changes"
+            : "Submit application"}
       </Button>
       <Dialog
         open={pendingSync !== null}
@@ -524,6 +582,16 @@ const ApplicationForm = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {nextStepsFor && (
+        <ApplicationNextStepsDialog
+          open
+          onViewApplication={() =>
+            onViewApplication
+              ? onViewApplication()
+              : onSubmitted(nextStepsFor.app)
+          }
+        />
+      )}
     </div>
   );
 };

@@ -16,6 +16,7 @@ import { Info } from "lucide-react";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import SurveyRadioQuestion from "@/pages/PersonalDashboard/components/SurveyRadioQuestion";
 import { userDisplayName } from "@/utils/userName";
+import { safeLinkedinUrl } from "@/utils/url";
 import {
   INDUSTRY_CONFIG,
   SKILLSET_CONFIG,
@@ -39,14 +40,10 @@ const PROFILE_CHECK_SESSION_KEY = "post-registration-profile-check-shown";
 const PROFILE_CHECK_TOAST_TITLE = "Double-check your profile";
 const PROFILE_CHECK_TOAST_MESSAGE =
   "We use your profile info to match you with the right partner — please make sure it's up to date in your Profile page.";
-// Mentors can still meet with their mentee while they finish training,
-// so the message is a soft nudge framed around quality of mentorship.
-const POST_REGISTRATION_MENTOR_MESSAGE =
-  "Complete the onboarding training in your Profile page to help you get started as a mentor.";
-// Mentees are gated by training: matching skips them if they haven't
-// completed it, so the message is explicit about the consequence.
-const POST_REGISTRATION_MENTEE_MESSAGE =
-  "You must complete the onboarding training in your Profile page to be eligible for mentor matching this round.";
+// Matching leaves out anyone, mentor or mentee, whose onboarding course for
+// their role is not done, so the message states the consequence.
+const POST_REGISTRATION_TOAST_MESSAGE =
+  "You must complete the onboarding training in your Profile page to be eligible for matching this round.";
 
 /**
  * MentorshipRegistrationDialog
@@ -68,6 +65,7 @@ const POST_REGISTRATION_MENTEE_MESSAGE =
  * @param {boolean} props.isLocked - Whether this role's window has closed,
  *   making the form read-only.
  * @param {(data: Object) => Promise<any>} props.onSave - Submits the registration.
+ * @param {string} [props.triggerClassName] - Extra classes for the trigger button.
  * @returns {JSX.Element}
  */
 export default function MentorshipRegistrationDialog({
@@ -80,6 +78,7 @@ export default function MentorshipRegistrationDialog({
   refreshRegistration,
   isLocked,
   onSave,
+  triggerClassName,
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -112,6 +111,10 @@ export default function MentorshipRegistrationDialog({
   const [targetRegionOther, setTargetRegionOther] = useState("");
   const [currentStage, setCurrentStage] = useState("");
   const [timeUrgency, setTimeUrgency] = useState("");
+  const [shareLinkedin, setShareLinkedin] = useState("");
+  const [linkedinLink, setLinkedinLink] = useState("");
+  // Whether the link came from the profile, which decides the helper text.
+  const [isLinkedinPrefilled, setIsLinkedinPrefilled] = useState(false);
   const [errors, setErrors] = useState({});
 
   const clearError = (field) =>
@@ -158,6 +161,9 @@ export default function MentorshipRegistrationDialog({
       setTargetRegionOther(formData.targetRegionOther);
       setCurrentStage(formData.currentStage);
       setTimeUrgency(formData.timeUrgency);
+      setShareLinkedin(formData.shareLinkedin);
+      setLinkedinLink(formData.linkedinLink);
+      setIsLinkedinPrefilled(Boolean(formData.linkedinLink));
     };
 
     // The server refuses a role the user was never admitted into, and a
@@ -228,6 +234,10 @@ export default function MentorshipRegistrationDialog({
       if (targetRegion === "other" && !targetRegionOther.trim())
         newErrors.targetRegionOther = "Please specify your target job market.";
     }
+    if (!shareLinkedin) newErrors.shareLinkedin = "This field is required.";
+    if (shareLinkedin === "yes" && !safeLinkedinUrl(linkedinLink))
+      newErrors.linkedinLink =
+        "Enter a linkedin.com link, like https://www.linkedin.com/in/your-name";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -256,6 +266,8 @@ export default function MentorshipRegistrationDialog({
         targetRegionOther,
         currentStage,
         timeUrgency,
+        shareLinkedin,
+        linkedinLink: safeLinkedinUrl(linkedinLink) ?? linkedinLink.trim(),
       },
       prefill ?? currentRegistration,
       role,
@@ -298,11 +310,7 @@ export default function MentorshipRegistrationDialog({
       showReminderToast({
         id: POST_REGISTRATION_TOAST_ID,
         title: POST_REGISTRATION_TOAST_TITLE,
-        message:
-          response?.data?.roundPreferences?.participantRole ===
-          MentorshipParticipantRoles.MENTOR
-            ? POST_REGISTRATION_MENTOR_MESSAGE
-            : POST_REGISTRATION_MENTEE_MESSAGE,
+        message: POST_REGISTRATION_TOAST_MESSAGE,
       });
     }
 
@@ -352,7 +360,11 @@ export default function MentorshipRegistrationDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="default" disabled={isPartnersLoading}>
+        <Button
+          variant="default"
+          disabled={isPartnersLoading}
+          className={triggerClassName}
+        >
           {isLocked
             ? "View Registration"
             : isUpdating
@@ -620,6 +632,82 @@ export default function MentorshipRegistrationDialog({
                 {(goal || "").length} / 300
               </div>
             </div>
+          </div>
+
+          {/* Sharing LinkedIn with the match */}
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-sm font-semibold">
+                Share your LinkedIn with your match?{" "}
+                <span className="text-destructive">*</span>
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Your match sees it with the matching results. No one else does.
+              </p>
+            </div>
+            <RadioGroup
+              disabled={isLocked}
+              value={shareLinkedin}
+              onValueChange={(val) => {
+                setShareLinkedin(val);
+                clearError("shareLinkedin");
+                if (val !== "yes") clearError("linkedinLink");
+              }}
+              className="flex flex-col gap-2"
+            >
+              {[
+                { id: "yes", label: "Yes" },
+                { id: "no", label: "No" },
+              ].map((opt) => (
+                <div key={opt.id} className="flex items-center space-x-2">
+                  <RadioGroupItem value={opt.id} id={`sl-${opt.id}`} />
+                  <Label
+                    htmlFor={`sl-${opt.id}`}
+                    className="font-normal cursor-pointer text-sm"
+                  >
+                    {opt.label}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+            {errors.shareLinkedin && (
+              <span className="text-destructive text-xs">
+                {errors.shareLinkedin}
+              </span>
+            )}
+            {shareLinkedin === "yes" && (
+              <div className="space-y-1">
+                <Label
+                  htmlFor="linkedin-link"
+                  className="text-sm font-semibold"
+                >
+                  Your LinkedIn profile link{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <input
+                  id="linkedin-link"
+                  type="url"
+                  disabled={isLocked}
+                  placeholder="https://www.linkedin.com/in/your-name"
+                  value={linkedinLink}
+                  onChange={(e) => {
+                    setLinkedinLink(e.target.value);
+                    clearError("linkedinLink");
+                  }}
+                  className={`w-full p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring${errors.linkedinLink ? " border-destructive" : ""}`}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {isLinkedinPrefilled
+                    ? "Filled in from your profile. Changes here are saved to your profile too."
+                    : "We'll also save it to your profile."}
+                </p>
+                {errors.linkedinLink && (
+                  <span className="text-destructive text-xs">
+                    {errors.linkedinLink}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Preference section hint */}

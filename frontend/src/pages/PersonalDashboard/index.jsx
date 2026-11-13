@@ -5,8 +5,8 @@ import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorship
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
 import MyApplicationsCard from "@/pages/PersonalDashboard/components/MyApplicationsCard";
 import { useMyApplications } from "@/hooks/useMyApplications";
-import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/useOnboardingTrainingReminder";
-import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
+import { useOnboardingTraining } from "@/pages/PersonalDashboard/hooks/useOnboardingTraining";
+import { isOnboardingDoneForRoles } from "@/utils/training";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { useLeaveApprovals } from "@/pages/Leave/hooks/useLeaveApprovals";
@@ -49,14 +49,16 @@ const PersonalDashboard = () => {
     !applicationsLoadError &&
     hiredMentorshipRoles.length > 0;
 
-  useOnboardingTrainingReminder({ enabled: showMentorshipSection });
+  const { training, isLoading: isTrainingLoading } = useOnboardingTraining({
+    enabled: showMentorshipSection,
+  });
 
   const {
+    regRoundId, // Round in the registration slot, or null
     registration, // Registration data for the current or most recent round
     isRegistrationOpen, // Whether the registration period is currently open
     registrationDeadlineAt, // Deadline the registration window is measured against
     regRoundName, // Display name of the round taking registrations
-    isFeedbackEnabled, // Whether the feedback phase is currently active
     registrationEntries, // One entry per role the user may register under, each with its own deadline
     registeredRole, // Role an existing registration settled on, or null
     loadRegistrationForRole, // Fetches one role's registration form prefill
@@ -81,14 +83,12 @@ const PersonalDashboard = () => {
     hiredMentorshipRoles,
   });
 
-  useRegistrationReminder({
-    enabled: showMentorshipSection,
-    isLoading: isMentorshipLoading,
-    isRegistered: Boolean(registration?.isRegistered),
-    isRegistrationOpen,
-    registrationDeadlineAt,
-    roundName: regRoundName,
-  });
+  // A registration settles which role's onboarding course counts; before
+  // that, every role the user was admitted as.
+  const isTrainingDone = isOnboardingDoneForRoles(
+    training,
+    registeredRole ? [registeredRole] : hiredMentorshipRoles,
+  );
 
   const { permissions } = useAuth();
   const canViewActivitySummary = permissions?.includes(
@@ -134,9 +134,15 @@ const PersonalDashboard = () => {
         <>
           {/* Mentorship information banner */}
           <MentorshipInfoBanner
+            isLoading={isMentorshipLoading || isTrainingLoading}
+            regRoundId={regRoundId}
+            regRoundName={regRoundName}
             registration={registration}
             isRegistrationOpen={isRegistrationOpen}
-            isFeedbackEnabled={isFeedbackEnabled}
+            registrationDeadlineAt={registrationDeadlineAt}
+            isTrainingDone={isTrainingDone}
+            roundSelectionData={roundSelectionData}
+            userTimezone={userTimezone}
             registrationEntries={registrationEntries}
             registeredRole={registeredRole}
             loadRegistrationForRole={loadRegistrationForRole}
@@ -159,6 +165,7 @@ const PersonalDashboard = () => {
             isParticipantCardLoading={isParticipantCardLoading}
             participantDetails={participantDetails}
             refreshMeetings={refreshMeetings}
+            isRegistrationOpen={isRegistrationOpen}
           />
         </>
       )}

@@ -8,7 +8,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { User, Mail, Sparkles } from "lucide-react";
+import { User, Mail, Sparkles, Linkedin } from "lucide-react";
+import { safeLinkedinUrl } from "@/utils/url";
 import { Button } from "@/components/ui/button";
 import { MatchStatus } from "@/constants/matchStatus";
 import { userDisplayName } from "@/utils/userName";
@@ -169,10 +170,25 @@ export default function MatchingResultDialog({
                           This pairing has ended.
                         </p>
                       ) : (
-                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <Mail className="h-3.5 w-3.5" />
-                          <span>{partner.primaryEmail}</span>
-                        </div>
+                        <>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Mail className="h-3.5 w-3.5" />
+                            <span>{partner.primaryEmail}</span>
+                          </div>
+                          {safeLinkedinUrl(partner.linkedinLink) && (
+                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                              <Linkedin className="h-3.5 w-3.5" />
+                              <a
+                                href={safeLinkedinUrl(partner.linkedinLink)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary underline-offset-4 hover:underline"
+                              >
+                                LinkedIn profile
+                              </a>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
