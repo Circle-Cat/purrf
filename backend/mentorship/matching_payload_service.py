@@ -265,13 +265,12 @@ class MatchingPayloadService:
     def _round_counts(
         self, user_id: int, registered: int, completed: int
     ) -> tuple[int, int]:
-        """Reconcile the two round counts so their difference stays meaningful.
+        """Keep the completed count from exceeding the participated one.
 
-        The matcher reads ``participated - completed`` as rounds that were
-        paired and then went nowhere, so a negative difference would report a
-        gap in our own records as somebody standing people up. It can only
-        arise where a historical round left a pair behind without a
-        registration row, which is a data gap worth saying out loud.
+        A round someone completed is a round they took part in, so completed
+        can never honestly be the larger. It only is where a historical round
+        left a pair behind without a registration row: report the completed
+        count for both, and log it, since that is a gap in our own records.
         """
         if registered < completed:
             self.logger.warning(

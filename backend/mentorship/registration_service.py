@@ -314,13 +314,16 @@ class RegistrationService:
             MentorshipRoundParticipantsEntity: The result of the upsert operation.
 
         Raises:
-            ConflictError: The user was withdrawn from this round.
+            ConflictError: The user has left this round (withdrawn or rejected).
         """
         entity = await self.participants_repo.get_by_user_id_and_round_id(
             session=session, user_id=user_id, round_id=round_id
         )
 
-        if entity is not None and entity.approval_status == ApprovalStatus.WITHDRAWN:
+        if entity is not None and entity.approval_status in (
+            ApprovalStatus.WITHDRAWN,
+            ApprovalStatus.REJECTED,
+        ):
             raise ConflictError(
                 "You have left this round, so your registration for it can no "
                 "longer be changed."

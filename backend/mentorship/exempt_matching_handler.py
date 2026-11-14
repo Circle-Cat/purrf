@@ -147,9 +147,9 @@ class ExemptMatchingHandler(ApprovalHandler):
         participant = await self.participants_repository.get_by_user_id_and_round_id(
             session, user_id, round_id
         )
-        if (
-            participant is not None
-            and participant.approval_status == ApprovalStatus.WITHDRAWN
+        if participant is not None and participant.approval_status in (
+            ApprovalStatus.WITHDRAWN,
+            ApprovalStatus.REJECTED,
         ):
             name = (await self._names(session, [user_id])).get(user_id)
             return [f"{name or f'User {user_id}'} has left this round."]

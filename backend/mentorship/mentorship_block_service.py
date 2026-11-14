@@ -2,9 +2,11 @@
 
 Called from the block kernel inside its transaction. Every pair the person
 has in a round under way ends and its meetings that have not started are
-cancelled; the person leaves those rounds; a partner left with no active pair
-goes from matched to un_matched. Each person gets a note by whoever applied
-the block, without the block's reason. Never commits.
+cancelled; the person is rejected from every round under way they registered
+for, paired or not and even if they had withdrawn, since being blocked
+outranks leaving; a partner left with no active pair goes from matched to
+un_matched. Each person gets a note by whoever applied the block, without the
+block's reason. Never commits.
 """
 
 from datetime import datetime, timezone
@@ -24,11 +26,13 @@ CALENDAR_REFUSED = (
     "so nobody was blocked. Some invites may already be cancelled; try again."
 )
 
-# The statuses someone is still in the round with.
-_WITHDRAWABLE = {
+# Every status a block overrides. Being blocked outranks having withdrawn, so
+# only an existing rejection is left as it is.
+_REJECTABLE = {
     ApprovalStatus.SIGNED_UP,
     ApprovalStatus.MATCHED,
     ApprovalStatus.UN_MATCHED,
+    ApprovalStatus.WITHDRAWN,
 }
 
 
@@ -71,7 +75,7 @@ class MentorshipBlockService:
         Returns:
             tuple[int, int]: (pairs, meetings).
         """
-        by_round = await self._active_pairs_by_round(session, user_id)
+        by_round = await self._rounds_under_way(session, user_id)
         pair_ids = [pair.pair_id for pairs in by_round.values() for pair in pairs]
         meetings = await self.meeting_service.count_upcoming_for_pairs(
             session, pair_ids
@@ -86,8 +90,8 @@ class MentorshipBlockService:
         actor_id: int,
         request_id: int | None = None,
     ) -> None:
-        """End the person's pairs in rounds under way and note it. Does not
-        commit.
+        """End the person's pairs in rounds under way, reject them from those
+        rounds and note it. Does not commit.
 
         Args:
             session (AsyncSession): The block's open session.
@@ -99,13 +103,14 @@ class MentorshipBlockService:
             ConflictError: Calendar refused to cancel a meeting (code
                 ``calendar_cancel_failed``); the caller rolls back.
         """
-        by_round = await self._active_pairs_by_round(session, user_id)
+        by_round = await self._rounds_under_way(session, user_id)
         if not by_round:
             return
-        for pairs in by_round.values():
-            for pair in pairs:
-                pair.status = PairStatus.INACTIVE
-        await session.flush()
+        ending = [pair for pairs in by_round.values() for pair in pairs]
+        for pair in ending:
+            pair.status = PairStatus.INACTIVE
+        if ending:
+            await session.flush()
 
         cancelled: dict[int, int] = {}
         try:
@@ -138,9 +143,28 @@ class MentorshipBlockService:
                 )
             )
             before = participant.approval_status if participant is not None else None
-            moved = before in _WITHDRAWABLE
+            moved = before in _REJECTABLE
             if moved:
-                participant.approval_status = ApprovalStatus.WITHDRAWN
+                participant.approval_status = ApprovalStatus.REJECTED
+            head = (
+                f"{before.value} -> {ApprovalStatus.REJECTED.value}: blocked."
+                if moved
+                else "Blocked."
+            )
+            if not pairs:
+                # Registered but never paired: only the status moves.
+                if moved:
+                    await self.note_repository.create(
+                        session,
+                        user_id=user_id,
+                        round_id=round_id,
+                        author_user_id=actor_id,
+                        body=head,
+                        tag=ParticipantNoteTag.STATUS_CHANGE,
+                        pair_id=None,
+                        request_id=request_id,
+                    )
+                continue
             unmatched = await unmatch_if_unpaired(
                 session,
                 participants_repository=self.participants_repository,
@@ -151,11 +175,6 @@ class MentorshipBlockService:
             ended = ", ".join(
                 f"{name(partner_of[pair.pair_id])} (pair {pair.pair_id})"
                 for pair in pairs
-            )
-            head = (
-                f"{before.value} -> {ApprovalStatus.WITHDRAWN.value}: blocked."
-                if moved
-                else "Blocked."
             )
             await self.note_repository.create(
                 session,
@@ -199,7 +218,9 @@ class MentorshipBlockService:
             actor_id,
         )
 
-    async def _active_pairs_by_round(self, session, user_id: int) -> dict[int, list]:
+    async def _rounds_under_way(self, session, user_id: int) -> dict[int, list]:
+        """Every round under way the person registered for, with their active
+        pairs there (possibly none)."""
         now = datetime.now(timezone.utc)
         rounds = (
             await self.participants_repository.list_registered_rounds_by_user_ids(
@@ -217,8 +238,7 @@ class MentorshipBlockService:
                 )
                 if pair.status == PairStatus.ACTIVE
             ]
-            if pairs:
-                found[round_.round_id] = pairs
+            found[round_.round_id] = pairs
         return found
 
     async def _names(self, session, user_ids) -> dict[int, str]:
