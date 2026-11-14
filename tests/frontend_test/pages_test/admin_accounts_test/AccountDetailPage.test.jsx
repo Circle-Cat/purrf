@@ -115,6 +115,9 @@ beforeEach(() => {
   api.getBlockPreflight.mockResolvedValue({
     data: { applicationCount: 0, interviewTimes: [] },
   });
+  api.getDeactivatePreflight.mockResolvedValue({
+    data: { mentorshipRounds: [], openApplicationCount: 0, interviewTimes: [] },
+  });
   api.deactivateAccount.mockResolvedValue({ data: null });
   api.reactivateAccount.mockResolvedValue({ data: null });
   api.unblockAccount.mockResolvedValue({ data: null });
@@ -522,9 +525,12 @@ describe("AccountDetailPage — actions", () => {
     fireEvent.change(screen.getByLabelText(/Note/), {
       target: { value: "Asked to leave Purrf" },
     });
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Deactivate" }).at(-1),
-    );
+    const confirm = screen
+      .getAllByRole("button", { name: "Deactivate" })
+      .at(-1);
+    // Held until the pre-flight says nothing stands in the way.
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
 
     await waitFor(() =>
       expect(api.deactivateAccount).toHaveBeenCalledWith(
@@ -532,6 +538,41 @@ describe("AccountDetailPage — actions", () => {
         "Asked to leave Purrf",
       ),
     );
+  });
+
+  it("reads the deactivate pre-flight when the dialog opens and holds the button while mentorship holds them", async () => {
+    api.getDeactivatePreflight.mockResolvedValue({
+      data: {
+        mentorshipRounds: [
+          {
+            roundId: 3,
+            roundName: "Spring 2026",
+            role: "mentor",
+            pairCount: 2,
+            withdrawPending: false,
+            endsAt: "2026-12-15T12:00:00Z",
+          },
+        ],
+        openApplicationCount: 0,
+        interviewTimes: [],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+
+    await waitFor(() =>
+      expect(api.getDeactivatePreflight).toHaveBeenCalledWith(1203),
+    );
+    expect(
+      await screen.findByText(
+        "Still in mentorship — cannot be deactivated yet",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Deactivate" }).at(-1),
+    ).toBeDisabled();
+    expect(api.getBlockPreflight).not.toHaveBeenCalled();
   });
 
   it("offers Reactivate instead once the account is off", async () => {

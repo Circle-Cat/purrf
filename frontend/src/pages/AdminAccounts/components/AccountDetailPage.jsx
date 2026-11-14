@@ -72,6 +72,9 @@ const AccountDetailPage = ({ userId }) => {
     preflight,
     preflightError,
     loadPreflight,
+    deactivatePreflight,
+    deactivatePreflightError,
+    loadDeactivatePreflight,
     submitting,
     deactivate,
     reactivate,
@@ -129,6 +132,11 @@ const AccountDetailPage = ({ userId }) => {
   const openBlockDialog = () => {
     setBlockOpen(true);
     loadPreflight();
+  };
+
+  const openDeactivateDialog = () => {
+    setDeactivateOpen(true);
+    loadDeactivatePreflight();
   };
 
   const handleDeactivate = async (note) => {
@@ -346,7 +354,7 @@ const AccountDetailPage = ({ userId }) => {
           {account.isActive ? (
             <Button
               variant="outline"
-              onClick={() => setDeactivateOpen(true)}
+              onClick={openDeactivateDialog}
               disabled={submitting || isSelf}
               title={
                 isSelf ? "You cannot deactivate your own account" : undefined
@@ -400,6 +408,8 @@ const AccountDetailPage = ({ userId }) => {
         open={deactivateOpen}
         onOpenChange={setDeactivateOpen}
         account={account}
+        preflight={deactivatePreflight}
+        preflightError={Boolean(deactivatePreflightError)}
         onConfirm={handleDeactivate}
         submitting={submitting}
       />

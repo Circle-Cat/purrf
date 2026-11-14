@@ -8,6 +8,7 @@ import {
   getAccountBlockRequests,
   getAccounts,
   getBlockPreflight,
+  getDeactivatePreflight,
   getPendingBlockRequests,
   getSignInMethods,
   reactivateAccount,
@@ -293,6 +294,9 @@ export const useAccountDetail = (userId) => {
   const [closedRequestsFailed, setClosedRequestsFailed] = useState(false);
   const [preflight, setPreflight] = useState(null);
   const [preflightError, setPreflightError] = useState(null);
+  const [deactivatePreflight, setDeactivatePreflight] = useState(null);
+  const [deactivatePreflightError, setDeactivatePreflightError] =
+    useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const { begin, isCurrent } = useRequestGuard();
@@ -427,6 +431,20 @@ export const useAccountDetail = (userId) => {
     }
   }, [userId]);
 
+  /** Read what stands in the way of deactivating. Called when its dialog opens. */
+  const loadDeactivatePreflight = useCallback(async () => {
+    setDeactivatePreflight(null);
+    setDeactivatePreflightError(null);
+    try {
+      const { data } = await getDeactivatePreflight(userId);
+      setDeactivatePreflight(data ?? null);
+    } catch (err) {
+      setDeactivatePreflightError(
+        err?.response?.data?.message ?? "Failed to load the pre-flight check",
+      );
+    }
+  }, [userId]);
+
   return {
     account,
     loading,
@@ -440,6 +458,9 @@ export const useAccountDetail = (userId) => {
     preflight,
     preflightError,
     loadPreflight,
+    deactivatePreflight,
+    deactivatePreflightError,
+    loadDeactivatePreflight,
     submitting,
     deactivate,
     reactivate,

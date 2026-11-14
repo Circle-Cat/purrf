@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { accountLabel } from "@/utils/userName";
+import DeactivatePreflight from "@/pages/AdminAccounts/components/DeactivatePreflight";
 
 /**
  * Confirm deactivating an account.
@@ -28,6 +29,11 @@ import { accountLabel } from "@/utils/userName";
  * @param {object|null} [props.account] The account being deactivated; named in
  *   the title when it resolves to something. Either a first/last pair or a
  *   single resolved `name`.
+ * @param {object|null} [props.preflight] DeactivatePreflightDto, or null
+ *   while it is loading or could not be read. Left out, no check is shown.
+ * @param {boolean} [props.preflightError] The pre-flight could not be read.
+ *   Deactivate stays available: the server refuses on its own if a
+ *   mentorship round still holds the person.
  * @param {Function} props.onConfirm Called with the trimmed note, or null when
  *   the note was left blank.
  * @param {boolean} [props.submitting] Disables both buttons while in flight.
@@ -37,6 +43,8 @@ const DeactivateDialog = ({
   open,
   onOpenChange,
   account,
+  preflight,
+  preflightError = false,
   onConfirm,
   submitting = false,
 }) => {
@@ -47,9 +55,12 @@ const DeactivateDialog = ({
   }, [open]);
 
   const name = accountLabel(account);
+  const checking = preflight === null && !preflightError;
+  const heldByMentorship = (preflight?.mentorshipRounds?.length ?? 0) > 0;
+  const blocked = submitting || checking || heldByMentorship;
 
   const handleConfirm = () => {
-    if (submitting) return;
+    if (blocked) return;
     onConfirm?.(note.trim() || null);
   };
 
@@ -69,6 +80,9 @@ const DeactivateDialog = ({
           <li>· Nothing is deleted; reactivating restores everything</li>
           <li>· Sign-in methods and emails are left untouched</li>
         </ul>
+        {preflight !== undefined && (
+          <DeactivatePreflight preflight={preflight} error={preflightError} />
+        )}
         <div className="space-y-1">
           <Label htmlFor="deactivate-note">
             Note — optional, kept with the record
@@ -88,7 +102,7 @@ const DeactivateDialog = ({
           >
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={submitting}>
+          <Button onClick={handleConfirm} disabled={blocked}>
             Deactivate
           </Button>
         </DialogFooter>

@@ -16,8 +16,8 @@ import {
  * about irreversibility is not conditional on them: it is true regardless of
  * how many rows the sweep turns out to reach.
  *
- * @param {{preflight: {applicationCount: number, interviewTimes: string[], mentorshipPairCount?: number, mentorshipMeetingCount?: number}|null, timezone?: string, error?: boolean}} props
- * @param {{applicationCount: number, interviewTimes: string[], mentorshipPairCount?: number, mentorshipMeetingCount?: number}|null} props.preflight
+ * @param {{preflight: {applicationCount: number, interviewTimes: string[], mentorshipPairCount?: number, mentorshipMeetingCount?: number, mentorshipRoundCount?: number}|null, timezone?: string, error?: boolean}} props
+ * @param {{applicationCount: number, interviewTimes: string[], mentorshipPairCount?: number, mentorshipMeetingCount?: number, mentorshipRoundCount?: number}|null} props.preflight
  *   Counts and dates from the preflight endpoint, or null while it is loading
  *   or could not be read.
  * @param {string} [props.timezone] Zone to render the interview times in.
@@ -35,6 +35,8 @@ const BlockPreflight = ({ preflight, timezone, error = false }) => {
   const interviewTimes = preflight?.interviewTimes ?? [];
   const pairCount = preflight?.mentorshipPairCount ?? 0;
   const meetingCount = preflight?.mentorshipMeetingCount ?? 0;
+  // Older pre-flights carry no round count; say nothing rather than "none".
+  const roundCount = preflight?.mentorshipRoundCount;
   const dates = interviewTimes
     .map((iso) => formatDateTimeWithZone(iso, tz))
     .filter(Boolean)
@@ -71,6 +73,15 @@ const BlockPreflight = ({ preflight, timezone, error = false }) => {
                       interviewTimes.length === 1 ? "interview" : "interviews"
                     } — ${dates}`}
               </li>
+              {roundCount !== undefined && (
+                <li>
+                  {roundCount === 0
+                    ? "· Reject them from no mentorship rounds — none in progress"
+                    : `· Reject them from ${roundCount} mentorship ${
+                        roundCount === 1 ? "round" : "rounds"
+                      } in progress, paired or not`}
+                </li>
+              )}
               <li>
                 {pairCount === 0
                   ? "· End no mentorship pairs — none in a round in progress"
