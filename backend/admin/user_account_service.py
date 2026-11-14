@@ -9,11 +9,16 @@ is the price of the two pages coexisting.
 Entry-point service: every write method commits its own transaction.
 """
 
+from datetime import datetime, timezone
+
 from backend.admin.block_service import BLOCK_USER, require_standing_over
+from backend.common.exceptions import ConflictError
 from backend.common.identity_type import IdentityType
 from backend.common.name_utils import display_name_or_id
+from backend.common.recruiting_enums import ApplicationStage
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.notification_management.event_recorder import record_event
+from backend.dto.block_dto import DeactivatePreflightDto
 from backend.dto.user_account_dto import (
     SignInEmailDto,
     SignInIdentityDto,
@@ -34,6 +39,43 @@ _STATUS_FILTERS: dict[str, tuple[bool | None, bool | None]] = {
     _STATUS_BLOCKED: (None, True),
 }
 
+# Applications in these stages are settled; the rest are still in flight.
+_SETTLED_STAGES = frozenset({
+    ApplicationStage.HIRED,
+    ApplicationStage.REJECTED,
+    ApplicationStage.BLACKLISTED,
+})
+
+
+def _still_in_mentorship(rounds) -> str:
+    """Why an account cannot be deactivated yet, naming each round."""
+
+    def one(round_):
+        details = [round_.role] if round_.role else []
+        if round_.pair_count:
+            noun = "pair" if round_.pair_count == 1 else "pairs"
+            details.append(f"{round_.pair_count} {noun}")
+        if round_.withdraw_pending:
+            details.append("withdrawal awaiting approval")
+        named = (
+            f"{round_.round_name} ({', '.join(details)})"
+            if details
+            else round_.round_name
+        )
+        return f"{named} until {round_.ends_at:%Y-%m-%d} UTC"
+
+    # Someone who finished their meetings needs no withdrawal -- recording
+    # one marks them as having quit -- so waiting is always offered.
+    if all(round_.withdraw_pending for round_ in rounds):
+        advice = "Wait for the withdrawal to be decided"
+    else:
+        advice = "Ask the mentorship admins to withdraw them"
+    return (
+        f"Still in mentorship: {'; '.join(one(r) for r in rounds)}. "
+        f"{advice}, or deactivate once those dates have passed."
+    )
+
+
 # The columns an operator can sort the list by. Newest accounts first is the
 # common question, and user_id is assigned in sign-up order.
 _SORTABLE = frozenset({"user_id"})
@@ -47,6 +89,9 @@ class UserAccountService:
         user_identities_repository,
         user_permissions_repository,
         approval_service,
+        application_repository,
+        application_interview_repository,
+        open_participation_service,
         logger,
     ):
         """
@@ -61,6 +106,13 @@ class UserAccountService:
                 whether the operator and target are permission admins.
             approval_service (ApprovalService): Reads the caller's pending
                 block requests to flag rows in the list.
+            application_repository (ApplicationRepository): The person's
+                applications, for the deactivate pre-flight.
+            application_interview_repository (ApplicationInterviewRepository):
+                Their interviews, for the deactivate pre-flight.
+            open_participation_service (OpenParticipationService): The
+                mentorship rounds still holding the person, which stop a
+                deactivation.
             logger (Logger): Injected logger.
         """
         self._users = users_repository
@@ -68,6 +120,9 @@ class UserAccountService:
         self._user_identities = user_identities_repository
         self._permissions = user_permissions_repository
         self._approvals = approval_service
+        self._applications = application_repository
+        self._interviews = application_interview_repository
+        self._mentorship = open_participation_service
         self._logger = logger
 
     async def list_accounts(
@@ -224,6 +279,13 @@ class UserAccountService:
         """
         Turn an account off at the user's own request. Commits.
 
+        Only the account is touched. A person still in a mentorship round
+        under way cannot be deactivated: the mentorship admins withdraw them
+        first, through the usual approval, so no partner is left paired with
+        someone who has gone. Recruiting does not stand in the way -- open
+        applications are the recruiter's to close, and the recruiting pages
+        show the account as deactivated.
+
         Args:
             session (AsyncSession): The active async database session.
             actor_id (int): The operator performing it.
@@ -236,6 +298,9 @@ class UserAccountService:
             PermissionError: If the operator is deactivating themselves, or
                 is deactivating a permission admin without being one (surfaces
                 as 403).
+            ConflictError: The person is still in a mentorship round under
+                way (code ``mentorship_open``, surfaces as 409); the message
+                names each round.
         """
         target = await self._require_user(session, user_id)
         if user_id == actor_id:
@@ -251,6 +316,9 @@ class UserAccountService:
             users_repository=self._users,
             user_permissions_repository=self._permissions,
         )
+        still_in = await self._mentorship.list_open(session, user_id)
+        if still_in:
+            raise ConflictError(_still_in_mentorship(still_in), code="mentorship_open")
         await self._users.deactivate(session, user_id, actor_id, note)
         await record_event(
             session,
@@ -287,6 +355,43 @@ class UserAccountService:
             details={},
         )
         await session.commit()
+
+    async def deactivate_preflight(
+        self, session, user_id: int
+    ) -> DeactivatePreflightDto:
+        """
+        What stands in the way of deactivating this account, and what it
+        leaves alone. Reads only.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The account about to be deactivated.
+
+        Returns:
+            DeactivatePreflightDto: The mentorship rounds still holding them,
+            and recruiting still in flight.
+
+        Raises:
+            ValueError: If no user exists with ``user_id`` (surfaces as 400).
+        """
+        await self._require_user(session, user_id)
+        rows = await self._applications.list_by_user(session, user_id)
+        open_ids = [
+            application.application_id
+            for application, _job in rows
+            if application.stage not in _SETTLED_STAGES
+        ]
+        interviews = await self._interviews.list_by_application_ids(session, open_ids)
+        now = datetime.now(timezone.utc)
+        return DeactivatePreflightDto(
+            mentorship_rounds=await self._mentorship.list_open(session, user_id),
+            open_application_count=len(open_ids),
+            interview_times=sorted(
+                interview.start_at
+                for interview in interviews
+                if interview.start_at > now
+            ),
+        )
 
     async def unblock(self, session, *, actor_id: int, user_id: int) -> None:
         """

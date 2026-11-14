@@ -178,5 +178,18 @@ def is_in_progress(r: MentorshipRoundEntity, now: datetime) -> bool:
         bool: True inside the window.
     """
     start = r.promotion_start_at
-    end = r.feedback_deadline_at or feedback_window(r).closes_at
+    end = in_progress_ends_at(r)
     return bool(start and end and start <= now <= end)
+
+
+def in_progress_ends_at(r: MentorshipRoundEntity) -> datetime | None:
+    """When the round stops being under way: the close of its feedback window.
+
+    Args:
+        r (MentorshipRoundEntity): The round.
+
+    Returns:
+        datetime | None: The close, or None when the round has neither close
+        date.
+    """
+    return r.feedback_deadline_at or feedback_window(r).closes_at

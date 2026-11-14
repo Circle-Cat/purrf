@@ -20,6 +20,8 @@ class BlockPreflightDto(BaseDto):
     # meetings that have not started.
     mentorship_pair_count: int = 0
     mentorship_meeting_count: int = 0
+    # Rounds under way the person is rejected from, including unpaired ones.
+    mentorship_round_count: int = 0
 
 
 class ReviewerOptionDto(BaseDto):
@@ -51,6 +53,32 @@ class BlockRequestDto(BaseDto):
     decided_by_name: str | None = None
     decided_at: datetime | None = None
     decision_note: str | None = None
+
+
+class OpenMentorshipRoundDto(BaseDto):
+    """A round under way someone is still in. While any is left, their account
+    cannot be deactivated."""
+
+    round_id: int
+    round_name: str
+    role: str | None
+    pair_count: int
+    # A request to withdraw them is waiting on a decision.
+    withdraw_pending: bool
+    # When the round stops holding them, so the account can be deactivated
+    # without a withdrawal by waiting.
+    ends_at: datetime
+
+
+class DeactivatePreflightDto(BaseDto):
+    """What stands in the way of deactivating an account, and what it leaves
+    alone. Mentorship rounds block it; open applications are reported only, so
+    the operator can tell recruiting."""
+
+    mentorship_rounds: list[OpenMentorshipRoundDto]
+    # Applications not yet hired or rejected, and their interviews still ahead.
+    open_application_count: int
+    interview_times: list[datetime]
 
 
 class DeactivateRequestDto(BaseRequestDto):
