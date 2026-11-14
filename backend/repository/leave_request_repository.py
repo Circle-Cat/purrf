@@ -96,6 +96,41 @@ class LeaveRequestRepository:
         )
         return list(result.scalars().all())
 
+    async def sum_pending_paid_hours_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, Decimal]:
+        """Total paid leave hours held by pending requests for each user.
+
+        Only paid requests still awaiting a decision reserve hours; sick leave,
+        holiday exchanges, and non-pending requests are excluded.
+
+        Args:
+            session: Active async session.
+            user_ids: Users to look up.
+
+        Returns:
+            A mapping from each requested user_id to their pending paid hours,
+            defaulting to ``Decimal("0.00")`` (never None) when none are waiting.
+            Returns ``{}`` when ``user_ids`` is empty.
+        """
+        if not user_ids:
+            return {}
+
+        result = await session.execute(
+            select(
+                LeaveRequestEntity.user_id,
+                func.sum(LeaveRequestEntity.hours),
+            )
+            .where(
+                LeaveRequestEntity.user_id.in_(user_ids),
+                LeaveRequestEntity.type == LeaveRequestType.PAID,
+                LeaveRequestEntity.status == LeaveRequestStatus.PENDING,
+            )
+            .group_by(LeaveRequestEntity.user_id)
+        )
+        totals = dict(result.all())
+        return {user_id: totals.get(user_id, Decimal("0.00")) for user_id in user_ids}
+
     async def sum_pending_paid_hours(
         self, session: AsyncSession, user_id: int
     ) -> Decimal:
@@ -117,16 +152,8 @@ class LeaveRequestRepository:
             The total, or ``0.00`` when nothing is waiting -- never None, since
             a balance subtracts this.
         """
-        result = await session.execute(
-            select(
-                func.coalesce(func.sum(LeaveRequestEntity.hours), Decimal("0.00"))
-            ).where(
-                LeaveRequestEntity.user_id == user_id,
-                LeaveRequestEntity.type == LeaveRequestType.PAID,
-                LeaveRequestEntity.status == LeaveRequestStatus.PENDING,
-            )
-        )
-        return result.scalar_one()
+        totals = await self.sum_pending_paid_hours_by_user_ids(session, [user_id])
+        return totals[user_id]
 
     async def list_for_user(
         self, session: AsyncSession, user_id: int
