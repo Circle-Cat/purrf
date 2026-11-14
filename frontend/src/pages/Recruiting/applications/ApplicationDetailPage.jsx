@@ -1830,6 +1830,15 @@ const ApplicationDetailPage = () => {
                 Blacklisted
               </Badge>
             )}
+            {detail.applicantIsDeactivated && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-100 text-amber-900"
+                title={termHint("tag.account_deactivated")}
+              >
+                Account deactivated
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
         </div>

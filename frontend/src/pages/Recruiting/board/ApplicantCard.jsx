@@ -25,6 +25,9 @@ import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
  * "Blacklisted", so the board doesn't look like it's flagging someone who
  * is no longer blocked.
  *
+ * "Account deactivated" is the account's live state too: deactivating leaves
+ * the application as it is, so this is how the recruiter finds out.
+ *
  * Behavioral and tech cards with an interviewer also say whether that
  * round's interview is booked (`interviewBooked`). The backend leaves it
  * unset on every other stage. With nobody assigned there is nothing to book
@@ -37,7 +40,8 @@ import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
  * @param {{
  *   card: {id: number, applicantName: string, applicantEmail: string,
  *     stage: string, subStatus: string|null, tags: object|null,
- *     appliedAt: string|null, isBlocked: boolean, reviewerName: string|null,
+ *     appliedAt: string|null, isBlocked: boolean, isDeactivated?: boolean,
+ *     reviewerName: string|null,
  *     interviewBooked?: boolean|null},
  *   showStatus: boolean,
  *   highlighted?: boolean,
@@ -100,7 +104,7 @@ const ApplicantCard = ({ card, showStatus, highlighted = false, onOpen }) => {
           )}
         </div>
       )}
-      {showColdFreeze || card.tags?.blacklisted ? (
+      {showColdFreeze || card.tags?.blacklisted || card.isDeactivated ? (
         <div className="flex flex-wrap gap-1">
           {showColdFreeze && (
             <Badge variant="secondary" title={termHint("tag.cold_freeze")}>
@@ -120,6 +124,15 @@ const ApplicantCard = ({ card, showStatus, highlighted = false, onOpen }) => {
                 Blacklist Lifted
               </Badge>
             ))}
+          {card.isDeactivated && (
+            <Badge
+              variant="outline"
+              className="border-amber-300 bg-amber-100 text-amber-900"
+              title={termHint("tag.account_deactivated")}
+            >
+              Account deactivated
+            </Badge>
+          )}
         </div>
       ) : null}
       {card.appliedAt && (

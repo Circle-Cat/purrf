@@ -1411,6 +1411,25 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.applicant_is_blocked)
 
+    async def test_get_application_detail_reports_a_deactivated_applicant(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        applicant.is_active = False
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        # Per id: the viewer is read through the same method and is active.
+        self._users_by_id({2: self._user(user_id=2), 3: applicant})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.applicant_is_deactivated)
+        self.assertFalse(result.applicant_is_blocked)
+
     async def test_get_application_detail_reports_an_applicant_who_is_not_blocked(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(application_id=10, job_id=1, user_id=3)

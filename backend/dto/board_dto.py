@@ -61,6 +61,9 @@ class BoardCardDto(BaseDto):
     # tags["blacklisted"], which just records that this application was
     # rejected by a blacklist action at some point and never changes after).
     is_blocked: bool = False
+    # Whether the applicant's account is deactivated. Deactivating leaves the
+    # application as it is, so the recruiter sees it here and closes it.
+    is_deactivated: bool = False
     # The interviewer responsible for this card's current stage+round, for
     # interview-stage cards only (None for e.g. applied/offer/hired/rejected
     # — the board never renders a reviewer line for those). None also means
@@ -120,6 +123,8 @@ class ApplicationDetailDto(BaseDto):
     # needs the live flag: it decides whether raising a block request is still
     # something to offer, and BlockService.raise_request refuses one either way.
     applicant_is_blocked: bool = False
+    # Whether the applicant's account is deactivated; see BoardCardDto.
+    applicant_is_deactivated: bool = False
     # A block request on the applicant waiting on a reviewer, whoever raised
     # it and from wherever: only its reviewer, never its reason or raiser.
     pending_block_request: PendingBlockRequestDto | None = None

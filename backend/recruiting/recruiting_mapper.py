@@ -220,6 +220,7 @@ class RecruitingMapper:
             applied_at=application.created_datetime,
             round=application.current_round,
             is_blocked=bool(user.is_blocked),
+            is_deactivated=user.is_active is False,
             reviewer_name=reviewer_name,
             interview_booked=interview_booked,
         )
