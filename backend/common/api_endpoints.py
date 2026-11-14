@@ -144,6 +144,9 @@ ADMIN_USER_SUPER_ADMIN_ENDPOINT = "/admin/users/{user_id}/super-admin"
 ADMIN_ACCOUNTS_ENDPOINT = "/admin/accounts"
 ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT = "/admin/accounts/{user_id}/sign-in-methods"
 ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/deactivate"
+ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT_ENDPOINT = (
+    "/admin/accounts/{user_id}/deactivate-preflight"
+)
 ADMIN_ACCOUNT_REACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/reactivate"
 ADMIN_ACCOUNT_UNBLOCK_ENDPOINT = "/admin/accounts/{user_id}/unblock"
 ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"

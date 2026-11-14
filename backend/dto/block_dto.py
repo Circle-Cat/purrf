@@ -55,6 +55,29 @@ class BlockRequestDto(BaseDto):
     decision_note: str | None = None
 
 
+class OpenMentorshipRoundDto(BaseDto):
+    """A round under way someone is still in. While any is left, their account
+    cannot be deactivated."""
+
+    round_id: int
+    round_name: str
+    role: str | None
+    pair_count: int
+    # A request to withdraw them is waiting on a decision.
+    withdraw_pending: bool
+
+
+class DeactivatePreflightDto(BaseDto):
+    """What stands in the way of deactivating an account, and what it leaves
+    alone. Mentorship rounds block it; open applications are reported only, so
+    the operator can tell recruiting."""
+
+    mentorship_rounds: list[OpenMentorshipRoundDto]
+    # Applications not yet hired or rejected, and their interviews still ahead.
+    open_application_count: int
+    interview_times: list[datetime]
+
+
 class DeactivateRequestDto(BaseRequestDto):
     """Deactivate an account. The note is optional: deactivation is not a
     finding of fault, unlike blocking."""

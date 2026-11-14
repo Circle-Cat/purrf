@@ -41,8 +41,10 @@ py_library(
     srcs = ["user_account_service.py"],
     deps = [
         ":block_service",
+        "//backend/common:exceptions",
         "//backend/common:identity_type",
         "//backend/common:name_utils",
+        "//backend/common:recruiting_enums",
         "//backend/common:user_enums",
         "//backend/dto",
         "//backend/notification_management:event_recorder",

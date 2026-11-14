@@ -1,10 +1,11 @@
-"""Blocking a mentor end to end against a real database.
+"""Blocking or deactivating a mentor end to end against a real database.
 
 Zed mentors Ann and Bo in Spring 2026, which is under way, and has an old pair
 with Old in Fall 2025, which is over. Blocking Zed ends the two Spring pairs,
 cancels their upcoming meetings, withdraws Zed from Spring and moves Ann and Bo
-to un_matched, while Fall and the bystanders Mo and Cy are left alone. Every id
-and name in the fixture is distinct."""
+to un_matched, while Fall and the bystanders Mo and Cy are left alone.
+Deactivating Zed is refused while Spring still holds Zed, and touches nothing
+in mentorship or recruiting. Every id and name in the fixture is distinct."""
 
 import unittest
 import uuid
@@ -15,7 +16,9 @@ from sqlalchemy import select
 
 from backend.admin.block_service import BlockService
 from backend.admin.block_user_handler import BlockUserHandler
+from backend.admin.user_account_service import UserAccountService
 from backend.approval.approval_service import ApprovalService
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     ApprovalStatus,
@@ -29,6 +32,7 @@ from backend.common.mentorship_enums import (
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_interview_entity import ApplicationInterviewEntity
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
@@ -40,6 +44,11 @@ from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: 
 from backend.entity.users_entity import UsersEntity
 from backend.mentorship.meeting_service import MeetingService
 from backend.mentorship.mentorship_block_service import MentorshipBlockService
+from backend.mentorship.open_participation_service import OpenParticipationService
+from backend.mentorship.withdraw_participant_handler import (
+    WITHDRAW_PARTICIPANT,
+    WithdrawParticipantHandler,
+)
 from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
 )
@@ -201,7 +210,13 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         application = ApplicationEntity(
             job_id=job.job_id, user_id=self.zed_id, stage=ApplicationStage.TECH
         )
-        await self.insert_entities([application])
+        hired_job = JobEntity(kind=JobKind.ACTIVITY, title="Zed hired flow job")
+        await self.insert_entities([hired_job])
+        self.hired = ApplicationEntity(
+            job_id=hired_job.job_id, user_id=self.zed_id, stage=ApplicationStage.HIRED
+        )
+        await self.insert_entities([application, self.hired])
+        self.application = application
         await self.insert_entities([
             ApplicationInterviewEntity(
                 application_id=application.application_id,
@@ -275,6 +290,34 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
             approvals,
             perms,
             mentorship_block_service=mentorship,
+            logger=logger,
+        )
+        participants = MentorshipRoundParticipantsRepository()
+        approvals.register(
+            WithdrawParticipantHandler(
+                participants,
+                pairs,
+                MagicMock(),
+                rounds,
+                self.notes,
+                users,
+                logger,
+            )
+        )
+        self.accounts = UserAccountService(
+            users,
+            MagicMock(),
+            MagicMock(),
+            perms,
+            approvals,
+            application_repository=applications,
+            application_interview_repository=interviews,
+            open_participation_service=OpenParticipationService(
+                participants_repository=participants,
+                pairs_repository=pairs,
+                approval_service=approvals,
+                logger=logger,
+            ),
             logger=logger,
         )
 
@@ -422,6 +465,82 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         self.assertEqual(view.mentorship_pair_count, 2)
         self.assertEqual(view.mentorship_meeting_count, 1)
         self.assertEqual(view.mentorship_round_count, 1)
+
+    # ---- deactivation ------------------------------------------------------
+
+    async def test_deactivation_is_refused_while_spring_holds_zed(self):
+        with self.assertRaises(ConflictError) as caught:
+            await self.accounts.deactivate(
+                self.session,
+                actor_id=self.operator_id,
+                user_id=self.zed_id,
+                note="Asked by email to close the account",
+            )
+        await self.session.rollback()
+
+        self.assertEqual(caught.exception.code, "mentorship_open")
+        self.assertIn("Spring 2026 (mentor, 2 pairs)", str(caught.exception))
+        await self._refresh_all()
+        self.assertTrue(self.zed.is_active)
+        self.assertIs(self.pair_ann.status, PairStatus.ACTIVE)
+        self.assertIs(self.zed_reg.approval_status, ApprovalStatus.MATCHED)
+
+    async def test_once_withdrawn_zed_is_deactivated_and_nothing_else_moves(self):
+        self.zed_reg.approval_status = ApprovalStatus.WITHDRAWN
+        await self.session.flush()
+
+        await self.accounts.deactivate(
+            self.session, actor_id=self.operator_id, user_id=self.zed_id, note=None
+        )
+
+        await self._refresh_all()
+        await self.session.refresh(self.hired)
+        await self.session.refresh(self.application)
+        self.assertFalse(self.zed.is_active)
+        # The account is all a deactivation touches.
+        self.assertIs(self.pair_ann.status, PairStatus.ACTIVE)
+        self.assertIs(self.ann_reg.approval_status, ApprovalStatus.MATCHED)
+        self.assertEqual(await self._meeting_ids(), ["g-ann-past", "g-ann-up"])
+        self.assertIs(self.hired.stage, ApplicationStage.HIRED)
+        self.assertIs(self.application.stage, ApplicationStage.TECH)
+        self.interviews_svc.cancel_for_round.assert_not_awaited()
+        self.assertEqual(
+            await self.notes.list_for_user_round(
+                self.session, self.zed_id, self.spring_id
+            ),
+            [],
+        )
+
+    async def test_the_deactivate_preflight_names_the_round_and_a_pending_withdrawal(
+        self,
+    ):
+        await self.insert_entities([
+            ApprovalRequestEntity(
+                action=WITHDRAW_PARTICIPANT,
+                target_type="round_participant",
+                target_id=f"{self.spring_id}:{self.zed_id}",
+                payload={"round_id": self.spring_id, "user_id": self.zed_id},
+                raised_by=self.raiser_id,
+                reason="Leaving the program",
+                reviewer_id=self.reviewer_id,
+                status=ApprovalRequestStatus.PENDING,
+            )
+        ])
+
+        view = await self.accounts.deactivate_preflight(self.session, self.zed_id)
+
+        (spring,) = view.mentorship_rounds
+        self.assertEqual(
+            (
+                spring.round_name,
+                spring.role,
+                spring.pair_count,
+                spring.withdraw_pending,
+            ),
+            ("Spring 2026", "mentor", 2, True),
+        )
+        self.assertEqual(view.open_application_count, 1)
+        self.assertEqual(len(view.interview_times), 1)
 
 
 if __name__ == "__main__":

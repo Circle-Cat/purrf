@@ -9,13 +9,16 @@ from backend.admin.user_account_controller import UserAccountController
 from backend.common.api_endpoints import (
     ADMIN_ACCOUNT_BLOCK_ENDPOINT,
     ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT,
+    ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT_ENDPOINT,
     ADMIN_ACCOUNT_REACTIVATE_ENDPOINT,
     ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT,
     ADMIN_ACCOUNT_UNBLOCK_ENDPOINT,
     ADMIN_ACCOUNTS_ENDPOINT,
 )
 from backend.common.fast_api_error_handler import register_exception_handlers
+from backend.common.exceptions import ConflictError
 from backend.common.permissions import SUPER_ADMIN_PERMISSIONS, Permission
+from backend.dto.block_dto import DeactivatePreflightDto, OpenMentorshipRoundDto
 from backend.dto.user_account_dto import UserSignInMethodsDto
 
 CALLER = 1
@@ -62,6 +65,7 @@ _ROUTES = [
     ("get", ADMIN_ACCOUNTS_ENDPOINT, None),
     ("get", ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT.format(user_id=TARGET), None),
     ("post", ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT.format(user_id=TARGET), {}),
+    ("get", ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT_ENDPOINT.format(user_id=TARGET), None),
     ("post", ADMIN_ACCOUNT_REACTIVATE_ENDPOINT.format(user_id=TARGET), None),
     ("post", ADMIN_ACCOUNT_UNBLOCK_ENDPOINT.format(user_id=TARGET), None),
     ("post", ADMIN_ACCOUNT_BLOCK_ENDPOINT.format(user_id=TARGET), {"reason": "r"}),
@@ -76,6 +80,21 @@ class TestUserAccountController(unittest.TestCase):
             return_value=UserSignInMethodsDto(emails=[], identities=[])
         )
         self.service.deactivate = AsyncMock(return_value=None)
+        self.service.deactivate_preflight = AsyncMock(
+            return_value=DeactivatePreflightDto(
+                mentorship_rounds=[
+                    OpenMentorshipRoundDto(
+                        round_id=3,
+                        round_name="Spring 2026",
+                        role="mentor",
+                        pair_count=2,
+                        withdraw_pending=True,
+                    )
+                ],
+                open_application_count=1,
+                interview_times=[],
+            )
+        )
         self.service.reactivate = AsyncMock(return_value=None)
         self.service.unblock = AsyncMock(return_value=None)
         self.blocks = MagicMock()
@@ -193,6 +212,43 @@ class TestUserAccountController(unittest.TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         self.assertIsNone(self.service.deactivate.await_args.kwargs["note"])
+
+    def test_deactivate_preflight_delegates(self):
+        resp = self._admin().get(
+            ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT_ENDPOINT.format(user_id=TARGET)
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertEqual(self.service.deactivate_preflight.await_args.args[1], TARGET)
+        data = resp.json()["data"]
+        self.assertEqual(data["openApplicationCount"], 1)
+        self.assertEqual(
+            data["mentorshipRounds"],
+            [
+                {
+                    "roundId": 3,
+                    "roundName": "Spring 2026",
+                    "role": "mentor",
+                    "pairCount": 2,
+                    "withdrawPending": True,
+                }
+            ],
+        )
+
+    def test_still_in_mentorship_is_a_409_with_its_code(self):
+        self.service.deactivate = AsyncMock(
+            side_effect=ConflictError(
+                "Still in mentorship: Spring 2026.", code="mentorship_open"
+            )
+        )
+
+        resp = self._admin().post(
+            ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT.format(user_id=TARGET), json={}
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.CONFLICT)
+        self.assertIn("Still in mentorship", resp.text)
+        self.assertIn("mentorship_open", resp.text)
 
     def test_reactivate_delegates(self):
         resp = self._admin().post(

@@ -1,10 +1,14 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from backend.admin.user_account_service import UserAccountService
 from backend.admin.block_service import BLOCK_USER
 from backend.common.approval_enums import ApprovalRequestStatus
+from backend.common.exceptions import ConflictError
+from backend.common.recruiting_enums import ApplicationStage
+from backend.dto.block_dto import OpenMentorshipRoundDto
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
@@ -41,6 +45,24 @@ def _user(user_id, *, first="Yanpei", last="Wang", preferred=None, **flags):
     return row
 
 
+def _application(application_id, stage):
+    return SimpleNamespace(application_id=application_id, stage=stage)
+
+
+def _interview(start_at):
+    return SimpleNamespace(start_at=start_at)
+
+
+def _open_round(name="Spring 2026", role="mentor", pairs=2, pending=False):
+    return OpenMentorshipRoundDto(
+        round_id=7,
+        round_name=name,
+        role=role,
+        pair_count=pairs,
+        withdraw_pending=pending,
+    )
+
+
 def _pending(request_id, target_user_id, reviewer_id):
     row = ApprovalRequestEntity(
         action=BLOCK_USER,
@@ -62,6 +84,10 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.user_emails = AsyncMock()
         self.user_identities = AsyncMock()
         self.approvals = AsyncMock()
+        self.applications = AsyncMock()
+        self.interviews = AsyncMock()
+        self.mentorship = AsyncMock()
+        self.mentorship.list_open.return_value = []
         self.user_permissions = AsyncMock()
         self.grants: dict[int, set[str]] = {}
         self.user_permissions.get_active_permission_names.side_effect = (
@@ -79,6 +105,9 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             user_identities_repository=self.user_identities,
             user_permissions_repository=self.user_permissions,
             approval_service=self.approvals,
+            application_repository=self.applications,
+            application_interview_repository=self.interviews,
+            open_participation_service=self.mentorship,
             logger=self.logger,
         )
         self.session = AsyncMock()
@@ -95,6 +124,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             )
 
         self.users.deactivate.assert_not_awaited()
+        self.mentorship.list_open.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
     async def test_deactivate_unknown_user_raises(self):
@@ -118,6 +148,75 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             self.session, TARGET, ME, "requested by email"
         )
         self.session.commit.assert_awaited_once()
+
+    async def test_deactivation_is_refused_while_a_mentorship_round_holds_them(self):
+        self.users.get_user_by_user_id.return_value = _user(TARGET)
+        self.mentorship.list_open.return_value = [
+            _open_round(),
+            _open_round("Summer 2026", "mentee", pairs=0, pending=True),
+        ]
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.deactivate(
+                self.session, actor_id=ME, user_id=TARGET, note=None
+            )
+
+        self.assertEqual(caught.exception.code, "mentorship_open")
+        self.assertEqual(
+            str(caught.exception),
+            "Still in mentorship: Spring 2026 (mentor, 2 pairs); "
+            "Summer 2026 (mentee, withdrawal awaiting approval). "
+            "Ask the mentorship admins to withdraw them first.",
+        )
+        self.mentorship.list_open.assert_awaited_once_with(self.session, TARGET)
+        self.users.deactivate.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_one_pair_is_singular_and_a_missing_role_is_left_out(self):
+        self.users.get_user_by_user_id.return_value = _user(TARGET)
+        self.mentorship.list_open.return_value = [_open_round(role=None, pairs=1)]
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.deactivate(
+                self.session, actor_id=ME, user_id=TARGET, note=None
+            )
+
+        self.assertIn("Spring 2026 (1 pair).", str(caught.exception))
+
+    async def test_preflight_names_the_rounds_and_reports_recruiting(self):
+        self.users.get_user_by_user_id.return_value = _user(TARGET)
+        self.mentorship.list_open.return_value = [_open_round()]
+        self.applications.list_by_user.return_value = [
+            (_application(1, ApplicationStage.HIRED), None),
+            (_application(2, ApplicationStage.REJECTED), None),
+            (_application(3, ApplicationStage.TECH), None),
+            (_application(4, ApplicationStage.APPLIED), None),
+        ]
+        now = datetime.now(timezone.utc)
+        soon, later = now + timedelta(days=1), now + timedelta(days=3)
+        self.interviews.list_by_application_ids.return_value = [
+            _interview(later),
+            _interview(now - timedelta(days=1)),
+            _interview(soon),
+        ]
+
+        view = await self.service.deactivate_preflight(self.session, TARGET)
+
+        self.assertEqual(view.mentorship_rounds, [_open_round()])
+        self.interviews.list_by_application_ids.assert_awaited_once_with(
+            self.session, [3, 4]
+        )
+        self.assertEqual(view.open_application_count, 2)
+        self.assertEqual(view.interview_times, [soon, later])
+
+    async def test_preflight_unknown_user_raises(self):
+        self.users.get_user_by_user_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.deactivate_preflight(self.session, 999999)
+
+        self.applications.list_by_user.assert_not_awaited()
+        self.mentorship.list_open.assert_not_awaited()
 
     def _seed_people(self, *people):
         by_id = {row.user_id: row for row in people}
