@@ -272,6 +272,24 @@ class TestRecruitingMapper(unittest.TestCase):
 
         self.assertFalse(dto.is_blocked)
 
+    def _card_for(self, **user_flags):
+        application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", **user_flags)
+        user.user_id = 2
+        return self.mapper.to_board_card_dto(application, user)
+
+    def test_to_board_card_dto_is_deactivated_for_a_deactivated_account(self):
+        self.assertTrue(self._card_for(is_active=False).is_deactivated)
+
+    def test_to_board_card_dto_is_not_deactivated_for_an_active_account(self):
+        self.assertFalse(self._card_for(is_active=True).is_deactivated)
+
+    def test_to_board_card_dto_is_not_deactivated_when_the_flag_is_unset(self):
+        self.assertFalse(self._card_for().is_deactivated)
+
     def test_to_job_dto_includes_reviewer_id_when_provided(self):
         job = self._make_job_entity(status=JobStatus.PENDING_REVIEW)
         dto = self.mapper.to_job_dto(job, reviewer_id=7)

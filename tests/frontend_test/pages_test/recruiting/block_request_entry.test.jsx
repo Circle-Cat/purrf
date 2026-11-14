@@ -666,11 +666,23 @@ describe("Request block — the applicant is already blocked", () => {
     expect(screen.getByText("Blacklisted")).toBeInTheDocument();
   });
 
+  it("marks an applicant whose account is deactivated", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: { ...makeDetail(), applicantIsDeactivated: true },
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Account deactivated")).toBeInTheDocument();
+    expect(screen.queryByText("Blacklisted")).not.toBeInTheDocument();
+  });
+
   it("leaves an applicant who is not blocked unmarked and still blockable", async () => {
     renderPage();
     await waitLoaded();
 
     expect(screen.queryByText("Blacklisted")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account deactivated")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
   });
 });
