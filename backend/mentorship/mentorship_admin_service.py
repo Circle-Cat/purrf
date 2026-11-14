@@ -408,12 +408,40 @@ class MentorshipAdminService:
             if filters.needs_exemption
             else {}
         )
+
+        notes = await self.note_repository.list_tagged(
+            session,
+            sorted({row.user_id for row in rows}),
+            [
+                ParticipantNoteTag.NO_SHOW,
+                ParticipantNoteTag.RED_FLAG,
+                ParticipantNoteTag.MATCHING_EXEMPTION,
+            ],
+        )
+
+        # Find the latest exemption for each person in each round.
+        latest_exemptions = {}
+        for note in notes:
+            if note.tag != ParticipantNoteTag.MATCHING_EXEMPTION:
+                continue
+
+            key = (note.user_id, note.round_id)
+            latest = latest_exemptions.get(key)
+            if latest is None or note.created_at > latest:
+                latest_exemptions[key] = note.created_at
+
+        # Count only marks after the latest exemption in the same round.
+        mark_tags = {
+            ParticipantNoteTag.NO_SHOW,
+            ParticipantNoteTag.RED_FLAG,
+        }
         marked = Counter(
             (note.user_id, note.round_id, note.tag)
-            for note in await self.note_repository.list_tagged(
-                session,
-                sorted({row.user_id for row in rows}),
-                [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+            for note in notes
+            if note.tag in mark_tags
+            and (
+                (note.user_id, note.round_id) not in latest_exemptions
+                or note.created_at > latest_exemptions[(note.user_id, note.round_id)]
             )
         )
 
@@ -449,6 +477,7 @@ class MentorshipAdminService:
                         for f in findings.get(row.user_id, [])
                     ],
                     exemption_request=requests.get(row.user_id),
+                    exempted=(row.user_id, row.round_id) in latest_exemptions,
                     marks=MarkCountsDto(
                         no_show=marked[
                             (row.user_id, row.round_id, ParticipantNoteTag.NO_SHOW)
