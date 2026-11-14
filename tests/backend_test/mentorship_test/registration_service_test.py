@@ -336,34 +336,39 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, entity=existing_entity
         )
 
-    async def test_update_user_round_preferences_refuses_a_withdrawn_registration(
+    async def test_update_user_round_preferences_refuses_a_registration_that_left(
         self,
     ):
-        """Someone withdrawn from the round cannot edit their way back in."""
-        existing_entity = MentorshipRoundParticipantsEntity(
-            user_id=self.user_id,
-            round_id=self.mock_round_id,
-            participant_role=ParticipantRole.MENTOR,
-            approval_status=ApprovalStatus.WITHDRAWN,
-            goal="Old goal",
-        )
-        self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
-            existing_entity
-        )
-        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
-        self.sample_dto.round_preferences.goal = "New goal"
+        """Someone withdrawn or rejected (blocked) cannot edit their way back in."""
+        for status in (ApprovalStatus.WITHDRAWN, ApprovalStatus.REJECTED):
+            with self.subTest(status=status):
+                self.mock_participants_repo.upsert_participant.reset_mock()
+                existing_entity = MentorshipRoundParticipantsEntity(
+                    user_id=self.user_id,
+                    round_id=self.mock_round_id,
+                    participant_role=ParticipantRole.MENTOR,
+                    approval_status=status,
+                    goal="Old goal",
+                )
+                self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
+                    existing_entity
+                )
+                self.sample_dto.round_preferences.participant_role = (
+                    ParticipantRole.MENTOR
+                )
+                self.sample_dto.round_preferences.goal = "New goal"
 
-        with self.assertRaises(ConflictError) as ctx:
-            await self.service._update_user_round_preferences(
-                session=self.mock_session,
-                user_id=self.user_id,
-                round_id=self.mock_round_id,
-                data=self.sample_dto,
-            )
+                with self.assertRaises(ConflictError) as ctx:
+                    await self.service._update_user_round_preferences(
+                        session=self.mock_session,
+                        user_id=self.user_id,
+                        round_id=self.mock_round_id,
+                        data=self.sample_dto,
+                    )
 
-        self.assertIn("left this round", str(ctx.exception))
-        self.assertEqual(existing_entity.goal, "Old goal")
-        self.mock_participants_repo.upsert_participant.assert_not_called()
+                self.assertIn("left this round", str(ctx.exception))
+                self.assertEqual(existing_entity.goal, "Old goal")
+                self.mock_participants_repo.upsert_participant.assert_not_called()
 
     async def test_update_registration_info_success(self):
         """Test: Post registration info, containing updated global and round preferences."""

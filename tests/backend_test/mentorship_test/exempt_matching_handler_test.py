@@ -90,19 +90,23 @@ class ExemptMatchingHandlerTest(unittest.IsolatedAsyncioTestCase):
             participants_repository=self.participants,
         )
 
-    async def test_someone_withdrawn_from_the_round_is_refused_by_name(self):
-        self.participants.get_by_user_id_and_round_id.return_value = SimpleNamespace(
-            approval_status=ApprovalStatus.WITHDRAWN
-        )
+    async def test_someone_who_left_the_round_is_refused_by_name(self):
+        # Withdrawn asked to leave; rejected was blocked. Neither is exempted.
+        for status in (ApprovalStatus.WITHDRAWN, ApprovalStatus.REJECTED):
+            with self.subTest(status=status):
+                self.eligibility.needs_exemption.reset_mock()
+                self.participants.get_by_user_id_and_round_id.return_value = (
+                    SimpleNamespace(approval_status=status)
+                )
 
-        with self.assertRaises(ConflictError) as caught:
-            await self._check()
-        self.assertEqual(str(caught.exception), "Ann Lee has left this round.")
-        self.eligibility.needs_exemption.assert_not_awaited()
-        self.assertEqual(
-            await self.handler.problems_at_approval(self.session, _request()),
-            ["Ann Lee has left this round."],
-        )
+                with self.assertRaises(ConflictError) as caught:
+                    await self._check()
+                self.assertEqual(str(caught.exception), "Ann Lee has left this round.")
+                self.eligibility.needs_exemption.assert_not_awaited()
+                self.assertEqual(
+                    await self.handler.problems_at_approval(self.session, _request()),
+                    ["Ann Lee has left this round."],
+                )
 
     async def _check(self, target=None, payload=None):
         await self.handler.check_raise(
