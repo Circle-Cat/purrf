@@ -183,6 +183,7 @@ export const useParticipantSearch = (
   const [listed, setListed] = useState({ notRegistered: false, rows: [] });
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [searchSucceeded, setSearchSucceeded] = useState(false);
 
   const [userId, setUserId] = useState(committedUserId);
   const [q, setQ] = useState(committedQ);
@@ -308,9 +309,13 @@ export const useParticipantSearch = (
         setListed({ notRegistered, rows: [] });
         setTotal(0);
         setLoading(false);
+        setSearchSucceeded(false);
         return;
       }
-      if (!silent) setLoading(true);
+      if (!silent) {
+        setLoading(true);
+        setSearchSucceeded(false);
+      }
       const person = {
         userId: committedUserId || undefined,
         q: committedQ || undefined,
@@ -345,6 +350,7 @@ export const useParticipantSearch = (
               approvalStatus: committedApproval || undefined,
             });
         if (!isCurrent(seq)) return;
+        setSearchSucceeded(true);
         setListed({
           notRegistered,
           rows: (notRegistered ? data.rows : data.participantRows) ?? [],
@@ -368,6 +374,7 @@ export const useParticipantSearch = (
       } catch (err) {
         if (!isCurrent(seq)) return;
         if (silent) return;
+        setSearchSucceeded(false);
         toast.error(
           err?.response?.data?.message ?? "Failed to load participants",
         );
@@ -638,6 +645,7 @@ export const useParticipantSearch = (
     rows: listed.notRegistered === notRegistered ? listed.rows : [],
     total,
     loading,
+    searchSucceeded,
     hasSearched,
     canSearch,
     refetch: () => fetchRows({ silent: true }),
