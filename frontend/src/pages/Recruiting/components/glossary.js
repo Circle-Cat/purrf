@@ -138,6 +138,10 @@ export const GLOSSARY = {
     label: "Blacklisted",
     hint: "This applicant is currently blocked from every posting and from using Purrf at all. The tag can appear even if nobody was blacklisted from this posting, because blacklisting sweeps every posting the person has applied to.",
   },
+  "tag.account_deactivated": {
+    label: "Account deactivated",
+    hint: "This applicant's Purrf account is deactivated, usually because they asked to stop using it. The application is left as it is; close it if they are not continuing.",
+  },
   "tag.blacklist_lifted": {
     label: "Blacklist Lifted",
     hint: "This applicant was blacklisted and has since been unblocked, so they are not blocked now.",
