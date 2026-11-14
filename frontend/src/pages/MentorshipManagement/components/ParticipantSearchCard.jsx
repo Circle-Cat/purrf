@@ -388,6 +388,7 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
     total,
     loading,
     hasSearched,
+    searchSucceeded,
     canSearch,
     userId,
     setUserId,
@@ -759,6 +760,15 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
             ...notificationsColumns,
           ]
         : [...notifySelect, ...COLUMNS, ...notificationsColumns];
+  const showNeedsExemptionEmpty =
+    listNeedsExemption &&
+    needsExemption &&
+    hasSearched &&
+    canSearch &&
+    !filtersEdited &&
+    !loading &&
+    searchSucceeded &&
+    total === 0;
 
   return (
     <Card className="mt-6 border-gray-200">
@@ -987,6 +997,21 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
           </Button>
         </div>
 
+        {listNeedsExemption && (
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <p>
+              Listed only when history is the one thing keeping them out of
+              matching: they are taking part this round (not withdrawn), have
+              finished onboarding training and still have an open pairing slot.
+            </p>
+            <p className="mt-2">
+              History means: left a pair early or fell short of meetings in
+              their last paired round, or a no show / red flag since their last
+              exemption.
+            </p>
+          </div>
+        )}
+
         {!hasSearched || !canSearch ? (
           <p className="text-sm text-muted-foreground">
             Set filters and click Search to see participants.
@@ -1019,6 +1044,18 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
               sortColumn={activeSortAccessor}
               sortDirection={order}
             />
+
+            {showNeedsExemptionEmpty && (
+              <div className="mt-3 text-sm text-muted-foreground">
+                <p>No one in this round needs an exemption.</p>
+                <p className="mt-1">
+                  Someone with a no show or red flag who is not here has
+                  withdrawn, is already paired this round, or has not finished
+                  training.
+                </p>
+              </div>
+            )}
+
             <div className="participant-search-pager mt-3 flex items-center justify-between gap-2 text-sm text-muted-foreground">
               <Button
                 variant="outline"
