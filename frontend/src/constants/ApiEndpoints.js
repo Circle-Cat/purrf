@@ -113,6 +113,8 @@ export const API_ENDPOINTS = {
   ADMIN_ACCOUNT_SIGN_IN_METHODS: (userId) =>
     `/admin/accounts/${userId}/sign-in-methods`,
   ADMIN_ACCOUNT_DEACTIVATE: (userId) => `/admin/accounts/${userId}/deactivate`,
+  ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT: (userId) =>
+    `/admin/accounts/${userId}/deactivate-preflight`,
   ADMIN_ACCOUNT_REACTIVATE: (userId) => `/admin/accounts/${userId}/reactivate`,
   ADMIN_ACCOUNT_UNBLOCK: (userId) => `/admin/accounts/${userId}/unblock`,
   ADMIN_ACCOUNT_BLOCK: (userId) => `/admin/accounts/${userId}/block`,

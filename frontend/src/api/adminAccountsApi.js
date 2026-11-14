@@ -37,6 +37,13 @@ export const getSignInMethods = (userId) =>
 export const deactivateAccount = (userId, note) =>
   request.post(API_ENDPOINTS.ADMIN_ACCOUNT_DEACTIVATE(userId), { note });
 
+/**
+ * What stands in the way of deactivating an account: the mentorship rounds
+ * still holding the person, and open applications left for the recruiter.
+ */
+export const getDeactivatePreflight = (userId) =>
+  request.get(API_ENDPOINTS.ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT(userId));
+
 /** Undo a deactivation. */
 export const reactivateAccount = (userId) =>
   request.post(API_ENDPOINTS.ADMIN_ACCOUNT_REACTIVATE(userId));

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
 import DeactivateDialog from "@/pages/AdminAccounts/components/DeactivateDialog";
 import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
+import DeactivatePreflight from "@/pages/AdminAccounts/components/DeactivatePreflight";
 
 const holder = (userId) => ({ userId, name: `Holder ${userId}` });
 
@@ -17,6 +18,23 @@ const preflight = (
   interviewTimes,
   mentorshipPairCount,
   mentorshipMeetingCount,
+});
+
+const spring = (overrides = {}) => ({
+  roundId: 3,
+  roundName: "Spring 2026",
+  role: "mentor",
+  pairCount: 2,
+  withdrawPending: false,
+  endsAt: "2026-12-15T12:00:00Z",
+  ...overrides,
+});
+
+const deactivatePreflight = (overrides = {}) => ({
+  mentorshipRounds: [],
+  openApplicationCount: 0,
+  interviewTimes: [],
+  ...overrides,
 });
 
 const account = {
@@ -356,6 +374,50 @@ describe("BlockPreflight", () => {
     ).toBeInTheDocument();
   });
 
+  it("says how many mentorship rounds the person is rejected from", () => {
+    render(
+      <BlockPreflight
+        preflight={{ ...preflight(0, []), mentorshipRoundCount: 2 }}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "· Reject them from 2 mentorship rounds in progress, paired or not",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the singular and says when there is no round to reject them from", () => {
+    const { rerender } = render(
+      <BlockPreflight
+        preflight={{ ...preflight(0, []), mentorshipRoundCount: 1 }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "· Reject them from 1 mentorship round in progress, paired or not",
+      ),
+    ).toBeInTheDocument();
+
+    rerender(
+      <BlockPreflight
+        preflight={{ ...preflight(0, []), mentorshipRoundCount: 0 }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "· Reject them from no mentorship rounds — none in progress",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("states no round count it was not given", () => {
+    render(<BlockPreflight preflight={preflight(0, [])} />);
+
+    expect(screen.queryByText(/Reject them from/)).toBeNull();
+  });
+
   it("says which mentorship pairs end and how many meetings go", () => {
     render(<BlockPreflight preflight={preflight(0, [], 2, 3)} />);
 
@@ -437,6 +499,58 @@ describe("DeactivateDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("cannot be confirmed while a mentorship round still holds them", () => {
+    render(
+      <DeactivateDialog
+        open
+        account={account}
+        onConfirm={() => {}}
+        preflight={deactivatePreflight({ mentorshipRounds: [spring()] })}
+      />,
+    );
+
+    expect(screen.getByTestId("deactivate-preflight")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deactivate" })).toBeDisabled();
+  });
+
+  it("can be confirmed once nothing holds them", () => {
+    render(
+      <DeactivateDialog
+        open
+        account={account}
+        onConfirm={() => {}}
+        preflight={deactivatePreflight()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Deactivate" })).toBeEnabled();
+  });
+
+  it("waits for the check before it can be confirmed, but not if the check failed", () => {
+    const { rerender } = render(
+      <DeactivateDialog
+        open
+        account={account}
+        onConfirm={() => {}}
+        preflight={null}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Deactivate" })).toBeDisabled();
+
+    // The server refuses on its own, so a failed check must not trap the
+    // operator.
+    rerender(
+      <DeactivateDialog
+        open
+        account={account}
+        onConfirm={() => {}}
+        preflight={null}
+        preflightError
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Deactivate" })).toBeEnabled();
+  });
+
   it("passes the note through trimmed", async () => {
     const onConfirm = vi.fn();
     const user = userEvent.setup();
@@ -449,5 +563,124 @@ describe("DeactivateDialog", () => {
     await user.click(screen.getByRole("button", { name: /Deactivate/ }));
 
     expect(onConfirm).toHaveBeenCalledWith("moved on from the program");
+  });
+});
+
+describe("DeactivatePreflight", () => {
+  it("names each round still holding them and when it stops", () => {
+    render(
+      <DeactivatePreflight
+        preflight={deactivatePreflight({
+          mentorshipRounds: [
+            spring(),
+            spring({
+              roundId: 4,
+              roundName: "Summer 2026",
+              role: "mentee",
+              pairCount: 1,
+              withdrawPending: true,
+            }),
+          ],
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("Still in mentorship — cannot be deactivated yet"),
+    ).toBeInTheDocument();
+    // The zone is the runner's, so assert the shape of the date.
+    expect(
+      screen.getByText(
+        /^· Spring 2026 — mentor, 2 pairs, until \d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^· Summer 2026 — mentee, 1 pair, withdrawal awaiting approval, until \d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+$/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Ask the mentorship admins to withdraw them, or deactivate once those dates have passed.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says to wait for the decision when every withdrawal is pending", () => {
+    render(
+      <DeactivatePreflight
+        preflight={deactivatePreflight({
+          mentorshipRounds: [
+            spring({ withdrawPending: true, role: null, pairCount: 0 }),
+          ],
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText(/^· Spring 2026 — withdrawal awaiting approval, until /),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Wait for the withdrawal to be decided, or deactivate once those dates have passed.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says when nothing holds them and recruiting is untouched", () => {
+    render(<DeactivatePreflight preflight={deactivatePreflight()} />);
+
+    expect(
+      screen.getByText("· Not in any mentorship round in progress"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("· No open applications")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Still in mentorship — cannot be deactivated yet"),
+    ).toBeNull();
+  });
+
+  it("reports open applications and interviews for the recruiter, without blocking", () => {
+    render(
+      <DeactivatePreflight
+        preflight={deactivatePreflight({
+          openApplicationCount: 2,
+          interviewTimes: ["2026-12-01T14:30:00Z"],
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /^· 2 open applications and 1 upcoming interview \(\d{4}-\d{2}-\d{2} \d{2}:\d{2} \S+\) stay as they are — tell the recruiter$/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the singular for one open application with nothing scheduled", () => {
+    render(
+      <DeactivatePreflight
+        preflight={deactivatePreflight({ openApplicationCount: 1 })}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "· 1 open application stays as it is — tell the recruiter",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says it is still checking, then that it could not check", () => {
+    const { rerender } = render(<DeactivatePreflight preflight={null} />);
+    expect(
+      screen.getByText("· Checking what this account is still part of…"),
+    ).toBeInTheDocument();
+
+    rerender(<DeactivatePreflight preflight={null} error />);
+    expect(
+      screen.getByText(
+        "Couldn't check what this account is still part of. Deactivating is refused if a mentorship round still holds them.",
+      ),
+    ).toBeInTheDocument();
   });
 });
