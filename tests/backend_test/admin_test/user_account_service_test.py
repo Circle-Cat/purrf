@@ -53,13 +53,19 @@ def _interview(start_at):
     return SimpleNamespace(start_at=start_at)
 
 
-def _open_round(name="Spring 2026", role="mentor", pairs=2, pending=False):
+SPRING_ENDS = datetime(2026, 12, 15, 23, 59, tzinfo=timezone.utc)
+
+
+def _open_round(
+    name="Spring 2026", role="mentor", pairs=2, pending=False, ends=SPRING_ENDS
+):
     return OpenMentorshipRoundDto(
         round_id=7,
         round_name=name,
         role=role,
         pair_count=pairs,
         withdraw_pending=pending,
+        ends_at=ends,
     )
 
 
@@ -153,7 +159,13 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.users.get_user_by_user_id.return_value = _user(TARGET)
         self.mentorship.list_open.return_value = [
             _open_round(),
-            _open_round("Summer 2026", "mentee", pairs=0, pending=True),
+            _open_round(
+                "Summer 2026",
+                "mentee",
+                pairs=0,
+                pending=True,
+                ends=datetime(2027, 3, 1, tzinfo=timezone.utc),
+            ),
         ]
 
         with self.assertRaises(ConflictError) as caught:
@@ -164,9 +176,10 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.code, "mentorship_open")
         self.assertEqual(
             str(caught.exception),
-            "Still in mentorship: Spring 2026 (mentor, 2 pairs); "
-            "Summer 2026 (mentee, withdrawal awaiting approval). "
-            "Ask the mentorship admins to withdraw them first.",
+            "Still in mentorship: Spring 2026 (mentor, 2 pairs) until "
+            "2026-12-15 UTC; Summer 2026 (mentee, withdrawal awaiting approval) "
+            "until 2027-03-01 UTC. Ask the mentorship admins to withdraw them, "
+            "or deactivate once those dates have passed.",
         )
         self.mentorship.list_open.assert_awaited_once_with(self.session, TARGET)
         self.users.deactivate.assert_not_awaited()
@@ -181,7 +194,27 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
                 self.session, actor_id=ME, user_id=TARGET, note=None
             )
 
-        self.assertIn("Spring 2026 (1 pair).", str(caught.exception))
+        self.assertIn(
+            "Spring 2026 (1 pair) until 2026-12-15 UTC.", str(caught.exception)
+        )
+
+    async def test_with_every_withdrawal_pending_it_says_to_wait_for_the_decision(
+        self,
+    ):
+        self.users.get_user_by_user_id.return_value = _user(TARGET)
+        self.mentorship.list_open.return_value = [_open_round(pending=True)]
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.deactivate(
+                self.session, actor_id=ME, user_id=TARGET, note=None
+            )
+
+        self.assertTrue(
+            str(caught.exception).endswith(
+                "Wait for the withdrawal to be decided, "
+                "or deactivate once those dates have passed."
+            )
+        )
 
     async def test_preflight_names_the_rounds_and_reports_recruiting(self):
         self.users.get_user_by_user_id.return_value = _user(TARGET)
@@ -189,6 +222,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.applications.list_by_user.return_value = [
             (_application(1, ApplicationStage.HIRED), None),
             (_application(2, ApplicationStage.REJECTED), None),
+            (_application(5, ApplicationStage.BLACKLISTED), None),
             (_application(3, ApplicationStage.TECH), None),
             (_application(4, ApplicationStage.APPLIED), None),
         ]

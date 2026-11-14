@@ -29,6 +29,8 @@ def _round(round_id, name, under_way=True):
         round_id=round_id,
         name=name,
         promotion_start_at=start,
+        meetings_completion_deadline_at=end - timedelta(days=5),
+        meeting_log_reminder_at=None,
         feedback_deadline_at=end,
     )
 
@@ -98,6 +100,23 @@ class OpenParticipationServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual((spring.role, spring.pair_count), ("mentor", 2))
         self.assertEqual((summer.role, summer.pair_count), ("mentee", 0))
+
+    async def test_says_when_each_round_stops_holding_them(self):
+        spring, _ = await self.service.list_open(self.session, PERSON)
+
+        self.assertEqual(spring.ends_at, self.rounds[0].feedback_deadline_at)
+
+    async def test_a_round_without_a_feedback_deadline_ends_a_month_after_meetings(
+        self,
+    ):
+        meetings_end = datetime.now(timezone.utc) + timedelta(days=5)
+        self.rounds[0].feedback_deadline_at = None
+        self.rounds[0].meetings_completion_deadline_at = meetings_end
+
+        spring, _ = await self.service.list_open(self.session, PERSON)
+
+        self.assertGreater(spring.ends_at, meetings_end)
+        self.assertLessEqual(spring.ends_at, meetings_end + timedelta(days=31))
 
     async def test_flags_a_withdrawal_awaiting_approval(self):
         self.approvals.list_pending_for_targets = AsyncMock(

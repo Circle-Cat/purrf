@@ -65,6 +65,9 @@ class OpenMentorshipRoundDto(BaseDto):
     pair_count: int
     # A request to withdraw them is waiting on a decision.
     withdraw_pending: bool
+    # When the round stops holding them, so the account can be deactivated
+    # without a withdrawal by waiting.
+    ends_at: datetime
 
 
 class DeactivatePreflightDto(BaseDto):

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from backend.common.mentorship_enums import ApprovalStatus, PairStatus
 from backend.dto.block_dto import OpenMentorshipRoundDto
 from backend.mentorship.exempt_matching_handler import exemption_target
-from backend.mentorship.round_windows import is_in_progress
+from backend.mentorship.round_windows import in_progress_ends_at, is_in_progress
 from backend.mentorship.withdraw_participant_handler import WITHDRAW_PARTICIPANT
 
 # A registration in one of these is still in its round. Withdrawn and rejected
@@ -89,6 +89,7 @@ class OpenParticipationService:
                 ),
                 pair_count=sum(1 for pair in pairs if pair.status == PairStatus.ACTIVE),
                 withdraw_pending=target in pending,
+                ends_at=in_progress_ends_at(round_),
             )
             for (round_, participant, pairs), target in zip(found, targets)
         ]

@@ -40,7 +40,11 @@ _STATUS_FILTERS: dict[str, tuple[bool | None, bool | None]] = {
 }
 
 # Applications in these stages are settled; the rest are still in flight.
-_SETTLED_STAGES = frozenset({ApplicationStage.HIRED, ApplicationStage.REJECTED})
+_SETTLED_STAGES = frozenset({
+    ApplicationStage.HIRED,
+    ApplicationStage.REJECTED,
+    ApplicationStage.BLACKLISTED,
+})
 
 
 def _still_in_mentorship(rounds) -> str:
@@ -53,15 +57,22 @@ def _still_in_mentorship(rounds) -> str:
             details.append(f"{round_.pair_count} {noun}")
         if round_.withdraw_pending:
             details.append("withdrawal awaiting approval")
-        return (
+        named = (
             f"{round_.round_name} ({', '.join(details)})"
             if details
             else round_.round_name
         )
+        return f"{named} until {round_.ends_at:%Y-%m-%d} UTC"
 
+    # Someone who finished their meetings needs no withdrawal -- recording
+    # one marks them as having quit -- so waiting is always offered.
+    if all(round_.withdraw_pending for round_ in rounds):
+        advice = "Wait for the withdrawal to be decided"
+    else:
+        advice = "Ask the mentorship admins to withdraw them"
     return (
         f"Still in mentorship: {'; '.join(one(r) for r in rounds)}. "
-        "Ask the mentorship admins to withdraw them first."
+        f"{advice}, or deactivate once those dates have passed."
     )
 
 

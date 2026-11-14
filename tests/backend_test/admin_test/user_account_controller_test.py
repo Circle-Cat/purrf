@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock
 
@@ -89,6 +90,7 @@ class TestUserAccountController(unittest.TestCase):
                         role="mentor",
                         pair_count=2,
                         withdraw_pending=True,
+                        ends_at=datetime(2026, 12, 15, tzinfo=timezone.utc),
                     )
                 ],
                 open_application_count=1,
@@ -231,6 +233,7 @@ class TestUserAccountController(unittest.TestCase):
                     "role": "mentor",
                     "pairCount": 2,
                     "withdrawPending": True,
+                    "endsAt": "2026-12-15T00:00:00Z",
                 }
             ],
         )

@@ -479,7 +479,7 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         await self.session.rollback()
 
         self.assertEqual(caught.exception.code, "mentorship_open")
-        self.assertIn("Spring 2026 (mentor, 2 pairs)", str(caught.exception))
+        self.assertIn("Spring 2026 (mentor, 2 pairs) until ", str(caught.exception))
         await self._refresh_all()
         self.assertTrue(self.zed.is_active)
         self.assertIs(self.pair_ann.status, PairStatus.ACTIVE)
