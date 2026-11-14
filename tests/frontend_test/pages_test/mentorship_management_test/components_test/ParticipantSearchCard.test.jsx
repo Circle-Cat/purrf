@@ -913,6 +913,92 @@ describe("ParticipantSearchCard", () => {
       expect(cellOf(name, "Approval")).toHaveTextContent("matched");
     });
 
+    it.each([
+      {
+        exempted: true,
+        noShow: 0,
+        redFlag: 0,
+        expectedNoShow: null,
+        expectedRedFlag: null,
+      },
+      {
+        exempted: true,
+        noShow: 0,
+        redFlag: 1,
+        expectedNoShow: null,
+        expectedRedFlag: "Red flag",
+      },
+      {
+        exempted: true,
+        noShow: 1,
+        redFlag: 2,
+        expectedNoShow: "No show",
+        expectedRedFlag: "Red flag ×2",
+      },
+      {
+        exempted: false,
+        noShow: 2,
+        redFlag: 1,
+        expectedNoShow: "No show ×2",
+        expectedRedFlag: "Red flag",
+      },
+    ])(
+      "renders mark counts already filtered by the backend: exempted=$exempted, noShow=$noShow, redFlag=$redFlag",
+      async ({
+        exempted,
+        noShow,
+        redFlag,
+        expectedNoShow,
+        expectedRedFlag,
+      }) => {
+        searchParticipants.mockResolvedValue(
+          resultsOf([
+            participantRow({
+              exempted,
+              marks: { noShow, redFlag },
+            }),
+          ]),
+        );
+        await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+        const approval = within(
+          cellOf(await screen.findByText("Alice Doe"), "Approval"),
+        );
+
+        expect(approval.getByText("matched")).toBeInTheDocument();
+
+        if (exempted) {
+          expect(
+            approval.getByText("Exempted", { exact: true }),
+          ).toBeInTheDocument();
+        } else {
+          expect(
+            approval.queryByText("Exempted", { exact: true }),
+          ).not.toBeInTheDocument();
+        }
+
+        if (expectedNoShow) {
+          expect(
+            approval.getByText(expectedNoShow, { exact: true }),
+          ).toBeInTheDocument();
+        } else {
+          expect(
+            approval.queryByText(/^No show(?: ×\d+)?$/),
+          ).not.toBeInTheDocument();
+        }
+
+        if (expectedRedFlag) {
+          expect(
+            approval.getByText(expectedRedFlag, { exact: true }),
+          ).toBeInTheDocument();
+        } else {
+          expect(
+            approval.queryByText(/^Red flag(?: ×\d+)?$/),
+          ).not.toBeInTheDocument();
+        }
+      },
+    );
+
     it("shows the pair's partner, their ID and the meeting progress", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       await renderCard({ url: SEARCHED_PARTICIPANTS });

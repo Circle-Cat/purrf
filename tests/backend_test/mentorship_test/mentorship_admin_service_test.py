@@ -251,19 +251,127 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [
-                (r.user_id, r.round_id, r.marks.no_show, r.marks.red_flag)
+                (
+                    r.user_id,
+                    r.round_id,
+                    r.exempted,
+                    r.marks.no_show,
+                    r.marks.red_flag,
+                )
                 for r in result.participant_rows
             ],
-            [(21, 7, 2, 0), (21, 5, 0, 1), (22, 7, 0, 1)],
+            [
+                (21, 7, False, 2, 0),
+                (21, 5, False, 0, 1),
+                (22, 7, False, 0, 1),
+            ],
         )
         self.mock_notes.list_tagged.assert_awaited_once_with(
             self.mock_session,
             [21, 22],
-            [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+            [
+                ParticipantNoteTag.NO_SHOW,
+                ParticipantNoteTag.RED_FLAG,
+                ParticipantNoteTag.MATCHING_EXEMPTION,
+            ],
         )
         self.assertEqual(
             result.participant_rows[0].marks.model_dump(by_alias=True),
             {"noShow": 2, "redFlag": 0},
+        )
+
+    async def test_each_row_counts_only_marks_after_its_latest_exemption(self):
+        self.mock_rounds_repo.get_all_rounds.return_value = []
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(user_id=21, round_id=7),
+                _make_row(user_id=21, round_id=5),
+                _make_row(user_id=22, round_id=7),
+            ],
+            3,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (21, 22)
+            },
+            {},
+        )
+
+        def _note(user_id, round_id, tag, hour):
+            return SimpleNamespace(
+                user_id=user_id,
+                round_id=round_id,
+                tag=tag,
+                created_at=datetime(2026, 1, 1, hour, tzinfo=timezone.utc),
+            )
+
+        self.mock_notes.list_tagged.return_value = [
+            # Deliberately unordered: use the latest exemption timestamp.
+            _note(21, 7, ParticipantNoteTag.MATCHING_EXEMPTION, 6),
+            _note(21, 7, ParticipantNoteTag.NO_SHOW, 1),
+            _note(21, 7, ParticipantNoteTag.MATCHING_EXEMPTION, 3),
+            # After the first exemption, but before the latest: cleared.
+            _note(21, 7, ParticipantNoteTag.RED_FLAG, 5),
+            # Equal to the latest exemption: excluded by the strict > rule.
+            _note(21, 7, ParticipantNoteTag.NO_SHOW, 6),
+            # After the latest exemption: still counted.
+            _note(21, 7, ParticipantNoteTag.RED_FLAG, 7),
+            # An exemption in round 7 must not affect round 5.
+            _note(21, 5, ParticipantNoteTag.RED_FLAG, 1),
+            # Another person's marks must not be cleared.
+            _note(22, 7, ParticipantNoteTag.NO_SHOW, 1),
+        ]
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(user_id=21)
+        )
+
+        self.assertEqual(
+            [
+                (
+                    r.user_id,
+                    r.round_id,
+                    r.exempted,
+                    r.marks.no_show,
+                    r.marks.red_flag,
+                )
+                for r in result.participant_rows
+            ],
+            [
+                (21, 7, True, 0, 1),
+                (21, 5, False, 0, 1),
+                (22, 7, False, 1, 0),
+            ],
+        )
+
+        # A new exemption clears all the earlier marks in this round.
+        self.mock_notes.list_tagged.return_value.append(
+            _note(21, 7, ParticipantNoteTag.MATCHING_EXEMPTION, 8)
+        )
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(user_id=21)
+        )
+
+        self.assertEqual(
+            [
+                (
+                    r.user_id,
+                    r.round_id,
+                    r.exempted,
+                    r.marks.no_show,
+                    r.marks.red_flag,
+                )
+                for r in result.participant_rows
+            ],
+            [
+                (21, 7, True, 0, 0),
+                (21, 5, False, 0, 1),
+                (22, 7, False, 1, 0),
+            ],
         )
 
     async def test_meeting_log_says_whether_its_round_is_in_progress(self):
