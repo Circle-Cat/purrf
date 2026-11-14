@@ -237,6 +237,28 @@ class TestLeaveRequestRepository(BaseRepositoryTestLib):
 
         self.assertEqual(held, Decimal("0.00"))
 
+    async def test_batch_defaults_to_zero_for_users_without_pending_paid_hours(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13),
+                datetime.date(2026, 8, 14),
+                hours="16.00",
+                user=self.employee,
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id, self.colleague.user_id]
+        )
+
+        self.assertEqual(
+            totals,
+            {
+                self.employee.user_id: Decimal("16.00"),
+                self.colleague.user_id: Decimal("0.00"),
+            },
+        )
+
     async def test_batch_sums_multiple_pending_paid_requests_per_person(self):
         await self.insert_entities([
             self._request(

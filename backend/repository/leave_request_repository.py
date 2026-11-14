@@ -119,7 +119,7 @@ class LeaveRequestRepository:
         result = await session.execute(
             select(
                 LeaveRequestEntity.user_id,
-                func.coalesce(func.sum(LeaveRequestEntity.hours), Decimal("0.00")),
+                func.sum(LeaveRequestEntity.hours),
             )
             .where(
                 LeaveRequestEntity.user_id.in_(user_ids),
@@ -153,7 +153,7 @@ class LeaveRequestRepository:
             a balance subtracts this.
         """
         totals = await self.sum_pending_paid_hours_by_user_ids(session, [user_id])
-        return totals.get(user_id, Decimal("0.00"))
+        return totals[user_id]
 
     async def list_for_user(
         self, session: AsyncSession, user_id: int
