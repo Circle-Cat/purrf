@@ -237,6 +237,158 @@ class TestLeaveRequestRepository(BaseRepositoryTestLib):
 
         self.assertEqual(held, Decimal("0.00"))
 
+    async def test_batch_defaults_to_zero_for_users_without_pending_paid_hours(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13),
+                datetime.date(2026, 8, 14),
+                hours="16.00",
+                user=self.employee,
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id, self.colleague.user_id]
+        )
+
+        self.assertEqual(
+            totals,
+            {
+                self.employee.user_id: Decimal("16.00"),
+                self.colleague.user_id: Decimal("0.00"),
+            },
+        )
+
+    async def test_batch_sums_multiple_pending_paid_requests_per_person(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13), datetime.date(2026, 8, 14), hours="8.00"
+            ),
+            self._request(
+                datetime.date(2026, 8, 20), datetime.date(2026, 8, 20), hours="4.50"
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id]
+        )
+
+        self.assertEqual(totals, {self.employee.user_id: Decimal("12.50")})
+
+    async def test_batch_keeps_each_persons_pending_hours_separate(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13),
+                datetime.date(2026, 8, 14),
+                hours="16.00",
+                user=self.employee,
+            ),
+            self._request(
+                datetime.date(2026, 8, 20),
+                datetime.date(2026, 8, 20),
+                hours="6.00",
+                user=self.colleague,
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id, self.colleague.user_id]
+        )
+
+        self.assertEqual(
+            totals,
+            {
+                self.employee.user_id: Decimal("16.00"),
+                self.colleague.user_id: Decimal("6.00"),
+            },
+        )
+
+    async def test_batch_excludes_sick_and_exchange_requests(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13),
+                datetime.date(2026, 8, 13),
+                request_type=LeaveRequestType.SICK,
+                hours="8.00",
+            ),
+            self._request(
+                datetime.date(2026, 8, 14),
+                datetime.date(2026, 8, 14),
+                request_type=LeaveRequestType.EXCHANGE,
+                hours="8.00",
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id]
+        )
+
+        self.assertEqual(totals, {self.employee.user_id: Decimal("0.00")})
+
+    async def test_batch_excludes_approved_rejected_and_withdrawn_requests(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13),
+                datetime.date(2026, 8, 13),
+                status=LeaveRequestStatus.APPROVED,
+                hours="8.00",
+            ),
+            self._request(
+                datetime.date(2026, 8, 14),
+                datetime.date(2026, 8, 14),
+                status=LeaveRequestStatus.REJECTED,
+                hours="8.00",
+            ),
+            self._request(
+                datetime.date(2026, 8, 15),
+                datetime.date(2026, 8, 15),
+                status=LeaveRequestStatus.WITHDRAWN,
+                hours="8.00",
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id]
+        )
+
+        self.assertEqual(totals, {self.employee.user_id: Decimal("0.00")})
+
+    async def test_batch_returns_empty_dict_for_empty_user_ids(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13), datetime.date(2026, 8, 13), hours="8.00"
+            )
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, []
+        )
+
+        self.assertEqual(totals, {})
+
+    async def test_batch_only_returns_requested_user_ids(self):
+        await self.insert_entities([
+            self._request(
+                datetime.date(2026, 8, 13),
+                datetime.date(2026, 8, 13),
+                hours="8.00",
+                user=self.employee,
+            ),
+            self._request(
+                datetime.date(2026, 8, 14),
+                datetime.date(2026, 8, 14),
+                hours="4.00",
+                user=self.colleague,
+            ),
+        ])
+
+        totals = await self.repository.sum_pending_paid_hours_by_user_ids(
+            self.session, [self.employee.user_id]
+        )
+
+        self.assertEqual(totals, {self.employee.user_id: Decimal("8.00")})
+        self.assertNotIn(self.colleague.user_id, totals)
+
     async def test_a_persons_own_requests_come_back_newest_first(self):
         await self.insert_entities([
             self._request(datetime.date(2026, 8, 13), datetime.date(2026, 8, 13)),
