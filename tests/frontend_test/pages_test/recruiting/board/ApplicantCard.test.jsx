@@ -69,6 +69,47 @@ describe("ApplicantCard blacklist tag", () => {
   });
 });
 
+describe("ApplicantCard deactivated account", () => {
+  it("says the applicant's account is deactivated", () => {
+    render(
+      <ApplicantCard
+        card={{ ...baseCard, isDeactivated: true }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Account deactivated")).toBeInTheDocument();
+  });
+
+  it("shows it alongside a blacklist tag", () => {
+    render(
+      <ApplicantCard
+        card={{
+          ...baseCard,
+          tags: { blacklisted: true },
+          isBlocked: true,
+          isDeactivated: true,
+        }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Account deactivated")).toBeInTheDocument();
+    expect(screen.getByText("Blacklisted")).toBeInTheDocument();
+  });
+
+  it("says nothing for an active account", () => {
+    render(
+      <ApplicantCard
+        card={{ ...baseCard, isDeactivated: false }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Account deactivated")).not.toBeInTheDocument();
+  });
+});
+
 describe("ApplicantCard reviewer", () => {
   it("shows the reviewer name in accent color when present", () => {
     render(
