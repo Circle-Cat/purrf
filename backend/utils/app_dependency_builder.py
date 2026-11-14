@@ -239,6 +239,7 @@ from backend.mentorship.mark_participant_handler import (
     MarkRedFlagHandler,
 )
 from backend.mentorship.mentorship_block_service import MentorshipBlockService
+from backend.mentorship.open_participation_service import OpenParticipationService
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -1336,6 +1337,14 @@ class AppDependencyBuilder:
             self.user_identities_repository,
             self.user_permissions_repository,
             self.approval_service,
+            application_repository=self.application_repository,
+            application_interview_repository=self.application_interview_repository,
+            open_participation_service=OpenParticipationService(
+                participants_repository=self.mentorship_round_participants_repo,
+                pairs_repository=self.mentorship_pairs_repository,
+                approval_service=self.approval_service,
+                logger=self.logger,
+            ),
             logger=self.logger,
         )
         self.mentorship_block_service = MentorshipBlockService(

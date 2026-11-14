@@ -515,3 +515,12 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "open_participation_service_test",
+    srcs = ["open_participation_service_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)

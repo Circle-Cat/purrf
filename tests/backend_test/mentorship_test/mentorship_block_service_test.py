@@ -323,6 +323,19 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(self.p601.status, PairStatus.ACTIVE)
 
+    async def test_counts_the_rounds_a_block_would_reject_from(self):
+        self.regs[(BLOCKED, SEVEN)].approval_status = ApprovalStatus.WITHDRAWN
+        self.regs[(BLOCKED, EIGHT)].approval_status = ApprovalStatus.REJECTED
+
+        # SEVEN (withdrawn, still overridden) and NINE (signed_up, no pair);
+        # not EIGHT (already rejected) and not PAST (over).
+        self.assertEqual(
+            await self.service.rounds_block_rejects(self.session, BLOCKED), 2
+        )
+        self.assertIs(
+            self.regs[(BLOCKED, SEVEN)].approval_status, ApprovalStatus.WITHDRAWN
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
