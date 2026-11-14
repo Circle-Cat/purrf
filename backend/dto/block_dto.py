@@ -20,6 +20,8 @@ class BlockPreflightDto(BaseDto):
     # meetings that have not started.
     mentorship_pair_count: int = 0
     mentorship_meeting_count: int = 0
+    # Rounds under way the person is rejected from, including unpaired ones.
+    mentorship_round_count: int = 0
 
 
 class ReviewerOptionDto(BaseDto):

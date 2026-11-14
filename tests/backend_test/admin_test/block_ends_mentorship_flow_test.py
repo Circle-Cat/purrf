@@ -421,6 +421,7 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
 
         self.assertEqual(view.mentorship_pair_count, 2)
         self.assertEqual(view.mentorship_meeting_count, 1)
+        self.assertEqual(view.mentorship_round_count, 1)
 
 
 if __name__ == "__main__":
