@@ -82,6 +82,7 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
         mentorship = MagicMock()
         mentorship.end_for_blocked_user = AsyncMock()
         mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
+        mentorship.rounds_block_rejects = AsyncMock(return_value=0)
         approvals.register(
             BlockUserHandler(
                 users,

@@ -217,6 +217,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.mentorship = MagicMock()
         self.mentorship.end_for_blocked_user = AsyncMock()
         self.mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
+        self.mentorship.rounds_block_rejects = AsyncMock(return_value=0)
         self.approvals = ApprovalService(
             approval_request_repository=self.requests,
             user_permissions_repository=self.perms_repo,

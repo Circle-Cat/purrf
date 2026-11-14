@@ -364,6 +364,7 @@ class BlockService:
         pair_count, meeting_count = await self._mentorship.preflight_counts(
             session, user_id
         )
+        round_count = await self._mentorship.rounds_block_rejects(session, user_id)
         now = datetime.now(timezone.utc)
         return BlockPreflightDto(
             application_count=len(live),
@@ -374,6 +375,7 @@ class BlockService:
             ),
             mentorship_pair_count=pair_count,
             mentorship_meeting_count=meeting_count,
+            mentorship_round_count=round_count,
         )
 
     async def apply_block(

@@ -44,6 +44,7 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         self.mentorship = MagicMock()
         self.mentorship.end_for_blocked_user = AsyncMock()
         self.mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
+        self.mentorship.rounds_block_rejects = AsyncMock(return_value=0)
 
         recorder = patch(
             "backend.admin.block_service.record_event", new_callable=AsyncMock
@@ -454,12 +455,17 @@ class TestBlockServicePreflight(_BlockServiceTestBase):
     async def test_counts_the_mentorship_it_ends(self):
         self._seed([self._application(10)])
         self.mentorship.preflight_counts = AsyncMock(return_value=(2, 3))
+        self.mentorship.rounds_block_rejects = AsyncMock(return_value=4)
 
         view = await self.service.preflight(self.session, TARGET)
 
         self.assertEqual(view.mentorship_pair_count, 2)
         self.assertEqual(view.mentorship_meeting_count, 3)
+        self.assertEqual(view.mentorship_round_count, 4)
         self.mentorship.preflight_counts.assert_awaited_once_with(self.session, TARGET)
+        self.mentorship.rounds_block_rejects.assert_awaited_once_with(
+            self.session, TARGET
+        )
 
     async def test_counts_only_what_will_change(self):
         self._seed([

@@ -82,6 +82,28 @@ class MentorshipBlockService:
         )
         return len(pair_ids), meetings
 
+    async def rounds_block_rejects(self, session, user_id: int) -> int:
+        """How many rounds under way blocking this person would reject them
+        from, paired or not. Reads only.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The person about to be blocked.
+
+        Returns:
+            int: The rounds whose registration would move to rejected.
+        """
+        count = 0
+        for round_id in await self._rounds_under_way(session, user_id):
+            participant = (
+                await self.participants_repository.get_by_user_id_and_round_id(
+                    session, user_id, round_id
+                )
+            )
+            if participant is not None and participant.approval_status in _REJECTABLE:
+                count += 1
+        return count
+
     async def end_for_blocked_user(
         self,
         session,
