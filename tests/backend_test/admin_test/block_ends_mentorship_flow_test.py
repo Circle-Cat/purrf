@@ -324,7 +324,7 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         self.assertIs(self.pair_ann.status, PairStatus.INACTIVE)
         self.assertIs(self.pair_bo.status, PairStatus.INACTIVE)
         self.assertIs(self.pair_old.status, PairStatus.ACTIVE)
-        self.assertIs(self.zed_reg.approval_status, ApprovalStatus.WITHDRAWN)
+        self.assertIs(self.zed_reg.approval_status, ApprovalStatus.REJECTED)
         self.assertIs(self.ann_reg.approval_status, ApprovalStatus.UN_MATCHED)
         self.assertIs(self.bo_reg.approval_status, ApprovalStatus.UN_MATCHED)
         self.assertIs(self.cy_reg.approval_status, ApprovalStatus.MATCHED)

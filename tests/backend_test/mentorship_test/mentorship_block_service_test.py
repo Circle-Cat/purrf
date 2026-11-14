@@ -1,6 +1,7 @@
 """What blocking someone does to their mentorship: the pairs in rounds under
-way end, they leave those rounds, and partners left with nothing go back to
-un_matched. Everyone in the fixture has a distinct id and name."""
+way end, they are rejected from every round under way they are still in, and
+partners left with nothing go back to un_matched. Everyone in the fixture has a
+distinct id and name."""
 
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -163,17 +164,18 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
             [("flush",), ("cancel", [603]), ("cancel", [601]), ("cancel", [602])],
         )
 
-    async def test_the_blocked_person_leaves_each_round_whose_pairs_ended(self):
+    async def test_the_blocked_person_is_rejected_from_every_round_under_way(self):
         await self._block()
 
         self.assertIs(
-            self.regs[(BLOCKED, SEVEN)].approval_status, ApprovalStatus.WITHDRAWN
+            self.regs[(BLOCKED, SEVEN)].approval_status, ApprovalStatus.REJECTED
         )
         self.assertIs(
-            self.regs[(BLOCKED, EIGHT)].approval_status, ApprovalStatus.WITHDRAWN
+            self.regs[(BLOCKED, EIGHT)].approval_status, ApprovalStatus.REJECTED
         )
+        # Registered but never paired: rejected all the same.
         self.assertIs(
-            self.regs[(BLOCKED, NINE)].approval_status, ApprovalStatus.SIGNED_UP
+            self.regs[(BLOCKED, NINE)].approval_status, ApprovalStatus.REJECTED
         )
 
     async def test_only_partners_left_with_no_pair_become_un_matched(self):
@@ -192,11 +194,12 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             bodies,
             {
-                (BLOCKED, EIGHT): "matched -> withdrawn: blocked. Pairs ended: "
+                (BLOCKED, NINE): "signed_up -> rejected: blocked.",
+                (BLOCKED, EIGHT): "matched -> rejected: blocked. Pairs ended: "
                 "Mo Fox (pair 603). Upcoming meetings cancelled: 1.",
                 (MO, EIGHT): "Pair ended: Zed Block was blocked. "
                 "1 upcoming meetings cancelled.",
-                (BLOCKED, SEVEN): "matched -> withdrawn: blocked. Pairs ended: "
+                (BLOCKED, SEVEN): "matched -> rejected: blocked. Pairs ended: "
                 "Ann Lee (pair 601), Bo Ng (pair 602). "
                 "Upcoming meetings cancelled: 2.",
                 (ANN, SEVEN): "Pair ended: Zed Block was blocked; matched -> "
@@ -218,7 +221,27 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pair_of[(MO, EIGHT)], 603)
         self.assertIsNone(pair_of[(BLOCKED, SEVEN)])
 
-    async def test_a_registration_that_already_left_is_noted_but_not_moved(self):
+    async def test_being_blocked_outranks_having_withdrawn(self):
+        self.regs[(BLOCKED, SEVEN)].approval_status = ApprovalStatus.WITHDRAWN
+        self.regs[(BLOCKED, NINE)].approval_status = ApprovalStatus.WITHDRAWN
+
+        await self._block()
+
+        self.assertIs(
+            self.regs[(BLOCKED, SEVEN)].approval_status, ApprovalStatus.REJECTED
+        )
+        self.assertIs(
+            self.regs[(BLOCKED, NINE)].approval_status, ApprovalStatus.REJECTED
+        )
+        bodies = {(n["user_id"], n["round_id"]): n["body"] for n in self._notes()}
+        self.assertEqual(
+            bodies[(BLOCKED, SEVEN)],
+            "withdrawn -> rejected: blocked. Pairs ended: Ann Lee (pair 601), "
+            "Bo Ng (pair 602). Upcoming meetings cancelled: 2.",
+        )
+        self.assertEqual(bodies[(BLOCKED, NINE)], "withdrawn -> rejected: blocked.")
+
+    async def test_a_registration_already_rejected_is_noted_but_not_moved(self):
         self.regs[(BLOCKED, SEVEN)].approval_status = ApprovalStatus.REJECTED
 
         await self._block()
@@ -231,6 +254,18 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
             bodies[(BLOCKED, SEVEN)],
             "Blocked. Pairs ended: Ann Lee (pair 601), Bo Ng (pair 602). "
             "Upcoming meetings cancelled: 2.",
+        )
+
+    async def test_an_unpaired_registration_already_rejected_gets_no_note(self):
+        self.regs[(BLOCKED, NINE)].approval_status = ApprovalStatus.REJECTED
+
+        await self._block()
+
+        self.assertIs(
+            self.regs[(BLOCKED, NINE)].approval_status, ApprovalStatus.REJECTED
+        )
+        self.assertNotIn(
+            (BLOCKED, NINE), {(n["user_id"], n["round_id"]) for n in self._notes()}
         )
 
     async def test_a_calendar_refusal_says_nobody_was_blocked(self):
@@ -248,15 +283,35 @@ class MentorshipBlockServiceTest(unittest.IsolatedAsyncioTestCase):
             self.regs[(BLOCKED, SEVEN)].approval_status, ApprovalStatus.MATCHED
         )
 
-    async def test_someone_with_no_pair_under_way_is_left_alone(self):
+    async def test_someone_with_no_pair_under_way_is_rejected_and_nothing_else(self):
         self.participants.list_registered_rounds_by_user_ids.return_value = {
             BLOCKED: [_round(NINE), _round(PAST, under_way=False)]
+        }
+
+        await self._block(request_id=902)
+
+        self.session.flush.assert_not_awaited()
+        self.meetings.cancel_upcoming_for_pairs.assert_not_awaited()
+        self.assertIs(
+            self.regs[(BLOCKED, NINE)].approval_status, ApprovalStatus.REJECTED
+        )
+        (note,) = self._notes()
+        self.assertEqual(
+            (note["user_id"], note["round_id"], note["body"]),
+            (BLOCKED, NINE, "signed_up -> rejected: blocked."),
+        )
+        self.assertIsNone(note["pair_id"])
+        self.assertEqual((note["author_user_id"], note["request_id"]), (ACTOR, 902))
+        self.assertIs(note["tag"], ParticipantNoteTag.STATUS_CHANGE)
+
+    async def test_someone_with_no_round_under_way_is_left_alone(self):
+        self.participants.list_registered_rounds_by_user_ids.return_value = {
+            BLOCKED: [_round(PAST, under_way=False)]
         }
 
         await self._block()
 
         self.session.flush.assert_not_awaited()
-        self.meetings.cancel_upcoming_for_pairs.assert_not_awaited()
         self.notes.create.assert_not_awaited()
 
     async def test_preflight_counts_pairs_under_way_and_their_meetings(self):
