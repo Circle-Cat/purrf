@@ -397,12 +397,24 @@ export const useMentorshipData = ({
       if (!partnersInfo || partnersInfo.length === 0) {
         const isRegistrationRound =
           selectedRoundId?.toString() === roundStatus.regRoundId?.toString();
+        // The registration loaded on mount is the registration round's only;
+        // any other round has to be asked about on its own.
+        let isRegistered = registration?.isRegistered === true;
+        if (!isRegistrationRound) {
+          try {
+            const { data } = await getMyMentorshipRegistration(selectedRoundId);
+            isRegistered = data?.isRegistered === true;
+          } catch (err) {
+            console.error("Failed to fetch registration for round", err);
+            isRegistered = false;
+          }
+          if (!isCurrent(seq)) return;
+        }
         setParticipantDetails({
           roundInfo: currentRound,
           partnerMeetingOverview: [],
           participantRole: null,
-          isRegistered:
-            isRegistrationRound && registration?.isRegistered === true,
+          isRegistered,
           isRegistrationRound,
         });
         return;
