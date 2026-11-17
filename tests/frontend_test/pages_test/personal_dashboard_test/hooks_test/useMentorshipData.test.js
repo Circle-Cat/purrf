@@ -242,6 +242,85 @@ describe("useMentorshipData Hook", () => {
     expect(result.current.participantDetails.isRegistered).toBe(false);
   });
 
+  describe("an empty round other than the registration round", () => {
+    const setUp = () => {
+      getAllMentorshipRounds.mockResolvedValue({
+        data: [
+          { id: "round-2", name: "Later" },
+          { id: "round-1", name: "Earlier" },
+        ],
+      });
+      mockSlots({
+        registrationRoundId: "round-2",
+        registrationRoundName: "Later",
+        isRegistrationOpen: true,
+        activeRoundId: "round-1",
+      });
+      getMyMentorshipPartners.mockResolvedValue({ data: [] });
+      getMyMentorshipMeetingLog.mockResolvedValue({
+        data: { meetingInfo: [] },
+      });
+      getMyMentorshipMatchResult.mockResolvedValue({ data: null });
+    };
+
+    it("reports registered when the user registered for that round", async () => {
+      setUp();
+      getMyMentorshipRegistration.mockImplementation((roundId) =>
+        Promise.resolve({ data: { isRegistered: roundId === "round-1" } }),
+      );
+
+      const { result } = renderHook(() => useMentorshipData());
+      await waitFor(() =>
+        expect(result.current.participantDetails?.roundInfo?.id).toBe(
+          "round-1",
+        ),
+      );
+
+      expect(getMyMentorshipRegistration).toHaveBeenCalledWith("round-1");
+      expect(result.current.participantDetails.isRegistrationRound).toBe(false);
+      expect(result.current.participantDetails.isRegistered).toBe(true);
+    });
+
+    it("reports not registered when the user did not register for that round", async () => {
+      setUp();
+      getMyMentorshipRegistration.mockImplementation((roundId) =>
+        Promise.resolve({ data: { isRegistered: roundId === "round-2" } }),
+      );
+
+      const { result } = renderHook(() => useMentorshipData());
+      await waitFor(() =>
+        expect(result.current.participantDetails?.roundInfo?.id).toBe(
+          "round-1",
+        ),
+      );
+
+      expect(getMyMentorshipRegistration).toHaveBeenCalledWith("round-1");
+      expect(result.current.participantDetails.isRegistered).toBe(false);
+    });
+
+    it("reports not registered when asking about that round fails", async () => {
+      setUp();
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      getMyMentorshipRegistration.mockImplementation((roundId) =>
+        roundId === "round-1"
+          ? Promise.reject(new Error("boom"))
+          : Promise.resolve({ data: { isRegistered: true } }),
+      );
+
+      const { result } = renderHook(() => useMentorshipData());
+      await waitFor(() =>
+        expect(result.current.participantDetails?.roundInfo?.id).toBe(
+          "round-1",
+        ),
+      );
+
+      expect(result.current.participantDetails.isRegistered).toBe(false);
+      consoleSpy.mockRestore();
+    });
+  });
+
   it("should not call getMyMentorshipRegistration when regRoundId is null", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
     mockSlots({
