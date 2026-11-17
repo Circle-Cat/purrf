@@ -315,6 +315,50 @@ describe("MentorshipParticipantsCard", () => {
     });
   });
 
+  describe("a viewer who left the round", () => {
+    const rounds = {
+      finished: {
+        roundSelectionData: {
+          sortedRounds: [{ id: "7", name: "2025 Fall", status: "completed" }],
+        },
+        selectedRoundId: "7",
+      },
+      "in-progress": {
+        roundSelectionData: {
+          sortedRounds: [{ id: "1", name: "2026 Spring", status: "active" }],
+        },
+        selectedRoundId: "1",
+      },
+    };
+
+    it.each([
+      ["finished", "withdrawn", "You withdrew from this round."],
+      ["in-progress", "withdrawn", "You've withdrawn from this round."],
+      ["finished", "rejected", "You didn't take part in this round."],
+      ["in-progress", "rejected", "You aren't taking part in this round."],
+    ])(
+      "on a %s round, as %s, is told they left rather than unmatched",
+      (round, matchStatus, expected) => {
+        render(
+          <MentorshipParticipantsCard
+            {...baseProps}
+            {...rounds[round]}
+            participantDetails={{
+              roundInfo: null,
+              partnerMeetingOverview: [],
+              participantRole: null,
+              isRegistered: true,
+              isRegistrationRound: false,
+              matchStatus,
+            }}
+          />,
+        );
+        expect(screen.getByText(expected)).toBeInTheDocument();
+        expect(screen.queryByText(/matched/)).toBeNull();
+      },
+    );
+  });
+
   it("should offer logging a past meeting to mentees", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
     expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(

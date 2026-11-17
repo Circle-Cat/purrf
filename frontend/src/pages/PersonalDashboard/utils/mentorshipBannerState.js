@@ -19,6 +19,7 @@ export const BannerKind = Object.freeze({
   NOT_TAKING_PART: "notTakingPart",
   WITHDRAWN: "withdrawn",
   RESULT_NOT_READY: "resultNotReady",
+  TRAINING_MISSED: "trainingMissed",
 });
 
 export const BannerAction = Object.freeze({
@@ -318,8 +319,15 @@ export function mentorshipBannerState({
           )
         : notTakingPart();
     }
-    // Still signed up (or unreadable) after the announcement: the result
-    // is late, not coming soon.
+    // Still signed up after the announcement. Training still not done
+    // means it was not done at matching either, which keeps a person out of
+    // the pool, so that is said; any other cause is not known here.
+    if (!isTrainingDone) {
+      return {
+        ...finished(BannerKind.TRAINING_MISSED, COPY.trainingMissed(title)),
+        showRegistrationEntry: true,
+      };
+    }
     return {
       ...finished(BannerKind.RESULT_NOT_READY, COPY.resultNotReady(title)),
       showRegistrationEntry: true,

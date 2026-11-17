@@ -4,5 +4,6 @@ export const MatchStatus = Object.freeze({
   REJECTED: "rejected",
   WITHDRAWN: "withdrawn",
   PENDING: "pending",
+  UNREGISTERED: "unregistered",
   UNKNOWN: "unknown",
 });
