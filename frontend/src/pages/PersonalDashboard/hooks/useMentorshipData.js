@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { MatchStatus } from "@/constants/matchStatus";
 
 // Default profile timezone for newly created users.
 const DEFAULT_TIMEZONE = "America/Los_Angeles";
@@ -397,15 +398,22 @@ export const useMentorshipData = ({
       if (!partnersInfo || partnersInfo.length === 0) {
         const isRegistrationRound =
           selectedRoundId?.toString() === roundStatus.regRoundId?.toString();
-        // The registration loaded on mount is the registration round's only;
-        // any other round has to be asked about on its own.
+        // The registration and match result loaded on mount are the
+        // registration round's only; any other round has to be asked about
+        // on its own. Its match status also says whether the user left.
         let isRegistered = registration?.isRegistered === true;
+        let matchStatus = isRegistered
+          ? (matchResult?.currentStatus ?? null)
+          : null;
         if (!isRegistrationRound) {
           try {
-            const { data } = await getMyMentorshipRegistration(selectedRoundId);
-            isRegistered = data?.isRegistered === true;
+            const { data } = await getMyMentorshipMatchResult(selectedRoundId);
+            matchStatus = data?.currentStatus ?? null;
+            isRegistered =
+              matchStatus !== null && matchStatus !== MatchStatus.UNREGISTERED;
           } catch (err) {
-            console.error("Failed to fetch registration for round", err);
+            console.error("Failed to fetch match result for round", err);
+            matchStatus = null;
             isRegistered = false;
           }
           if (!isCurrent(seq)) return;
@@ -416,6 +424,7 @@ export const useMentorshipData = ({
           participantRole: null,
           isRegistered,
           isRegistrationRound,
+          matchStatus,
         });
         return;
       }
@@ -467,6 +476,7 @@ export const useMentorshipData = ({
     roundSelectionData.sortedRounds,
     roundStatus.regRoundId,
     registration?.isRegistered,
+    matchResult?.currentStatus,
   ]);
 
   useEffect(() => {

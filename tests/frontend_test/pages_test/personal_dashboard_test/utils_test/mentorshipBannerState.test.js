@@ -497,6 +497,21 @@ describe("mentorshipBannerState", () => {
         expect(state.showRegistrationEntry).toBe(true);
       },
     );
+
+    it("says unfinished training kept a still-pending viewer out of matching", () => {
+      const state = build({
+        ...announced,
+        matchStatus: "pending",
+        isTrainingDone: false,
+      });
+
+      expect(state.kind).toBe(BannerKind.TRAINING_MISSED);
+      expectFinished(state);
+      expect(state.next).toBe(
+        "You weren't matched in 2027 Spring because your onboarding training wasn't finished before matching. You can register again when the next round opens.",
+      );
+      expect(state.showRegistrationEntry).toBe(true);
+    });
   });
 
   describe("left the round before matches are announced", () => {
