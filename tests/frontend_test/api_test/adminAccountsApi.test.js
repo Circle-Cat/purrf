@@ -8,6 +8,7 @@ import {
   unblockAccount,
   blockAccount,
   getBlockPreflight,
+  getDeactivatePreflight,
   createBlockRequest,
   getPendingBlockRequests,
   reassignBlockRequest,
@@ -128,6 +129,14 @@ describe("adminAccountsApi", () => {
     await getBlockPreflight(7);
 
     expect(request.get).toHaveBeenCalledWith("/block-preflight/7");
+  });
+
+  it("reads the deactivate pre-flight for one user", async () => {
+    await getDeactivatePreflight(7);
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/admin/accounts/7/deactivate-preflight",
+    );
   });
 
   it("puts raised_from in the query string, not the body", async () => {

@@ -35,6 +35,9 @@ py_test(
         "//backend/admin:block_service",
         "//backend/admin:user_account_service",
         "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
         "//backend/entity:entities",
     ],
 )
@@ -70,6 +73,7 @@ py_test(
     deps = [
         "//backend/admin:user_account_controller",
         "//backend/common:api_endpoints",
+        "//backend/common:exceptions",
         "//backend/common:fast_api_error_handler",
         "//backend/common:permissions",
         "//backend/dto",
@@ -130,7 +134,9 @@ py_test(
     deps = [
         "//backend/admin:block_service",
         "//backend/admin:block_user_handler",
+        "//backend/admin:user_account_service",
         "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
         "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
