@@ -105,7 +105,6 @@ async def apply_block_kernel(
     reason: str | None,
     users_repository,
     application_repository,
-    application_submission_repository,
     application_interview_repository,
     interview_scheduling_service,
     mentorship_block_service,
@@ -139,8 +138,6 @@ async def apply_block_kernel(
         users_repository (UsersRepository): The user row being blocked.
         application_repository (ApplicationRepository): The applications to
             sweep.
-        application_submission_repository (ApplicationSubmissionRepository):
-            Freezes the current submission of each row that is closed out.
         application_interview_repository (ApplicationInterviewRepository): The
             interviews booked on the swept applications.
         interview_scheduling_service (InterviewSchedulingService): Cancels
@@ -181,15 +178,12 @@ async def apply_block_kernel(
         locked.tags = {**(locked.tags or {}), "blacklisted": True}
         if locked.stage != ApplicationStage.REJECTED:
             # In-flight or HIRED: fully close it out. Already-rejected rows
-            # keep their historical stage/round/sub_status and frozen
-            # submission -- only the tag is backfilled.
+            # keep their historical stage/round/sub_status -- only the tag is
+            # backfilled.
             locked.stage = ApplicationStage.REJECTED
             locked.stage_entered_at = datetime.now(timezone.utc)
             locked.sub_status = None
             locked.current_round = 1
-            await _freeze_current_submission(
-                session, application_submission_repository, locked.application_id
-            )
         await application_repository.update(session, locked)
         await record_event(
             session,
@@ -262,30 +256,6 @@ async def pending_block_summary(
     )
 
 
-async def _freeze_current_submission(
-    session, application_submission_repository, application_id: int
-):
-    """Mark an application's current submission version as frozen.
-
-    The same four lines as ``BoardService._freeze_current_submission``, which
-    stays where it is because ``change_stage`` and ``set_sub_status`` still call
-    it. Duplicated rather than given a third home: a shared module for four
-    lines would buy an import edge between two packages and nothing else.
-
-    Args:
-        session (AsyncSession): Active database async session.
-        application_submission_repository (ApplicationSubmissionRepository):
-            Submission data access.
-        application_id (int): The owning application.
-    """
-    current_sub = await application_submission_repository.get_current(
-        session, application_id
-    )
-    if current_sub is not None:
-        current_sub.is_frozen = True
-        await application_submission_repository.update(session, current_sub)
-
-
 class BlockService:
     """The block action and its pre-flight, for the account console."""
 
@@ -293,7 +263,6 @@ class BlockService:
         self,
         users_repository,
         application_repository,
-        application_submission_repository,
         application_interview_repository,
         interview_scheduling_service,
         approval_service,
@@ -306,8 +275,6 @@ class BlockService:
             users_repository (UsersRepository): The user being blocked.
             application_repository (ApplicationRepository): The applications a
                 block sweeps, and the pre-flight's count.
-            application_submission_repository (ApplicationSubmissionRepository):
-                Freezes the submissions of closed-out applications.
             application_interview_repository (ApplicationInterviewRepository):
                 The interviews a block cancels, and the pre-flight's list.
             interview_scheduling_service (InterviewSchedulingService): Cancels
@@ -323,7 +290,6 @@ class BlockService:
         """
         self._users = users_repository
         self._applications = application_repository
-        self._submissions = application_submission_repository
         self._interviews = application_interview_repository
         self._interview_scheduling = interview_scheduling_service
         self._approvals = approval_service
@@ -399,7 +365,6 @@ class BlockService:
             reason=reason,
             users_repository=self._users,
             application_repository=self._applications,
-            application_submission_repository=self._submissions,
             application_interview_repository=self._interviews,
             interview_scheduling_service=self._interview_scheduling,
             mentorship_block_service=self._mentorship,

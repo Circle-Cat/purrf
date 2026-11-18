@@ -97,17 +97,13 @@ def visible_questions(form_schema: dict | None, answers: dict) -> list[dict]:
 def prune_answers(form_schema: dict | None, answers: dict) -> dict:
     """Answers narrowed to what the form was showing when they were written.
 
-    Applications stay editable until processing starts, and the client seeds
-    its answer state from the previous version without cropping it, so a
-    candidate who changes an answer that hides a dependent question — or who
-    edits after an owner deletes a question — re-submits the stale value
-    underneath. Only the current state is meaningful, so the stale keys are
-    dropped at write time rather than stored and explained away later.
+    The client keeps its answer state without cropping it, so a candidate who
+    changes an answer that hides a dependent question — or who resumes a draft
+    after an owner deletes a question — submits the stale value underneath.
+    Only the current state is meaningful, so the stale keys are dropped at
+    write time rather than stored and explained away later.
 
-    Idempotent: pruning an already-pruned set of answers is a no-op. It has to
-    be, because the client seeds the next edit from what this returned — a
-    rule resolved against an answer this call removes would drop one further
-    layer on every save until the chain was gone.
+    Idempotent: pruning an already-pruned set of answers is a no-op.
 
     Args:
         form_schema (dict | None): The job's live form schema.
