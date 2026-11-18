@@ -65,6 +65,7 @@ class ApplicationService:
         user_emails_repository,
         mentorship_admission_service,
         application_access,
+        application_draft_repository,
     ):
         """
         Args:
@@ -91,6 +92,9 @@ class ApplicationService:
             application_access (ApplicationAccess): Decides whether a stage's
                 configured default assignee can still be assigned, by the
                 same rule a manual assignment is validated against.
+            application_draft_repository (ApplicationDraftRepository): The
+                caller's saved drafts: a submission deletes the one it
+                replaces, and ``list_mine`` lists the rest.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -102,6 +106,7 @@ class ApplicationService:
         self.user_emails_repository = user_emails_repository
         self.mentorship_admission_service = mentorship_admission_service
         self.application_access = application_access
+        self.application_draft_repository = application_draft_repository
 
     @staticmethod
     def _today():
@@ -598,6 +603,9 @@ class ApplicationService:
                 details=details,
             )
 
+        await self.application_draft_repository.delete(
+            session, current_user.user_id, dto.job_id
+        )
         await session.commit()
         lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
@@ -947,12 +955,16 @@ class ApplicationService:
                 mentorship role the caller holds a HIRED admission in, or an
                 empty list when they have none. That list's order carries no
                 authority — it is most-recent-admission-first for display
-                only, and no code may treat element 0 as "the" role.
+                only, and no code may treat element 0 as "the" role. Also
+                the caller's unsubmitted drafts, most recently saved first.
         """
         rows = await self.application_repository.list_by_user(
             session, current_user.user_id
         )
         mentorship_roles = await self.application_repository.list_hired_activity_roles(
+            session, current_user.user_id
+        )
+        draft_rows = await self.application_draft_repository.list_by_user_with_job(
             session, current_user.user_id
         )
         return MyApplicationsDto(
@@ -961,6 +973,10 @@ class ApplicationService:
                 for application, job in rows
             ],
             mentorship_roles=mentorship_roles,
+            drafts=[
+                self.recruiting_mapper.to_my_application_draft_summary_dto(draft, job)
+                for draft, job in draft_rows
+            ],
         )
 
     def _lock_reason(self, application, job, current_submission):

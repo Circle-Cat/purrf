@@ -378,3 +378,47 @@ class RecruitingMapper:
             mentorship_role=job.mentorship_role,
             stage=application.stage,
         )
+
+    def to_my_application_draft_summary_dto(self, draft, job):
+        """Map a (draft, job) pair to a row of the caller's draft list.
+
+        Args:
+            draft (ApplicationDraftEntity): The candidate's saved draft.
+            job (JobEntity): The posting the draft is for.
+
+        Returns:
+            MyApplicationDraftSummaryDto: The response row.
+        """
+        from backend.dto.application_dto import MyApplicationDraftSummaryDto
+
+        return MyApplicationDraftSummaryDto(
+            job_id=draft.job_id,
+            job_title=job.title,
+            job_kind=job.kind,
+            mentorship_role=job.mentorship_role,
+            accepting_applications=job.status in PUBLICLY_VISIBLE_JOB_STATUSES,
+            updated_at=draft.updated_timestamp,
+        )
+
+    def to_application_draft_dto(self, draft):
+        """Map a saved draft to the form state the candidate left.
+
+        Args:
+            draft (ApplicationDraftEntity): The candidate's saved draft.
+
+        Returns:
+            ApplicationDraftDto: The response shape.
+        """
+        from backend.dto.application_dto import ApplicationDraftDto
+
+        content = draft.content or {}
+        return ApplicationDraftDto(
+            job_id=draft.job_id,
+            personal=content.get("personal") or {},
+            education=content.get("education") or [],
+            experience=content.get("experience") or [],
+            answers=content.get("answers") or {},
+            resume_sha256=content.get("resumeSha256"),
+            resume_object_key=content.get("resumeObjectKey"),
+            updated_at=draft.updated_timestamp,
+        )

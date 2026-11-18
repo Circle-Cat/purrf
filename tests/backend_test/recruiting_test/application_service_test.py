@@ -30,6 +30,9 @@ from backend.common.recruiting_enums import (
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
+from backend.repository.application_draft_repository import (
+    ApplicationDraftRepository,
+)
 
 
 # The three fields every submission must carry, and one complete row of each
@@ -127,6 +130,15 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.user_permissions_repo,
         )
+        # autospec so a signature drift fails here; delete records itself in
+        # call_order so a test can tell it ran inside the submit transaction.
+        self.draft_repo = create_autospec(ApplicationDraftRepository, instance=True)
+        self.draft_repo.delete = AsyncMock(
+            side_effect=lambda session, user_id, job_id: self.call_order.append(
+                "delete_draft"
+            )
+        )
+        self.draft_repo.list_by_user_with_job = AsyncMock(return_value=[])
         self.service = ApplicationService(
             self.app_repo,
             self.sub_repo,
@@ -138,6 +150,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.user_emails_repo,
             self.mentorship_admission_svc,
             self.application_access,
+            self.draft_repo,
         )
 
     @staticmethod
@@ -2029,6 +2042,41 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_not_awaited()
         self.sub_repo.update.assert_not_awaited()
 
+    async def test_submit_deletes_the_callers_draft_for_that_job(self):
+        """The draft the submission replaces goes in the same transaction, so
+        a rolled-back submit leaves the draft where it was."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PUBLISHED)
+        )
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.submit(self.session, self._ctx(user_id=37), dto)
+
+        self.draft_repo.delete.assert_awaited_once_with(self.session, 37, 1)
+        self.assertLess(
+            self.call_order.index("delete_draft"), self.call_order.index("commit")
+        )
+
+    async def test_a_refused_submit_keeps_the_draft(self):
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=1
+        )
+        app.application_id = 100
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        with self.assertRaises(ValueError):
+            await self.service.submit(self.session, self._ctx(), dto)
+
+        self.draft_repo.delete.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
     async def test_submit_active_application_still_errors(self):
         """A latest attempt that hasn't been rejected must still block a
         fresh submit — the candidate should edit it instead."""
@@ -2655,6 +2703,35 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.applications[1].application_id, 11)
         self.assertEqual(result.applications[1].mentorship_role, None)
 
+    async def test_list_mine_returns_the_callers_drafts(self):
+        from backend.entity.application_draft_entity import ApplicationDraftEntity
+
+        open_job = self._job(kind=JobKind.EMPLOYMENT, status=JobStatus.PUBLISHED)
+        open_job.job_id = 41
+        open_job.title = "Backend Engineer"
+        closed_job = self._job(kind=JobKind.ACTIVITY, status=JobStatus.CLOSED)
+        closed_job.job_id = 42
+        closed_job.title = "CircleCat Mentee"
+        closed_job.mentorship_role = ParticipantRole.MENTEE
+        newer = ApplicationDraftEntity(user_id=2, job_id=41, content={})
+        newer.updated_timestamp = datetime(2026, 11, 2, tzinfo=timezone.utc)
+        older = ApplicationDraftEntity(user_id=2, job_id=42, content={})
+        older.updated_timestamp = datetime(2026, 10, 3, tzinfo=timezone.utc)
+        self.app_repo.list_by_user = AsyncMock(return_value=[])
+        self.draft_repo.list_by_user_with_job = AsyncMock(
+            return_value=[(newer, open_job), (older, closed_job)]
+        )
+
+        result = await self.service.list_mine(self.session, self._ctx(user_id=58))
+
+        self.draft_repo.list_by_user_with_job.assert_awaited_once_with(self.session, 58)
+        self.assertEqual([41, 42], [d.job_id for d in result.drafts])
+        self.assertEqual("Backend Engineer", result.drafts[0].job_title)
+        self.assertTrue(result.drafts[0].accepting_applications)
+        self.assertFalse(result.drafts[1].accepting_applications)
+        self.assertEqual(ParticipantRole.MENTEE, result.drafts[1].mentorship_role)
+        self.assertEqual([], result.applications)
+
     async def test_list_mine_returns_empty_for_no_applications(self):
         self.app_repo.list_by_user = AsyncMock(return_value=[])
 
@@ -2732,6 +2809,7 @@ class LockReasonTest(unittest.TestCase):
             user_emails_repository=MagicMock(),
             mentorship_admission_service=MagicMock(),
             application_access=MagicMock(),
+            application_draft_repository=MagicMock(),
         )
         self.job = JobEntity(
             kind=JobKind.EMPLOYMENT,
