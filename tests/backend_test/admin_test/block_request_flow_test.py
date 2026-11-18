@@ -23,9 +23,6 @@ from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
 )
 from backend.repository.application_repository import ApplicationRepository
-from backend.repository.application_submission_repository import (
-    ApplicationSubmissionRepository,
-)
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
@@ -69,7 +66,6 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
         users = UsersRepository()
         perms = UserPermissionsRepository()
         applications = ApplicationRepository()
-        submissions = ApplicationSubmissionRepository()
         interviews = ApplicationInterviewRepository()
         # The target has no applications, so no interview is ever cancelled.
         scheduling = MagicMock()
@@ -87,7 +83,6 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
             BlockUserHandler(
                 users,
                 applications,
-                submissions,
                 interviews,
                 scheduling,
                 mentorship,
@@ -97,7 +92,6 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
         self.service = BlockService(
             users,
             applications,
-            submissions,
             interviews,
             scheduling,
             approvals,

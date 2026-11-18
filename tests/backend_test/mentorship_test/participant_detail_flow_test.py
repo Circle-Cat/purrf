@@ -245,7 +245,6 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 MagicMock(),
                 MagicMock(),
                 MagicMock(),
-                MagicMock(),
                 UserPermissionsRepository(),
             )
         )

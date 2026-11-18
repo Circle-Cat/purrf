@@ -173,7 +173,6 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                 application_id
             )
         )
-        self.sub_repo = MagicMock()
         self.interview_repo = MagicMock()
         self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
         self.interview_svc = MagicMock()
@@ -227,7 +226,6 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                 BlockUserHandler(
                     self.users_repo,
                     self.app_repo,
-                    self.sub_repo,
                     self.interview_repo,
                     self.interview_svc,
                     self.mentorship,
@@ -238,7 +236,6 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.service = BlockService(
             users_repository=self.users_repo,
             application_repository=self.app_repo,
-            application_submission_repository=self.sub_repo,
             application_interview_repository=self.interview_repo,
             interview_scheduling_service=self.interview_svc,
             approval_service=self.approvals,
