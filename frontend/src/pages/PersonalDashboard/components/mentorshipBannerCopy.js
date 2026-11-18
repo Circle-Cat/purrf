@@ -50,6 +50,8 @@ export const MENTORSHIP_BANNER_COPY = {
     `You aren't taking part in ${roundName}. You can register again when the next round opens.`,
   withdrawn: (roundName) =>
     `You've withdrawn from ${roundName}. You can register again when the next round opens.`,
+  trainingMissed: (roundName) =>
+    `You weren't matched in ${roundName} because your onboarding training wasn't finished before matching. You can register again when the next round opens.`,
   resultNotReady: (roundName) =>
     `Your match result for ${roundName} isn't ready yet. Contact the mentorship team if you have questions.`,
   profileLine:
