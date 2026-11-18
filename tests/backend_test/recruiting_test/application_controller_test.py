@@ -24,8 +24,16 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.resume_storage = MagicMock()
         self.resume_storage.put = MagicMock(return_value=("abc", "resumes/abc.pdf"))
 
+        self.draft_service = MagicMock()
+        self.draft_service.get_mine = AsyncMock(return_value=None)
+        self.draft_service.save = AsyncMock(return_value={"jobId": 31})
+
         self.controller = ApplicationController(
-            self.app_service, self.job_service, self.resume_storage, self.database
+            self.app_service,
+            self.job_service,
+            self.resume_storage,
+            self.database,
+            self.draft_service,
         )
 
         self.patcher = patch("backend.recruiting.application_controller.api_response")
@@ -126,6 +134,35 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         resp = await self.controller.get_my_application(self.ctx, job_id=7)
         self.app_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 7)
         self.assertIsNone(resp["data"])
+
+    async def test_get_my_draft_uses_job_id_query_param(self):
+        resp = await self.controller.get_my_draft(self.ctx, job_id=31)
+        self.draft_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 31)
+        self.assertEqual("Draft fetched.", resp["message"])
+        self.assertIsNone(resp["data"])
+
+    async def test_save_my_draft_delegates(self):
+        from backend.dto.application_dto import ApplicationDraftSaveDto
+
+        dto = ApplicationDraftSaveDto.model_validate({"jobId": 31})
+        resp = await self.controller.save_my_draft(self.ctx, dto)
+        self.draft_service.save.assert_awaited_once_with(self.session, self.ctx, dto)
+        self.assertEqual("Draft saved.", resp["message"])
+        self.assertEqual({"jobId": 31}, resp["data"])
+
+    def test_draft_routes_are_not_shadowed_by_the_application_id_route(self):
+        """Starlette matches routes in order, so /draft has to be registered
+        before /{application_id} or "draft" would be read as an id."""
+        paths = [
+            (route.path, method)
+            for route in self.controller.router.routes
+            for method in route.methods
+        ]
+        draft_get = paths.index(("/recruiting/applications/draft", "GET"))
+        draft_put = paths.index(("/recruiting/applications/draft", "PUT"))
+        by_id = paths.index(("/recruiting/applications/{application_id}", "PATCH"))
+        self.assertLess(draft_get, by_id)
+        self.assertLess(draft_put, by_id)
 
     async def test_list_my_applications_delegates(self):
         payload = {
