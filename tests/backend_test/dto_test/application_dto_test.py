@@ -5,7 +5,6 @@ from backend.dto.application_dto import (
     ApplicationDraftDto,
     ApplicationDraftSaveDto,
     ApplicationDto,
-    ApplicationEditDto,
     ApplicationSubmitDto,
     MyApplicationsDto,
 )
@@ -41,7 +40,6 @@ class TestApplicationDtos(unittest.TestCase):
         other_sha = "f" * 64
         for dto_class, base in (
             (ApplicationSubmitDto, {"jobId": 1}),
-            (ApplicationEditDto, {}),
             (ApplicationDraftSaveDto, {"jobId": 1}),
         ):
             for sha, key in (
@@ -61,14 +59,15 @@ class TestApplicationDtos(unittest.TestCase):
                         })
 
     def test_no_resume_at_all_is_fine(self):
-        dto = ApplicationEditDto.model_validate({})
+        dto = ApplicationSubmitDto.model_validate({"jobId": 3})
         self.assertIsNone(dto.resume_object_key)
 
     def test_a_resume_can_be_dropped_one_field_at_a_time(self):
         """The service clears both fields for a posting that collects no
         resume, one assignment after the other, and the model is revalidated
         on each."""
-        dto = ApplicationEditDto.model_validate({
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 4,
             "resumeSha256": SHA,
             "resumeObjectKey": KEY,
         })
@@ -77,10 +76,6 @@ class TestApplicationDtos(unittest.TestCase):
         dto.resume_sha256 = None
 
         self.assertIsNone(dto.resume_sha256)
-
-    def test_edit_forbids_job_id(self):
-        with self.assertRaises(pydantic.ValidationError):
-            ApplicationEditDto.model_validate({"jobId": 1})
 
     def test_application_dto_exposes_current_round(self):
         dto = ApplicationDto(

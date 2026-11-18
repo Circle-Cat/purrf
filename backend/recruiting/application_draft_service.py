@@ -90,9 +90,7 @@ class ApplicationDraftService:
             session, dto.job_id, current_user.user_id
         )
         if existing is not None and existing.stage != ApplicationStage.REJECTED:
-            raise ValueError(
-                "you already have an application for this job; edit it instead"
-            )
+            raise ValueError("you already have an application for this job")
         draft = await self.application_draft_repository.upsert(
             session,
             current_user.user_id,

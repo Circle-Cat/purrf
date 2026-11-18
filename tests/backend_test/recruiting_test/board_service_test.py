@@ -199,7 +199,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
         self.app_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
-        self.sub_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
         # Default: candidate has no other applications, so blacklist's
         # close-out-the-rest loop is a no-op unless a test seeds siblings.
         self.app_repo.list_by_user = AsyncMock(return_value=[])
@@ -755,12 +754,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             assigned_by=assigned_by,
         )
 
-    def _submission(self, application_id=10, is_frozen=False):
+    def _submission(self, application_id=10):
         return ApplicationSubmissionEntity(
             application_id=application_id,
             version=1,
             submission={"answers": {}},
-            is_frozen=is_frozen,
         )
 
     # -- list_my_jobs --
@@ -2033,7 +2031,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- change_stage --
 
-    async def test_change_stage_advances_resets_sub_status_and_freezes(self):
+    async def test_change_stage_advances_and_resets_sub_status(self):
         job = self._job(
             job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
         )
@@ -2044,7 +2042,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         application.current_round = 2
         application.sub_status = "in_progress"
-        current_sub = self._submission(application_id=10, is_frozen=False)
+        current_sub = self._submission(application_id=10)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
@@ -2060,8 +2058,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.TECH)
         self.assertEqual(result.sub_status, "pending")
         self.assertIsNone(result.tags)
-        self.assertTrue(current_sub.is_frozen)
-        self.sub_repo.update.assert_awaited_once()
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
         self.assignment_repo.upsert.assert_awaited_once_with(
@@ -2184,7 +2180,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(application.stage, ApplicationStage.TECH)
         self.app_repo.update.assert_not_awaited()
-        self.sub_repo.update.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
     async def test_change_stage_reject_stores_tags_reject_with_from_stage(self):
@@ -2632,7 +2627,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             application_id=10, job_id=1, stage=ApplicationStage.TECH
         )
         application.sub_status = "evaluated"
-        current_sub = self._submission(application_id=10, is_frozen=True)
+        current_sub = self._submission(application_id=10)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
@@ -2973,13 +2968,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- set_sub_status --
 
-    async def test_set_sub_status_valid_switch_freezes_on_first_leave(self):
+    async def test_set_sub_status_valid_switch(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
         )
         application.sub_status = "pending"
-        current_sub = self._submission(application_id=10, is_frozen=False)
+        current_sub = self._submission(application_id=10)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
@@ -2990,8 +2985,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.sub_status, "in_progress")
-        self.assertTrue(current_sub.is_frozen)
-        self.sub_repo.update.assert_awaited_once()
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
 
@@ -3039,47 +3032,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(application.sub_status, "pending")
         self.app_repo.update.assert_not_awaited()
-        self.sub_repo.update.assert_not_awaited()
         self.session.commit.assert_not_awaited()
-
-    async def test_set_sub_status_between_non_pending_values_does_not_refreeze(self):
-        job = self._job(job_id=1, owner_ids=(2,))
-        application = self._application(
-            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
-        )
-        application.sub_status = "in_progress"
-        current_sub = self._submission(application_id=10, is_frozen=True)
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
-
-        dto = SubStatusChangeDto(sub_status="evaluated")
-        result = await self.service.set_sub_status(
-            self.session, self._ctx(user_id=2), 10, dto
-        )
-
-        self.assertEqual(result.sub_status, "evaluated")
-        self.sub_repo.update.assert_not_awaited()
-
-    async def test_set_sub_status_back_to_pending_does_not_unfreeze(self):
-        job = self._job(job_id=1, owner_ids=(2,))
-        application = self._application(
-            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
-        )
-        application.sub_status = "evaluated"
-        current_sub = self._submission(application_id=10, is_frozen=True)
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
-
-        dto = SubStatusChangeDto(sub_status="pending")
-        result = await self.service.set_sub_status(
-            self.session, self._ctx(user_id=2), 10, dto
-        )
-
-        self.assertEqual(result.sub_status, "pending")
-        self.sub_repo.update.assert_not_awaited()
-        self.assertTrue(current_sub.is_frozen)
 
     async def test_set_sub_status_non_owner_gets_collapsed_not_found_message(self):
         job = self._job(job_id=1, owner_ids=(9,))
@@ -3152,7 +3105,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(
-            return_value=self._submission(application_id=10, is_frozen=True)
+            return_value=self._submission(application_id=10)
         )
         self.evaluation_repo.has_confirmed.return_value = True
 
