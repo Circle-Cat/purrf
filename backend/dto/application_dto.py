@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import datetime
 from pydantic import model_validator
@@ -60,6 +61,55 @@ class ApplicationEditDto(_ResumeReferenceDto):
     save_to_profile: bool = False
 
 
+# Ceiling on a saved draft's serialized size. A draft skips the submit-time
+# field checks, so this is what stops the endpoint being used as free storage.
+DRAFT_CONTENT_MAX_BYTES = 256 * 1024
+
+
+class ApplicationDraftSaveDto(_ResumeReferenceDto):
+    """Save payload for a draft: the form as the candidate left it.
+
+    No required-field or length checks: a draft is allowed to be incomplete.
+    Submitting still goes through ApplicationSubmitDto and every check there.
+    """
+
+    job_id: int
+    personal: dict = {}
+    education: list[dict] = []
+    experience: list[dict] = []
+    answers: dict = {}
+
+    @model_validator(mode="after")
+    def check_content_size(self):
+        size = len(
+            json.dumps(
+                {
+                    "personal": self.personal,
+                    "education": self.education,
+                    "experience": self.experience,
+                    "answers": self.answers,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8")
+        )
+        if size > DRAFT_CONTENT_MAX_BYTES:
+            raise ValueError("The draft is too large to save")
+        return self
+
+
+class ApplicationDraftDto(BaseDto):
+    """The caller's saved draft for one posting."""
+
+    job_id: int
+    personal: dict = {}
+    education: list[dict] = []
+    experience: list[dict] = []
+    answers: dict = {}
+    resume_sha256: str | None = None
+    resume_object_key: str | None = None
+    updated_at: datetime | None = None
+
+
 class ApplicationSubmissionDto(BaseDto):
     """One submission version in a response."""
 
@@ -103,6 +153,19 @@ class MyApplicationSummaryDto(BaseDto):
     stage: ApplicationStage
 
 
+class MyApplicationDraftSummaryDto(BaseDto):
+    """One unsubmitted draft in the current user's own application list."""
+
+    job_id: int
+    job_title: str
+    job_kind: JobKind
+    mentorship_role: ParticipantRole | None = None
+    # Whether the posting still takes submissions; a draft for a closed
+    # posting is kept, but it can no longer be sent.
+    accepting_applications: bool
+    updated_at: datetime | None = None
+
+
 class MyApplicationsDto(BaseDto):
     """The current user's own application list, plus every mentorship role
     those applications qualify them to register a round under.
@@ -127,3 +190,6 @@ class MyApplicationsDto(BaseDto):
     # no authority, so no code may treat element 0 as "the" role. Empty when
     # they are not a participant.
     mentorship_roles: list[ParticipantRole] = []
+    # Drafts the caller saved and has not submitted, most recently saved
+    # first. Never an application: staff cannot see them.
+    drafts: list[MyApplicationDraftSummaryDto] = []

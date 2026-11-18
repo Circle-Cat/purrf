@@ -139,6 +139,20 @@ py_test(
 )
 
 py_test(
+    name = "application_draft_repository_test",
+    srcs = ["application_draft_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "application_assignment_repository_test",
     srcs = ["application_assignment_repository_test.py"],
     env_inherit = ["DATABASE_URL"],

@@ -120,6 +120,19 @@ py_test(
         "//backend/entity:entities",
         "//backend/mentorship",
         "//backend/recruiting",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "application_draft_service_test",
+    srcs = ["application_draft_service_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+        "//backend/repository:repositories",
     ],
 )
 

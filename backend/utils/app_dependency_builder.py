@@ -126,11 +126,15 @@ from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
 )
 from backend.repository.evaluation_repository import EvaluationRepository
+from backend.repository.application_draft_repository import (
+    ApplicationDraftRepository,
+)
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.recruiting.job_service import JobService
 from backend.recruiting.recruiting_controller import RecruitingController
 from backend.recruiting.resume_storage import ResumeStorage
 from backend.recruiting.application_service import ApplicationService
+from backend.recruiting.application_draft_service import ApplicationDraftService
 from backend.recruiting.application_controller import ApplicationController
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import BoardService
@@ -1095,6 +1099,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.user_permissions_repository,
         )
+        self.application_draft_repository = ApplicationDraftRepository()
         self.application_service = ApplicationService(
             self.application_repository,
             self.application_submission_repository,
@@ -1106,12 +1111,20 @@ class AppDependencyBuilder:
             self.user_emails_repository,
             self.mentorship_admission_service,
             self.application_access,
+            self.application_draft_repository,
+        )
+        self.application_draft_service = ApplicationDraftService(
+            self.application_draft_repository,
+            self.application_repository,
+            self.job_repository,
+            self.recruiting_mapper,
         )
         self.application_controller = ApplicationController(
             self.application_service,
             self.job_service,
             self.resume_storage,
             self.database,
+            self.application_draft_service,
         )
         # Person-anchored email (recruiting Emails tab). self.gmail_client and
         # recruiting_sender were constructed earlier, alongside the
