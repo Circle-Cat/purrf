@@ -84,7 +84,12 @@ const ReqMark = ({ level }) => {
  *          onChange?: (value: {personal: object, education: object[], experience: object[]}) => void,
  *          contactEmail?: string,
  *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void,
- *          existingResume?: {applicationId: number} | null}} props
+ *          existingResume?: {applicationId: number} | null,
+ *          draftResumeOnFile?: boolean}} props
+ *
+ * `draftResumeOnFile` shows a résumé saved with the candidate's draft as
+ * attached. It has no preview: a draft is not an application, and the only
+ * résumé download there is is addressed by application id.
  * @returns {JSX.Element}
  */
 const RecruitingProfileForm = ({
@@ -96,6 +101,7 @@ const RecruitingProfileForm = ({
   existingResume,
   errors = {},
   onUploadingChange,
+  draftResumeOnFile = false,
 }) => {
   const [internal, setInternal] = useState({
     personal: {},
@@ -226,6 +232,18 @@ const RecruitingProfileForm = ({
                 className="mt-2 h-[400px] w-full rounded border"
               />
             )}
+          </div>
+        )}
+        {draftResumeOnFile && (
+          <div className="flex items-center justify-between rounded-md border border-muted-foreground/30 p-2 text-sm">
+            <span>✓ Résumé attached to your saved draft</span>
+            <button
+              type="button"
+              className="text-destructive underline"
+              onClick={handleResumeRemoved}
+            >
+              Remove
+            </button>
           </div>
         )}
         <ResumeUpload

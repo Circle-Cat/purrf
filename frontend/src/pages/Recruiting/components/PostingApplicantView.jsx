@@ -20,7 +20,13 @@ import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfi
  *          onAnswerChange?: (id: string, value: unknown) => void,
  *          contactEmail?: string,
  *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void,
- *          existingResume?: {applicationId: number} | null}} props
+ *          existingResume?: {applicationId: number} | null,
+ *          draftResumeOnFile?: boolean,
+ *          afterProfile?: import("react").ReactNode}} props
+ *
+ * `draftResumeOnFile` says the résumé shown as attached came from a saved
+ * draft (see `RecruitingProfileForm`). `afterProfile` is rendered between the
+ * profile blocks and the posting's questions; omitted, nothing is.
  */
 const PostingApplicantView = ({
   title,
@@ -37,6 +43,8 @@ const PostingApplicantView = ({
   existingResume,
   errors = {},
   onResumeUploadingChange,
+  draftResumeOnFile = false,
+  afterProfile = null,
 }) => {
   const [internalAnswers, setInternalAnswers] = useState({});
   const answers = controlledAnswers ?? internalAnswers;
@@ -68,7 +76,9 @@ const PostingApplicantView = ({
         existingResume={existingResume}
         errors={errors}
         onUploadingChange={onResumeUploadingChange}
+        draftResumeOnFile={draftResumeOnFile}
       />
+      {afterProfile}
       <FormRenderer
         questions={questions}
         answers={answers}

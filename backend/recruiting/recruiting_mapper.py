@@ -265,28 +265,13 @@ class RecruitingMapper:
             applied_at=application.created_datetime,
         )
 
-    def to_application_dto(
-        self, application, current_submission=None, editable=False, lock_reason=None
-    ):
+    def to_application_dto(self, application, current_submission=None):
         """Map an application (+ its current submission version) to a DTO.
-
-        A lock reason forces ``editable`` false whatever the caller passed, so
-        the pair cannot contradict each other in the direction that would
-        matter -- offering an edit while stating why it is closed.
-
-        Owner-facing callers (``BoardService``) pass neither: ``editable``
-        describes the *candidate's* permission, which means nothing on a
-        board read, and no candidate reads those responses.
 
         Args:
             application (ApplicationEntity): The application container.
             current_submission (ApplicationSubmissionEntity | None): Highest
                 version, or None if not yet written.
-            editable (bool): Whether the candidate may still edit.
-            lock_reason (ApplicationLockReason | None): Why the candidate can
-                no longer edit, or None while they still can (see
-                ``ApplicationService._lock_reason``). Serialised as
-                ``lockReason``.
 
         Returns:
             ApplicationDto: The response DTO.
@@ -296,9 +281,6 @@ class RecruitingMapper:
         current = (
             ApplicationSubmissionDto(
                 version=current_submission.version,
-                # Mapped-column default (False) only applies on flush; a
-                # freshly-constructed, not-yet-flushed entity has None here.
-                is_frozen=bool(current_submission.is_frozen),
                 submission=current_submission.submission,
                 resume_object_key=current_submission.resume_object_key,
                 resume_sha256=current_submission.resume_sha256,
@@ -315,8 +297,6 @@ class RecruitingMapper:
             sub_status=application.sub_status,
             tags=application.tags,
             current=current,
-            editable=editable and lock_reason is None,
-            lock_reason=lock_reason,
             current_round=application.current_round,
         )
 
@@ -377,4 +357,48 @@ class RecruitingMapper:
             job_kind=job.kind,
             mentorship_role=job.mentorship_role,
             stage=application.stage,
+        )
+
+    def to_my_application_draft_summary_dto(self, draft, job):
+        """Map a (draft, job) pair to a row of the caller's draft list.
+
+        Args:
+            draft (ApplicationDraftEntity): The candidate's saved draft.
+            job (JobEntity): The posting the draft is for.
+
+        Returns:
+            MyApplicationDraftSummaryDto: The response row.
+        """
+        from backend.dto.application_dto import MyApplicationDraftSummaryDto
+
+        return MyApplicationDraftSummaryDto(
+            job_id=draft.job_id,
+            job_title=job.title,
+            job_kind=job.kind,
+            mentorship_role=job.mentorship_role,
+            accepting_applications=job.status in PUBLICLY_VISIBLE_JOB_STATUSES,
+            updated_at=draft.updated_timestamp,
+        )
+
+    def to_application_draft_dto(self, draft):
+        """Map a saved draft to the form state the candidate left.
+
+        Args:
+            draft (ApplicationDraftEntity): The candidate's saved draft.
+
+        Returns:
+            ApplicationDraftDto: The response shape.
+        """
+        from backend.dto.application_dto import ApplicationDraftDto
+
+        content = draft.content or {}
+        return ApplicationDraftDto(
+            job_id=draft.job_id,
+            personal=content.get("personal") or {},
+            education=content.get("education") or [],
+            experience=content.get("experience") or [],
+            answers=content.get("answers") or {},
+            resume_sha256=content.get("resumeSha256"),
+            resume_object_key=content.get("resumeObjectKey"),
+            updated_at=draft.updated_timestamp,
         )

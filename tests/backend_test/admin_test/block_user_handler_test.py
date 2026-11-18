@@ -35,7 +35,6 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.applications = MagicMock()
-        self.submissions = MagicMock()
         self.interviews = MagicMock()
         self.scheduling = MagicMock()
         self.mentorship = MagicMock()
@@ -44,7 +43,6 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.handler = BlockUserHandler(
             self.users,
             self.applications,
-            self.submissions,
             self.interviews,
             self.scheduling,
             self.mentorship,
@@ -122,7 +120,6 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
             reason="Abusive messages",
             users_repository=self.users,
             application_repository=self.applications,
-            application_submission_repository=self.submissions,
             application_interview_repository=self.interviews,
             interview_scheduling_service=self.scheduling,
             mentorship_block_service=self.mentorship,

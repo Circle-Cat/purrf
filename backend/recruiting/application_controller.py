@@ -2,14 +2,17 @@ from fastapi import APIRouter, File, UploadFile
 from backend.common.fast_api_response_wrapper import api_response
 from backend.utils.permission_decorators import authenticate
 from backend.dto.user_context_dto import UserContextDto
-from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
+from backend.dto.application_dto import (
+    ApplicationDraftSaveDto,
+    ApplicationSubmitDto,
+)
 from backend.common.api_endpoints import (
     RECRUITING_ANONYMOUS_JOBS_ENDPOINT,
     RECRUITING_PUBLIC_JOB_ENDPOINT,
     RECRUITING_PUBLIC_JOBS_ENDPOINT,
     RECRUITING_RESUMES_ENDPOINT,
     RECRUITING_APPLICATIONS_ENDPOINT,
-    RECRUITING_APPLICATION_ENDPOINT,
+    RECRUITING_APPLICATION_DRAFT_ENDPOINT,
     RECRUITING_APPLICATIONS_MINE_ENDPOINT,
     RECRUITING_MY_APPLICATIONS_ENDPOINT,
     RECRUITING_MY_LATEST_PROFILE_ENDPOINT,
@@ -19,24 +22,46 @@ from backend.common.api_endpoints import (
 class ApplicationController:
     """FastAPI routes for candidate application submission (login-gated)."""
 
-    def __init__(self, application_service, job_service, resume_storage, database):
+    def __init__(
+        self,
+        application_service,
+        job_service,
+        resume_storage,
+        database,
+        application_draft_service,
+    ):
         """
         Args:
-            application_service (ApplicationService): Submit/edit/get logic.
+            application_service (ApplicationService): Submit/get logic.
             job_service (JobService): Provides the candidate-visible job lookups.
             resume_storage (ResumeStorage): Content-addressed résumé upload.
             database: Async session provider.
+            application_draft_service (ApplicationDraftService): The caller's
+                private, unsubmitted drafts.
         """
         self.application_service = application_service
         self.job_service = job_service
         self.resume_storage = resume_storage
         self.database = database
+        self.application_draft_service = application_draft_service
         self.router = APIRouter(tags=["recruiting-applications"])
 
         self.router.add_api_route(
             RECRUITING_APPLICATIONS_MINE_ENDPOINT,
             endpoint=authenticate()(self.get_my_application),
             methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_DRAFT_ENDPOINT,
+            endpoint=authenticate()(self.get_my_draft),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_DRAFT_ENDPOINT,
+            endpoint=authenticate()(self.save_my_draft),
+            methods=["PUT"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -81,12 +106,6 @@ class ApplicationController:
             RECRUITING_APPLICATIONS_ENDPOINT,
             endpoint=authenticate()(self.submit_application),
             methods=["POST"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_APPLICATION_ENDPOINT,
-            endpoint=authenticate()(self.edit_application),
-            methods=["PATCH"],
             response_model=None,
         )
 
@@ -145,19 +164,6 @@ class ApplicationController:
             )
         return api_response(message="Application submitted.", data=result)
 
-    async def edit_application(
-        self,
-        current_user: UserContextDto,
-        application_id: int,
-        edit_data: ApplicationEditDto,
-    ):
-        """Overwrite the caller's application while it is still Applied."""
-        async with self.database.session() as session:
-            result = await self.application_service.edit(
-                session, current_user, application_id, edit_data
-            )
-        return api_response(message="Application updated.", data=result)
-
     async def get_my_application(self, current_user: UserContextDto, job_id: int):
         """Return the caller's application for a job (query param job_id)."""
         async with self.database.session() as session:
@@ -184,3 +190,21 @@ class ApplicationController:
         async with self.database.session() as session:
             result = await self.application_service.list_mine(session, current_user)
         return api_response(message="Applications fetched.", data=result)
+
+    async def get_my_draft(self, current_user: UserContextDto, job_id: int):
+        """Return the caller's saved draft for a job (query param job_id), or null."""
+        async with self.database.session() as session:
+            result = await self.application_draft_service.get_mine(
+                session, current_user, job_id
+            )
+        return api_response(message="Draft fetched.", data=result)
+
+    async def save_my_draft(
+        self, current_user: UserContextDto, draft_data: ApplicationDraftSaveDto
+    ):
+        """Create or overwrite the caller's draft for a job."""
+        async with self.database.session() as session:
+            result = await self.application_draft_service.save(
+                session, current_user, draft_data
+            )
+        return api_response(message="Draft saved.", data=result)

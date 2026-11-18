@@ -3,14 +3,12 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import (
-    ApplicationLockReason,
     ApplicationStage,
     PUBLICLY_VISIBLE_JOB_STATUSES,
     RecruitingEvent,
 )
 from backend.dto.application_dto import (
     ApplicationDto,
-    ApplicationEditDto,
     ApplicationSubmitDto,
     MyApplicationsDto,
 )
@@ -65,6 +63,7 @@ class ApplicationService:
         user_emails_repository,
         mentorship_admission_service,
         application_access,
+        application_draft_repository,
     ):
         """
         Args:
@@ -91,6 +90,9 @@ class ApplicationService:
             application_access (ApplicationAccess): Decides whether a stage's
                 configured default assignee can still be assigned, by the
                 same rule a manual assignment is validated against.
+            application_draft_repository (ApplicationDraftRepository): The
+                caller's saved drafts: a submission deletes the one it
+                replaces, and ``list_mine`` lists the rest.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -102,6 +104,7 @@ class ApplicationService:
         self.user_emails_repository = user_emails_repository
         self.mentorship_admission_service = mentorship_admission_service
         self.application_access = application_access
+        self.application_draft_repository = application_draft_repository
 
     @staticmethod
     def _today():
@@ -110,7 +113,7 @@ class ApplicationService:
 
     @staticmethod
     def _snapshot(dto, job) -> dict:
-        """Build the immutable submission snapshot from a submit/edit DTO.
+        """Build the immutable submission snapshot from a submit DTO.
 
         Stores the job's form schema next to the answers so the answers can
         always be labeled with the questions the candidate actually saw:
@@ -118,7 +121,7 @@ class ApplicationService:
         the posting, and no historical copy is kept anywhere else.
 
         Args:
-            dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            dto (ApplicationSubmitDto): The payload.
             job (JobEntity): The posting being applied to, read for its
                 live ``form_schema`` at the moment of this write.
 
@@ -227,7 +230,7 @@ class ApplicationService:
 
         Args:
             job (JobEntity): The posting the submission is for.
-            dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            dto (ApplicationSubmitDto): The payload.
 
         Raises:
             ValueError: If a required résumé, profile section or answer is
@@ -323,7 +326,7 @@ class ApplicationService:
 
         Args:
             job (JobEntity): The posting the submission is for.
-            dto (ApplicationSubmitDto | ApplicationEditDto): The payload,
+            dto (ApplicationSubmitDto): The payload,
                 mutated in place.
         """
         dto.answers = form_visibility.prune_answers(job.form_schema, dto.answers)
@@ -345,7 +348,7 @@ class ApplicationService:
 
         Args:
             job (JobEntity): The posting the submission is for.
-            dto (ApplicationSubmitDto | ApplicationEditDto): Mutated in place.
+            dto (ApplicationSubmitDto): Mutated in place.
         """
         profile_config = job.profile_config or {}
         if profile_config.get(_SECTION_CONFIG_KEY["education"]) == "off":
@@ -364,7 +367,7 @@ class ApplicationService:
 
         Args:
             job (JobEntity): The posting the submission is for.
-            dto (ApplicationSubmitDto | ApplicationEditDto): Mutated in place.
+            dto (ApplicationSubmitDto): Mutated in place.
         """
         if (job.profile_config or {}).get("resume") == "off":
             dto.resume_object_key = None
@@ -471,8 +474,8 @@ class ApplicationService:
                 (see ``PUBLICLY_VISIBLE_JOB_STATUSES`` -- a pending revision or
                 close review does not stop submissions), a required
                 résumé/answer is missing, or the latest existing application
-                for this job is not REJECTED (an active application must be
-                edited instead of resubmitted).
+                for this job is not REJECTED (a submitted application is
+                final, so there is nothing to resubmit).
         """
         job = await self.job_repository.get_by_job_id(session, dto.job_id)
         if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
@@ -516,9 +519,7 @@ class ApplicationService:
             session, dto.job_id, current_user.user_id
         )
         if existing is not None and existing.stage != ApplicationStage.REJECTED:
-            raise ValueError(
-                "you already have an application for this job; edit it instead"
-            )
+            raise ValueError("you already have an application for this job")
 
         stage = self._screened_stage(job, blocked, screen_action)
         tags = self._screened_tags(blocked, screen_action, screen_rule_id)
@@ -548,7 +549,7 @@ class ApplicationService:
             ),
         )
         current_sub = await self._write_version(
-            session, application.application_id, 1, None, dto, job
+            session, application.application_id, dto, job
         )
 
         default_assignment = await self._assign_default_if_configured(
@@ -598,91 +599,11 @@ class ApplicationService:
                 details=details,
             )
 
+        await self.application_draft_repository.delete(
+            session, current_user.user_id, dto.job_id
+        )
         await session.commit()
-        lock_reason = self._lock_reason(application, job, current_sub)
-        return self.recruiting_mapper.to_application_dto(
-            application,
-            current_sub,
-            editable=lock_reason is None,
-            lock_reason=lock_reason,
-        )
-
-    async def _rescreen_after_edit(
-        self, session, current_user, application, job, dto
-    ) -> None:
-        """Re-run machine screening against the answers an edit just stored.
-
-        An edit is not a draft: the candidate has no save that is not a
-        submission, so the answers this writes are the answers the posting is
-        being applied to. Screening them only the first time left a rule the
-        edit now matches unfired -- answer "yes" to the question that
-        auto-rejects, submit, then edit it to "no", and the application stayed
-        in the pipeline reading "no" with nothing having looked at it.
-
-        All three outcomes apply, the same as on submit, so the result is a
-        function of the recorded answers and not of which write recorded them.
-
-        The blacklist is deliberately not re-checked here: it is swept
-        separately across every application (see ``BlockService``), and
-        that sweep, not an applicant's own edit, is what should act on it.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated applicant.
-            application (ApplicationEntity): The row being edited, already
-                locked by ``edit``.
-            job (JobEntity): The posting applied to.
-            dto (ApplicationEditDto): The edit payload, post-validation.
-        """
-        applicant_email_rows = await self.user_emails_repository.list_by_user_id(
-            session, current_user.user_id
-        )
-        applicant_emails = [
-            row.email for row in applicant_email_rows if row.otp_confirmed
-        ]
-        result = screen_rules.evaluate(job.screen_rules, applicant_emails, dto.answers)
-        action, rule_id = result["action"], result["rule_id"]
-        if action is None:
-            return
-
-        if action == "reject":
-            application.stage = ApplicationStage.REJECTED
-            application.stage_entered_at = datetime.now(timezone.utc)
-            application.sub_status = self._screened_sub_status(
-                ApplicationStage.REJECTED
-            )
-            application.tags = {"auto_reject": "screen_rule", "rule_id": rule_id}
-            await self.application_repository.update(session, application)
-            await record_event(
-                session,
-                subject_type="application",
-                subject_id=application.application_id,
-                actor_id=None,
-                event_type=RecruitingEvent.AUTO_REJECTED,
-                details={"reason": "screen_rule", "ruleId": rule_id, "onEdit": True},
-            )
-        else:  # auto_hire
-            application.stage = ApplicationStage.HIRED
-            application.stage_entered_at = datetime.now(timezone.utc)
-            application.sub_status = self._screened_sub_status(ApplicationStage.HIRED)
-            await self.application_repository.update(session, application)
-            await record_event(
-                session,
-                subject_type="application",
-                subject_id=application.application_id,
-                actor_id=current_user.user_id,
-                event_type=RecruitingEvent.APPLICATION_SUBMITTED,
-                details={
-                    "stage": ApplicationStage.HIRED.value,
-                    "screenAutoHireRuleId": rule_id,
-                    "onEdit": True,
-                },
-            )
-            await self.mentorship_admission_service.on_admitted(
-                session=session,
-                application=application,
-                job=job,
-            )
+        return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def _assign_default_if_configured(
         self, session, application, job, current_user
@@ -768,63 +689,6 @@ class ApplicationService:
         )
         return {"autoAssigneeId": default_id}
 
-    async def edit(
-        self,
-        session: AsyncSession,
-        current_user: UserContextDto,
-        application_id: int,
-        dto: ApplicationEditDto,
-    ) -> ApplicationDto:
-        """Overwrite the current submission version while still Applied.
-
-        Row-locks the application for the duration of the transaction so a
-        concurrent owner decision (freeze/advance via ``BoardService``)
-        can't interleave with this edit — without the lock, an edit could
-        silently overwrite the submission a decision was already based on.
-        ``_lock_reason`` is evaluated after this locked load, on the
-        now-current row.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated applicant.
-            application_id (int): The application to edit.
-            dto (ApplicationEditDto): The edit payload.
-
-        Returns:
-            ApplicationDto: The persisted application with its current version.
-
-        Raises:
-            ValueError: If not the owner, the application is no longer
-                editable (processing has started), or a required
-                résumé/answer is missing.
-        """
-        application = await self._load_owned(
-            session, current_user, application_id, for_update=True
-        )
-        job = await self.job_repository.get_by_job_id(session, application.job_id)
-        current_sub = await self.application_submission_repository.get_current(
-            session, application_id
-        )
-        if self._lock_reason(application, job, current_sub) is not None:
-            raise ValueError("application is locked once processing has started")
-        self._validate_submission(job, dto)
-        self._prune_hidden_answers(job, dto)
-        self._strip_uncollected_resume(job, dto)
-        self._strip_uncollected_sections(job, dto)
-        version = current_sub.version if current_sub is not None else 1
-        current_sub = await self._write_version(
-            session, application_id, version, current_sub, dto, job
-        )
-        await self._rescreen_after_edit(session, current_user, application, job, dto)
-        await session.commit()
-        lock_reason = self._lock_reason(application, job, current_sub)
-        return self.recruiting_mapper.to_application_dto(
-            application,
-            current_sub,
-            editable=lock_reason is None,
-            lock_reason=lock_reason,
-        )
-
     async def get_my_latest_profile(self, session, current_user: UserContextDto):
         """The profile blocks of this candidate's most recent submission.
 
@@ -870,8 +734,7 @@ class ApplicationService:
         belong to with it, while the dashboard kept linking there.
 
         Reading is all this grants. ``submit`` still refuses a posting that
-        is not live, and ``_lock_reason`` reports it as CLOSED so the
-        answers cannot be edited either.
+        is not live, and a submitted application cannot be changed at all.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -918,14 +781,7 @@ class ApplicationService:
         current_sub = await self.application_submission_repository.get_current(
             session, application.application_id
         )
-        job = await self.job_repository.get_by_job_id(session, application.job_id)
-        lock_reason = self._lock_reason(application, job, current_sub)
-        return self.recruiting_mapper.to_application_dto(
-            application,
-            current_sub,
-            editable=lock_reason is None,
-            lock_reason=lock_reason,
-        )
+        return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def list_mine(self, session, current_user) -> MyApplicationsDto:
         """Return every application the caller has ever submitted, any job
@@ -947,12 +803,16 @@ class ApplicationService:
                 mentorship role the caller holds a HIRED admission in, or an
                 empty list when they have none. That list's order carries no
                 authority — it is most-recent-admission-first for display
-                only, and no code may treat element 0 as "the" role.
+                only, and no code may treat element 0 as "the" role. Also
+                the caller's unsubmitted drafts, most recently saved first.
         """
         rows = await self.application_repository.list_by_user(
             session, current_user.user_id
         )
         mentorship_roles = await self.application_repository.list_hired_activity_roles(
+            session, current_user.user_id
+        )
+        draft_rows = await self.application_draft_repository.list_by_user_with_job(
             session, current_user.user_id
         )
         return MyApplicationsDto(
@@ -961,102 +821,32 @@ class ApplicationService:
                 for application, job in rows
             ],
             mentorship_roles=mentorship_roles,
+            drafts=[
+                self.recruiting_mapper.to_my_application_draft_summary_dto(draft, job)
+                for draft, job in draft_rows
+            ],
         )
 
-    def _lock_reason(self, application, job, current_submission):
-        """Why the candidate can no longer edit, or None while they still can.
-
-        ``editable`` is derived from this rather than computed beside it, so a
-        client cannot be told it is locked and shown no reason, or the reverse.
-
-        ADVANCED is checked first because it is the more informative answer:
-        naming where the application went tells the reader more than saying
-        someone is working on it. CLOSED is checked last for the same
-        reason from the other end: an application that advanced, or that
-        someone is working on, was not stopped by the posting closing, and
-        saying it was would suggest the application is over when it is not.
-
-        Args:
-            application (ApplicationEntity): The application container.
-            job (JobEntity): The posting the application is for.
-            current_submission (ApplicationSubmissionEntity | None): The
-                application's current (highest) submission version.
-
-        Returns:
-            ApplicationLockReason | None: The reason editing is closed, or
-                None while the posting is still live and the application sits
-                at its first configured stage with a pending sub_status and
-                an unfrozen submission.
-        """
-        if application.stage != stage_machine.first_stage(job.pipeline_config):
-            return ApplicationLockReason.ADVANCED
-        if (application.sub_status or "pending") != "pending":
-            return ApplicationLockReason.IN_REVIEW
-        if current_submission is not None and current_submission.is_frozen:
-            return ApplicationLockReason.IN_REVIEW
-        if job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
-            return ApplicationLockReason.CLOSED
-        return None
-
-    async def _load_owned(
-        self, session, current_user, application_id, *, for_update: bool = False
-    ):
-        """Fetch an application and assert the caller owns it.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated applicant.
-            application_id (int): The application to fetch.
-            for_update (bool): When True, row-locks the application
-                (``SELECT ... FOR UPDATE``) so a concurrent owner decision
-                (freeze/advance) on the same application can't interleave
-                with this call. ``edit`` passes True (it mutates); read-only
-                callers should leave this False.
-
-        Returns:
-            ApplicationEntity: The owned application.
-
-        Raises:
-            ValueError: If missing or owned by another user.
-        """
-        application = await self.application_repository.get_by_id(
-            session, application_id, for_update=for_update
-        )
-        if application is None or application.user_id != current_user.user_id:
-            raise ValueError(f"application {application_id} not found")
-        return application
-
-    async def _write_version(
-        self, session, application_id, version, current_sub, dto, job
-    ):
-        """Overwrite the current version in place, or create version 1.
+    async def _write_version(self, session, application_id, dto, job):
+        """Create the application's one submission, version 1.
 
         Args:
             session (AsyncSession): Active database async session.
             application_id (int): The owning application.
-            version (int): The version number to write.
-            current_sub (ApplicationSubmissionEntity | None): The existing
-                current version, or None to create version 1.
-            dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            dto (ApplicationSubmitDto): The payload.
             job (JobEntity): The posting being applied to, read for its
                 live ``form_schema`` to snapshot.
 
         Returns:
             ApplicationSubmissionEntity: The persisted submission version.
         """
-        snapshot = self._snapshot(dto, job)
-        if current_sub is None:
-            return await self.application_submission_repository.create(
-                session,
-                ApplicationSubmissionEntity(
-                    application_id=application_id,
-                    version=version,
-                    submission=snapshot,
-                    resume_object_key=dto.resume_object_key,
-                    resume_sha256=dto.resume_sha256,
-                ),
-            )
-        current_sub.submission = snapshot
-        current_sub.resume_object_key = dto.resume_object_key
-        current_sub.resume_sha256 = dto.resume_sha256
-        return await self.application_submission_repository.update(session, current_sub)
+        return await self.application_submission_repository.create(
+            session,
+            ApplicationSubmissionEntity(
+                application_id=application_id,
+                version=1,
+                submission=self._snapshot(dto, job),
+                resume_object_key=dto.resume_object_key,
+                resume_sha256=dto.resume_sha256,
+            ),
+        )

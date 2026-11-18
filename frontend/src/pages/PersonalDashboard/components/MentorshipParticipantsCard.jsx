@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatInTz, formatDateTimeWithZone } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { MatchStatus } from "@/constants/matchStatus";
 import { GraduationCap, User } from "lucide-react";
 import { toast } from "sonner";
 import { deleteMeeting, rescheduleMeeting } from "@/api/meetingApi";
@@ -40,13 +41,15 @@ import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
  *     partnerMeetingOverview: Array,
  *     participantRole: string | null,
  *     isRegistered?: boolean,
- *     isRegistrationRound?: boolean
+ *     isRegistrationRound?: boolean,
+ *     matchStatus?: string | null
  *   },
  *   refreshMeetings: () => void,
  *   isRegistrationOpen?: boolean
  * }} props - `isRegistrationRound` is whether the selected round is the one
  *   taking registrations; with `isRegistrationOpen` it decides whether the
  *   empty state points the viewer at the banner's register button.
+ *   `matchStatus` is the viewer's MatchStatus in that round, or null.
  */
 export default function MentorshipParticipantsCard({
   roundSelectionData,
@@ -120,6 +123,28 @@ export default function MentorshipParticipantsCard({
   );
   // A finished round is looked back on, so its empty state speaks in the past.
   const isPastRound = selectedRound?.status === MentorshipRoundStatus.COMPLETED;
+  // Leaving a round keeps its registration on file, so the match status is
+  // read before it. Rejected covers a turned-down application, a block and
+  // leaving alike, so it names no reason.
+  const matchStatus = participantDetails?.matchStatus;
+  const emptyStateMessage =
+    matchStatus === MatchStatus.WITHDRAWN
+      ? isPastRound
+        ? "You withdrew from this round."
+        : "You've withdrawn from this round."
+      : matchStatus === MatchStatus.REJECTED
+        ? isPastRound
+          ? "You didn't take part in this round."
+          : "You aren't taking part in this round."
+        : isPastRound
+          ? participantDetails?.isRegistered
+            ? "You registered for this round but weren't matched."
+            : "You didn't take part in this round."
+          : participantDetails?.isRegistered
+            ? "You are registered for this round but have not been matched yet."
+            : participantDetails?.isRegistrationRound && isRegistrationOpen
+              ? "Register for this round from the banner above to get matched with a partner."
+              : "You're not taking part in this round. When registration for a round opens, you can register from this page.";
   // Booking needs a live partner as well as a running round; the dialog's
   // partner list already leaves ended pairings out, so with none left the
   // entry point says why instead of opening onto an empty list.
@@ -278,15 +303,7 @@ export default function MentorshipParticipantsCard({
         ) : !hasParticipation ? (
           <div className="text-center py-8 text-gray-500">
             <GraduationCap className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-            {isPastRound
-              ? participantDetails?.isRegistered
-                ? "You registered for this round but weren't matched."
-                : "You didn't take part in this round."
-              : participantDetails?.isRegistered
-                ? "You are registered for this round but have not been matched yet."
-                : participantDetails?.isRegistrationRound && isRegistrationOpen
-                  ? "Register for this round from the banner above to get matched with a partner."
-                  : "You're not taking part in this round. When registration for a round opens, you can register from this page."}
+            {emptyStateMessage}
           </div>
         ) : (
           <>

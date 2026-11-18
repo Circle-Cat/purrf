@@ -53,9 +53,6 @@ from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
 )
 from backend.repository.application_repository import ApplicationRepository
-from backend.repository.application_submission_repository import (
-    ApplicationSubmissionRepository,
-)
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
@@ -260,7 +257,6 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         )
         perms = UserPermissionsRepository()
         applications = ApplicationRepository()
-        submissions = ApplicationSubmissionRepository()
         interviews = ApplicationInterviewRepository()
         self.interviews_svc = MagicMock()
         self.interviews_svc.cancel_for_round = AsyncMock()
@@ -274,7 +270,6 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
             BlockUserHandler(
                 users,
                 applications,
-                submissions,
                 interviews,
                 self.interviews_svc,
                 mentorship,
@@ -284,7 +279,6 @@ class BlockEndsMentorshipFlowTest(BaseRepositoryTestLib):
         self.service = BlockService(
             users,
             applications,
-            submissions,
             interviews,
             self.interviews_svc,
             approvals,

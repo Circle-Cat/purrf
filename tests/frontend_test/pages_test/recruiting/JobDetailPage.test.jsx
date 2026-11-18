@@ -18,7 +18,6 @@ vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
           onSubmitted({
             id: 1,
             stage: "recruiter_screening",
-            editable: true,
             current: { submission: {} },
           })
         }
@@ -47,6 +46,7 @@ beforeEach(() => {
     },
   });
   api.getMyApplication.mockResolvedValue({ data: null });
+  api.getMyApplicationDraft.mockResolvedValue({ data: null });
 });
 
 /** Render JobDetailPage inside a MemoryRouter at the given path, with both
@@ -94,7 +94,7 @@ describe("JobDetailPage", () => {
       },
     });
     api.getMyApplication.mockResolvedValue({
-      data: { id: 9, stage: "rejected", editable: false },
+      data: { id: 9, stage: "rejected" },
     });
 
     renderAt("/recruiting/jobs/5");
@@ -112,25 +112,9 @@ describe("JobDetailPage", () => {
     expect(api.getMyApplication).toHaveBeenCalledWith("5");
   });
 
-  it("shows 'Continue application' and goes to the my-application route when an editable application already exists", async () => {
+  it("shows 'View your application' and goes to the my-application route when an application already exists", async () => {
     api.getMyApplication.mockResolvedValue({
-      data: { id: 7, stage: "applied", editable: true },
-    });
-    const { router } = renderAt("/recruiting/jobs/5");
-    const button = await screen.findByRole("button", {
-      name: "Continue application",
-    });
-    fireEvent.click(button);
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe(
-        "/recruiting/jobs/5/application",
-      ),
-    );
-  });
-
-  it("shows 'View your application' and goes to the my-application route when a locked application already exists", async () => {
-    api.getMyApplication.mockResolvedValue({
-      data: { id: 7, stage: "recruiter_screening", editable: false },
+      data: { id: 7, stage: "recruiter_screening" },
     });
     const { router } = renderAt("/recruiting/jobs/5");
     const button = await screen.findByRole("button", {
@@ -265,5 +249,55 @@ describe("JobDetailPage", () => {
     expect(
       screen.queryByText("Couldn't load this job."),
     ).not.toBeInTheDocument();
+  });
+
+  describe("with a saved draft", () => {
+    const DRAFT = {
+      jobId: 5,
+      personal: { firstName: "Dora" },
+      education: [],
+      experience: [],
+      answers: { q1: "Lisbon" },
+      resumeSha256: null,
+      resumeObjectKey: null,
+      updatedAt: "2026-11-17T08:00:00Z",
+    };
+
+    it("offers to continue the draft, on the apply route", async () => {
+      api.getMyApplicationDraft.mockResolvedValue({ data: DRAFT });
+      const { router } = renderAt("/recruiting/jobs/5");
+
+      const button = await screen.findByRole("button", {
+        name: "Continue application",
+      });
+      expect(api.getMyApplicationDraft).toHaveBeenCalledWith("5");
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(router.state.location.pathname).toBe("/recruiting/jobs/5/apply"),
+      );
+      expect(await screen.findByText("Applying to Mentee")).toBeInTheDocument();
+    });
+
+    it("reads a failed draft check as no draft", async () => {
+      api.getMyApplicationDraft.mockRejectedValue(new Error("draft down"));
+      renderAt("/recruiting/jobs/5");
+
+      expect(
+        await screen.findByRole("button", { name: "Apply" }),
+      ).toBeInTheDocument();
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it("leads to the application, not the draft, once one exists", async () => {
+      api.getMyApplicationDraft.mockResolvedValue({ data: DRAFT });
+      api.getMyApplication.mockResolvedValue({
+        data: { id: 1, stage: "applied" },
+      });
+      renderAt("/recruiting/jobs/5");
+
+      expect(
+        await screen.findByRole("button", { name: "View your application" }),
+      ).toBeInTheDocument();
+    });
   });
 });

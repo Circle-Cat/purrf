@@ -15,7 +15,6 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
 
         self.app_service = MagicMock()
         self.app_service.submit = AsyncMock(return_value={"id": 100})
-        self.app_service.edit = AsyncMock(return_value={"id": 100})
         self.app_service.get_mine = AsyncMock(return_value=None)
         self.app_service.get_job_for_applicant = AsyncMock(return_value={"id": 1})
 
@@ -24,8 +23,16 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.resume_storage = MagicMock()
         self.resume_storage.put = MagicMock(return_value=("abc", "resumes/abc.pdf"))
 
+        self.draft_service = MagicMock()
+        self.draft_service.get_mine = AsyncMock(return_value=None)
+        self.draft_service.save = AsyncMock(return_value={"jobId": 31})
+
         self.controller = ApplicationController(
-            self.app_service, self.job_service, self.resume_storage, self.database
+            self.app_service,
+            self.job_service,
+            self.resume_storage,
+            self.database,
+            self.draft_service,
         )
 
         self.patcher = patch("backend.recruiting.application_controller.api_response")
@@ -64,14 +71,6 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
         resp = await self.controller.submit_application(self.ctx, dto)
         self.app_service.submit.assert_awaited_once_with(self.session, self.ctx, dto)
-        self.assertEqual(resp["data"], {"id": 100})
-
-    async def test_edit_application_delegates(self):
-        from backend.dto.application_dto import ApplicationEditDto
-
-        dto = ApplicationEditDto.model_validate({})
-        resp = await self.controller.edit_application(self.ctx, 5, dto)
-        self.app_service.edit.assert_awaited_once_with(self.session, self.ctx, 5, dto)
         self.assertEqual(resp["data"], {"id": 100})
 
     async def test_list_public_jobs_delegates(self):
@@ -126,6 +125,21 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         resp = await self.controller.get_my_application(self.ctx, job_id=7)
         self.app_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 7)
         self.assertIsNone(resp["data"])
+
+    async def test_get_my_draft_uses_job_id_query_param(self):
+        resp = await self.controller.get_my_draft(self.ctx, job_id=31)
+        self.draft_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 31)
+        self.assertEqual("Draft fetched.", resp["message"])
+        self.assertIsNone(resp["data"])
+
+    async def test_save_my_draft_delegates(self):
+        from backend.dto.application_dto import ApplicationDraftSaveDto
+
+        dto = ApplicationDraftSaveDto.model_validate({"jobId": 31})
+        resp = await self.controller.save_my_draft(self.ctx, dto)
+        self.draft_service.save.assert_awaited_once_with(self.session, self.ctx, dto)
+        self.assertEqual("Draft saved.", resp["message"])
+        self.assertEqual({"jobId": 31}, resp["data"])
 
     async def test_list_my_applications_delegates(self):
         payload = {
