@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import ApplicationNextStepsDialog from "@/pages/Recruiting/components/ApplicationNextStepsDialog";
 import { useAuth } from "@/context/auth/AuthContext.js";
@@ -8,6 +10,8 @@ import {
   submitApplication,
   updateApplication,
   getMyLatestProfile,
+  getMyApplicationDraft,
+  saveApplicationDraft,
 } from "@/api/recruitingApi";
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
 import { ProfileFields } from "@/constants/ApiEndpoints";
@@ -143,6 +147,22 @@ const submittedNotice = (existing) => {
 };
 
 /**
+ * The caller's saved draft for a job, or null. Never throws: a draft is a
+ * convenience, and failing to read one must leave a usable form.
+ *
+ * @param {number} jobId
+ * @returns {Promise<object|null>}
+ */
+const loadDraft = async (jobId) => {
+  try {
+    const res = await getMyApplicationDraft(jobId);
+    return res?.data ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Candidate application form for a published job. Owns the applicant's
  * profile/answers/resume state and submits it via `submitApplication`
  * (create) or `updateApplication` (edit, when `existing` is provided). Both
@@ -182,6 +202,14 @@ const submittedNotice = (existing) => {
  * matched. That dialog leads to `onViewApplication` (falling back to
  * `onSubmitted`) or to the Personal Dashboard. Edits and every other
  * posting go straight to `onSubmitted`.
+ *
+ * A new application (no `existing`, with or without `seed`) can also be
+ * saved as a private draft and finished later. Its saved draft, when there
+ * is one, is read alongside the profile and wins over every other prefill,
+ * résumé reference included. Saving a draft checks nothing; submitting is
+ * confirmed first, since a submitted application cannot be changed. Whether
+ * to write the form back to the profile is a checkbox, ticked by default,
+ * rather than the "Update your profile?" question the edit path asks.
  *
  * @param {{job: object, existing?: object, seed?: object, seedApplicationId?: number,
  *          onSubmitted: (app: object) => void,
@@ -246,6 +274,17 @@ const ApplicationForm = ({
   const [resumeUploading, setResumeUploading] = useState(false);
   // Always: the profile is where the block comes from, on every path.
   const [prefillLoading, setPrefillLoading] = useState(true);
+  // New-application path only: the profile write-back choice, the submit
+  // confirmation, a draft save in flight, and the résumé key a loaded draft
+  // carried (shown as attached while it is still the one on the form).
+  const [saveToProfile, setSaveToProfile] = useState(true);
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftResumeKey, setDraftResumeKey] = useState(null);
+  const draftResumeOnFile =
+    !existingResume &&
+    Boolean(draftResumeKey) &&
+    resume.objectKey === draftResumeKey;
   // Which profile blocks this posting puts on screen, and so which the
   // candidate can be said to have reviewed.
   const shownBlocks = {
@@ -253,8 +292,33 @@ const ApplicationForm = ({
     experience: job.profileConfig?.workExperience !== "off",
   };
 
+  /**
+   * Put a saved draft on the form, replacing whatever the profile gave.
+   *
+   * @param {object} draft As `getMyApplicationDraft` returns it.
+   */
+  const applyDraft = (draft) => {
+    setProfileValue({
+      personal: {
+        ...(draft.personal ?? {}),
+        timezone: draft.personal?.timezone || browserTimezone(),
+      },
+      education: draft.education ?? [],
+      experience: draft.experience ?? [],
+    });
+    setAnswers(draft.answers ?? {});
+    setResume({
+      sha256: draft.resumeSha256 ?? null,
+      objectKey: draft.resumeObjectKey ?? null,
+    });
+    setDraftResumeKey(draft.resumeObjectKey ?? null);
+  };
+
   useEffect(() => {
     let cancelled = false;
+    // Started now so it runs beside the profile read, applied after it so
+    // the draft wins.
+    const draftLoad = existing ? Promise.resolve(null) : loadDraft(job.id);
     getMyProfile({
       fields: [ProfileFields.WORK_HISTORY, ProfileFields.EDUCATION],
     })
@@ -280,6 +344,10 @@ const ApplicationForm = ({
       .catch(() => {
         // Prefill is a convenience; a failure just leaves the form at its
         // normal empty initial state.
+      })
+      .then(() => draftLoad)
+      .then((draft) => {
+        if (!cancelled && draft) applyDraft(draft);
       })
       .finally(() => {
         if (!cancelled) setPrefillLoading(false);
@@ -458,7 +526,42 @@ const ApplicationForm = ({
   const submit = () => {
     if (submitting) return;
     if (!validate()) return;
+    if (!existing) {
+      setConfirmingSubmit(true);
+      return;
+    }
     askAboutProfile();
+  };
+
+  /** Send a new application once the candidate confirms it. */
+  const confirmSubmit = () => {
+    setConfirmingSubmit(false);
+    send(saveToProfile);
+  };
+
+  /**
+   * Save the form as it stands as the candidate's private draft. Nothing is
+   * checked: a draft is allowed to be incomplete. Stays on the page.
+   */
+  const saveDraft = async () => {
+    if (savingDraft || submitting) return;
+    setSavingDraft(true);
+    try {
+      await saveApplicationDraft({
+        jobId: job.id,
+        personal: profileValue.personal,
+        education: profileValue.education,
+        experience: profileValue.experience,
+        answers,
+        resumeSha256: resume.sha256 ?? null,
+        resumeObjectKey: resume.objectKey ?? null,
+      });
+      toast.success("Draft saved.");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setSavingDraft(false);
+    }
   };
 
   /**
@@ -540,14 +643,80 @@ const ApplicationForm = ({
         onResumeUploadingChange={setResumeUploading}
         onResumeStored={setResume}
         existingResume={existingResume}
+        draftResumeOnFile={draftResumeOnFile}
+        afterProfile={
+          existing ? null : (
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+              <Checkbox
+                id="application-save-to-profile"
+                className="mt-0.5"
+                checked={saveToProfile}
+                onCheckedChange={(checked) =>
+                  setSaveToProfile(checked === true)
+                }
+              />
+              <div className="space-y-1">
+                <Label htmlFor="application-save-to-profile">
+                  Also save these changes to my profile
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Your profile&apos;s education and experience will be replaced
+                  by what you entered here.
+                </p>
+              </div>
+            </div>
+          )
+        }
       />
-      <Button onClick={submit} disabled={submitting || resumeUploading}>
-        {resumeUploading
-          ? "Uploading résumé…"
-          : existing
-            ? "Save changes"
-            : "Submit application"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={submit} disabled={submitting || resumeUploading}>
+          {resumeUploading
+            ? "Uploading résumé…"
+            : existing
+              ? "Save changes"
+              : "Submit application"}
+        </Button>
+        {!existing && (
+          <Button
+            variant="outline"
+            onClick={saveDraft}
+            disabled={savingDraft || submitting || resumeUploading}
+          >
+            Save draft
+          </Button>
+        )}
+      </div>
+      {!existing && (
+        <p className="text-xs text-muted-foreground">
+          Only you can see a draft. You can&apos;t change your application after
+          you submit it.
+        </p>
+      )}
+      <Dialog
+        open={confirmingSubmit}
+        onOpenChange={(open) => !open && setConfirmingSubmit(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Submit your application?</DialogTitle>
+            <DialogDescription>
+              You can&apos;t change it after you submit. If you&apos;re not
+              ready, save a draft and come back later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmingSubmit(false)}
+            >
+              Keep editing
+            </Button>
+            <Button onClick={confirmSubmit} disabled={submitting}>
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={pendingSync !== null}
         onOpenChange={(open) => !open && setPendingSync(null)}

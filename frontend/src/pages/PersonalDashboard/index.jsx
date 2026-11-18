@@ -36,6 +36,7 @@ const PersonalDashboard = () => {
     loadError: applicationsLoadError,
     load: loadApplications,
     hiredMentorshipRoles,
+    drafts: applicationDrafts,
   } = useMyApplications();
 
   // Only show the mentorship section, and only start fetching mentorship
@@ -125,6 +126,7 @@ const PersonalDashboard = () => {
       {/* My Applications card */}
       <MyApplicationsCard
         applications={applications}
+        drafts={applicationDrafts}
         isLoading={isApplicationsLoading}
         loadError={applicationsLoadError}
         onRetry={loadApplications}

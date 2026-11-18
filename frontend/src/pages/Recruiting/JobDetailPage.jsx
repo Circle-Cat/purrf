@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { getPublicJob, getMyApplication } from "@/api/recruitingApi";
+import {
+  getPublicJob,
+  getMyApplication,
+  getMyApplicationDraft,
+} from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
@@ -24,6 +28,11 @@ import LoadGate from "@/pages/Recruiting/components/LoadGate";
  * seeing "Apply" again. A failed check falls back to the no-application
  * behavior on both routes -- the submit path still surfaces backend errors.
  *
+ * On the summary route a saved draft is checked too: with no application,
+ * a draft turns "Apply" into "Continue application", still leading to the
+ * apply route, where the form picks the draft up. A failed check reads as no
+ * draft.
+ *
  * A posting that has stopped accepting applications says so under its kind.
  * Only a candidate who already applied can load one at all, and for them
  * the action is "View your application" either way, so nothing here breaks
@@ -39,6 +48,7 @@ const JobDetailPage = () => {
   const isApplying = location.pathname.endsWith("/apply");
   const [checkingApplication, setCheckingApplication] = useState(true);
   const [application, setApplication] = useState(null);
+  const [hasDraft, setHasDraft] = useState(false);
 
   /** Load (or reload, after a failure) the public job into state. */
   const load = useCallback(() => {
@@ -74,6 +84,21 @@ const JobDetailPage = () => {
       cancelled = true;
     };
   }, [jobId]);
+
+  useEffect(() => {
+    if (isApplying) return undefined;
+    let cancelled = false;
+    getMyApplicationDraft(jobId)
+      .then((res) => {
+        if (!cancelled) setHasDraft(Boolean(res?.data));
+      })
+      .catch(() => {
+        if (!cancelled) setHasDraft(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, isApplying]);
 
   useEffect(() => {
     if (isApplying && application) {
@@ -136,7 +161,9 @@ const JobDetailPage = () => {
           ? application.editable
             ? "Continue application"
             : "View your application"
-          : "Apply"}
+          : hasDraft
+            ? "Continue application"
+            : "Apply"}
       </Button>
     </div>
   );
