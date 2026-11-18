@@ -1373,7 +1373,6 @@ class AppDependencyBuilder:
         self.block_user_handler = BlockUserHandler(
             self.users_repository,
             self.application_repository,
-            self.application_submission_repository,
             self.application_interview_repository,
             self.interview_scheduling_service,
             self.mentorship_block_service,
@@ -1383,7 +1382,6 @@ class AppDependencyBuilder:
         self.block_service = BlockService(
             self.users_repository,
             self.application_repository,
-            self.application_submission_repository,
             self.application_interview_repository,
             self.interview_scheduling_service,
             self.approval_service,

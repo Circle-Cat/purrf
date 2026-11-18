@@ -45,8 +45,7 @@ class EvaluationService:
             users_repository (UsersRepository): Applicant lookups, for
                 applicant names in "My Interview Evaluations".
             application_submission_repository (ApplicationSubmissionRepository):
-                Submission data access, used to freeze the answers an
-                evaluation was written against and to name an applicant whose
+                Submission data access, used to name an applicant whose
                 account has no name.
         """
         self.application_repository = application_repository
@@ -113,19 +112,6 @@ class EvaluationService:
                 session, row, datetime.now(timezone.utc)
             )
             application.sub_status = "evaluated"
-            # Freeze what was just scored. Every other mover of sub_status
-            # freezes, but set_sub_status only does so on the way *out* of
-            # "pending" -- so without this, an owner setting the status back
-            # to "pending" would hand the candidate the edit back, and a save
-            # would overwrite in place the answers this scorecard judged.
-            current_sub = await self.application_submission_repository.get_current(
-                session, application_id
-            )
-            if current_sub is not None and not current_sub.is_frozen:
-                current_sub.is_frozen = True
-                await self.application_submission_repository.update(
-                    session, current_sub
-                )
             await self.application_repository.update(session, application)
             await record_event(
                 session,

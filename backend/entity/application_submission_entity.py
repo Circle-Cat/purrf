@@ -6,11 +6,11 @@ from backend.common.base import Base
 
 
 class ApplicationSubmissionEntity(Base):
-    """An append-only submission version for an application.
+    """The answers a candidate submitted for an application.
 
-    While the application is Applied the current version is overwritten in
-    place; freezing or re-applying after a rejection mints a
-    new version, so prior versions survive for a later diff.
+    Written once, as version 1, when the candidate submits, and never changed
+    afterwards. Re-applying after a rejection creates a new application with
+    its own version 1.
     """
 
     __tablename__ = "application_submission"

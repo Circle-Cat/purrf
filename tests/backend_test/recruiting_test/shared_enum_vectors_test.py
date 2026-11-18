@@ -3,13 +3,11 @@ import unittest
 from pathlib import Path
 
 from backend.common.recruiting_enums import (
-    ApplicationLockReason,
     ApplicationStage,
     JobStatus,
 )
 
 _STAGES = Path("tests/shared/application_stages.json")
-_LOCK_REASONS = Path("tests/shared/application_lock_reasons.json")
 _JOB_STATUSES = Path("tests/shared/job_statuses.json")
 
 
@@ -19,14 +17,6 @@ class ApplicationStagesVectorTest(unittest.TestCase):
     def test_vector_matches_the_enum_exactly(self):
         shared = json.loads(_STAGES.read_text(encoding="utf-8"))
         self.assertEqual(shared, [stage.value for stage in ApplicationStage])
-
-
-class ApplicationLockReasonsVectorTest(unittest.TestCase):
-    """Pins the shared lock-reason vector to the enum the frontend words."""
-
-    def test_vector_matches_the_enum_exactly(self):
-        shared = json.loads(_LOCK_REASONS.read_text(encoding="utf-8"))
-        self.assertEqual(shared, [r.value for r in ApplicationLockReason])
 
 
 class JobStatusesVectorTest(unittest.TestCase):

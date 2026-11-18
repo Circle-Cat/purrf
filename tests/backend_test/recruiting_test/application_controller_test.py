@@ -15,7 +15,6 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
 
         self.app_service = MagicMock()
         self.app_service.submit = AsyncMock(return_value={"id": 100})
-        self.app_service.edit = AsyncMock(return_value={"id": 100})
         self.app_service.get_mine = AsyncMock(return_value=None)
         self.app_service.get_job_for_applicant = AsyncMock(return_value={"id": 1})
 
@@ -72,14 +71,6 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
         resp = await self.controller.submit_application(self.ctx, dto)
         self.app_service.submit.assert_awaited_once_with(self.session, self.ctx, dto)
-        self.assertEqual(resp["data"], {"id": 100})
-
-    async def test_edit_application_delegates(self):
-        from backend.dto.application_dto import ApplicationEditDto
-
-        dto = ApplicationEditDto.model_validate({})
-        resp = await self.controller.edit_application(self.ctx, 5, dto)
-        self.app_service.edit.assert_awaited_once_with(self.session, self.ctx, 5, dto)
         self.assertEqual(resp["data"], {"id": 100})
 
     async def test_list_public_jobs_delegates(self):
@@ -149,20 +140,6 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.draft_service.save.assert_awaited_once_with(self.session, self.ctx, dto)
         self.assertEqual("Draft saved.", resp["message"])
         self.assertEqual({"jobId": 31}, resp["data"])
-
-    def test_draft_routes_are_not_shadowed_by_the_application_id_route(self):
-        """Starlette matches routes in order, so /draft has to be registered
-        before /{application_id} or "draft" would be read as an id."""
-        paths = [
-            (route.path, method)
-            for route in self.controller.router.routes
-            for method in route.methods
-        ]
-        draft_get = paths.index(("/recruiting/applications/draft", "GET"))
-        draft_put = paths.index(("/recruiting/applications/draft", "PUT"))
-        by_id = paths.index(("/recruiting/applications/{application_id}", "PATCH"))
-        self.assertLess(draft_get, by_id)
-        self.assertLess(draft_put, by_id)
 
     async def test_list_my_applications_delegates(self):
         payload = {

@@ -4,7 +4,6 @@ from backend.utils.permission_decorators import authenticate
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.application_dto import (
     ApplicationDraftSaveDto,
-    ApplicationEditDto,
     ApplicationSubmitDto,
 )
 from backend.common.api_endpoints import (
@@ -13,7 +12,6 @@ from backend.common.api_endpoints import (
     RECRUITING_PUBLIC_JOBS_ENDPOINT,
     RECRUITING_RESUMES_ENDPOINT,
     RECRUITING_APPLICATIONS_ENDPOINT,
-    RECRUITING_APPLICATION_ENDPOINT,
     RECRUITING_APPLICATION_DRAFT_ENDPOINT,
     RECRUITING_APPLICATIONS_MINE_ENDPOINT,
     RECRUITING_MY_APPLICATIONS_ENDPOINT,
@@ -34,7 +32,7 @@ class ApplicationController:
     ):
         """
         Args:
-            application_service (ApplicationService): Submit/edit/get logic.
+            application_service (ApplicationService): Submit/get logic.
             job_service (JobService): Provides the candidate-visible job lookups.
             resume_storage (ResumeStorage): Content-addressed résumé upload.
             database: Async session provider.
@@ -110,12 +108,6 @@ class ApplicationController:
             methods=["POST"],
             response_model=None,
         )
-        self.router.add_api_route(
-            RECRUITING_APPLICATION_ENDPOINT,
-            endpoint=authenticate()(self.edit_application),
-            methods=["PATCH"],
-            response_model=None,
-        )
 
     async def get_public_job(self, current_user: UserContextDto, job_id: int):
         """Fetch a posting's candidate-safe projection for the application form.
@@ -171,19 +163,6 @@ class ApplicationController:
                 session, current_user, submit_data
             )
         return api_response(message="Application submitted.", data=result)
-
-    async def edit_application(
-        self,
-        current_user: UserContextDto,
-        application_id: int,
-        edit_data: ApplicationEditDto,
-    ):
-        """Overwrite the caller's application while it is still Applied."""
-        async with self.database.session() as session:
-            result = await self.application_service.edit(
-                session, current_user, application_id, edit_data
-            )
-        return api_response(message="Application updated.", data=result)
 
     async def get_my_application(self, current_user: UserContextDto, job_id: int):
         """Return the caller's application for a job (query param job_id)."""
