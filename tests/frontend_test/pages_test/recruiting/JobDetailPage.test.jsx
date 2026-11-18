@@ -18,7 +18,6 @@ vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
           onSubmitted({
             id: 1,
             stage: "recruiter_screening",
-            editable: true,
             current: { submission: {} },
           })
         }
@@ -95,7 +94,7 @@ describe("JobDetailPage", () => {
       },
     });
     api.getMyApplication.mockResolvedValue({
-      data: { id: 9, stage: "rejected", editable: false },
+      data: { id: 9, stage: "rejected" },
     });
 
     renderAt("/recruiting/jobs/5");
@@ -113,25 +112,9 @@ describe("JobDetailPage", () => {
     expect(api.getMyApplication).toHaveBeenCalledWith("5");
   });
 
-  it("shows 'Continue application' and goes to the my-application route when an editable application already exists", async () => {
+  it("shows 'View your application' and goes to the my-application route when an application already exists", async () => {
     api.getMyApplication.mockResolvedValue({
-      data: { id: 7, stage: "applied", editable: true },
-    });
-    const { router } = renderAt("/recruiting/jobs/5");
-    const button = await screen.findByRole("button", {
-      name: "Continue application",
-    });
-    fireEvent.click(button);
-    await waitFor(() =>
-      expect(router.state.location.pathname).toBe(
-        "/recruiting/jobs/5/application",
-      ),
-    );
-  });
-
-  it("shows 'View your application' and goes to the my-application route when a locked application already exists", async () => {
-    api.getMyApplication.mockResolvedValue({
-      data: { id: 7, stage: "recruiter_screening", editable: false },
+      data: { id: 7, stage: "recruiter_screening" },
     });
     const { router } = renderAt("/recruiting/jobs/5");
     const button = await screen.findByRole("button", {
@@ -308,7 +291,7 @@ describe("JobDetailPage", () => {
     it("leads to the application, not the draft, once one exists", async () => {
       api.getMyApplicationDraft.mockResolvedValue({ data: DRAFT });
       api.getMyApplication.mockResolvedValue({
-        data: { id: 1, editable: false },
+        data: { id: 1, stage: "applied" },
       });
       renderAt("/recruiting/jobs/5");
 

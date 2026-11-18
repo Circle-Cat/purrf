@@ -30,11 +30,6 @@ filegroup(
     srcs = ["application_lock_reasons.json"],
 )
 
-js_library(
-    name = "application_lock_reasons_vector_js",
-    srcs = ["application_lock_reasons.json"],
-)
-
 filegroup(
     name = "job_statuses_vector",
     srcs = ["job_statuses.json"],

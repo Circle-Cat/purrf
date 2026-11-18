@@ -20,7 +20,6 @@ import {
   getPublicJob,
   uploadResume,
   submitApplication,
-  updateApplication,
   getMyApplication,
   getMyApplicationDraft,
   saveApplicationDraft,
@@ -207,14 +206,6 @@ describe("recruitingApi", () => {
     await submitApplication({ jobId: 5 });
     expect(request.post).toHaveBeenCalledWith("/recruiting/applications", {
       jobId: 5,
-    });
-  });
-
-  it("updateApplication PATCHes the application endpoint", async () => {
-    request.patch.mockResolvedValue({});
-    await updateApplication(7, { answers: {} });
-    expect(request.patch).toHaveBeenCalledWith("/recruiting/applications/7", {
-      answers: {},
     });
   });
 
