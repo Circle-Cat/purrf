@@ -103,10 +103,6 @@ export const uploadResume = (file) => {
 export const submitApplication = (body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATIONS, body);
 
-/** Update a candidate application. */
-export const updateApplication = (applicationId, body) =>
-  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION(applicationId), body);
-
 /** Fetch the current user's application for a specific job. */
 export const getMyApplication = (jobId) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATIONS_MINE, {

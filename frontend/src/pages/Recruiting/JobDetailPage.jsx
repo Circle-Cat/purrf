@@ -23,7 +23,7 @@ import LoadGate from "@/pages/Recruiting/components/LoadGate";
  * candidate who already has an application is redirected to the
  * my-application route instead of dead-ending on a blank form that would
  * 422 on submit; on the summary route, an existing application swaps the
- * "Apply" action for "Continue application"/"View your application" so a
+ * "Apply" action for "View your application" so a
  * returning candidate can find their submission instead of only ever
  * seeing "Apply" again. A failed check falls back to the no-application
  * behavior on both routes -- the submit path still surfaces backend errors.
@@ -158,9 +158,7 @@ const JobDetailPage = () => {
         }
       >
         {application
-          ? application.editable
-            ? "Continue application"
-            : "View your application"
+          ? "View your application"
           : hasDraft
             ? "Continue application"
             : "Apply"}

@@ -142,36 +142,19 @@ const FETCHED_USER_NEW = {
   timezoneUpdatedAt: "1970-01-01T00:00:00Z",
 };
 
-// The send button reads "Submit application" for a new application and
-// "Save changes" for one already in; tests that do not care which match both.
-const SEND_BUTTON = /submit application|save changes/i;
+const SEND_BUTTON = /submit application/i;
 
 /** The confirmation dialog's own Submit button, on a new application. */
 const CONFIRM_BUTTON = /^submit$/i;
 
 /**
- * Press the send button, then confirm when a new application asks to. The
- * edit path asks nothing, so this is the same click there.
+ * Press the send button, then confirm. A form that fails validation never
+ * asks, so there is nothing to confirm then.
  */
 const clickSend = async (user) => {
   await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
   const confirm = screen.queryByRole("button", { name: CONFIRM_BUTTON });
   if (confirm) await user.click(confirm);
-};
-
-/** An `existing` application whose form collected only personal fields. */
-const PERSONAL_ONLY_EXISTING = {
-  id: 7,
-  current: {
-    submission: {
-      personal: { firstName: "Ada", lastName: "L", timezone: "Asia/Shanghai" },
-      education: [],
-      experience: [],
-      answers: {},
-    },
-    resumeSha256: null,
-    resumeObjectKey: null,
-  },
 };
 
 const pdfFile = () =>
@@ -223,16 +206,13 @@ describe("ApplicationForm", () => {
       },
     };
 
-    /** An editable application already holding an answer to the gated q2. */
-    const EXISTING_WITH_GATED_ANSWER = {
-      id: 7,
-      current: {
-        submission: {
-          personal: REQUIRED_PERSONAL,
-          education: [],
-          experience: [],
-          answers: { q1: "Yes", q2: "F-1 OPT" },
-        },
+    /** An earlier submission holding an answer to the gated q2. */
+    const SEED_WITH_GATED_ANSWER = {
+      submission: {
+        personal: REQUIRED_PERSONAL,
+        education: [],
+        experience: [],
+        answers: { q1: "Yes", q2: "F-1 OPT" },
       },
     };
 
@@ -252,17 +232,17 @@ describe("ApplicationForm", () => {
 
     it("submits what is on screen without asking about answers it drops", async () => {
       // The candidate wrote a visa type, then said they need no sponsorship.
-      // The server keeps only what the form is showing and overwrites in
-      // place, so that text is gone for good the moment this is sent -- but
-      // the candidate is not asked: a question they cannot see is not one to
-      // make them approve deleting.
+      // The server keeps only what the form is showing, so that text is gone
+      // the moment this is sent -- but the candidate is not asked: a question
+      // they cannot see is not one to make them approve deleting.
       const user = userEvent.setup();
-      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+      api.submitApplication.mockResolvedValue({ data: { id: 100 } });
       const onSubmitted = vi.fn();
       render(
         <ApplicationForm
           job={GATED_JOB}
-          existing={EXISTING_WITH_GATED_ANSWER}
+          seed={SEED_WITH_GATED_ANSWER}
+          seedApplicationId={7}
           onSubmitted={onSubmitted}
         />,
       );
@@ -275,7 +255,7 @@ describe("ApplicationForm", () => {
         screen.queryByText("Some answers will be removed"),
       ).not.toBeInTheDocument();
       await waitFor(() =>
-        expect(api.updateApplication).toHaveBeenCalledTimes(1),
+        expect(api.submitApplication).toHaveBeenCalledTimes(1),
       );
       expect(onSubmitted).toHaveBeenCalled();
     });
@@ -429,40 +409,7 @@ describe("ApplicationForm", () => {
     expect(await screen.findAllByLabelText("Contact email")).toHaveLength(1);
   });
 
-  it("updates an existing application via updateApplication when `existing` is provided", async () => {
-    const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    const onSubmitted = vi.fn();
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={FILLED_EXISTING}
-        onSubmitted={onSubmitted}
-      />,
-    );
-
-    // The profile is read on every path now, so the form loads first.
-    await screen.findByLabelText("Contact email");
-
-    await clickSend(user);
-    expect(api.updateApplication).toHaveBeenCalledTimes(1);
-    expect(api.updateApplication.mock.calls[0][0]).toBe(7);
-    expect(api.submitApplication).not.toHaveBeenCalled();
-    expect(onSubmitted).toHaveBeenCalled();
-    // `ApplicationEditDto` forbids extra fields -- `jobId` must never be
-    // sent on the edit path, or every edit 422s.
-    expect(api.updateApplication.mock.calls[0][1]).not.toHaveProperty("jobId");
-    expect(api.updateApplication.mock.calls[0][1]).toMatchObject({
-      // From the profile, not from the application being edited.
-      personal: { ...REQUIRED_PERSONAL },
-      answers: {},
-      resumeSha256: null,
-      resumeObjectKey: null,
-      saveToProfile: false,
-    });
-  });
-
-  it("prefills from `seed` without switching into edit mode", async () => {
+  it("prefills from `seed` and submits it as a new application", async () => {
     const user = userEvent.setup();
     api.submitApplication.mockResolvedValue({ data: { id: 101 } });
     const onSubmitted = vi.fn();
@@ -485,7 +432,6 @@ describe("ApplicationForm", () => {
       // From the profile: `seed` prefills the answers, not the person.
       personal: { ...REQUIRED_PERSONAL },
     });
-    expect(api.updateApplication).not.toHaveBeenCalled();
     expect(onSubmitted).toHaveBeenCalled();
   });
 
@@ -528,21 +474,18 @@ describe("ApplicationForm", () => {
     });
   });
 
-  it("reads the profile on the edit and reapply paths too", async () => {
-    // These used to assert the profile was NOT fetched when an earlier
-    // submission was available. That is exactly the behaviour this changed:
-    // the snapshot is for reading, the profile is for filling.
-    for (const props of [
-      { existing: FILLED_EXISTING },
-      { seed: FILLED_EXISTING.current },
-    ]) {
-      profileApi.getMyProfile.mockClear();
-      render(<ApplicationForm job={JOB} {...props} onSubmitted={vi.fn()} />);
+  it("reads the profile on the reapply path too", async () => {
+    // The snapshot is for reading, the profile is for filling.
+    render(
+      <ApplicationForm
+        job={JOB}
+        seed={FILLED_EXISTING.current}
+        onSubmitted={vi.fn()}
+      />,
+    );
 
-      // The profile is read on every path now, so the form loads first.
-      await screen.findByLabelText("Contact email");
-      expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1);
-    }
+    await screen.findByLabelText("Contact email");
+    expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1);
   });
 
   it("asks for the required fields when the profile prefill fetch fails", async () => {
@@ -605,11 +548,8 @@ describe("ApplicationForm", () => {
     await waitFor(() => expect(button).not.toBeDisabled());
   });
 
-  // The old write-back tests are gone with the behaviour they described: the
-  // form's rows came from an earlier submission, an "Also save to my profile"
-  // checkbox defaulted to on, and each list was overwritten silently. The rows
-  // now come from the profile, so a difference can only be something the
-  // candidate did here, and they are asked about it before anything is written.
+  // The rows come from the profile, so a difference can only be something the
+  // candidate did here. The save-to-profile box is ticked by default.
   describe("saving changes back to the profile", () => {
     /** A profile holding one education row and one job, in backend shape. */
     const STORED = {
@@ -635,33 +575,24 @@ describe("ApplicationForm", () => {
     const render_ = async (profile = STORED, job = JOB) => {
       profileApi.getMyProfile.mockResolvedValue({ data: { profile } });
       profileApi.updateMyProfile.mockResolvedValue({ data: {} });
-      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-      render(
-        <ApplicationForm
-          job={job}
-          existing={FILLED_EXISTING}
-          onSubmitted={vi.fn()}
-        />,
-      );
+      api.submitApplication.mockResolvedValue({ data: { id: 7 } });
+      render(<ApplicationForm job={job} onSubmitted={vi.fn()} />);
       await screen.findByLabelText("Contact email");
     };
 
     const submitForm = async (user) => clickSend(user);
 
-    it("asks nothing and writes nothing when the candidate changed nothing", async () => {
+    it("writes nothing when the candidate changed nothing", async () => {
       const user = userEvent.setup();
       await render_();
 
       await submitForm(user);
 
-      await waitFor(() => expect(api.updateApplication).toHaveBeenCalled());
-      expect(
-        screen.queryByText("Update your profile?"),
-      ).not.toBeInTheDocument();
+      await waitFor(() => expect(api.submitApplication).toHaveBeenCalled());
       expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
     });
 
-    it("asks once the candidate edits a row, and writes nothing if they decline", async () => {
+    it("replaces the edited block", async () => {
       const user = userEvent.setup();
       await render_();
       fireEvent.change(screen.getByDisplayValue("Tsinghua University"), {
@@ -669,29 +600,6 @@ describe("ApplicationForm", () => {
       });
 
       await submitForm(user);
-      expect(
-        await screen.findByText("Update your profile?"),
-      ).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: /don't update/i }));
-
-      await waitFor(() =>
-        expect(api.updateApplication).toHaveBeenCalledTimes(1),
-      );
-      expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
-    });
-
-    it("replaces the edited block when they accept", async () => {
-      const user = userEvent.setup();
-      await render_();
-      fireEvent.change(screen.getByDisplayValue("Tsinghua University"), {
-        target: { value: "Peking University" },
-      });
-
-      await submitForm(user);
-      await screen.findByText("Update your profile?");
-      await user.click(
-        screen.getByRole("button", { name: /update & submit/i }),
-      );
 
       await waitFor(() =>
         expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
@@ -720,10 +628,6 @@ describe("ApplicationForm", () => {
       await user.click(screen.getByRole("button", { name: "-" }));
 
       await submitForm(user);
-      await screen.findByText("Update your profile?");
-      await user.click(
-        screen.getByRole("button", { name: /update & submit/i }),
-      );
 
       await waitFor(() =>
         expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
@@ -747,10 +651,6 @@ describe("ApplicationForm", () => {
       });
 
       await submitForm(user);
-      await screen.findByText("Update your profile?");
-      await user.click(
-        screen.getByRole("button", { name: /update & submit/i }),
-      );
 
       await waitFor(() =>
         expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
@@ -769,16 +669,12 @@ describe("ApplicationForm", () => {
       });
 
       await submitForm(user);
-      await screen.findByText("Update your profile?");
-      await user.click(
-        screen.getByRole("button", { name: /update & submit/i }),
-      );
 
       await waitFor(() =>
-        expect(toast.success).toHaveBeenCalledWith("Changes saved."),
+        expect(toast.success).toHaveBeenCalledWith("Application submitted."),
       );
       expect(toast.warning).toHaveBeenCalledWith(
-        "Changes saved, but saving to your profile failed.",
+        "Application submitted, but saving to your profile failed.",
       );
     });
 
@@ -792,14 +688,10 @@ describe("ApplicationForm", () => {
       profileApi.getMyProfile.mockRejectedValue(new Error("boom"));
 
       await submitForm(user);
-      await screen.findByText("Update your profile?");
-      await user.click(
-        screen.getByRole("button", { name: /update & submit/i }),
-      );
 
       await waitFor(() =>
         expect(toast.warning).toHaveBeenCalledWith(
-          "Changes saved, but saving to your profile failed.",
+          "Application submitted, but saving to your profile failed.",
         ),
       );
       expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
@@ -849,37 +741,6 @@ describe("ApplicationForm", () => {
       screen.queryByText(/detailed job description/),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("activity")).not.toBeInTheDocument();
-  });
-
-  it("shows the résumé-on-file banner when editing an existing application with a résumé attached", async () => {
-    api.resumeUrl.mockImplementation((id) => `/resume/${id}`);
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    const existingWithResume = {
-      ...FILLED_EXISTING,
-      current: {
-        ...FILLED_EXISTING.current,
-        resumeObjectKey: "resumes/old.pdf",
-      },
-    };
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={existingWithResume}
-        onSubmitted={vi.fn()}
-      />,
-    );
-
-    // The profile is read on every path now, so the form loads first.
-    await screen.findByLabelText("Contact email");
-
-    expect(
-      await screen.findByText(/on file from your previous application/i),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
-    expect(screen.getByTitle("Your résumé on file")).toHaveAttribute(
-      "src",
-      "/resume/7",
-    );
   });
 
   it("shows the résumé-on-file banner when reapplying with a carried-forward résumé, pointed at the prior application's id", async () => {
@@ -961,21 +822,18 @@ describe("ApplicationForm", () => {
 
   it("hides the résumé-on-file banner once a fresh file replaces the carried-forward résumé", async () => {
     api.resumeUrl.mockImplementation((id) => `/resume/${id}`);
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
     api.uploadResume.mockResolvedValue({
       data: { sha256: "new123", objectKey: "resumes/new123.pdf" },
     });
-    const existingWithResume = {
-      ...FILLED_EXISTING,
-      current: {
-        ...FILLED_EXISTING.current,
-        resumeObjectKey: "resumes/old.pdf",
-      },
+    const seedWithResume = {
+      ...FILLED_EXISTING.current,
+      resumeObjectKey: "resumes/old.pdf",
     };
     render(
       <ApplicationForm
         job={JOB}
-        existing={existingWithResume}
+        seed={seedWithResume}
+        seedApplicationId={9}
         onSubmitted={vi.fn()}
       />,
     );
@@ -1015,15 +873,16 @@ describe("ApplicationForm résumé requirement", () => {
 
   it("sends when a résumé carried over from a previous application is on file", async () => {
     const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    const withResume = {
-      ...FILLED_EXISTING,
-      current: { ...FILLED_EXISTING.current, resumeObjectKey: "resumes/7.pdf" },
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
+    const seedWithResume = {
+      ...FILLED_EXISTING.current,
+      resumeObjectKey: "resumes/7.pdf",
     };
     render(
       <ApplicationForm
         job={RESUME_JOB}
-        existing={withResume}
+        seed={seedWithResume}
+        seedApplicationId={7}
         onSubmitted={vi.fn()}
       />,
     );
@@ -1031,7 +890,7 @@ describe("ApplicationForm résumé requirement", () => {
 
     await clickSend(user);
 
-    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("A résumé is required")).not.toBeInTheDocument();
   });
 });
@@ -1046,11 +905,12 @@ describe("ApplicationForm sections the posting does not collect", () => {
     // The section is not rendered, so these rows -- carried over from an
     // earlier submission -- were never on this candidate's screen.
     const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
     render(
       <ApplicationForm
         job={NO_SECTIONS_JOB}
-        existing={FILLED_EXISTING}
+        seed={FILLED_EXISTING.current}
+        seedApplicationId={7}
         onSubmitted={vi.fn()}
       />,
     );
@@ -1058,16 +918,16 @@ describe("ApplicationForm sections the posting does not collect", () => {
 
     await clickSend(user);
 
-    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
-    const body = api.updateApplication.mock.calls[0][1];
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
+    const body = api.submitApplication.mock.calls[0][0];
     expect(body.education).toEqual([]);
     expect(body.experience).toEqual([]);
   });
 
   it("still sends the rows of a section it does collect", async () => {
     const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    // The form's rows come from the profile now, so that is where they live.
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
+    // The form's rows come from the profile, so that is where they live.
     profileApi.getMyProfile.mockResolvedValue({
       data: {
         profile: {
@@ -1095,19 +955,13 @@ describe("ApplicationForm sections the posting does not collect", () => {
         },
       },
     });
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={FILLED_EXISTING}
-        onSubmitted={vi.fn()}
-      />,
-    );
+    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     await screen.findByLabelText("Contact email");
 
     await clickSend(user);
 
-    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
-    const body = api.updateApplication.mock.calls[0][1];
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
+    const body = api.submitApplication.mock.calls[0][0];
     expect(body.education).toHaveLength(1);
     expect(body.experience).toHaveLength(1);
   });
@@ -1219,16 +1073,17 @@ describe("ApplicationForm where the profile block comes from", () => {
     workHistory: [],
   };
 
-  it("reads the profile even when editing an application that says otherwise", async () => {
-    // The stored application has MIT; the profile has Tsinghua. The profile
-    // wins, while the answers still come from the application.
+  it("reads the profile even when reapplying from a submission that says otherwise", async () => {
+    // The earlier submission has MIT; the profile has Tsinghua. The profile
+    // wins, while the answers still come from the submission.
     profileApi.getMyProfile.mockResolvedValue({
       data: { profile: STORED_PROFILE },
     });
     render(
       <ApplicationForm
         job={JOB}
-        existing={FILLED_EXISTING}
+        seed={FILLED_EXISTING.current}
+        seedApplicationId={7}
         onSubmitted={vi.fn()}
       />,
     );
@@ -1297,18 +1152,15 @@ describe("ApplicationForm where the profile block comes from", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("still takes the answers from the application being edited", async () => {
+  it("still takes the answers from the submission it reapplies from", async () => {
     profileApi.getMyProfile.mockResolvedValue({
       data: { profile: STORED_PROFILE },
     });
     const withAnswer = {
-      ...FILLED_EXISTING,
-      current: {
-        ...FILLED_EXISTING.current,
-        submission: {
-          ...FILLED_EXISTING.current.submission,
-          answers: { q1: "kept" },
-        },
+      ...FILLED_EXISTING.current,
+      submission: {
+        ...FILLED_EXISTING.current.submission,
+        answers: { q1: "kept" },
       },
     };
     const answeredJob = {
@@ -1321,7 +1173,8 @@ describe("ApplicationForm where the profile block comes from", () => {
     render(
       <ApplicationForm
         job={answeredJob}
-        existing={withAnswer}
+        seed={withAnswer}
+        seedApplicationId={7}
         onSubmitted={vi.fn()}
       />,
     );
@@ -1466,26 +1319,6 @@ describe("ApplicationForm after a new mentorship application", () => {
     expect(onSubmitted).not.toHaveBeenCalled();
   });
 
-  it("moves straight on when editing an existing mentorship application", async () => {
-    const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    const onSubmitted = vi.fn();
-    renderOnRoute({
-      job: MENTEE_JOB,
-      existing: FILLED_EXISTING,
-      onSubmitted,
-      onViewApplication: vi.fn(),
-    });
-
-    await submit(user);
-
-    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith({ id: 7 }));
-    expect(toast.success).toHaveBeenCalledWith("Changes saved.");
-    expect(
-      screen.queryByRole("dialog", { name: "Application submitted" }),
-    ).not.toBeInTheDocument();
-  });
-
   it("moves straight on for an employment posting", async () => {
     const user = userEvent.setup();
     api.submitApplication.mockResolvedValue({ data: { id: 306 } });
@@ -1521,73 +1354,6 @@ describe("ApplicationForm after a new mentorship application", () => {
     expect(
       screen.queryByRole("dialog", { name: "Application submitted" }),
     ).not.toBeInTheDocument();
-  });
-});
-
-describe("ApplicationForm on an application that is already in", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  const renderWith = async (existing) => {
-    render(
-      <ApplicationForm job={JOB} existing={existing} onSubmitted={vi.fn()} />,
-    );
-    await screen.findByLabelText("Contact email");
-  };
-
-  it("says when it was submitted and offers Save changes", async () => {
-    await renderWith({
-      ...FILLED_EXISTING,
-      current: {
-        ...FILLED_EXISTING.current,
-        version: 1,
-        submittedAt: "2026-11-11T15:30:00Z",
-      },
-    });
-
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Submitted on Nov 11, 2026. You can still edit your answers until we start reviewing it.",
-    );
-    expect(
-      screen.getByRole("button", { name: "Save changes" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Submit application" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("says when it was last changed once it has been edited", async () => {
-    await renderWith({
-      ...FILLED_EXISTING,
-      current: {
-        ...FILLED_EXISTING.current,
-        version: 3,
-        submittedAt: "2026-10-02T15:30:00Z",
-      },
-    });
-
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Updated on Oct 2, 2026. You can still edit your answers until we start reviewing it.",
-    );
-  });
-
-  it("leaves the date out when the submission has none", async () => {
-    await renderWith(FILLED_EXISTING);
-
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Submitted. You can still edit your answers until we start reviewing it.",
-    );
-  });
-
-  it("shows no notice and Submit application on a new application", async () => {
-    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
-    await screen.findByLabelText("Contact email");
-
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Submit application" }),
-    ).toBeInTheDocument();
   });
 });
 
@@ -1778,7 +1544,6 @@ describe("ApplicationForm drafts on a new application", () => {
       await screen.findByText("Submit your application?"),
     ).toBeInTheDocument();
     expect(api.submitApplication).not.toHaveBeenCalled();
-    expect(screen.queryByText("Update your profile?")).not.toBeInTheDocument();
   });
 
   it("sends nothing when the candidate keeps editing", async () => {
@@ -1832,47 +1597,5 @@ describe("ApplicationForm drafts on a new application", () => {
       saveToProfile: false,
     });
     expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
-  });
-
-  it("keeps the edit path as it was: no draft, no checkbox, no confirmation", async () => {
-    const user = userEvent.setup();
-    profileApi.getMyProfile.mockResolvedValue({
-      data: {
-        profile: {
-          user: PROFILE_USER,
-          education: [
-            {
-              id: 41,
-              school: "Tsinghua University",
-              degree: "Bachelor",
-              fieldOfStudy: "Computer Science",
-              startDate: "2018-09-01",
-              endDate: "2022-06-01",
-            },
-          ],
-          workHistory: [],
-        },
-      },
-    });
-    await renderForm({ job: JOB, existing: FILLED_EXISTING });
-
-    expect(api.getMyApplicationDraft).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Save changes" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Save draft" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByDisplayValue("Tsinghua University"), {
-      target: { value: "Peking University" },
-    });
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
-
-    expect(await screen.findByText("Update your profile?")).toBeInTheDocument();
-    expect(
-      screen.queryByText("Submit your application?"),
-    ).not.toBeInTheDocument();
   });
 });
