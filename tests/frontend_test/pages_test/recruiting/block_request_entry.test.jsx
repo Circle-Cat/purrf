@@ -77,7 +77,6 @@ const makeDetail = () => ({
     currentRound: 1,
     current: {
       version: 1,
-      isFrozen: false,
       submission: {
         personal: { firstName: "Alice", lastName: "Smith" },
         education: [],
@@ -85,7 +84,6 @@ const makeDetail = () => ({
         answers: {},
       },
     },
-    editable: false,
   },
   applicantName: "Alice Smith",
   applicantEmail: "alice@example.com",
