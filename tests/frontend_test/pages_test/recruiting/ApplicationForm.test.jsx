@@ -56,6 +56,7 @@ beforeEach(() => {
   api.getMyLatestProfile.mockResolvedValue({
     data: { personal: {}, education: [], experience: [] },
   });
+  api.getMyApplicationDraft.mockResolvedValue({ data: null });
 });
 
 const JOB = {
@@ -145,6 +146,19 @@ const FETCHED_USER_NEW = {
 // "Save changes" for one already in; tests that do not care which match both.
 const SEND_BUTTON = /submit application|save changes/i;
 
+/** The confirmation dialog's own Submit button, on a new application. */
+const CONFIRM_BUTTON = /^submit$/i;
+
+/**
+ * Press the send button, then confirm when a new application asks to. The
+ * edit path asks nothing, so this is the same click there.
+ */
+const clickSend = async (user) => {
+  await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+  const confirm = screen.queryByRole("button", { name: CONFIRM_BUTTON });
+  if (confirm) await user.click(confirm);
+};
+
 /** An `existing` application whose form collected only personal fields. */
 const PERSONAL_ONLY_EXISTING = {
   id: 7,
@@ -179,7 +193,7 @@ describe("ApplicationForm", () => {
     expect(email).toHaveValue("cand@x.com");
     expect(email).toHaveAttribute("readonly");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
     expect(api.submitApplication).toHaveBeenCalledTimes(1);
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
       jobId: 5,
@@ -228,7 +242,7 @@ describe("ApplicationForm", () => {
       render(<ApplicationForm job={GATED_JOB} onSubmitted={vi.fn()} />);
       await screen.findByLabelText("Contact email");
 
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
 
       expect(api.submitApplication).toHaveBeenCalledTimes(1);
       expect(
@@ -255,7 +269,7 @@ describe("ApplicationForm", () => {
       await screen.findByLabelText("Contact email");
       await user.click(screen.getByRole("radio", { name: "No" }));
 
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
 
       expect(
         screen.queryByText("Some answers will be removed"),
@@ -289,7 +303,7 @@ describe("ApplicationForm", () => {
       render(<ApplicationForm job={REQUIRED_JOB} onSubmitted={vi.fn()} />);
       await screen.findByLabelText("Contact email");
 
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
 
       expect(
         await screen.findByText("This question is required"),
@@ -301,7 +315,7 @@ describe("ApplicationForm", () => {
       const user = userEvent.setup();
       render(<ApplicationForm job={REQUIRED_JOB} onSubmitted={vi.fn()} />);
       await screen.findByLabelText("Contact email");
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
       await screen.findByText("This question is required");
 
       fireEvent.change(screen.getByLabelText("Where are you based?"), {
@@ -332,7 +346,7 @@ describe("ApplicationForm", () => {
         target: { value: "Taipei" },
       });
 
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
 
       await waitFor(() =>
         expect(api.submitApplication).toHaveBeenCalledTimes(1),
@@ -390,7 +404,7 @@ describe("ApplicationForm", () => {
       render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
       await screen.findByLabelText("Contact email");
 
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
 
       await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
       expect(toast.error).not.toHaveBeenCalled();
@@ -403,7 +417,7 @@ describe("ApplicationForm", () => {
       render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
       await screen.findByLabelText("Contact email");
 
-      await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+      await clickSend(user);
 
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
       expect(onSubmitted).not.toHaveBeenCalled();
@@ -430,7 +444,7 @@ describe("ApplicationForm", () => {
     // The profile is read on every path now, so the form loads first.
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
     expect(api.updateApplication).toHaveBeenCalledTimes(1);
     expect(api.updateApplication.mock.calls[0][0]).toBe(7);
     expect(api.submitApplication).not.toHaveBeenCalled();
@@ -463,7 +477,7 @@ describe("ApplicationForm", () => {
     // The profile is read on every path now, so the form loads first.
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     expect(api.submitApplication).toHaveBeenCalledTimes(1);
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
@@ -507,7 +521,7 @@ describe("ApplicationForm", () => {
         screen.getByRole("button", { name: SEND_BUTTON }),
       ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
       personal: { ...REQUIRED_PERSONAL, firstName: "Ann", lastName: "Liu" },
@@ -561,7 +575,7 @@ describe("ApplicationForm", () => {
         screen.getByRole("button", { name: SEND_BUTTON }),
       ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     expect(
       await screen.findByText("First name is required"),
@@ -583,7 +597,7 @@ describe("ApplicationForm", () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
 
     const button = await screen.findByRole("button", { name: SEND_BUTTON });
-    await user.click(button);
+    await clickSend(user);
     await user.click(button);
 
     expect(api.submitApplication).toHaveBeenCalledTimes(1);
@@ -632,8 +646,7 @@ describe("ApplicationForm", () => {
       await screen.findByLabelText("Contact email");
     };
 
-    const submitForm = async (user) =>
-      user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    const submitForm = async (user) => clickSend(user);
 
     it("asks nothing and writes nothing when the candidate changed nothing", async () => {
       const user = userEvent.setup();
@@ -805,7 +818,7 @@ describe("ApplicationForm", () => {
     selectResumeFile(pdfFile());
     await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
       resumeSha256: "abc123",
       resumeObjectKey: "resumes/abc123.pdf",
@@ -939,7 +952,7 @@ describe("ApplicationForm", () => {
       screen.queryByText(/on file from your previous application/i),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
       resumeSha256: null,
       resumeObjectKey: null,
@@ -994,7 +1007,7 @@ describe("ApplicationForm résumé requirement", () => {
     render(<ApplicationForm job={RESUME_JOB} onSubmitted={vi.fn()} />);
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     expect(await screen.findByText("A résumé is required")).toBeInTheDocument();
     expect(api.submitApplication).not.toHaveBeenCalled();
@@ -1016,7 +1029,7 @@ describe("ApplicationForm résumé requirement", () => {
     );
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("A résumé is required")).not.toBeInTheDocument();
@@ -1043,7 +1056,7 @@ describe("ApplicationForm sections the posting does not collect", () => {
     );
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
     const body = api.updateApplication.mock.calls[0][1];
@@ -1091,7 +1104,7 @@ describe("ApplicationForm sections the posting does not collect", () => {
     );
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
     const body = api.updateApplication.mock.calls[0][1];
@@ -1126,7 +1139,7 @@ describe("ApplicationForm timezone default", () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
     expect(api.submitApplication.mock.calls[0][0].personal.timezone).toBe(
@@ -1150,7 +1163,7 @@ describe("ApplicationForm timezone default", () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
     expect(api.submitApplication.mock.calls[0][0].personal.timezone).toBe(
@@ -1176,7 +1189,7 @@ describe("ApplicationForm timezone default", () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     await screen.findByLabelText("Contact email");
 
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
 
     await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
     expect(api.submitApplication.mock.calls[0][0].personal.timezone).toBe(
@@ -1342,7 +1355,7 @@ describe("ApplicationForm after a new mentorship application", () => {
 
   const submit = async (user) => {
     await screen.findByLabelText("Contact email");
-    await user.click(screen.getByRole("button", { name: SEND_BUTTON }));
+    await clickSend(user);
   };
 
   it("explains what comes next instead of moving straight on", async () => {
@@ -1575,5 +1588,291 @@ describe("ApplicationForm on an application that is already in", () => {
     expect(
       screen.getByRole("button", { name: "Submit application" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationForm drafts on a new application", () => {
+  /** A posting with one required question, so validation has something to say. */
+  const QUESTION_JOB = {
+    ...JOB,
+    formSchema: {
+      questions: [
+        {
+          id: "q1",
+          type: "short_text",
+          label: "Where are you based?",
+          required: true,
+        },
+      ],
+    },
+  };
+
+  /** A saved draft whose every field differs from the profile's. */
+  const DRAFT = {
+    jobId: 5,
+    personal: {
+      firstName: "Dora",
+      lastName: "Drafton",
+      timezone: "Europe/Paris",
+    },
+    education: [
+      {
+        id: "rpf-9",
+        institution: "Draft University",
+        degree: "Master",
+        field: "Math",
+        startMonth: "October",
+        startYear: "2019",
+        endMonth: "June",
+        endYear: "2021",
+      },
+    ],
+    experience: [],
+    answers: { q1: "Lisbon" },
+    resumeSha256: "draft-sha",
+    resumeObjectKey: "resumes/draft-key.pdf",
+    updatedAt: "2026-11-17T08:00:00Z",
+  };
+
+  beforeEach(() => {
+    vi.spyOn(toast, "success").mockImplementation(() => {});
+    vi.spyOn(toast, "error").mockImplementation(() => {});
+    vi.spyOn(toast, "warning").mockImplementation(() => {});
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { user: PROFILE_USER } },
+    });
+    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
+    api.getMyLatestProfile.mockResolvedValue({
+      data: { personal: {}, education: [], experience: [] },
+    });
+    api.getMyApplicationDraft.mockResolvedValue({ data: null });
+    api.saveApplicationDraft.mockResolvedValue({ data: DRAFT });
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+  });
+
+  const renderForm = async (props = {}) => {
+    render(
+      <ApplicationForm job={QUESTION_JOB} onSubmitted={vi.fn()} {...props} />,
+    );
+    await screen.findByLabelText("Contact email");
+  };
+
+  const fillQuestion = () =>
+    fireEvent.change(screen.getByLabelText("Where are you based?"), {
+      target: { value: "Taipei" },
+    });
+
+  it("fills the form from a saved draft rather than the profile", async () => {
+    const user = userEvent.setup();
+    api.getMyApplicationDraft.mockResolvedValue({ data: DRAFT });
+    await renderForm();
+
+    expect(api.getMyApplicationDraft).toHaveBeenCalledWith(5);
+    expect(screen.getByLabelText(/^First name/)).toHaveValue("Dora");
+    expect(screen.getByDisplayValue("Draft University")).toBeInTheDocument();
+    expect(screen.getByLabelText("Where are you based?")).toHaveValue("Lisbon");
+    expect(
+      screen.getByText(/Résumé attached to your saved draft/),
+    ).toBeInTheDocument();
+
+    await clickSend(user);
+
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalled());
+    expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
+      jobId: 5,
+      personal: DRAFT.personal,
+      answers: { q1: "Lisbon" },
+      resumeSha256: "draft-sha",
+      resumeObjectKey: "resumes/draft-key.pdf",
+    });
+  });
+
+  it("falls back to the profile when the draft cannot be read", async () => {
+    api.getMyApplicationDraft.mockRejectedValue(new Error("draft down"));
+    await renderForm();
+
+    expect(screen.getByLabelText(/^First name/)).toHaveValue("Cand");
+    expect(screen.getByLabelText("Where are you based?")).toHaveValue("");
+    expect(
+      screen.queryByText(/Résumé attached to your saved draft/),
+    ).not.toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("saves a draft of what is on screen without checking it", async () => {
+    const user = userEvent.setup();
+    await renderForm();
+
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() =>
+      expect(api.saveApplicationDraft).toHaveBeenCalledTimes(1),
+    );
+    expect(api.saveApplicationDraft.mock.calls[0][0]).toEqual({
+      jobId: 5,
+      personal: expect.objectContaining(REQUIRED_PERSONAL),
+      education: [],
+      experience: [],
+      answers: {},
+      resumeSha256: null,
+      resumeObjectKey: null,
+    });
+    expect(toast.success).toHaveBeenCalledWith("Draft saved.");
+    expect(
+      screen.queryByText("This question is required"),
+    ).not.toBeInTheDocument();
+    expect(api.submitApplication).not.toHaveBeenCalled();
+  });
+
+  it("says why a draft could not be saved", async () => {
+    const user = userEvent.setup();
+    api.saveApplicationDraft.mockRejectedValue(
+      new Error("This posting is no longer accepting applications"),
+    );
+    await renderForm();
+
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This posting is no longer accepting applications",
+      ),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("offers to save to the profile, ticked by default", async () => {
+    await renderForm();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Also save these changes to my profile",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByText(
+        "Only you can see a draft. You can't change your application after you submit it.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("asks for confirmation only once the form is valid", async () => {
+    const user = userEvent.setup();
+    await renderForm();
+
+    await user.click(
+      screen.getByRole("button", { name: "Submit application" }),
+    );
+    expect(
+      await screen.findByText("This question is required"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Submit your application?"),
+    ).not.toBeInTheDocument();
+
+    fillQuestion();
+    await user.click(
+      screen.getByRole("button", { name: "Submit application" }),
+    );
+
+    expect(
+      await screen.findByText("Submit your application?"),
+    ).toBeInTheDocument();
+    expect(api.submitApplication).not.toHaveBeenCalled();
+    expect(screen.queryByText("Update your profile?")).not.toBeInTheDocument();
+  });
+
+  it("sends nothing when the candidate keeps editing", async () => {
+    const user = userEvent.setup();
+    await renderForm();
+    fillQuestion();
+
+    await user.click(
+      screen.getByRole("button", { name: "Submit application" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Keep editing" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Submit your application?"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(api.submitApplication).not.toHaveBeenCalled();
+  });
+
+  it("saves to the profile when the box stays ticked", async () => {
+    const user = userEvent.setup();
+    await renderForm();
+    fillQuestion();
+
+    await clickSend(user);
+
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalled());
+    expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
+      saveToProfile: true,
+      answers: { q1: "Taipei" },
+    });
+  });
+
+  it("leaves the profile alone when the box is unticked", async () => {
+    const user = userEvent.setup();
+    await renderForm();
+    fillQuestion();
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Also save these changes to my profile",
+      }),
+    );
+
+    await clickSend(user);
+
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalled());
+    expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
+      saveToProfile: false,
+    });
+    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("keeps the edit path as it was: no draft, no checkbox, no confirmation", async () => {
+    const user = userEvent.setup();
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          user: PROFILE_USER,
+          education: [
+            {
+              id: 41,
+              school: "Tsinghua University",
+              degree: "Bachelor",
+              fieldOfStudy: "Computer Science",
+              startDate: "2018-09-01",
+              endDate: "2022-06-01",
+            },
+          ],
+          workHistory: [],
+        },
+      },
+    });
+    await renderForm({ job: JOB, existing: FILLED_EXISTING });
+
+    expect(api.getMyApplicationDraft).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Save changes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save draft" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue("Tsinghua University"), {
+      target: { value: "Peking University" },
+    });
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Update your profile?")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Submit your application?"),
+    ).not.toBeInTheDocument();
   });
 });

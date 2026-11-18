@@ -22,6 +22,8 @@ import {
   submitApplication,
   updateApplication,
   getMyApplication,
+  getMyApplicationDraft,
+  saveApplicationDraft,
   listMyApplications,
   listPublicJobs,
   listBoardJobs,
@@ -234,6 +236,32 @@ describe("recruitingApi", () => {
     expect(request.get).toHaveBeenCalledWith("/recruiting/applications/mine", {
       params: { job_id: 5 },
     });
+  });
+
+  it("getMyApplicationDraft GETs the draft with job_id param", async () => {
+    request.get.mockResolvedValue({ data: null });
+    await getMyApplicationDraft(7);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/applications/draft", {
+      params: { job_id: 7 },
+    });
+  });
+
+  it("saveApplicationDraft PUTs the body to the draft endpoint", async () => {
+    const body = {
+      jobId: 7,
+      personal: { firstName: "Dora" },
+      education: [],
+      experience: [],
+      answers: { q1: "Lisbon" },
+      resumeSha256: "sha-1",
+      resumeObjectKey: "resumes/k1.pdf",
+    };
+    request.put.mockResolvedValue({ data: body });
+    await saveApplicationDraft(body);
+    expect(request.put).toHaveBeenCalledWith(
+      "/recruiting/applications/draft",
+      body,
+    );
   });
 
   it("listMyApplications GETs /recruiting/my-applications", async () => {

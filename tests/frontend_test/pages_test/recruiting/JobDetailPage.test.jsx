@@ -47,6 +47,7 @@ beforeEach(() => {
     },
   });
   api.getMyApplication.mockResolvedValue({ data: null });
+  api.getMyApplicationDraft.mockResolvedValue({ data: null });
 });
 
 /** Render JobDetailPage inside a MemoryRouter at the given path, with both
@@ -265,5 +266,55 @@ describe("JobDetailPage", () => {
     expect(
       screen.queryByText("Couldn't load this job."),
     ).not.toBeInTheDocument();
+  });
+
+  describe("with a saved draft", () => {
+    const DRAFT = {
+      jobId: 5,
+      personal: { firstName: "Dora" },
+      education: [],
+      experience: [],
+      answers: { q1: "Lisbon" },
+      resumeSha256: null,
+      resumeObjectKey: null,
+      updatedAt: "2026-11-17T08:00:00Z",
+    };
+
+    it("offers to continue the draft, on the apply route", async () => {
+      api.getMyApplicationDraft.mockResolvedValue({ data: DRAFT });
+      const { router } = renderAt("/recruiting/jobs/5");
+
+      const button = await screen.findByRole("button", {
+        name: "Continue application",
+      });
+      expect(api.getMyApplicationDraft).toHaveBeenCalledWith("5");
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(router.state.location.pathname).toBe("/recruiting/jobs/5/apply"),
+      );
+      expect(await screen.findByText("Applying to Mentee")).toBeInTheDocument();
+    });
+
+    it("reads a failed draft check as no draft", async () => {
+      api.getMyApplicationDraft.mockRejectedValue(new Error("draft down"));
+      renderAt("/recruiting/jobs/5");
+
+      expect(
+        await screen.findByRole("button", { name: "Apply" }),
+      ).toBeInTheDocument();
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it("leads to the application, not the draft, once one exists", async () => {
+      api.getMyApplicationDraft.mockResolvedValue({ data: DRAFT });
+      api.getMyApplication.mockResolvedValue({
+        data: { id: 1, editable: false },
+      });
+      renderAt("/recruiting/jobs/5");
+
+      expect(
+        await screen.findByRole("button", { name: "View your application" }),
+      ).toBeInTheDocument();
+    });
   });
 });

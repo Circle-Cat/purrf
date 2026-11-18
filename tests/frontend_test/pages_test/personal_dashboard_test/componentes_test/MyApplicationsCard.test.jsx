@@ -18,6 +18,10 @@ const renderWithRouter = (props) => {
         path: "/recruiting/jobs",
         element: <p>Open Positions page</p>,
       },
+      {
+        path: "/recruiting/jobs/:jobId/apply",
+        element: <p>Apply page</p>,
+      },
     ],
     { initialEntries: ["/dashboard/me"] },
   );
@@ -190,6 +194,88 @@ describe("MyApplicationsCard", () => {
         "Your next steps are in Mentorship below",
       );
       expect(mentorRow).toHaveTextContent("We'll email you the decision");
+    });
+  });
+
+  describe("drafts", () => {
+    const OPEN_DRAFT = {
+      jobId: 31,
+      jobTitle: "Frontend Intern",
+      jobKind: "employment",
+      mentorshipRole: null,
+      acceptingApplications: true,
+      updatedAt: "2026-11-17T08:00:00Z",
+    };
+    const CLOSED_DRAFT = {
+      jobId: 32,
+      jobTitle: "2026 Spring Mentee",
+      jobKind: "activity",
+      mentorshipRole: "mentee",
+      acceptingApplications: false,
+      updatedAt: "2026-11-10T08:00:00Z",
+    };
+    const APPLICATION = {
+      applicationId: 9,
+      jobId: 33,
+      jobTitle: "Backend Engineer",
+      jobKind: "employment",
+      mentorshipRole: null,
+      stage: "recruiter_screening",
+    };
+
+    it("lists drafts above the applications, marked Draft", () => {
+      renderWithRouter({
+        applications: [APPLICATION],
+        drafts: [OPEN_DRAFT, CLOSED_DRAFT],
+        isLoading: false,
+        loadError: false,
+      });
+
+      const rows = screen.getAllByRole("listitem");
+      expect(rows).toHaveLength(3);
+      expect(rows[0]).toHaveTextContent("Frontend Intern");
+      expect(rows[0]).toHaveTextContent("Draft");
+      expect(rows[0]).toHaveTextContent("Not submitted yet");
+      expect(rows[1]).toHaveTextContent("2026 Spring Mentee");
+      expect(rows[1]).toHaveTextContent("This position has closed");
+      expect(rows[2]).toHaveTextContent("Backend Engineer");
+      expect(
+        screen.queryByText(/no applications yet/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("opens the apply route for a draft whose posting is open", () => {
+      renderWithRouter({
+        applications: [],
+        drafts: [OPEN_DRAFT],
+        isLoading: false,
+        loadError: false,
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /Frontend Intern/ }));
+      expect(screen.getByText("Apply page")).toBeInTheDocument();
+    });
+
+    it("does not make a closed posting's draft clickable", () => {
+      renderWithRouter({
+        applications: [],
+        drafts: [CLOSED_DRAFT],
+        isLoading: false,
+        loadError: false,
+      });
+
+      expect(screen.getByText("2026 Spring Mentee")).toBeInTheDocument();
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    });
+
+    it("shows the empty state only with neither applications nor drafts", () => {
+      renderWithRouter({
+        applications: [],
+        drafts: [],
+        isLoading: false,
+        loadError: false,
+      });
+      expect(screen.getByText(/no applications yet/i)).toBeInTheDocument();
     });
   });
 });

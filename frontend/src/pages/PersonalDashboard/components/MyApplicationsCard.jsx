@@ -40,8 +40,15 @@ const nextStepFor = (app) => {
  * A mentorship row also says what comes next (see `nextStepFor`), under
  * the row rather than inside it, since the row is already a button.
  *
+ * Saved, unsubmitted drafts are listed above the applications, marked
+ * "Draft". One whose posting still takes applications leads back to the
+ * apply route; one whose posting has closed is shown but not clickable,
+ * since the job page cannot be loaded by someone who never applied. The
+ * empty state shows only when there are neither applications nor drafts.
+ *
  * @param {{
  *   applications: Array<{applicationId: number, jobId: number, jobTitle: string, stage: string, jobKind: string, mentorshipRole: string|null}>,
+ *   drafts?: Array<{jobId: number, jobTitle: string, acceptingApplications: boolean}>,
  *   isLoading: boolean,
  *   loadError: boolean,
  *   onRetry?: () => void,
@@ -49,11 +56,13 @@ const nextStepFor = (app) => {
  */
 const MyApplicationsCard = ({
   applications,
+  drafts = [],
   isLoading,
   loadError,
   onRetry,
 }) => {
   const navigate = useNavigate();
+  const hasRows = applications.length > 0 || drafts.length > 0;
 
   return (
     <Card className="border-gray-200 shadow-sm">
@@ -70,7 +79,7 @@ const MyApplicationsCard = ({
             <Button onClick={onRetry}>Retry</Button>
           </div>
         )}
-        {!isLoading && !loadError && applications.length === 0 && (
+        {!isLoading && !loadError && !hasRows && (
           <p className="text-sm text-muted-foreground">
             No applications yet.{" "}
             <Link
@@ -82,8 +91,42 @@ const MyApplicationsCard = ({
             to apply for a program or a job.
           </p>
         )}
-        {!isLoading && !loadError && applications.length > 0 && (
+        {!isLoading && !loadError && hasRows && (
           <ul className="divide-y divide-gray-100">
+            {drafts.map((draft) => {
+              const label = (
+                <>
+                  <span className="text-sm text-slate-900">
+                    {draft.jobTitle}
+                  </span>
+                  <span className="text-sm text-muted-foreground">Draft</span>
+                </>
+              );
+              return (
+                <li key={`draft-${draft.jobId}`} className="py-2">
+                  {draft.acceptingApplications ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between text-left hover:bg-gray-50"
+                      onClick={() =>
+                        navigate(ROUTE_PATHS.RECRUITING_JOB_APPLY(draft.jobId))
+                      }
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <div className="flex w-full items-center justify-between">
+                      {label}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {draft.acceptingApplications
+                      ? "Not submitted yet"
+                      : "This position has closed"}
+                  </p>
+                </li>
+              );
+            })}
             {applications.map((app) => {
               const nextStep = nextStepFor(app);
               return (
