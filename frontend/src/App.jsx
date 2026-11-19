@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -49,6 +49,10 @@ import { PERMISSIONS, INBOX_PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 import { WhatsNewProvider } from "@/whatsNew/WhatsNewProvider";
+
+// Loaded only when someone opens the guide, so its content stays out of the
+// main bundle.
+const WorkGuidePage = lazy(() => import("@/pages/WorkGuide"));
 
 function App() {
   const deployEnv = import.meta.env.VITE_DEPLOY_ENV;
@@ -375,6 +379,25 @@ function App() {
                           >
                             <AdminTraining />
                           </ProtectedRoute>
+                        }
+                      />
+                      {/* The page gates itself: it waits for the flags,
+                        then needs the work-guide flag and a permission that
+                        shows at least one chapter. */}
+                      <Route
+                        path={ROUTE_PATHS.WORK_GUIDE}
+                        element={
+                          <Suspense fallback={null}>
+                            <WorkGuidePage />
+                          </Suspense>
+                        }
+                      />
+                      <Route
+                        path={ROUTE_PATHS.WORK_GUIDE_FLOW(":flowId")}
+                        element={
+                          <Suspense fallback={null}>
+                            <WorkGuidePage />
+                          </Suspense>
                         }
                       />
                       <Route

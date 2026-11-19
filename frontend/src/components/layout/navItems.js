@@ -1,6 +1,7 @@
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { INBOX_PERMISSIONS, PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { GUIDE_PERMISSIONS } from "@/pages/WorkGuide/guideModel";
 
 /**
  * The sidebar's entries, grouped in display order.
@@ -136,6 +137,17 @@ export const NAV_GROUPS = [
         label: "Training Administration",
         to: ROUTE_PATHS.ADMIN_TRAINING,
         permissions: [PERMISSIONS.TRAINING_ADMIN_READ],
+      },
+    ],
+  },
+  {
+    key: "guide",
+    items: [
+      {
+        label: "Work guide",
+        to: ROUTE_PATHS.WORK_GUIDE,
+        permissions: GUIDE_PERMISSIONS,
+        flag: FEATURE_FLAGS.WORK_GUIDE,
       },
     ],
   },

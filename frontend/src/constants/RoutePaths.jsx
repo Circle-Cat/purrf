@@ -13,6 +13,8 @@ export const ROUTE_PATHS = {
   MENTORSHIP_PARTICIPANT: (userId) =>
     `/mentorship-management/participants/${userId}`,
   INBOX: "/inbox",
+  WORK_GUIDE: "/guide",
+  WORK_GUIDE_FLOW: (flowId) => `/guide/${flowId}`,
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
   ADMIN_USERS: "/admin/users",
