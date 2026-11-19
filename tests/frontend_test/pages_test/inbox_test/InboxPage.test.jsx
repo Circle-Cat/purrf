@@ -128,6 +128,84 @@ describe("InboxPage list", () => {
     expect(lastListParams()).toEqual({});
   });
 
+  it("names the inquiries service Contact", async () => {
+    renderAt();
+    const services = await screen.findByRole("group", { name: "Services" });
+    expect(
+      within(services).getByRole("button", { name: /^Contact/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(services).queryByRole("button", { name: /^Inquiries/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says which address the selected service's mail was sent to", async () => {
+    api.listInboxThreads.mockResolvedValue(
+      listData([row({ service: "inquiries" })], {
+        services: [
+          {
+            key: "mentorship",
+            needsReply: 1,
+            address: "mentorship@circlecat.org",
+          },
+          { key: "inquiries", needsReply: 0, address: "contact@circlecat.org" },
+        ],
+      }),
+    );
+    renderAt("/inbox?service=inquiries");
+
+    const note = await screen.findByText("contact@circlecat.org");
+    expect(note.closest("p")).toHaveTextContent(
+      "Mail sent to contact@circlecat.org.",
+    );
+    expect(
+      screen.queryByText("mentorship@circlecat.org"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says Unsorted holds mail sent straight to the mailbox", async () => {
+    api.listInboxThreads.mockResolvedValue(
+      listData([row({ service: "unsorted" })], {
+        services: [
+          { key: "unsorted", needsReply: 0, address: "purrf@circlecat.org" },
+        ],
+      }),
+    );
+    renderAt("/inbox?service=unsorted");
+
+    const note = await screen.findByText("purrf@circlecat.org");
+    expect(note.closest("p")).toHaveTextContent(
+      "Mail sent straight to purrf@circlecat.org, not to any service address.",
+    );
+  });
+
+  it("shows no address under All or for a service without one", async () => {
+    api.listInboxThreads.mockResolvedValue(
+      listData([row()], {
+        services: [
+          {
+            key: "mentorship",
+            needsReply: 1,
+            address: "mentorship@circlecat.org",
+          },
+          { key: "recruiting", needsReply: 0, address: null },
+        ],
+      }),
+    );
+    const router = renderAt();
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    expect(screen.queryByText(/^Mail sent/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("mentorship@circlecat.org"),
+    ).not.toBeInTheDocument();
+
+    await router.navigate("/inbox?service=recruiting");
+    await waitFor(() =>
+      expect(lastListParams()).toEqual({ service: "recruiting" }),
+    );
+    expect(screen.queryByText(/^Mail sent/)).not.toBeInTheDocument();
+  });
+
   it("writes the service filter to the URL and refetches", async () => {
     const router = renderAt();
     fireEvent.click(
@@ -228,7 +306,7 @@ describe("InboxPage list", () => {
     for (const text of [
       "Delivery failed",
       "Archived",
-      "Transferred from Inquiries",
+      "Transferred from Contact",
     ]) {
       expect(first).toHaveTextContent(text);
     }
