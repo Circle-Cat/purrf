@@ -131,8 +131,9 @@ describe("InboxPage list", () => {
   it("names the inquiries service Contact", async () => {
     renderAt();
     const services = await screen.findByRole("group", { name: "Services" });
+    // The group renders with only All before the list arrives.
     expect(
-      within(services).getByRole("button", { name: /^Contact/ }),
+      await within(services).findByRole("button", { name: /^Contact/ }),
     ).toBeInTheDocument();
     expect(
       within(services).queryByRole("button", { name: /^Inquiries/ }),
