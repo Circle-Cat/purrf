@@ -10,7 +10,12 @@ import AssignDialog from "@/pages/Inbox/AssignDialog";
 import DeleteThreadsDialog from "@/pages/Inbox/DeleteThreadsDialog";
 import ThreadDetail from "@/pages/Inbox/ThreadDetail";
 import ThreadList from "@/pages/Inbox/ThreadList";
-import { SERVICES, conversations, serviceOf } from "@/pages/Inbox/inboxDisplay";
+import {
+  SERVICES,
+  addressNote,
+  conversations,
+  serviceOf,
+} from "@/pages/Inbox/inboxDisplay";
 import { useInboxThread } from "@/pages/Inbox/hooks/useInboxThread";
 import { useInboxThreads } from "@/pages/Inbox/hooks/useInboxThreads";
 
@@ -150,6 +155,10 @@ const InboxPage = () => {
     setParams(key === ALL ? {} : { service: key }, { replace: true });
 
   const totalNeedsReply = services.reduce((n, s) => n + s.needsReply, 0);
+  const note =
+    service === ALL
+      ? null
+      : addressNote(service, services.find((s) => s.key === service)?.address);
   const filters = [
     {
       key: "needsReply",
@@ -201,6 +210,14 @@ const InboxPage = () => {
           </button>
         ))}
       </div>
+
+      {note && (
+        <p className="-mt-2 text-sm text-slate-600">
+          {note.before}
+          <span className="font-medium text-slate-900">{note.address}</span>
+          {note.after}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <Input
