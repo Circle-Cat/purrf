@@ -609,6 +609,25 @@ class UnsortedTest(_WriteFixture):
             ],
         )
 
+    async def test_unsorted_is_listed_with_the_mailbox_address(self):
+        result = await self._list(_OPS)
+
+        self.assertEqual(
+            [(s.key, s.address) for s in result.services],
+            [(InboxService.UNSORTED, _MAILBOX)],
+        )
+
+    async def test_unsorted_is_listed_without_an_address_when_gmail_fails(self):
+        self.gmail.mailbox_address.side_effect = RuntimeError("503")
+
+        result = await self._list(_OPS)
+
+        self.assertEqual(
+            [(s.key, s.address) for s in result.services],
+            [(InboxService.UNSORTED, None)],
+        )
+        self.assertEqual(sorted(self._ids(result)), [10, 11])
+
     async def test_reply_goes_out_from_the_mailbox_address(self):
         detail = await self.service.reply(self.session, _OPS, 11, "<p>hi</p>", 110)
 
