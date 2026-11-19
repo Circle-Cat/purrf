@@ -164,6 +164,14 @@ export const mapRegistrationToForm = (registration, allPastPartners) => {
     // Mentee round fields
     currentStage: roundPref.currentStage || "",
     timeUrgency: roundPref.timeUrgency || "",
+    // "" when the question was never answered, so nothing is preselected.
+    shareLinkedin:
+      roundPref.shareLinkedin === true
+        ? "yes"
+        : roundPref.shareLinkedin === false
+          ? "no"
+          : "",
+    linkedinLink: registration?.linkedinLink || "",
   };
 };
 
@@ -235,6 +243,14 @@ export const mapFormToApi = (formData, currentRegistration, role) => {
       unexpectedPartnerIds: formData.excludedPartners.map((p) => p.id),
       currentStage: formData.currentStage || undefined,
       timeUrgency: formData.timeUrgency || undefined,
+      shareLinkedin:
+        formData.shareLinkedin === "yes"
+          ? true
+          : formData.shareLinkedin === "no"
+            ? false
+            : undefined,
     },
+    linkedinLink:
+      formData.shareLinkedin === "yes" ? formData.linkedinLink : undefined,
   };
 };

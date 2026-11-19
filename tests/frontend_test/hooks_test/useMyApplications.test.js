@@ -137,4 +137,50 @@ describe("useMyApplications", () => {
     await waitFor(() => expect(result.current.loadError).toBe(true));
     expect(result.current.hiredMentorshipRoles).toEqual([]);
   });
+
+  it("exposes the drafts the response lists", async () => {
+    const drafts = [
+      {
+        jobId: 31,
+        jobTitle: "Frontend Intern",
+        jobKind: "employment",
+        mentorshipRole: null,
+        acceptingApplications: true,
+        updatedAt: "2026-11-17T08:00:00Z",
+      },
+      {
+        jobId: 32,
+        jobTitle: "2026 Spring Mentee",
+        jobKind: "activity",
+        mentorshipRole: "mentee",
+        acceptingApplications: false,
+        updatedAt: "2026-11-10T08:00:00Z",
+      },
+    ];
+    api.listMyApplications.mockResolvedValue({
+      data: { applications: [row()], mentorshipRoles: ["mentor"], drafts },
+    });
+    const { result } = renderHook(() => useMyApplications());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.drafts).toEqual(drafts);
+  });
+
+  it("has no drafts while loading, when none are sent, or on failure", async () => {
+    api.listMyApplications.mockReturnValue(new Promise(() => {}));
+    const loading = renderHook(() => useMyApplications());
+    expect(loading.result.current.drafts).toEqual([]);
+
+    api.listMyApplications.mockResolvedValue({
+      data: { applications: [], mentorshipRoles: [] },
+    });
+    const absent = renderHook(() => useMyApplications());
+    await waitFor(() => expect(absent.result.current.isLoading).toBe(false));
+    expect(absent.result.current.drafts).toEqual([]);
+
+    api.listMyApplications.mockRejectedValue(new Error("network error"));
+    const failed = renderHook(() => useMyApplications());
+    await waitFor(() => expect(failed.result.current.loadError).toBe(true));
+    expect(failed.result.current.drafts).toEqual([]);
+  });
 });

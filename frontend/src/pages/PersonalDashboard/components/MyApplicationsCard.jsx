@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
@@ -11,6 +11,24 @@ import { GLOSSARY, stageTermId } from "@/pages/Recruiting/components/glossary";
 const formatStageLabel = (stage, jobKind) =>
   GLOSSARY[stageTermId(stage, jobKind)]?.label ?? "";
 
+const NO_NEXT_STEP_STAGES = ["rejected", "blacklisted"];
+
+/**
+ * What a mentorship applicant has left to do, for one row. Once admitted,
+ * the details live in the Mentorship section of this page, so the row only
+ * points there. Rows for any other posting, and closed-out applications,
+ * get nothing.
+ *
+ * @param {{jobKind: string, mentorshipRole: string|null, stage: string}} app
+ * @returns {string|null}
+ */
+const nextStepFor = (app) => {
+  if (app.jobKind !== "activity" || !app.mentorshipRole) return null;
+  if (NO_NEXT_STEP_STAGES.includes(app.stage)) return null;
+  if (app.stage === "hired") return "Your next steps are in Mentorship below";
+  return "We'll email you the decision";
+};
+
 /**
  * MyApplicationsCard
  *
@@ -19,8 +37,18 @@ const formatStageLabel = (stage, jobKind) =>
  * application's existing detail page (`MyApplication.jsx`) — this card
  * only renders the list, it doesn't duplicate the detail view.
  *
+ * A mentorship row also says what comes next (see `nextStepFor`), under
+ * the row rather than inside it, since the row is already a button.
+ *
+ * Saved, unsubmitted drafts are listed above the applications, marked
+ * "Draft". One whose posting still takes applications leads back to the
+ * apply route; one whose posting has closed is shown but not clickable,
+ * since the job page cannot be loaded by someone who never applied. The
+ * empty state shows only when there are neither applications nor drafts.
+ *
  * @param {{
- *   applications: Array<{applicationId: number, jobId: number, jobTitle: string, stage: string, jobKind: string}>,
+ *   applications: Array<{applicationId: number, jobId: number, jobTitle: string, stage: string, jobKind: string, mentorshipRole: string|null}>,
+ *   drafts?: Array<{jobId: number, jobTitle: string, acceptingApplications: boolean}>,
  *   isLoading: boolean,
  *   loadError: boolean,
  *   onRetry?: () => void,
@@ -28,11 +56,13 @@ const formatStageLabel = (stage, jobKind) =>
  */
 const MyApplicationsCard = ({
   applications,
+  drafts = [],
   isLoading,
   loadError,
   onRetry,
 }) => {
   const navigate = useNavigate();
+  const hasRows = applications.length > 0 || drafts.length > 0;
 
   return (
     <Card className="border-gray-200 shadow-sm">
@@ -49,27 +79,78 @@ const MyApplicationsCard = ({
             <Button onClick={onRetry}>Retry</Button>
           </div>
         )}
-        {!isLoading && !loadError && applications.length === 0 && (
-          <p className="text-sm text-muted-foreground">No applications yet.</p>
+        {!isLoading && !loadError && !hasRows && (
+          <p className="text-sm text-muted-foreground">
+            No applications yet.{" "}
+            <Link
+              to={ROUTE_PATHS.RECRUITING_JOBS_BROWSE}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Browse Open Positions
+            </Link>{" "}
+            to apply for a program or a job.
+          </p>
         )}
-        {!isLoading && !loadError && applications.length > 0 && (
+        {!isLoading && !loadError && hasRows && (
           <ul className="divide-y divide-gray-100">
-            {applications.map((app) => (
-              <li key={app.applicationId}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between py-2 text-left hover:bg-gray-50"
-                  onClick={() =>
-                    navigate(ROUTE_PATHS.RECRUITING_MY_APPLICATION(app.jobId))
-                  }
-                >
-                  <span className="text-sm text-slate-900">{app.jobTitle}</span>
-                  <span className="text-sm text-muted-foreground">
-                    {formatStageLabel(app.stage, app.jobKind)}
+            {drafts.map((draft) => {
+              const label = (
+                <>
+                  <span className="text-sm text-slate-900">
+                    {draft.jobTitle}
                   </span>
-                </button>
-              </li>
-            ))}
+                  <span className="text-sm text-muted-foreground">Draft</span>
+                </>
+              );
+              return (
+                <li key={`draft-${draft.jobId}`} className="py-2">
+                  {draft.acceptingApplications ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between text-left hover:bg-gray-50"
+                      onClick={() =>
+                        navigate(ROUTE_PATHS.RECRUITING_JOB_APPLY(draft.jobId))
+                      }
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <div className="flex w-full items-center justify-between">
+                      {label}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {draft.acceptingApplications
+                      ? "Not submitted yet"
+                      : "This position has closed"}
+                  </p>
+                </li>
+              );
+            })}
+            {applications.map((app) => {
+              const nextStep = nextStepFor(app);
+              return (
+                <li key={app.applicationId} className="py-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between text-left hover:bg-gray-50"
+                    onClick={() =>
+                      navigate(ROUTE_PATHS.RECRUITING_MY_APPLICATION(app.jobId))
+                    }
+                  >
+                    <span className="text-sm text-slate-900">
+                      {app.jobTitle}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {formatStageLabel(app.stage, app.jobKind)}
+                    </span>
+                  </button>
+                  {nextStep && (
+                    <p className="text-xs text-muted-foreground">{nextStep}</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>

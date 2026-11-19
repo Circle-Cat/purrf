@@ -26,7 +26,7 @@ export const SERVICES = [
   },
   {
     key: "inquiries",
-    label: "Inquiries",
+    label: "Contact",
     badgeClass: "border-stone-300 bg-stone-100 text-stone-700",
   },
   {
@@ -53,6 +53,27 @@ export const serviceOf = (key) =>
     label: key,
     badgeClass: "border-slate-300 bg-slate-50 text-slate-700",
   };
+
+/**
+ * Which mail a service holds, for the line under the service chips: mail
+ * sent to its address, or for Unsorted mail sent straight to the mailbox.
+ *
+ * @param {string} key - Service key.
+ * @param {string | null | undefined} address - The service's address.
+ * @returns {{before: string, address: string, after: string} | null} The
+ *   sentence split around the address, or null when there is no address.
+ */
+export const addressNote = (key, address) => {
+  if (!address) return null;
+  if (key === "unsorted") {
+    return {
+      before: "Mail sent straight to ",
+      address,
+      after: ", not to any service address.",
+    };
+  }
+  return { before: "Mail sent to ", address, after: "." };
+};
 
 /**
  * `1 conversation`, `3 conversations`.

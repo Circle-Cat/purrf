@@ -41,7 +41,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
-import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
@@ -225,9 +224,7 @@ const SubStatusSelector = ({
   if (!options) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium text-slate-700">
-        <TermHint id="application.edit_lock">Status:</TermHint>
-      </span>
+      <span className="text-sm font-medium text-slate-700">Status:</span>
       {options.map((value) => {
         const isActive = value === subStatus;
         return (
@@ -1828,6 +1825,15 @@ const ApplicationDetailPage = () => {
             {detail.applicantIsBlocked && (
               <Badge variant="destructive" title={termHint("tag.blacklisted")}>
                 Blacklisted
+              </Badge>
+            )}
+            {detail.applicantIsDeactivated && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-100 text-amber-900"
+                title={termHint("tag.account_deactivated")}
+              >
+                Account deactivated
               </Badge>
             )}
           </div>

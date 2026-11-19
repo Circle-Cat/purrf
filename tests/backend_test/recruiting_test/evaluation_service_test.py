@@ -1,5 +1,4 @@
 import unittest
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 from backend.recruiting.evaluation_service import EvaluationService
@@ -698,83 +697,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_for_application(self.session, ctx, 10)
 
         self.assertEqual(result, [])
-
-    async def test_confirming_freezes_the_answers_it_scored(self):
-        """Otherwise the scorecard outlives the submission it judged.
-
-        Every other mover of sub_status freezes, but set_sub_status only does
-        so on the way *out* of "pending" -- so an owner setting the status back
-        to "pending" would hand the candidate the edit back, and _write_version
-        overwrites the current version in place.
-        """
-        application = self._application(sub_status="pending")
-        draft_row = self._evaluation(
-            responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, is_confirmed=False
-        )
-        submission = SimpleNamespace(is_frozen=False)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.assignment_repo.get.return_value = self._assignment(assignee_id=2)
-        self.evaluation_repo.upsert_draft.return_value = draft_row
-        self.evaluation_repo.confirm.return_value = self._evaluation(
-            responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, is_confirmed=True
-        )
-        self.app_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
-        self.submission_repo.get_current.return_value = submission
-
-        await self.service.submit(
-            self.session,
-            self._ctx(user_id=2),
-            10,
-            EvaluationSubmitDto(
-                responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, confirm=True
-            ),
-        )
-
-        self.assertTrue(submission.is_frozen)
-        self.submission_repo.update.assert_awaited_once()
-
-    async def test_saving_a_draft_does_not_freeze(self):
-        """Only a confirmed evaluation ends the candidate's edit window."""
-        self.app_repo.get_by_id = AsyncMock(
-            return_value=self._application(sub_status="pending")
-        )
-        self.assignment_repo.get.return_value = self._assignment(assignee_id=2)
-        self.evaluation_repo.upsert_draft.return_value = self._evaluation(
-            responses={"rating": 3}, is_confirmed=False
-        )
-
-        await self.service.submit(
-            self.session,
-            self._ctx(user_id=2),
-            10,
-            EvaluationSubmitDto(responses={"rating": 3}, confirm=False),
-        )
-
-        self.submission_repo.update.assert_not_awaited()
-
-    async def test_confirming_with_no_submission_row_does_not_crash(self):
-        application = self._application(sub_status="pending")
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.assignment_repo.get.return_value = self._assignment(assignee_id=2)
-        self.evaluation_repo.upsert_draft.return_value = self._evaluation(
-            responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, is_confirmed=False
-        )
-        self.evaluation_repo.confirm.return_value = self._evaluation(
-            responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, is_confirmed=True
-        )
-        self.app_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
-        self.submission_repo.get_current.return_value = None
-
-        await self.service.submit(
-            self.session,
-            self._ctx(user_id=2),
-            10,
-            EvaluationSubmitDto(
-                responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, confirm=True
-            ),
-        )
-
-        self.submission_repo.update.assert_not_awaited()
 
 
 if __name__ == "__main__":

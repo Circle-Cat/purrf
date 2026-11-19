@@ -113,6 +113,8 @@ export const API_ENDPOINTS = {
   ADMIN_ACCOUNT_SIGN_IN_METHODS: (userId) =>
     `/admin/accounts/${userId}/sign-in-methods`,
   ADMIN_ACCOUNT_DEACTIVATE: (userId) => `/admin/accounts/${userId}/deactivate`,
+  ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT: (userId) =>
+    `/admin/accounts/${userId}/deactivate-preflight`,
   ADMIN_ACCOUNT_REACTIVATE: (userId) => `/admin/accounts/${userId}/reactivate`,
   ADMIN_ACCOUNT_UNBLOCK: (userId) => `/admin/accounts/${userId}/unblock`,
   ADMIN_ACCOUNT_BLOCK: (userId) => `/admin/accounts/${userId}/block`,
@@ -156,6 +158,7 @@ export const API_ENDPOINTS = {
   RECRUITING_APPLICATION: (applicationId) =>
     `/recruiting/applications/${applicationId}`,
   RECRUITING_APPLICATIONS_MINE: "/recruiting/applications/mine",
+  RECRUITING_APPLICATION_DRAFT: "/recruiting/applications/draft",
   RECRUITING_MY_APPLICATIONS: "/recruiting/my-applications",
   RECRUITING_MY_LATEST_PROFILE: "/recruiting/my-latest-profile",
   RECRUITING_BOARD_JOBS: "/recruiting/board/jobs",

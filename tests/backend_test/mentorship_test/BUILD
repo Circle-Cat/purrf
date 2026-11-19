@@ -10,7 +10,9 @@ py_test(
     name = "mentorship_controller_test",
     srcs = ["mentorship_controller_test.py"],
     deps = [
+        "//backend/common:fast_api_error_handler",
         "//backend/mentorship",
+        "@pypi//fastapi",
         "@pypi//httpx",
     ],
 )
@@ -511,5 +513,14 @@ py_test(
         "//backend/mentorship",
         "@pypi//fastapi",
         "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "open_participation_service_test",
+    srcs = ["open_participation_service_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
     ],
 )

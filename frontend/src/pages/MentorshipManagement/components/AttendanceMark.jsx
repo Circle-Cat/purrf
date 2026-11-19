@@ -6,7 +6,8 @@ import {
 } from "@/components/ui/tooltip";
 
 /**
- * A red "!" whose tooltip lists a live pair's flagged meetings, one per line.
+ * A red "!" whose tooltip lists what needs attention on a live pair, one per
+ * line: flagged meetings, and a first contact that is overdue.
  *
  * @param {{ lines: string[] }} props
  */

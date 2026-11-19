@@ -74,10 +74,6 @@ export const GLOSSARY = {
   },
   // Written for the recruiter, not the candidate: these buttons decide
   // someone else's edit access, and nothing else on the page says so.
-  "application.edit_lock": {
-    label: "Status",
-    hint: "Moving off Pending closes the application to the candidate's own edits, as do advancing the stage and confirming an evaluation. It is one-way — setting the status back to Pending does not give their edit access back.",
-  },
   "posting.draft": {
     label: "Draft",
     hint: "Not published yet, and only you can see it. Edit it as much as you like, then submit it for review when it is ready.",
@@ -137,6 +133,10 @@ export const GLOSSARY = {
   "tag.blacklisted": {
     label: "Blacklisted",
     hint: "This applicant is currently blocked from every posting and from using Purrf at all. The tag can appear even if nobody was blacklisted from this posting, because blacklisting sweeps every posting the person has applied to.",
+  },
+  "tag.account_deactivated": {
+    label: "Account deactivated",
+    hint: "This applicant's Purrf account is deactivated, usually because they asked to stop using it. The application is left as it is; close it if they are not continuing.",
   },
   "tag.blacklist_lifted": {
     label: "Blacklist Lifted",
@@ -204,44 +204,6 @@ export const GLOSSARY = {
  * @returns {string|undefined} The hint, or undefined for an unknown id.
  */
 export const termHint = (id) => GLOSSARY[id]?.hint;
-
-/**
- * Lock reasons, mirroring `ApplicationLockReason` in
- * `backend/common/recruiting_enums.py`. Held to that enum by
- * `tests/shared/application_lock_reasons.json`.
- */
-export const APPLICATION_LOCK_REASONS = ["advanced", "in_review", "closed"];
-
-/**
- * What to tell a candidate about why their application is closed to edits.
- *
- * The wording lives here rather than on the backend because the ADVANCED
- * sentence names a stage, and stage labels live in this glossary. The
- * IN_REVIEW sentence deliberately says only that work has begun: the backend
- * collapses a moved sub-status and a frozen submission into one reason,
- * because telling them apart would publish internal mechanics that change
- * nothing the reader can do. CLOSED is about the posting rather than the
- * application: it stopped taking submissions, so there is nothing to edit
- * into it.
- *
- * @param {string|null|undefined} reason An `ApplicationLockReason` value.
- * @param {string|null|undefined} stageLabel The stage's human label, when known.
- * @returns {string|null} The sentence to show, or null when nothing is locked.
- */
-export const lockReasonText = (reason, stageLabel) => {
-  if (reason === "advanced") {
-    return stageLabel
-      ? `It moved to ${stageLabel}, so it can't be edited any more.`
-      : "It moved on, so it can't be edited any more.";
-  }
-  if (reason === "in_review") {
-    return "A recruiter has started reviewing it, so it can't be edited any more.";
-  }
-  if (reason === "closed") {
-    return "This posting has closed, so it can't be edited any more.";
-  }
-  return null;
-};
 
 /**
  * Resolves a rejected review's kind to a glossary id, falling back for a kind

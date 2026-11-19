@@ -103,15 +103,35 @@ export const uploadResume = (file) => {
 export const submitApplication = (body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATIONS, body);
 
-/** Update a candidate application. */
-export const updateApplication = (applicationId, body) =>
-  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION(applicationId), body);
-
 /** Fetch the current user's application for a specific job. */
 export const getMyApplication = (jobId) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATIONS_MINE, {
     params: { job_id: jobId },
   });
+
+/**
+ * Fetch the current user's saved, unsubmitted draft for a job.
+ *
+ * Resolves to `{data: null}` when there is none.
+ *
+ * @param {number|string} jobId
+ */
+export const getMyApplicationDraft = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_DRAFT, {
+    params: { job_id: jobId },
+  });
+
+/**
+ * Create or overwrite the current user's draft for a job. Nothing in it is
+ * validated: a draft may be incomplete. The server refuses a posting that no
+ * longer takes applications and a job the caller already applied to.
+ *
+ * @param {{jobId: number, personal: object, education: object[],
+ *          experience: object[], answers: object,
+ *          resumeSha256: string|null, resumeObjectKey: string|null}} body
+ */
+export const saveApplicationDraft = (body) =>
+  request.put(API_ENDPOINTS.RECRUITING_APPLICATION_DRAFT, body);
 
 /** Fetch every application the current user has ever submitted, any job kind. */
 export const listMyApplications = () =>

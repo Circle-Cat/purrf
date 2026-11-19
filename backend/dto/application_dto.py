@@ -1,10 +1,10 @@
+import json
 import re
 from datetime import datetime
 from pydantic import model_validator
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 from backend.common.recruiting_enums import (
-    ApplicationLockReason,
     ApplicationStage,
     JobKind,
 )
@@ -49,22 +49,59 @@ class ApplicationSubmitDto(_ResumeReferenceDto):
     save_to_profile: bool = False
 
 
-class ApplicationEditDto(_ResumeReferenceDto):
-    """Edit payload for an application still in Applied (no job change)."""
+# Ceiling on a saved draft's serialized size. A draft skips the submit-time
+# field checks, so this is what stops the endpoint being used as free storage.
+DRAFT_CONTENT_MAX_BYTES = 256 * 1024
 
+
+class ApplicationDraftSaveDto(_ResumeReferenceDto):
+    """Save payload for a draft: the form as the candidate left it.
+
+    No required-field or length checks: a draft is allowed to be incomplete.
+    Submitting still goes through ApplicationSubmitDto and every check there.
+    """
+
+    job_id: int
     personal: dict = {}
     education: list[dict] = []
     experience: list[dict] = []
     answers: dict = {}
-    # Frontend-owned, same as on ApplicationSubmitDto above.
-    save_to_profile: bool = False
+
+    @model_validator(mode="after")
+    def check_content_size(self):
+        size = len(
+            json.dumps(
+                {
+                    "personal": self.personal,
+                    "education": self.education,
+                    "experience": self.experience,
+                    "answers": self.answers,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8")
+        )
+        if size > DRAFT_CONTENT_MAX_BYTES:
+            raise ValueError("The draft is too large to save")
+        return self
+
+
+class ApplicationDraftDto(BaseDto):
+    """The caller's saved draft for one posting."""
+
+    job_id: int
+    personal: dict = {}
+    education: list[dict] = []
+    experience: list[dict] = []
+    answers: dict = {}
+    resume_sha256: str | None = None
+    resume_object_key: str | None = None
+    updated_at: datetime | None = None
 
 
 class ApplicationSubmissionDto(BaseDto):
     """One submission version in a response."""
 
     version: int
-    is_frozen: bool
     submission: dict | None = None
     resume_object_key: str | None = None
     resume_sha256: str | None = None
@@ -81,12 +118,6 @@ class ApplicationDto(BaseDto):
     sub_status: str | None = None
     tags: dict | None = None
     current: ApplicationSubmissionDto | None = None
-    # Whether the candidate may still edit this application (first pipeline
-    # stage, pending sub_status, current submission unfrozen). Derived from
-    # lock_reason, never set alongside it, so the two cannot disagree.
-    editable: bool = False
-    # Why editing is closed, for the candidate to read. None while editable.
-    lock_reason: ApplicationLockReason | None = None
     # Which round of `stage` the applicant is on; meaningless (always 1)
     # for a stage configured with a single round.
     current_round: int = 1
@@ -101,6 +132,19 @@ class MyApplicationSummaryDto(BaseDto):
     job_kind: JobKind
     mentorship_role: ParticipantRole | None = None
     stage: ApplicationStage
+
+
+class MyApplicationDraftSummaryDto(BaseDto):
+    """One unsubmitted draft in the current user's own application list."""
+
+    job_id: int
+    job_title: str
+    job_kind: JobKind
+    mentorship_role: ParticipantRole | None = None
+    # Whether the posting still takes submissions; a draft for a closed
+    # posting is kept, but it can no longer be sent.
+    accepting_applications: bool
+    updated_at: datetime | None = None
 
 
 class MyApplicationsDto(BaseDto):
@@ -127,3 +171,6 @@ class MyApplicationsDto(BaseDto):
     # no authority, so no code may treat element 0 as "the" role. Empty when
     # they are not a participant.
     mentorship_roles: list[ParticipantRole] = []
+    # Drafts the caller saved and has not submitted, most recently saved
+    # first. Never an application: staff cannot see them.
+    drafts: list[MyApplicationDraftSummaryDto] = []

@@ -698,6 +698,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             onboarding_training_service=builder.onboarding_training_service,
             application_repository=builder.application_repository,
+            users_repository=mock_users_repo_cls.return_value,
         )
         mock_meeting_scheduling_service_cls.assert_called_once_with(
             logger=mock_logger,

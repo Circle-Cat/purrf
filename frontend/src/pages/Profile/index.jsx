@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
 import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
@@ -68,6 +68,15 @@ const Profile = () => {
     setModalState((prev) => ({ ...prev, [key]: isOpen }));
   };
 
+  // A link such as the dashboard's "Go to training" names a section by its
+  // hash; the section only exists once the profile has loaded.
+  useEffect(() => {
+    if (isLoading || loadError) return;
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    document.getElementById(id)?.scrollIntoView?.({ block: "start" });
+  }, [isLoading, loadError]);
+
   /** Display loading state while fetching profile data */
   if (isLoading) {
     return <div className="min-h-screen px-6 py-8">Loading profile...</div>;
@@ -135,7 +144,7 @@ const Profile = () => {
         </Card>
 
         {/* Training Card */}
-        <Card>
+        <Card id="training" className="scroll-mt-20">
           <CardContent>
             <TrainingSection
               list={personalInfo.completedTraining}

@@ -52,6 +52,7 @@ import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 import {
   attendanceIssueLines,
+  firstContactOverdueLine,
   MEETING_TIMEZONE,
 } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { useMatchingRun } from "@/pages/MentorshipManagement/hooks/useMatchingRun";
@@ -231,9 +232,12 @@ const orderPairs = (pairs) =>
  * the meeting progress that opens that pair's log. A live pair with flagged
  * meetings turns red and carries an attendance mark.
  *
- * @param {{ row: Object, roundId: string|number|null, returnSearch: string, onOpenMeetings: (pair: Object) => void }} props
+ * A live pair that has held no meeting by the round's first-contact date is
+ * flagged with the same red mark, while the round is in progress.
+ *
+ * @param {{ row: Object, roundId: string|number|null, round: {inProgress: boolean, firstMeetingDeadlineAt?: string|null}, returnSearch: string, onOpenMeetings: (pair: Object) => void }} props
  */
-const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
+const PairCell = ({ row, roundId, round, returnSearch, onOpenMeetings }) => {
   if (!row.pairs?.length) return "—";
 
   const isMentee = row.participantRole === MentorshipParticipantRoles.MENTEE;
@@ -247,12 +251,22 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
         const [mentorName, menteeName] = isMentee
           ? [partnerName, subjectName]
           : [subjectName, partnerName];
+        const overdue = firstContactOverdueLine(
+          {
+            isActive: pair.partner.isActive,
+            completedMeetingCount: pair.completedMeetingCount,
+          },
+          round,
+        );
         const issues = ended
           ? []
-          : attendanceIssueLines(pair.attendanceIssues, {
-              mentorName,
-              menteeName,
-            });
+          : [
+              ...attendanceIssueLines(pair.attendanceIssues, {
+                mentorName,
+                menteeName,
+              }),
+              ...(overdue ? [overdue] : []),
+            ];
         return (
           <li
             key={pair.pairId}
@@ -519,6 +533,14 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
   }));
 
   const [markOpen, setMarkOpen] = useState(false);
+  // What a row's Pair cell needs of its round to flag a late first contact.
+  const pairRoundOf = (id) => {
+    const r = (rounds ?? []).find((x) => String(x.id) === String(id));
+    return {
+      inProgress: Boolean(r?.isInProgress),
+      firstMeetingDeadlineAt: r?.timeline?.firstMeetingDeadlineAt ?? null,
+    };
+  };
   // Marks are written only while the round runs, as for any note.
   const committedInProgress = (rounds ?? []).some(
     (r) => String(r.id) === committedRoundId && r.isInProgress,
@@ -693,6 +715,7 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
             <PairCell
               row={row}
               roundId={row.roundId ?? committedRoundId}
+              round={pairRoundOf(row.roundId ?? committedRoundId)}
               returnSearch={location.search}
               onOpenMeetings={(pair) => openMeetingsDialog(row, pair)}
             />

@@ -7,18 +7,25 @@ import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import { Button } from "@/components/ui/button";
-import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
 import TermHint from "@/pages/Recruiting/components/TermHint";
-import {
-  GLOSSARY,
-  lockReasonText,
-  stageTermId,
-} from "@/pages/Recruiting/components/glossary";
+import { stageTermId } from "@/pages/Recruiting/components/glossary";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
- * Read-only summary of a submitted application: the applicant's answers, no
- * longer editable once the server reports `application.editable === false`.
+ * When an application was submitted, as "Nov 3, 2026".
+ *
+ * @param {string} at An ISO timestamp.
+ * @returns {string}
+ */
+const submittedOn = (at) =>
+  new Date(at).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
+/**
+ * Read-only summary of a submitted application: the applicant's answers.
  * Renders a "Reapply" button when `onReapply` is provided (only for a
  * `rejected` application — see `MyApplication`).
  *
@@ -31,10 +38,7 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
   const submission = application.current?.submission ?? {};
   const personal = submission.personal ?? {};
   const termId = stageTermId(application.stage, job.kind);
-  const lockText = lockReasonText(
-    application.lockReason,
-    GLOSSARY[termId]?.label,
-  );
+  const submittedAt = application.current?.submittedAt;
 
   return (
     <div className="space-y-4 p-6">
@@ -43,13 +47,11 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
         <p className="text-sm text-slate-600">
           Status: <TermHint id={termId} />
         </p>
+        <p className="text-sm text-muted-foreground">
+          {submittedAt ? `Submitted on ${submittedOn(submittedAt)}. ` : ""}
+          Submitted applications can&apos;t be changed.
+        </p>
       </div>
-      {lockText && (
-        <PendingNotice
-          headline="Your application is locked"
-          detail={lockText}
-        />
-      )}
       <div className="space-y-1">
         <h2 className="text-sm font-medium text-slate-700">Personal</h2>
         <p className="text-sm text-slate-700">
@@ -70,12 +72,9 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
 };
 
 /**
- * The signed-in candidate's own application for a job: a new/editable
- * `ApplicationForm` while there is no existing application yet, or while the
- * server reports the existing application as `editable: true`, otherwise a
- * read-only summary of what was submitted. Editability is decided entirely
- * by the server-computed `editable` flag on the application, not by the
- * stage string.
+ * The signed-in candidate's own application for a job: an `ApplicationForm`
+ * while there is no application yet, otherwise a read-only summary of what
+ * was submitted.
  * Loads the job and application on mount; while loading shows a placeholder,
  * and on failure toasts the error and shows an inline retryable error state.
  * A `rejected` application's read-only summary offers a "Reapply" action
@@ -114,6 +113,13 @@ const MyApplication = () => {
     load();
   }, [load]);
 
+  // The form sits on this very route, so "view my application" after a new
+  // submission is a reload rather than a navigation.
+  const viewSubmitted = () => {
+    setReapplying(false);
+    load();
+  };
+
   if (!loaded || !job) {
     return (
       <LoadGate
@@ -124,13 +130,13 @@ const MyApplication = () => {
     );
   }
 
-  if (!application || application.editable === true) {
+  if (!application) {
     return (
       <div className="space-y-4 p-6">
         <ApplicationForm
           job={job}
-          existing={application ?? undefined}
           onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
+          onViewApplication={viewSubmitted}
         />
       </div>
     );
@@ -144,6 +150,7 @@ const MyApplication = () => {
           seed={application.current}
           seedApplicationId={application.id}
           onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
+          onViewApplication={viewSubmitted}
         />
       </div>
     );

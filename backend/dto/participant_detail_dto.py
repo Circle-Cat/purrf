@@ -22,6 +22,9 @@ class DetailRoundDto(BaseDto):
     required_meetings: int | None = None
     # Writes on the page are offered only while this is true.
     in_progress: bool
+    # "First contact with mentor": a live pair with no meeting held by then
+    # is flagged on the page.
+    first_meeting_deadline_at: datetime | None = None
 
 
 class ParticipantNoteDto(BaseDto):

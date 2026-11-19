@@ -1095,6 +1095,98 @@ describe("ParticipantSearchCard", () => {
       }
     });
 
+    describe("first contact", () => {
+      const PAST = "2020-01-15T08:00:00Z";
+      const FUTURE = "2099-01-15T08:00:00Z";
+      const roundsWith = (deadline, isInProgress = true) => [
+        {
+          id: 7,
+          name: "Fall 2026",
+          isInProgress,
+          timeline: { firstMeetingDeadlineAt: deadline },
+        },
+        TEST_ROUNDS[1],
+      ];
+      const overdueLine =
+        "No meeting held yet. First contact was due 2020-01-15.";
+
+      it("marks a live pair with no meeting held once the date has passed", async () => {
+        searchParticipants.mockResolvedValue(
+          resultsOf([
+            participantRow({ pairs: [pairOf({ completedMeetingCount: 0 })] }),
+          ]),
+        );
+        await renderCard({
+          url: SEARCHED_PARTICIPANTS,
+          rounds: roundsWith(PAST),
+        });
+
+        const pair = cellOf(await screen.findByText("Alice Doe"), "Pair");
+        expect(
+          within(pair).getByRole("button", markOf([overdueLine])),
+        ).toBeInTheDocument();
+        expect(within(pair).getByRole("listitem")).toHaveClass("text-red-700");
+      });
+
+      it("lists the late first contact after the pair's flagged meetings", async () => {
+        searchParticipants.mockResolvedValue(
+          resultsOf([
+            participantRow({
+              pairs: [
+                pairOf({
+                  completedMeetingCount: 0,
+                  attendanceIssues: [flagged[0]],
+                }),
+              ],
+            }),
+          ]),
+        );
+        await renderCard({
+          url: SEARCHED_PARTICIPANTS,
+          rounds: roundsWith(PAST),
+        });
+
+        const pair = cellOf(await screen.findByText("Alice Doe"), "Pair");
+        expect(
+          within(pair).getByRole(
+            "button",
+            markOf(["2026-08-30: Bob Smith absent", overdueLine]),
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it.each([
+        ["a meeting was held", { completedMeetingCount: 1 }, PAST, true],
+        ["the date has not passed", { completedMeetingCount: 0 }, FUTURE, true],
+        [
+          "the pair has ended",
+          { completedMeetingCount: 0, isActive: false },
+          PAST,
+          true,
+        ],
+        [
+          "the round is not in progress",
+          { completedMeetingCount: 0 },
+          PAST,
+          false,
+        ],
+        ["the round has no date", { completedMeetingCount: 0 }, null, true],
+      ])("does not mark when %s", async (_, pair, deadline, inProgress) => {
+        searchParticipants.mockResolvedValue(
+          resultsOf([participantRow({ pairs: [pairOf(pair)] })]),
+        );
+        await renderCard({
+          url: SEARCHED_PARTICIPANTS,
+          rounds: roundsWith(deadline, inProgress),
+        });
+
+        const cell = cellOf(await screen.findByText("Alice Doe"), "Pair");
+        expect(
+          within(cell).queryByRole("button", { name: /^Attendance issues/ }),
+        ).not.toBeInTheDocument();
+      });
+    });
+
     it("does not mark an ended pair, flagged or not", async () => {
       searchParticipants.mockResolvedValue(
         resultsOf([

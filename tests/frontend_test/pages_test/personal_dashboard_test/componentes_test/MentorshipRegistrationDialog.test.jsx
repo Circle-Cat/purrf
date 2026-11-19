@@ -137,7 +137,6 @@ describe("MentorshipRegistrationDialog Component", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
 
     // Initialize a new userEvent instance for each test
     user = userEvent.setup();
@@ -168,6 +167,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
   });
 
@@ -301,6 +302,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
     const onSave = vi
       .fn()
@@ -334,11 +337,6 @@ describe("MentorshipRegistrationDialog Component", () => {
         ([args]) => args.id === "registration-success-toast",
       ),
     ).toBeUndefined();
-    expect(
-      showReminderToast.mock.calls.find(
-        ([args]) => args.id === "post-registration-training-toast",
-      ),
-    ).toBeUndefined();
   });
 
   it("sends the dialog's own role to the payload builder", async () => {
@@ -361,6 +359,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
@@ -455,6 +455,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "job_searching",
       timeUrgency: "within_3_months",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} />);
@@ -466,7 +468,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(defaultProps.onSave).toHaveBeenCalledWith(mockPayload);
   });
 
-  describe("post-registration training reminder", () => {
+  describe("post-registration toasts", () => {
     const validMenteeForm = {
       industries: [{ label: "Tech", value: "tech" }],
       skillsets: [{ label: "React", value: "react" }],
@@ -485,44 +487,16 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "job_searching",
       timeUrgency: "within_3_months",
+      shareLinkedin: "no",
+      linkedinLink: "",
     };
 
-    const validMentorForm = {
-      industries: [],
-      skillsets: [{ label: "React", value: "react" }],
-      partnerCapacity: 1,
-      goal: "",
-      selectedPartners: [],
-      excludedPartners: [],
-      careerTransition: "none",
-      careerTransitionOther: "",
-      region: "us",
-      regionOther: "",
-      externalMentoringExp: "none",
-      currentBackground: "",
-      currentBackgroundOther: "",
-      targetRegion: "",
-      targetRegionOther: "",
-      currentStage: "",
-      timeUrgency: "",
-    };
-
-    /**
-     * Build an onSave mock that resolves to the shape of a POST
-     * /registration response. We gate the reminder on this payload
-     * — `currentRegistration` (a GET-fetched view) is intentionally
-     * not consulted. `participantRole` defaults to mentee since the
-     * default props' currentRegistration is mentee; mentor tests pass
-     * "mentor" explicitly.
-     */
-    const onSaveResolving = (
-      isOnboardingTrainingCompleted,
-      participantRole = "mentee",
-    ) =>
+    /** Build an onSave mock that resolves to a POST /registration response. */
+    const onSaveResolving = (isOnboardingTrainingCompleted) =>
       vi.fn().mockResolvedValue({
         data: {
           isOnboardingTrainingCompleted,
-          roundPreferences: { participantRole },
+          roundPreferences: { participantRole: "mentee" },
         },
       });
 
@@ -530,7 +504,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     const callWithId = (id) =>
       showReminderToast.mock.calls.find(([args]) => args.id === id)?.[0];
 
-    it("fires the must-complete-or-no-match message for a mentee when the POST response says training is not completed", async () => {
+    it("fires only the success toast, even when training is not done, since the dashboard banner carries the training and profile reminders", async () => {
       mapFormToApi.mockReturnValue({ api: "data" });
       mapRegistrationToForm.mockReturnValue(validMenteeForm);
       const onSave = onSaveResolving(false);
@@ -541,100 +515,10 @@ describe("MentorshipRegistrationDialog Component", () => {
       await user.click(screen.getByText("Toggle Dialog"));
       await user.click(screen.getByText("Register"));
 
-      const reminder = callWithId("post-registration-training-toast");
-      expect(reminder).toBeDefined();
-      expect(reminder.title).toBe("Complete onboarding training");
-      expect(reminder.message).toMatch(
-        /must complete the onboarding training/i,
-      );
-      expect(reminder.message).toMatch(/eligible for mentor matching/i);
-    });
-
-    it("fires the soft mentoring-quality message for a mentor when the POST response says training is not completed", async () => {
-      mapFormToApi.mockReturnValue({ api: "data" });
-      mapRegistrationToForm.mockReturnValue(validMentorForm);
-      const onSave = onSaveResolving(false, "mentor");
-
-      render(
-        <MentorshipRegistrationDialog
-          {...defaultProps}
-          onSave={onSave}
-          role="mentor"
-        />,
-      );
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-
-      const reminder = callWithId("post-registration-training-toast");
-      expect(reminder).toBeDefined();
-      expect(reminder.message).toMatch(/get started as a mentor/i);
-      expect(reminder.message).not.toMatch(/eligible for mentor matching/i);
-    });
-
-    it("fires the success toast first so the training reminder lands on top of the sonner stack", async () => {
-      mapFormToApi.mockReturnValue({ api: "data" });
-      mapRegistrationToForm.mockReturnValue(validMenteeForm);
-      const onSave = onSaveResolving(false);
-      // Scoped to ordering between the success and training toasts only —
-      // suppress the session-scoped profile-check reminder (tested on its
-      // own below) so the call count/order here stays about those two.
-      sessionStorage.setItem("post-registration-profile-check-shown", "1");
-
-      render(
-        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
-      );
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-
-      expect(showReminderToast).toHaveBeenCalledTimes(2);
-      // First call is the registration confirmation; second is the
-      // training reminder. Sonner stacks newest on top, so the
-      // training reminder ends up at the top in `top-center`.
+      expect(showReminderToast).toHaveBeenCalledTimes(1);
       expect(showReminderToast.mock.calls[0][0].id).toBe(
         "registration-success-toast",
       );
-      expect(showReminderToast.mock.calls[1][0].id).toBe(
-        "post-registration-training-toast",
-      );
-    });
-
-    it("fires a one-time profile-check reminder on the first successful save this session", async () => {
-      mapFormToApi.mockReturnValue({ api: "data" });
-      mapRegistrationToForm.mockReturnValue(validMenteeForm);
-      const onSave = onSaveResolving(true);
-
-      render(
-        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
-      );
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-
-      const reminder = callWithId("post-registration-profile-check-toast");
-      expect(reminder).toBeDefined();
-      expect(reminder.title).toBe("Double-check your profile");
-      expect(reminder.message).toMatch(/match you with the right partner/i);
-      expect(
-        sessionStorage.getItem("post-registration-profile-check-shown"),
-      ).toBe("1");
-    });
-
-    it("does not fire the profile-check reminder again on a second successful save in the same session", async () => {
-      mapFormToApi.mockReturnValue({ api: "data" });
-      mapRegistrationToForm.mockReturnValue(validMenteeForm);
-      const onSave = onSaveResolving(true);
-
-      render(
-        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
-      );
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-
-      const profileCheckCalls = showReminderToast.mock.calls.filter(
-        ([args]) => args.id === "post-registration-profile-check-toast",
-      );
-      expect(profileCheckCalls).toHaveLength(1);
     });
 
     it("uses the success type and the right title for fresh registration", async () => {
@@ -679,42 +563,6 @@ describe("MentorshipRegistrationDialog Component", () => {
       expect(success.message).toMatch(/updated successfully/i);
     });
 
-    it("does not fire the training reminder when the POST response reports training already completed", async () => {
-      mapFormToApi.mockReturnValue({ api: "data" });
-      mapRegistrationToForm.mockReturnValue(validMenteeForm);
-      const onSave = onSaveResolving(true);
-
-      render(
-        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
-      );
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-
-      expect(onSave).toHaveBeenCalled();
-      // Success toast still fires; only the training reminder is gated.
-      expect(callWithId("registration-success-toast")).toBeDefined();
-      expect(callWithId("post-registration-training-toast")).toBeUndefined();
-    });
-
-    it("does not fire the training reminder when isOnboardingTrainingCompleted is missing from the POST response", async () => {
-      // Backend logic for the field isn't wired up yet — strict
-      // equality with `false` keeps the toast off until we get an
-      // explicit signal.
-      mapFormToApi.mockReturnValue({ api: "data" });
-      mapRegistrationToForm.mockReturnValue(validMenteeForm);
-      const onSave = vi.fn().mockResolvedValue({ data: {} });
-
-      render(
-        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
-      );
-      await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Register"));
-
-      expect(onSave).toHaveBeenCalled();
-      expect(callWithId("registration-success-toast")).toBeDefined();
-      expect(callWithId("post-registration-training-toast")).toBeUndefined();
-    });
-
     it("does not fire any toast when the user only opens the dialog to view existing registration (no save)", async () => {
       mapRegistrationToForm.mockReturnValue(validMenteeForm);
 
@@ -752,6 +600,8 @@ describe("MentorshipRegistrationDialog Component", () => {
         targetRegionOther: "",
         currentStage: "",
         timeUrgency: "",
+        shareLinkedin: "no",
+        linkedinLink: "",
       });
 
       render(<MentorshipRegistrationDialog {...defaultProps} />);
@@ -807,6 +657,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     rerender(
@@ -955,6 +807,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
@@ -986,6 +840,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     const mockPayload = { api: "data" };
@@ -1060,6 +916,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "job_searching",
       timeUrgency: "within_3_months",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} />);
@@ -1092,6 +950,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       targetRegionOther: "",
       currentStage: "",
       timeUrgency: "",
+      shareLinkedin: "no",
+      linkedinLink: "",
     });
 
     render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
@@ -1167,5 +1027,162 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(
       screen.getByPlaceholderText("Please briefly describe..."),
     ).toHaveValue("");
+  });
+
+  describe("sharing LinkedIn with the match", () => {
+    const menteeForm = (overrides) => ({
+      industries: [{ label: "Tech", value: "tech" }],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "",
+      careerTransitionOther: "",
+      region: "",
+      regionOther: "",
+      externalMentoringExp: "",
+      currentBackground: "cs_grad",
+      currentBackgroundOther: "",
+      targetRegion: "us",
+      targetRegionOther: "",
+      currentStage: "job_searching",
+      timeUrgency: "within_3_months",
+      shareLinkedin: "",
+      linkedinLink: "",
+      ...overrides,
+    });
+    const LINK_ERROR =
+      "Enter a linkedin.com link, like https://www.linkedin.com/in/your-name";
+
+    const open = async (form) => {
+      mapRegistrationToForm.mockReturnValue(menteeForm(form));
+      mapFormToApi.mockReturnValue({ api: "data" });
+      render(<MentorshipRegistrationDialog {...defaultProps} />);
+      await user.click(screen.getByText("Toggle Dialog"));
+      await waitFor(() => expect(mapRegistrationToForm).toHaveBeenCalled());
+    };
+
+    it("asks the question as required, with nothing selected when never answered", async () => {
+      await open();
+
+      expect(
+        screen.getByText("Share your LinkedIn with your match?"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Your match sees it with the matching results. No one else does.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Yes" })).not.toBeChecked();
+      expect(screen.getByRole("radio", { name: "No" })).not.toBeChecked();
+      expect(
+        screen.queryByLabelText(/Your LinkedIn profile link/),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+
+      expect(screen.getAllByText("This field is required.")).toHaveLength(1);
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+    });
+
+    it("prefills Yes with the profile link and saves both", async () => {
+      await open({
+        shareLinkedin: "yes",
+        linkedinLink: "https://www.linkedin.com/in/ann-lee",
+      });
+
+      expect(screen.getByRole("radio", { name: "Yes" })).toBeChecked();
+      expect(screen.getByLabelText(/Your LinkedIn profile link/)).toHaveValue(
+        "https://www.linkedin.com/in/ann-lee",
+      );
+      expect(
+        screen.getByText(
+          "Filled in from your profile. Changes here are saved to your profile too.",
+        ),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+
+      expect(mapFormToApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shareLinkedin: "yes",
+          linkedinLink: "https://www.linkedin.com/in/ann-lee",
+        }),
+        expect.anything(),
+        "mentee",
+      );
+      expect(defaultProps.onSave).toHaveBeenCalledWith({ api: "data" });
+    });
+
+    it("prefills No and shows no link input", async () => {
+      await open({
+        shareLinkedin: "no",
+        linkedinLink: "https://www.linkedin.com/in/ann-lee",
+      });
+
+      expect(screen.getByRole("radio", { name: "No" })).toBeChecked();
+      expect(
+        screen.queryByLabelText(/Your LinkedIn profile link/),
+      ).not.toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+
+      expect(mapFormToApi).toHaveBeenCalledWith(
+        expect.objectContaining({ shareLinkedin: "no" }),
+        expect.anything(),
+        "mentee",
+      );
+    });
+
+    it("asks for a linkedin.com link when Yes is chosen without a profile link", async () => {
+      await open();
+
+      await user.click(screen.getByRole("radio", { name: "Yes" }));
+      const input = screen.getByLabelText(/Your LinkedIn profile link/);
+      expect(input).toHaveValue("");
+      expect(input).toHaveAttribute(
+        "placeholder",
+        "https://www.linkedin.com/in/your-name",
+      );
+      expect(
+        screen.getByText("We'll also save it to your profile."),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByText("Register"));
+      expect(screen.getByText(LINK_ERROR)).toBeInTheDocument();
+
+      await user.type(input, "https://github.com/ann-lee");
+      await user.click(screen.getByText("Register"));
+      expect(screen.getByText(LINK_ERROR)).toBeInTheDocument();
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+
+      await user.clear(input);
+      await user.type(input, "  https://www.LinkedIn.com/in/ann-lee ");
+      await user.click(screen.getByText("Register"));
+
+      expect(screen.queryByText(LINK_ERROR)).not.toBeInTheDocument();
+      expect(mapFormToApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shareLinkedin: "yes",
+          linkedinLink: "https://www.LinkedIn.com/in/ann-lee",
+        }),
+        expect.anything(),
+        "mentee",
+      );
+    });
+
+    it("hides the link input again when the answer turns to No", async () => {
+      await open({ shareLinkedin: "yes" });
+      expect(
+        screen.getByLabelText(/Your LinkedIn profile link/),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("radio", { name: "No" }));
+
+      expect(
+        screen.queryByLabelText(/Your LinkedIn profile link/),
+      ).not.toBeInTheDocument();
+    });
   });
 });

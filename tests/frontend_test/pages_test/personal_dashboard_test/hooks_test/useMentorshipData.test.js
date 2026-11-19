@@ -209,6 +209,178 @@ describe("useMentorshipData Hook", () => {
     expect(result.current.roundSelectionData.sortedRounds).toEqual(rounds);
   });
 
+  it("marks an empty round as the registration round only when it is the one taking registrations", async () => {
+    getAllMentorshipRounds.mockResolvedValue({
+      data: [
+        { id: "round-2", name: "Later" },
+        { id: "round-1", name: "Earlier" },
+      ],
+    });
+    mockSlots({
+      registrationRoundId: "round-2",
+      registrationRoundName: "Later",
+      isRegistrationOpen: true,
+      activeRoundId: "round-1",
+    });
+    getMyMentorshipRegistration.mockResolvedValue({
+      data: { isRegistered: false },
+    });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() =>
+      expect(result.current.participantDetails?.roundInfo?.id).toBe("round-1"),
+    );
+    expect(result.current.participantDetails.isRegistrationRound).toBe(false);
+
+    act(() => result.current.handleRoundChange("round-2"));
+    await waitFor(() =>
+      expect(result.current.participantDetails?.roundInfo?.id).toBe("round-2"),
+    );
+    expect(result.current.participantDetails.isRegistrationRound).toBe(true);
+    expect(result.current.participantDetails.isRegistered).toBe(false);
+  });
+
+  describe("an empty round other than the registration round", () => {
+    const setUp = () => {
+      getAllMentorshipRounds.mockResolvedValue({
+        data: [
+          { id: "round-2", name: "Later" },
+          { id: "round-1", name: "Earlier" },
+        ],
+      });
+      mockSlots({
+        registrationRoundId: "round-2",
+        registrationRoundName: "Later",
+        isRegistrationOpen: true,
+        activeRoundId: "round-1",
+      });
+      getMyMentorshipPartners.mockResolvedValue({ data: [] });
+      getMyMentorshipMeetingLog.mockResolvedValue({
+        data: { meetingInfo: [] },
+      });
+      getMyMentorshipMatchResult.mockResolvedValue({ data: null });
+    };
+
+    // Each round answers differently, so a read of the wrong round shows.
+    const matchStatusByRound = (statuses) =>
+      getMyMentorshipMatchResult.mockImplementation((roundId) =>
+        Promise.resolve({ data: { currentStatus: statuses[roundId] } }),
+      );
+
+    const loadEarlierRound = async () => {
+      const { result } = renderHook(() => useMentorshipData());
+      await waitFor(() =>
+        expect(result.current.participantDetails?.roundInfo?.id).toBe(
+          "round-1",
+        ),
+      );
+      return result;
+    };
+
+    it("reports registered when the user registered for that round", async () => {
+      setUp();
+      getMyMentorshipRegistration.mockResolvedValue({
+        data: { isRegistered: false },
+      });
+      matchStatusByRound({ "round-1": "unmatched", "round-2": "unregistered" });
+
+      const result = await loadEarlierRound();
+
+      expect(getMyMentorshipMatchResult).toHaveBeenCalledWith("round-1");
+      expect(result.current.participantDetails.isRegistrationRound).toBe(false);
+      expect(result.current.participantDetails.isRegistered).toBe(true);
+      expect(result.current.participantDetails.matchStatus).toBe("unmatched");
+    });
+
+    it("reports not registered when the user did not register for that round", async () => {
+      setUp();
+      getMyMentorshipRegistration.mockResolvedValue({
+        data: { isRegistered: true },
+      });
+      matchStatusByRound({ "round-1": "unregistered", "round-2": "pending" });
+
+      const result = await loadEarlierRound();
+
+      expect(getMyMentorshipMatchResult).toHaveBeenCalledWith("round-1");
+      expect(result.current.participantDetails.isRegistered).toBe(false);
+      expect(result.current.participantDetails.matchStatus).toBe(
+        "unregistered",
+      );
+    });
+
+    it("carries a withdrawal in that round", async () => {
+      setUp();
+      getMyMentorshipRegistration.mockResolvedValue({
+        data: { isRegistered: false },
+      });
+      matchStatusByRound({ "round-1": "withdrawn", "round-2": "unregistered" });
+
+      const result = await loadEarlierRound();
+
+      expect(result.current.participantDetails.isRegistered).toBe(true);
+      expect(result.current.participantDetails.matchStatus).toBe("withdrawn");
+    });
+
+    it("reports not registered when asking about that round fails", async () => {
+      setUp();
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      getMyMentorshipRegistration.mockResolvedValue({
+        data: { isRegistered: true },
+      });
+      getMyMentorshipMatchResult.mockImplementation((roundId) =>
+        roundId === "round-1"
+          ? Promise.reject(new Error("boom"))
+          : Promise.resolve({ data: { currentStatus: "pending" } }),
+      );
+
+      const result = await loadEarlierRound();
+
+      expect(result.current.participantDetails.isRegistered).toBe(false);
+      expect(result.current.participantDetails.matchStatus).toBeNull();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("an empty registration round", () => {
+    it("takes the match status already loaded for it", async () => {
+      getAllMentorshipRounds.mockResolvedValue({
+        data: [{ id: "round-2", name: "Later" }],
+      });
+      mockSlots({
+        registrationRoundId: "round-2",
+        registrationRoundName: "Later",
+        isRegistrationOpen: false,
+        activeRoundId: "round-2",
+      });
+      getMyMentorshipPartners.mockResolvedValue({ data: [] });
+      getMyMentorshipMeetingLog.mockResolvedValue({
+        data: { meetingInfo: [] },
+      });
+      getMyMentorshipRegistration.mockResolvedValue({
+        data: { isRegistered: true },
+      });
+      getMyMentorshipMatchResult.mockResolvedValue({
+        data: { currentStatus: "withdrawn", partners: [] },
+      });
+
+      const { result } = renderHook(() => useMentorshipData());
+      await waitFor(() =>
+        expect(result.current.participantDetails?.matchStatus).toBe(
+          "withdrawn",
+        ),
+      );
+
+      expect(result.current.participantDetails.isRegistrationRound).toBe(true);
+      expect(result.current.participantDetails.isRegistered).toBe(true);
+      // Fetched once, on mount, for the registration round itself.
+      expect(getMyMentorshipMatchResult).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("should not call getMyMentorshipRegistration when regRoundId is null", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
     mockSlots({

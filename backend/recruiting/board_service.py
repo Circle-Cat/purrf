@@ -1129,11 +1129,6 @@ class BoardService:
             session, current_user.user_id
         )
         viewer_timezone = viewer.timezone if viewer is not None else None
-        # The embedded ApplicationDto's `editable` is deliberately left at
-        # its default (False) here: it encodes the CANDIDATE's edit window
-        # (first stage / pending / unfrozen), which the owner-facing detail
-        # UI doesn't consume yet. Recompute via
-        # ApplicationService._is_editable if the board dialog ever needs it.
         application_dto = self.recruiting_mapper.to_application_dto(
             application, current_sub
         )
@@ -1152,6 +1147,7 @@ class BoardService:
             assignee_id=assignment.assignee_id if assignment is not None else None,
             # Free: `user` was already fetched above for the applicant's name.
             applicant_is_blocked=bool(user is not None and user.is_blocked),
+            applicant_is_deactivated=user is not None and user.is_active is False,
             pending_block_request=await pending_block_summary(
                 session,
                 approval_service=self.approval_service,
@@ -1557,36 +1553,6 @@ class BoardService:
             other_jobs=other_jobs, previous_same_job=previous_same_job
         )
 
-    async def _freeze_current_submission(
-        self, session: AsyncSession, application_id: int
-    ):
-        """Mark an application's current submission version as frozen.
-
-        Fetches the highest-version submission and sets ``is_frozen=True``.
-        Safe to call on an already-frozen submission (idempotent re-write of
-        the same value). ``change_stage`` calls this unconditionally on
-        every stage change; ``set_sub_status`` only calls it the first time
-        an application leaves ``"pending"``, so it isn't invoked (and no
-        extra write happens) on later, already-frozen transitions.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            application_id (int): The owning application.
-
-        Returns:
-            ApplicationSubmissionEntity | None: The (now-frozen) current
-                submission, or None if the application has none yet.
-        """
-        current_sub = await self.application_submission_repository.get_current(
-            session, application_id
-        )
-        if current_sub is not None:
-            current_sub.is_frozen = True
-            current_sub = await self.application_submission_repository.update(
-                session, current_sub
-            )
-        return current_sub
-
     async def _validate_interview_assignee(
         self, session: AsyncSession, assignee_id: int
     ) -> None:
@@ -1623,9 +1589,6 @@ class BoardService:
         no interview to assign. On reject, records the reason/note/origin
         stage under ``tags["reject"]``. The target's sub_status resets to
         ``"pending"`` for pipeline stages, or ``None`` for terminal stages.
-        Every stage change freezes the application's current submission
-        version, since once a decision has been made on it, the candidate
-        must not be able to edit the record the decision was based on.
 
         Advancing out of an interview stage whose current round has no
         confirmed evaluation is allowed (rescue lanes rely on it), but the
@@ -1742,7 +1705,9 @@ class BoardService:
         )
         application.current_round = 1
 
-        current_sub = await self._freeze_current_submission(session, application_id)
+        current_sub = await self.application_submission_repository.get_current(
+            session, application_id
+        )
         application = await self.application_repository.update(session, application)
         await record_event(
             session,
@@ -1801,12 +1766,7 @@ class BoardService:
             await self.interview_scheduling_service.delete_calendar_events([
                 released_event_id
             ])
-        # `editable` encodes the CANDIDATE's edit window (see
-        # get_application_detail's note); a fresh stage/sub_status decision
-        # is never in that window, so this is always False here.
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
+        return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def reassign(
         self,
@@ -1922,9 +1882,7 @@ class BoardService:
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
+        return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def set_sub_status(
         self,
@@ -1935,11 +1893,7 @@ class BoardService:
     ) -> ApplicationDto:
         """Manually switch an application's sub_status within its current stage.
 
-        The first move away from ``"pending"`` freezes the application's
-        current submission version (one-way: switching between later
-        non-pending values doesn't re-freeze since it's already frozen, and
-        moving back to ``"pending"`` never unfreezes it). Logs a
-        ``"sub_status_changed"`` activity entry.
+        Logs a ``"sub_status_changed"`` activity entry.
 
         ``"evaluated"`` is the one target the owner may not set freely: it
         means "an evaluator confirmed a scorecard" (``EvaluationService.submit``
@@ -1980,12 +1934,9 @@ class BoardService:
             )
 
         current_value = application.sub_status or "pending"
-        if current_value == "pending" and dto.sub_status != "pending":
-            current_sub = await self._freeze_current_submission(session, application_id)
-        else:
-            current_sub = await self.application_submission_repository.get_current(
-                session, application_id
-            )
+        current_sub = await self.application_submission_repository.get_current(
+            session, application_id
+        )
         application.sub_status = dto.sub_status
 
         application = await self.application_repository.update(session, application)
@@ -2002,9 +1953,7 @@ class BoardService:
             },
         )
         await session.commit()
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
+        return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def set_round(
         self,
@@ -2138,9 +2087,7 @@ class BoardService:
             await self.interview_scheduling_service.delete_calendar_events([
                 released_event_id
             ])
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
+        return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def _mentionable_user_ids(
         self, session: AsyncSession, application: ApplicationEntity, job: JobEntity

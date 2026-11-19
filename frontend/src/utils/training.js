@@ -19,3 +19,22 @@ export const ONBOARDING_TRAINING_CATEGORIES = [
 export const isIncompleteOnboarding = (training) =>
   ONBOARDING_TRAINING_CATEGORIES.includes(training.category) &&
   training.status !== "done";
+
+/**
+ * Whether the mentorship onboarding course is done for every given role.
+ * A role with no onboarding row counts as not done.
+ *
+ * @param {Array<{category: string, status: string}>} training - Training
+ *   rows from the profile API.
+ * @param {Array<"mentor"|"mentee">} roles - Roles to check.
+ * @returns {boolean}
+ */
+export const isOnboardingDoneForRoles = (training, roles) =>
+  roles.length > 0 &&
+  roles.every((role) =>
+    training.some(
+      (row) =>
+        row.category === `mentorship_${role}_onboarding` &&
+        row.status === "done",
+    ),
+  );

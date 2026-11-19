@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from backend.common.api_endpoints import (
     ADMIN_ACCOUNT_BLOCK_ENDPOINT,
     ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT,
+    ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT_ENDPOINT,
     ADMIN_ACCOUNT_REACTIVATE_ENDPOINT,
     ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT,
     ADMIN_ACCOUNT_UNBLOCK_ENDPOINT,
@@ -37,7 +38,8 @@ class UserAccountController:
         """
         Args:
             user_account_service (UserAccountService): The list, the sign-in
-                methods view, and the deactivate/reactivate/unblock writes.
+                methods view, the deactivate pre-flight, and the
+                deactivate/reactivate/unblock writes.
             block_service (BlockService): The direct block.
             database (Database): Provides the async session used per request.
         """
@@ -61,6 +63,12 @@ class UserAccountController:
             ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT,
             endpoint=authenticate(permissions=_GATE)(self.deactivate),
             methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            ADMIN_ACCOUNT_DEACTIVATE_PREFLIGHT_ENDPOINT,
+            endpoint=authenticate(permissions=_GATE)(self.deactivate_preflight),
+            methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -173,7 +181,8 @@ class UserAccountController:
 
         Returns:
             A standardized API response with no data. Deactivating yourself
-            surfaces as 403; an unknown user as 400.
+            surfaces as 403; an unknown user as 400; someone still in a
+            mentorship round under way as 409, naming the rounds.
         """
         async with self._database.session() as session:
             await self._service.deactivate(
@@ -183,6 +192,23 @@ class UserAccountController:
                 note=deactivate_data.note,
             )
         return api_response(message="Account deactivated.")
+
+    async def deactivate_preflight(self, current_user: UserContextDto, user_id: int):
+        """
+        What stands in the way of deactivating this account, and what it
+        leaves alone.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int): The account about to be deactivated, from the path.
+
+        Returns:
+            A standardized API response wrapping a ``DeactivatePreflightDto``.
+            An unknown user surfaces as 400.
+        """
+        async with self._database.session() as session:
+            view = await self._service.deactivate_preflight(session, user_id)
+        return api_response(message="Deactivate pre-flight", data=view)
 
     async def reactivate(self, current_user: UserContextDto, user_id: int):
         """

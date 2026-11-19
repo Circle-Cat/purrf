@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timezone
 
 from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.entity.application_draft_entity import ApplicationDraftEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
@@ -272,6 +273,24 @@ class TestRecruitingMapper(unittest.TestCase):
 
         self.assertFalse(dto.is_blocked)
 
+    def _card_for(self, **user_flags):
+        application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", **user_flags)
+        user.user_id = 2
+        return self.mapper.to_board_card_dto(application, user)
+
+    def test_to_board_card_dto_is_deactivated_for_a_deactivated_account(self):
+        self.assertTrue(self._card_for(is_active=False).is_deactivated)
+
+    def test_to_board_card_dto_is_not_deactivated_for_an_active_account(self):
+        self.assertFalse(self._card_for(is_active=True).is_deactivated)
+
+    def test_to_board_card_dto_is_not_deactivated_when_the_flag_is_unset(self):
+        self.assertFalse(self._card_for().is_deactivated)
+
     def test_to_job_dto_includes_reviewer_id_when_provided(self):
         job = self._make_job_entity(status=JobStatus.PENDING_REVIEW)
         dto = self.mapper.to_job_dto(job, reviewer_id=7)
@@ -310,6 +329,77 @@ class TestRecruitingMapper(unittest.TestCase):
         self.assertEqual(dto.job_kind, JobKind.ACTIVITY)
         self.assertEqual(dto.mentorship_role, ParticipantRole.MENTOR)
         self.assertEqual(dto.stage, ApplicationStage.HIRED)
+
+    def test_to_my_application_draft_summary_dto_maps_fields(self):
+        saved_at = datetime(2026, 11, 7, 8, 15, tzinfo=timezone.utc)
+        draft = ApplicationDraftEntity(user_id=4, job_id=63, content={})
+        draft.updated_timestamp = saved_at
+        job = self._make_job_entity(
+            title="CircleCat Mentee", mentorship_role=ParticipantRole.MENTEE
+        )
+        job.job_id = 63
+
+        dto = self.mapper.to_my_application_draft_summary_dto(draft, job)
+
+        self.assertEqual(dto.job_id, 63)
+        self.assertEqual(dto.job_title, "CircleCat Mentee")
+        self.assertEqual(dto.job_kind, JobKind.ACTIVITY)
+        self.assertEqual(dto.mentorship_role, ParticipantRole.MENTEE)
+        self.assertTrue(dto.accepting_applications)
+        self.assertEqual(dto.updated_at, saved_at)
+
+    def test_a_draft_for_a_posting_that_is_not_live_is_not_accepting(self):
+        draft = ApplicationDraftEntity(user_id=4, job_id=63, content={})
+        for status, accepting in (
+            (JobStatus.PUBLISHED_PENDING_REVISION, True),
+            (JobStatus.PENDING_CLOSE, True),
+            (JobStatus.CLOSED, False),
+            (JobStatus.PENDING_REOPEN, False),
+        ):
+            with self.subTest(status=status):
+                job = self._make_job_entity(status=status)
+                dto = self.mapper.to_my_application_draft_summary_dto(draft, job)
+                self.assertEqual(accepting, dto.accepting_applications)
+
+    def test_to_application_draft_dto_reads_the_snapshot_keys(self):
+        saved_at = datetime(2026, 11, 8, 10, 0, tzinfo=timezone.utc)
+        sha = "ab" * 32
+        draft = ApplicationDraftEntity(
+            user_id=4,
+            job_id=63,
+            content={
+                "personal": {"firstName": "Grace"},
+                "education": [{"degree": "BSc"}],
+                "experience": [{"company": "Navy"}],
+                "answers": {"q7": "yes"},
+                "resumeSha256": sha,
+                "resumeObjectKey": f"resumes/{sha}.pdf",
+            },
+        )
+        draft.updated_timestamp = saved_at
+
+        dto = self.mapper.to_application_draft_dto(draft)
+
+        self.assertEqual(dto.job_id, 63)
+        self.assertEqual(dto.personal, {"firstName": "Grace"})
+        self.assertEqual(dto.education, [{"degree": "BSc"}])
+        self.assertEqual(dto.experience, [{"company": "Navy"}])
+        self.assertEqual(dto.answers, {"q7": "yes"})
+        self.assertEqual(dto.resume_sha256, sha)
+        self.assertEqual(dto.resume_object_key, f"resumes/{sha}.pdf")
+        self.assertEqual(dto.updated_at, saved_at)
+
+    def test_to_application_draft_dto_fills_missing_keys_with_empties(self):
+        draft = ApplicationDraftEntity(user_id=4, job_id=63, content={})
+
+        dto = self.mapper.to_application_draft_dto(draft)
+
+        self.assertEqual(dto.personal, {})
+        self.assertEqual(dto.education, [])
+        self.assertEqual(dto.experience, [])
+        self.assertEqual(dto.answers, {})
+        self.assertIsNone(dto.resume_sha256)
+        self.assertIsNone(dto.resume_object_key)
 
 
 if __name__ == "__main__":

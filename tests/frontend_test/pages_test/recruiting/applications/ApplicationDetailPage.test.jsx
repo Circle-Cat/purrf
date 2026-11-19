@@ -127,11 +127,9 @@ const makeOtherApplication = ({
     currentRound: 1,
     current: {
       version: 1,
-      isFrozen: true,
       submission: OTHER_SUBMISSION,
       submittedAt,
     },
-    editable: false,
   },
   jobTitle,
   jobKind,
@@ -164,8 +162,7 @@ const makeDetail = ({
     subStatus: "pending",
     tags: null,
     currentRound,
-    current: { version: 1, isFrozen: false, submission: SUBMISSION },
-    editable: false,
+    current: { version: 1, submission: SUBMISSION },
   },
   applicantName: "Alice Smith",
   applicantEmail: "alice@example.com",
@@ -497,17 +494,6 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 
   // Wording lives in the glossary and is asserted there; what this pins is
   // that the Status label is a hint trigger at all.
-  it("hangs the edit-lock hint on the Status label", async () => {
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
-    });
-    renderPage();
-    await waitLoaded();
-
-    expect(screen.getByRole("button", { name: "Status:" })).toBeInTheDocument();
-  });
-
   it("states how far the block reaches before the request is sent", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;

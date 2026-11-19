@@ -8,7 +8,6 @@ from backend.common.exceptions import ConflictError
 from backend.common.recruiting_enums import ApplicationStage
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.entity.application_entity import ApplicationEntity
-from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.users_entity import UsersEntity
 
 TARGET = 5
@@ -33,7 +32,6 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.users_repo = MagicMock()
         self.app_repo = MagicMock()
-        self.sub_repo = MagicMock()
         self.interview_repo = MagicMock()
         self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
         self.interview_svc = MagicMock()
@@ -44,6 +42,7 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         self.mentorship = MagicMock()
         self.mentorship.end_for_blocked_user = AsyncMock()
         self.mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
+        self.mentorship.rounds_block_rejects = AsyncMock(return_value=0)
 
         recorder = patch(
             "backend.admin.block_service.record_event", new_callable=AsyncMock
@@ -54,7 +53,6 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         self.service = BlockService(
             users_repository=self.users_repo,
             application_repository=self.app_repo,
-            application_submission_repository=self.sub_repo,
             application_interview_repository=self.interview_repo,
             interview_scheduling_service=self.interview_svc,
             approval_service=self.approvals,
@@ -92,14 +90,6 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         row.tags = tags
         return row
 
-    def _submission(self, application_id=10, is_frozen=False):
-        return ApplicationSubmissionEntity(
-            application_id=application_id,
-            version=1,
-            submission={"answers": {}},
-            is_frozen=is_frozen,
-        )
-
     def _interview_row(
         self,
         application_id=10,
@@ -135,8 +125,6 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
             return_value=[(a, MagicMock()) for a in applications]
         )
         self.app_repo.update = AsyncMock(side_effect=lambda _s, row: row)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-        self.sub_repo.update = AsyncMock(side_effect=lambda _s, row: row)
         return by_id
 
     def _application_events(self):
@@ -234,14 +222,12 @@ class TestBlockServiceApply(_BlockServiceTestBase):
 
     # -- the application sweep ----------------------------------------------
 
-    async def test_closes_tags_and_freezes_the_application(self):
+    async def test_closes_and_tags_the_application(self):
         application = self._application(10, stage=ApplicationStage.TECH)
         application.current_round = 2
         application.sub_status = "in_progress"
         application.tags = {"existing": "keep-me"}
-        current_sub = self._submission(application_id=10, is_frozen=False)
         self._seed([application])
-        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
 
         await self._apply()
 
@@ -250,7 +236,6 @@ class TestBlockServiceApply(_BlockServiceTestBase):
         self.assertEqual(application.current_round, 1)
         self.assertEqual(application.tags["existing"], "keep-me")
         self.assertTrue(application.tags["blacklisted"])
-        self.assertTrue(current_sub.is_frozen)
         self.app_repo.update.assert_awaited_once()
 
     async def test_row_locks_every_application_it_touches(self):
@@ -454,12 +439,17 @@ class TestBlockServicePreflight(_BlockServiceTestBase):
     async def test_counts_the_mentorship_it_ends(self):
         self._seed([self._application(10)])
         self.mentorship.preflight_counts = AsyncMock(return_value=(2, 3))
+        self.mentorship.rounds_block_rejects = AsyncMock(return_value=4)
 
         view = await self.service.preflight(self.session, TARGET)
 
         self.assertEqual(view.mentorship_pair_count, 2)
         self.assertEqual(view.mentorship_meeting_count, 3)
+        self.assertEqual(view.mentorship_round_count, 4)
         self.mentorship.preflight_counts.assert_awaited_once_with(self.session, TARGET)
+        self.mentorship.rounds_block_rejects.assert_awaited_once_with(
+            self.session, TARGET
+        )
 
     async def test_counts_only_what_will_change(self):
         self._seed([

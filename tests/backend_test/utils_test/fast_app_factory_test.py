@@ -677,7 +677,7 @@ class TestFastAppFactory(unittest.TestCase):
         from backend.recruiting.board_controller import BoardController
 
         application_controller = ApplicationController(
-            MagicMock(), MagicMock(), MagicMock(), MagicMock()
+            MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
         )
         board_controller = BoardController(MagicMock(), MagicMock(), MagicMock())
         factory = FastAppFactory(
@@ -733,6 +733,13 @@ class TestFastAppFactory(unittest.TestCase):
             mine,
             detail,
             "GET /recruiting/applications/mine must be registered before the "
+            "board's /recruiting/applications/{application_id} or it 422s",
+        )
+        draft = paths.index("/api/recruiting/applications/draft")
+        self.assertLess(
+            draft,
+            detail,
+            "/recruiting/applications/draft must be registered before the "
             "board's /recruiting/applications/{application_id} or it 422s",
         )
 

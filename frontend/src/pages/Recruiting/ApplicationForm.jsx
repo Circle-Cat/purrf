@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
+import ApplicationNextStepsDialog from "@/pages/Recruiting/components/ApplicationNextStepsDialog";
 import { useAuth } from "@/context/auth/AuthContext.js";
 import {
   submitApplication,
-  updateApplication,
   getMyLatestProfile,
+  getMyApplicationDraft,
+  saveApplicationDraft,
 } from "@/api/recruitingApi";
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
 import { ProfileFields } from "@/constants/ApiEndpoints";
@@ -32,41 +36,6 @@ import {
  * consequence of a miss is the old behaviour, not a wrong action.
  */
 const ALREADY_APPLIED = /already have an application/i;
-
-/** The fields that make one education row the row it is. */
-const EDUCATION_FIELDS = [
-  "institution",
-  "degree",
-  "field",
-  "startMonth",
-  "startYear",
-  "endMonth",
-  "endYear",
-];
-
-/** The fields that make one experience row the row it is. */
-const EXPERIENCE_FIELDS = [
-  "title",
-  "company",
-  "isCurrentlyWorking",
-  "startMonth",
-  "startYear",
-  "endMonth",
-  "endYear",
-];
-
-/**
- * A comparable rendering of a list of form rows.
- *
- * Order-sensitive on purpose: the order is on screen, so moving a row is a
- * change the candidate can see and should be asked about.
- *
- * @param {object[]} rows
- * @param {string[]} fields
- * @returns {string}
- */
-const rowsFingerprint = (rows, fields) =>
-  JSON.stringify((rows ?? []).map((row) => fields.map((f) => row?.[f] ?? "")));
 
 /**
  * Which of the profile's blocks have nothing in them.
@@ -121,26 +90,35 @@ const withFallback = (fromProfile, sent, blanks) => {
 };
 
 /**
+ * The caller's saved draft for a job, or null. Never throws: a draft is a
+ * convenience, and failing to read one must leave a usable form.
+ *
+ * @param {number} jobId
+ * @returns {Promise<object|null>}
+ */
+const loadDraft = async (jobId) => {
+  try {
+    const res = await getMyApplicationDraft(jobId);
+    return res?.data ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Candidate application form for a published job. Owns the applicant's
- * profile/answers/resume state and submits it via `submitApplication`
- * (create) or `updateApplication` (edit, when `existing` is provided). Both
- * calls share the same base body; `jobId` is added only for the create call,
- * since the edit DTO forbids extra fields and rejects it.
+ * profile/answers/resume state and submits it via `submitApplication`.
  *
- * `existing` and `seed` both prefill the form but serve different purposes:
- * `existing` is a still-editable application being edited in place (drives
- * the `updateApplication` submit path); `seed` is a prior submission used
- * purely to prefill the form while still submitting via `submitApplication`
- * (create) — used when a rejected candidate reapplies, since the backend's
- * reapply branch lives on the create path, not edit.
+ * `seed` is a prior submission used to prefill the form when a rejected
+ * candidate reapplies; the reapply still goes through `submitApplication`,
+ * since the backend's reapply branch lives on the create path.
  *
- * When there is neither `existing` nor `seed` (a genuinely brand-new
- * application), the form instead blocks its first render on a fetch of the
- * candidate's saved Profile and prefills from that (via
- * `profileToApplicationForm`) — so applying to a second job doesn't start
- * blank when the candidate already wrote their profile back after a first
- * application. A failed fetch just leaves the form at its normal empty
- * state; prefill is a convenience, never a requirement.
+ * The form always blocks its first render on a fetch of the candidate's
+ * saved Profile and prefills from that (via `profileToApplicationForm`) — so
+ * applying to a second job doesn't start blank when the candidate already
+ * wrote their profile back after a first application. A failed fetch just
+ * leaves the form at its normal empty state; prefill is a convenience, never
+ * a requirement.
  *
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of the form's personal fields and complete
@@ -154,18 +132,33 @@ const withFallback = (fromProfile, sent, blanks) => {
  * only toasts a warning and never fails the submission -- `onSubmitted` still
  * fires.
  *
- * @param {{job: object, existing?: object, seed?: object, seedApplicationId?: number,
- *          onSubmitted: (app: object) => void}} props
+ * A new application to a mentorship posting (an activity posting with a
+ * mentorship role) does not call `onSubmitted` straight away: it first
+ * explains what comes after applying, since admission alone gets nobody
+ * matched. That dialog leads to `onViewApplication` (falling back to
+ * `onSubmitted`) or to the Personal Dashboard. Every other posting goes
+ * straight to `onSubmitted`.
+ *
+ * The application can also be saved as a private draft and finished later.
+ * Its saved draft, when there is one, is read alongside the profile and wins
+ * over every other prefill, résumé reference included. Saving a draft checks
+ * nothing; submitting is confirmed first, since a submitted application
+ * cannot be changed. Whether to write the form back to the profile is a
+ * checkbox, ticked by default.
+ *
+ * @param {{job: object, seed?: object, seedApplicationId?: number,
+ *          onSubmitted: (app: object) => void,
+ *          onViewApplication?: () => void}} props
  */
 const ApplicationForm = ({
   job,
-  existing,
   seed,
   seedApplicationId,
   onSubmitted,
+  onViewApplication,
 }) => {
   const { user } = useAuth();
-  const priorSubmission = existing?.current ?? seed ?? {};
+  const priorSubmission = seed ?? {};
   const submissionSeed = priorSubmission.submission ?? {};
   const [profileValue, setProfileValue] = useState({
     personal: {
@@ -187,21 +180,17 @@ const ApplicationForm = ({
   const initialResumeObjectKeyRef = useRef(
     priorSubmission.resumeObjectKey ?? null,
   );
-  const resumeApplicationId = existing?.id ?? seedApplicationId ?? null;
+  const resumeApplicationId = seedApplicationId ?? null;
   const existingResume =
     initialResumeObjectKeyRef.current &&
     resume.objectKey === initialResumeObjectKeyRef.current &&
     resumeApplicationId
       ? { applicationId: resumeApplicationId }
       : null;
-  // What the profile itself gave, before any fallback filled a blank block
-  // and before the candidate touched anything. Comparing against this is what
-  // makes "you changed your information" true rather than a guess.
-  const profileAtLoadRef = useRef(null);
-  // Null until a submission is found to change the profile; then the dialog
-  // asking whether to carry those changes over.
-  const [pendingSync, setPendingSync] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // Set once a new mentorship application is in: `{app}` while the
+  // what-comes-next dialog is up.
+  const [nextStepsFor, setNextStepsFor] = useState(null);
   // Empty until the candidate tries to submit. Only ever cleared as fields are
   // fixed, never added to while typing, so a half-filled form does not turn
   // red under someone still working through it.
@@ -212,6 +201,17 @@ const ApplicationForm = ({
   const [resumeUploading, setResumeUploading] = useState(false);
   // Always: the profile is where the block comes from, on every path.
   const [prefillLoading, setPrefillLoading] = useState(true);
+  // The profile write-back choice, the submit confirmation, a draft save in
+  // flight, and the résumé key a loaded draft carried (shown as attached
+  // while it is still the one on the form).
+  const [saveToProfile, setSaveToProfile] = useState(true);
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftResumeKey, setDraftResumeKey] = useState(null);
+  const draftResumeOnFile =
+    !existingResume &&
+    Boolean(draftResumeKey) &&
+    resume.objectKey === draftResumeKey;
   // Which profile blocks this posting puts on screen, and so which the
   // candidate can be said to have reviewed.
   const shownBlocks = {
@@ -219,14 +219,38 @@ const ApplicationForm = ({
     experience: job.profileConfig?.workExperience !== "off",
   };
 
+  /**
+   * Put a saved draft on the form, replacing whatever the profile gave.
+   *
+   * @param {object} draft As `getMyApplicationDraft` returns it.
+   */
+  const applyDraft = (draft) => {
+    setProfileValue({
+      personal: {
+        ...(draft.personal ?? {}),
+        timezone: draft.personal?.timezone || browserTimezone(),
+      },
+      education: draft.education ?? [],
+      experience: draft.experience ?? [],
+    });
+    setAnswers(draft.answers ?? {});
+    setResume({
+      sha256: draft.resumeSha256 ?? null,
+      objectKey: draft.resumeObjectKey ?? null,
+    });
+    setDraftResumeKey(draft.resumeObjectKey ?? null);
+  };
+
   useEffect(() => {
     let cancelled = false;
+    // Started now so it runs beside the profile read, applied after it so
+    // the draft wins.
+    const draftLoad = loadDraft(job.id);
     getMyProfile({
       fields: [ProfileFields.WORK_HISTORY, ProfileFields.EDUCATION],
     })
       .then(async ({ data }) => {
         const fromProfile = profileToApplicationForm(data?.profile);
-        profileAtLoadRef.current = fromProfile;
         const blanks = emptyBlocks(fromProfile, shownBlocks);
         if (blanks.length === 0) return fromProfile;
         // Applied before but never saved it: start them from what they
@@ -246,6 +270,10 @@ const ApplicationForm = ({
       .catch(() => {
         // Prefill is a convenience; a failure just leaves the form at its
         // normal empty initial state.
+      })
+      .then(() => draftLoad)
+      .then((draft) => {
+        if (!cancelled && draft) applyDraft(draft);
       })
       .finally(() => {
         if (!cancelled) setPrefillLoading(false);
@@ -358,7 +386,6 @@ const ApplicationForm = ({
    */
   const send = async (sync) => {
     if (submitting) return;
-    setPendingSync(null);
     setSubmitting(true);
     try {
       const base = {
@@ -376,14 +403,20 @@ const ApplicationForm = ({
         resumeObjectKey: resume.objectKey,
         saveToProfile: sync,
       };
-      // `ApplicationEditDto` forbids extra fields, so `jobId` is only ever
-      // sent on create (`ApplicationSubmitDto`), never on edit.
-      const res = existing
-        ? await updateApplication(existing.id, base)
-        : await submitApplication({ jobId: job.id, ...base });
-      toast.success("Application submitted.");
+      const res = await submitApplication({ jobId: job.id, ...base });
+      const submitted = res?.data ?? res;
+      const explainNextSteps =
+        job.kind === "activity" && Boolean(job.mentorshipRole);
+      // The dialog's own title says it was submitted; a toast would repeat it.
+      if (!explainNextSteps) {
+        toast.success("Application submitted.");
+      }
       if (sync) await writeBackProfile();
-      onSubmitted(res?.data ?? res);
+      if (explainNextSteps) {
+        setNextStepsFor({ app: submitted });
+      } else {
+        onSubmitted(submitted);
+      }
     } catch (e) {
       if (ALREADY_APPLIED.test(e.message ?? "")) {
         // The application exists -- this is a create whose response was lost,
@@ -400,71 +433,42 @@ const ApplicationForm = ({
     }
   };
 
-  /**
-   * Send what the candidate is looking at.
-   *
-   * The server keeps only the answers the form was showing and overwrites the
-   * submission in place, so an answer to a question a gate has since hidden is
-   * dropped for good. That is deliberate rather than silent: the submission is
-   * what is on screen, and asking someone to approve deleting an answer to a
-   * question they cannot see explains less than it confuses.
-   */
+  /** Check the form, then ask the candidate to confirm before sending. */
   const submit = () => {
     if (submitting) return;
     if (!validate()) return;
-    askAboutProfile();
+    setConfirmingSubmit(true);
+  };
+
+  /** Send a new application once the candidate confirms it. */
+  const confirmSubmit = () => {
+    setConfirmingSubmit(false);
+    send(saveToProfile);
   };
 
   /**
-   * What the candidate changed about themselves, relative to the profile this
-   * form started from.
-   *
-   * Only blocks the posting showed count: a block that was never rendered
-   * cannot have been changed here, whatever the form is still holding for it.
-   *
-   * @returns {boolean} Whether saving would alter their profile at all.
+   * Save the form as it stands as the candidate's private draft. Nothing is
+   * checked: a draft is allowed to be incomplete. Stays on the page.
    */
-  const profileWouldChange = () => {
-    const atLoad = profileAtLoadRef.current;
-    // No profile was read, so there is nothing to compare and nothing to
-    // offer -- a failed prefill must not turn into a confusing question.
-    if (!atLoad) return false;
-    const changed = (field) =>
-      (profileValue.personal?.[field] ?? "").trim() !==
-      (atLoad.personal?.[field] ?? "").trim();
-    if (["firstName", "lastName", "linkedin", "timezone"].some(changed)) {
-      return true;
+  const saveDraft = async () => {
+    if (savingDraft || submitting) return;
+    setSavingDraft(true);
+    try {
+      await saveApplicationDraft({
+        jobId: job.id,
+        personal: profileValue.personal,
+        education: profileValue.education,
+        experience: profileValue.experience,
+        answers,
+        resumeSha256: resume.sha256 ?? null,
+        resumeObjectKey: resume.objectKey ?? null,
+      });
+      toast.success("Draft saved.");
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setSavingDraft(false);
     }
-    if (
-      collects("education") &&
-      rowsFingerprint(profileValue.education, EDUCATION_FIELDS) !==
-        rowsFingerprint(atLoad.education, EDUCATION_FIELDS)
-    ) {
-      return true;
-    }
-    return (
-      collects("workExperience") &&
-      rowsFingerprint(profileValue.experience, EXPERIENCE_FIELDS) !==
-        rowsFingerprint(atLoad.experience, EXPERIENCE_FIELDS)
-    );
-  };
-
-  /**
-   * Ask before carrying this form's version of the candidate into their
-   * profile -- and only when there is something to carry.
-   *
-   * Asked before the application is sent, not after: the form unmounts on
-   * success, and a question asked into an unmounted component is a question
-   * nobody answers (the same trap that hid résumé upload failures).
-   */
-  const askAboutProfile = () => {
-    if (!profileWouldChange()) {
-      send(false);
-      return;
-    }
-    setPendingSync({
-      wasEmpty: emptyBlocks(profileAtLoadRef.current, shownBlocks).length > 0,
-    });
   };
 
   if (prefillLoading) {
@@ -486,44 +490,78 @@ const ApplicationForm = ({
         onResumeUploadingChange={setResumeUploading}
         onResumeStored={setResume}
         existingResume={existingResume}
+        draftResumeOnFile={draftResumeOnFile}
+        afterProfile={
+          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+            <Checkbox
+              id="application-save-to-profile"
+              className="mt-0.5"
+              checked={saveToProfile}
+              onCheckedChange={(checked) => setSaveToProfile(checked === true)}
+            />
+            <div className="space-y-1">
+              <Label htmlFor="application-save-to-profile">
+                Also save these changes to my profile
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Your profile&apos;s education and experience will be replaced by
+                what you entered here.
+              </p>
+            </div>
+          </div>
+        }
       />
-      <Button onClick={submit} disabled={submitting || resumeUploading}>
-        {resumeUploading ? "Uploading résumé…" : "Submit application"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={submit} disabled={submitting || resumeUploading}>
+          {resumeUploading ? "Uploading résumé…" : "Submit application"}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={saveDraft}
+          disabled={savingDraft || submitting || resumeUploading}
+        >
+          Save draft
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Only you can see a draft. You can&apos;t change your application after
+        you submit it.
+      </p>
       <Dialog
-        open={pendingSync !== null}
-        onOpenChange={(open) => !open && setPendingSync(null)}
+        open={confirmingSubmit}
+        onOpenChange={(open) => !open && setConfirmingSubmit(false)}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update your profile?</DialogTitle>
+            <DialogTitle>Submit your application?</DialogTitle>
             <DialogDescription>
-              You changed your information while applying. Update your profile
-              with it, so your next application starts from it?
+              You can&apos;t change it after you submit. If you&apos;re not
+              ready, save a draft and come back later.
             </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Your stored education and experience will be replaced by what you
-            entered here.
-          </p>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => send(false)}
-              disabled={submitting}
+              onClick={() => setConfirmingSubmit(false)}
             >
-              Don&apos;t update
+              Keep editing
             </Button>
-            <Button
-              variant={pendingSync?.wasEmpty ? "default" : "outline"}
-              onClick={() => send(true)}
-              disabled={submitting}
-            >
-              Update &amp; submit
+            <Button onClick={confirmSubmit} disabled={submitting}>
+              Submit
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {nextStepsFor && (
+        <ApplicationNextStepsDialog
+          open
+          onViewApplication={() =>
+            onViewApplication
+              ? onViewApplication()
+              : onSubmitted(nextStepsFor.app)
+          }
+        />
+      )}
     </div>
   );
 };

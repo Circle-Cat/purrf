@@ -126,11 +126,15 @@ from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
 )
 from backend.repository.evaluation_repository import EvaluationRepository
+from backend.repository.application_draft_repository import (
+    ApplicationDraftRepository,
+)
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.recruiting.job_service import JobService
 from backend.recruiting.recruiting_controller import RecruitingController
 from backend.recruiting.resume_storage import ResumeStorage
 from backend.recruiting.application_service import ApplicationService
+from backend.recruiting.application_draft_service import ApplicationDraftService
 from backend.recruiting.application_controller import ApplicationController
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import BoardService
@@ -239,6 +243,7 @@ from backend.mentorship.mark_participant_handler import (
     MarkRedFlagHandler,
 )
 from backend.mentorship.mentorship_block_service import MentorshipBlockService
+from backend.mentorship.open_participation_service import OpenParticipationService
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -741,6 +746,7 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             onboarding_training_service=self.onboarding_training_service,
             application_repository=self.application_repository,
+            users_repository=self.users_repository,
         )
         self.meeting_scheduling_service = MeetingSchedulingService(
             logger=self.logger,
@@ -1093,6 +1099,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.user_permissions_repository,
         )
+        self.application_draft_repository = ApplicationDraftRepository()
         self.application_service = ApplicationService(
             self.application_repository,
             self.application_submission_repository,
@@ -1104,12 +1111,20 @@ class AppDependencyBuilder:
             self.user_emails_repository,
             self.mentorship_admission_service,
             self.application_access,
+            self.application_draft_repository,
+        )
+        self.application_draft_service = ApplicationDraftService(
+            self.application_draft_repository,
+            self.application_repository,
+            self.job_repository,
+            self.recruiting_mapper,
         )
         self.application_controller = ApplicationController(
             self.application_service,
             self.job_service,
             self.resume_storage,
             self.database,
+            self.application_draft_service,
         )
         # Person-anchored email (recruiting Emails tab). self.gmail_client and
         # recruiting_sender were constructed earlier, alongside the
@@ -1335,6 +1350,14 @@ class AppDependencyBuilder:
             self.user_identities_repository,
             self.user_permissions_repository,
             self.approval_service,
+            application_repository=self.application_repository,
+            application_interview_repository=self.application_interview_repository,
+            open_participation_service=OpenParticipationService(
+                participants_repository=self.mentorship_round_participants_repo,
+                pairs_repository=self.mentorship_pairs_repository,
+                approval_service=self.approval_service,
+                logger=self.logger,
+            ),
             logger=self.logger,
         )
         self.mentorship_block_service = MentorshipBlockService(
@@ -1350,7 +1373,6 @@ class AppDependencyBuilder:
         self.block_user_handler = BlockUserHandler(
             self.users_repository,
             self.application_repository,
-            self.application_submission_repository,
             self.application_interview_repository,
             self.interview_scheduling_service,
             self.mentorship_block_service,
@@ -1360,7 +1382,6 @@ class AppDependencyBuilder:
         self.block_service = BlockService(
             self.users_repository,
             self.application_repository,
-            self.application_submission_repository,
             self.application_interview_repository,
             self.interview_scheduling_service,
             self.approval_service,

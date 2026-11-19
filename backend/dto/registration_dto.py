@@ -21,6 +21,7 @@ class RoundPreferencesDto(BaseDto):
     goal: str
     current_stage: str | None = None
     time_urgency: str | None = None
+    share_linkedin: bool | None = None
 
 
 class RegistrationDto(BaseDto):
@@ -31,3 +32,5 @@ class RegistrationDto(BaseDto):
     # to prefill a form for — there is nothing to show yet.
     round_preferences: RoundPreferencesDto | None = None
     is_onboarding_training_completed: bool | None = None
+    # The profile link, prefilling the link asked for when sharing LinkedIn.
+    linkedin_link: str | None = None

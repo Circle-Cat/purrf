@@ -30,7 +30,6 @@ class BlockUserHandler(ApprovalHandler):
         self,
         users_repository,
         application_repository,
-        application_submission_repository,
         application_interview_repository,
         interview_scheduling_service,
         mentorship_block_service,
@@ -41,8 +40,6 @@ class BlockUserHandler(ApprovalHandler):
             users_repository (UsersRepository): The person to block.
             application_repository (ApplicationRepository): The applications
                 a block sweeps.
-            application_submission_repository (ApplicationSubmissionRepository):
-                Freezes the submissions of closed-out applications.
             application_interview_repository (ApplicationInterviewRepository):
                 The interviews a block cancels.
             interview_scheduling_service (InterviewSchedulingService): Cancels
@@ -54,7 +51,6 @@ class BlockUserHandler(ApprovalHandler):
         """
         self._users = users_repository
         self._applications = application_repository
-        self._submissions = application_submission_repository
         self._interviews = application_interview_repository
         self._interview_scheduling = interview_scheduling_service
         self._mentorship = mentorship_block_service
@@ -111,7 +107,6 @@ class BlockUserHandler(ApprovalHandler):
             reason=request.reason,
             users_repository=self._users,
             application_repository=self._applications,
-            application_submission_repository=self._submissions,
             application_interview_repository=self._interviews,
             interview_scheduling_service=self._interview_scheduling,
             mentorship_block_service=self._mentorship,

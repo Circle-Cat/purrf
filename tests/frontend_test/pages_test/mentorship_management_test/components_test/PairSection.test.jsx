@@ -54,6 +54,32 @@ describe("PairSection", () => {
     getMeetingLog.mockResolvedValue(log());
   });
 
+  it("shows why the pair was matched without opening the log", () => {
+    renderSection({
+      pair: pairOf({
+        partner: {
+          ...pairOf().partner,
+          recommendationReason: "Both work on backend systems.",
+        },
+      }),
+    });
+
+    expect(screen.getByText("Why matched:")).toBeInTheDocument();
+    expect(
+      screen.getByText("Both work on backend systems.", { exact: false }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no reason line for a pair without a reason", () => {
+    renderSection({
+      pair: pairOf({
+        partner: { ...pairOf().partner, recommendationReason: "  " },
+      }),
+    });
+
+    expect(screen.queryByText("Why matched:")).not.toBeInTheDocument();
+  });
+
   it("names the partner with their ID, linked to their page on this pair", () => {
     renderSection();
     const link = screen.getByRole("link", { name: "Bob Smith · ID 22" });
@@ -97,6 +123,32 @@ describe("PairSection", () => {
     expect(
       screen.getByRole("button", { name: /Attendance issues/ }),
     ).toBeInTheDocument();
+  });
+
+  it("marks a live pair with no meeting held past the first-contact date", () => {
+    renderSection({
+      pair: pairOf({ completedMeetingCount: 0 }),
+      round: { ...ROUND, firstMeetingDeadlineAt: "2020-01-15T08:00:00Z" },
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "Attendance issues: No meeting held yet. First contact was due 2020-01-15.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not flag first contact in a round that is not in progress", () => {
+    renderSection({
+      pair: pairOf({ completedMeetingCount: 0 }),
+      round: {
+        ...ROUND,
+        inProgress: false,
+        firstMeetingDeadlineAt: "2020-01-15T08:00:00Z",
+      },
+    });
+    expect(
+      screen.queryByRole("button", { name: /Attendance issues/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("marks an ended pair and gives it no attendance mark", () => {

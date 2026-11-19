@@ -116,11 +116,3 @@ class ApplicationSubmissionRepository:
         session.add(entity)
         await session.flush()
         return entity
-
-    async def update(
-        self, session: AsyncSession, entity: ApplicationSubmissionEntity
-    ) -> ApplicationSubmissionEntity:
-        """Persist mutations to a submission version."""
-        merged = await session.merge(entity)
-        await session.flush()
-        return merged

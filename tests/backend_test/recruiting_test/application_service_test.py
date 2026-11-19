@@ -11,7 +11,7 @@ from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.application_service import ApplicationService
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
+from backend.dto.application_dto import ApplicationSubmitDto
 from backend.dto.job_config_dto import (
     LONG_TEXT_MAX_LENGTH,
     SHORT_TEXT_MAX_LENGTH,
@@ -22,13 +22,15 @@ from backend.entity.application_submission_entity import ApplicationSubmissionEn
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import (
-    ApplicationLockReason,
     ApplicationStage,
     JobKind,
     JobStatus,
 )
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
+)
+from backend.repository.application_draft_repository import (
+    ApplicationDraftRepository,
 )
 
 
@@ -73,7 +75,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.create = AsyncMock(
             side_effect=lambda s, e: setattr(e, "submission_id", 1) or e
         )
-        self.sub_repo.update = AsyncMock(side_effect=lambda s, e: e)
         self.job_repo = MagicMock()
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=self._job(status=JobStatus.PUBLISHED)
@@ -127,6 +128,15 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.user_permissions_repo,
         )
+        # autospec so a signature drift fails here; delete records itself in
+        # call_order so a test can tell it ran inside the submit transaction.
+        self.draft_repo = create_autospec(ApplicationDraftRepository, instance=True)
+        self.draft_repo.delete = AsyncMock(
+            side_effect=lambda session, user_id, job_id: self.call_order.append(
+                "delete_draft"
+            )
+        )
+        self.draft_repo.list_by_user_with_job = AsyncMock(return_value=[])
         self.service = ApplicationService(
             self.app_repo,
             self.sub_repo,
@@ -138,6 +148,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.user_emails_repo,
             self.mentorship_admission_svc,
             self.application_access,
+            self.draft_repo,
         )
 
     @staticmethod
@@ -231,7 +242,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(result.sub_status, "pending")
-        self.assertTrue(result.editable)
         self.app_repo.create.assert_awaited_once()
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.version, 1)
@@ -662,7 +672,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             application_id=100, version=1, submission={"personal": {}}
         )
         current.submission_id = 5
-        current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
@@ -690,7 +699,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
-        self.assertFalse(result.editable)
 
     async def test_blocked_user_submit_logs_auto_rejected_activity(self):
         self.users_repo.get_user_by_user_id = AsyncMock(
@@ -714,7 +722,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
     async def test_blocked_user_resubmit_on_active_application_still_errors(self):
         """A blocked user whose latest attempt is still active (not
-        REJECTED) hits the same "edit it instead" guard as anyone else —
+        REJECTED) hits the same "already applied" guard as anyone else —
         the blacklist check never even runs. This combination
         shouldn't occur in practice (blacklisting now closes in-flight
         applications), but the guard order must hold regardless."""
@@ -740,318 +748,30 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.create.assert_not_awaited()
         self.app_repo.update.assert_not_awaited()
 
-    async def test_edit_overwrites_current_version_when_editable(self):
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "z"},
-            "personal": REQUIRED_PERSONAL,
-        })
-        result = await self.service.edit(self.session, self._ctx(), 100, dto)
-        self.sub_repo.update.assert_awaited_once()
-        self.sub_repo.create.assert_not_awaited()
-        self.session.commit.assert_awaited()
-        self.assertTrue(result.editable)
-
-    async def test_edit_resnapshots_the_current_form_schema(self):
-        """Editing re-snapshots against the schema live at edit time."""
-        schema = {
-            "questions": [{"id": "q1", "type": "short_text", "label": "Revised?"}]
-        }
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.form_schema = schema
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "Yes"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        written_sub = self.sub_repo.update.call_args.args[1]
-        self.assertEqual(written_sub.submission["formSchema"], schema)
-
-    async def test_edit_drops_answers_the_revised_form_no_longer_shows(self):
-        """The candidate's client re-sends the whole prior answer bag, so an
-        answer stranded by their own change — or by an owner deleting the
-        question — arrives with the edit. Only the current state is kept."""
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.form_schema = {
-            "questions": [
-                {
-                    "id": "q1",
-                    "type": "single_choice",
-                    "label": "Need sponsorship?",
-                    "options": ["Yes", "No"],
-                },
-                {
-                    "id": "q2",
-                    "type": "short_text",
-                    "label": "Visa type?",
-                    "showWhen": {"questionId": "q1", "equals": "Yes"},
-                },
-            ]
-        }
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({
-            "personal": REQUIRED_PERSONAL,
-            "answers": {"q1": "No", "q2": "F-1 OPT", "q5": "WeChat"},
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        written_sub = self.sub_repo.update.call_args.args[1]
-        self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
-
-    async def test_edit_does_not_require_a_hidden_question(self):
-        """`required` is relaxed on the edit path too, not only on submit."""
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.form_schema = {
-            "questions": [
-                {
-                    "id": "q1",
-                    "type": "single_choice",
-                    "label": "Need sponsorship?",
-                    "options": ["Yes", "No"],
-                },
-                {
-                    "id": "q2",
-                    "type": "short_text",
-                    "label": "Visa type?",
-                    "required": True,
-                    "showWhen": {"questionId": "q1", "equals": "Yes"},
-                },
-            ]
-        }
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "No"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        written_sub = self.sub_repo.update.call_args.args[1]
-        self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
-
     async def test_pruning_leaves_the_other_snapshot_sections_alone(self):
         """Only `answers` is narrowed -- profile sections are separate keys."""
         job = self._job(status=JobStatus.PUBLISHED)
         job.form_schema = {"questions": []}
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
         personal = {**REQUIRED_PERSONAL, "firstName": "A"}
         # Rows in the form's shape, which is what actually goes on the wire and
         # gets stored verbatim -- the placeholders here used to be in the
         # profile PATCH shape, which the candidate form never sends.
-        dto = ApplicationEditDto.model_validate({
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
             "personal": personal,
             "education": [COMPLETE_EDUCATION],
             "experience": [COMPLETE_EXPERIENCE],
             "answers": {"q1": "dropped"},
         })
 
-        await self.service.edit(self.session, self._ctx(), 100, dto)
+        await self.service.submit(self.session, self._ctx(), dto)
 
-        written = self.sub_repo.update.call_args.args[1].submission
+        written = self.sub_repo.create.call_args.args[1].submission
         self.assertEqual(written["answers"], {})
         self.assertEqual(written["personal"], personal)
         self.assertEqual(written["education"], [COMPLETE_EDUCATION])
         self.assertEqual(written["experience"], [COMPLETE_EXPERIENCE])
-
-    def _editable_app(self):
-        """An application in the window where the candidate may still edit."""
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        return app
-
-    def _answer_rule(self, action):
-        """A posting that screens on q1 == "Yes"."""
-        job = self._job(
-            status=JobStatus.PUBLISHED,
-            screen_rules={
-                "rules": [
-                    {
-                        "id": "r1",
-                        "condition": {
-                            "source": "answer",
-                            "operator": "equals",
-                            "questionId": "q1",
-                            "value": "Yes",
-                        },
-                        "action": action,
-                    }
-                ]
-            },
-        )
-        job.form_schema = {
-            "questions": [
-                {
-                    "id": "q1",
-                    "type": "single_choice",
-                    "label": "Blocked?",
-                    "options": ["Yes", "No"],
-                }
-            ]
-        }
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        return job
-
-    async def test_edit_into_a_reject_rule_rejects(self):
-        """An edit is a submission -- there is no save that is not one.
-
-        Submitting "No" past a reject rule and then editing to "Yes" used to
-        leave the application in the pipeline reading "Yes", with the rule
-        that exists to catch exactly that never having run.
-        """
-        self._answer_rule("reject")
-        app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "Yes"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        result = await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        self.assertEqual(app.stage, ApplicationStage.REJECTED)
-        self.assertEqual(app.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
-        self.assertFalse(result.editable)
-        self.record_event.assert_awaited_once_with(
-            self.session,
-            subject_type="application",
-            subject_id=100,
-            actor_id=None,
-            event_type="recruiting.auto_rejected",
-            details={"reason": "screen_rule", "ruleId": "r1", "onEdit": True},
-        )
-
-    async def test_edit_that_matches_nothing_leaves_the_stage_alone(self):
-        self._answer_rule("reject")
-        app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "No"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        result = await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
-        self.assertIsNone(app.tags)
-        self.assertTrue(result.editable)
-        self.record_event.assert_not_awaited()
-
-    async def test_edit_into_an_auto_hire_rule_hires(self):
-        self._answer_rule("auto_hire")
-        app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "Yes"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        self.assertEqual(app.stage, ApplicationStage.HIRED)
-        self.mentorship_admission_svc.on_admitted.assert_awaited_once()
-
-    async def test_edit_screens_the_answers_it_just_stored(self):
-        """The rule reads the edit's answers, not the ones already on file."""
-        self._answer_rule("reject")
-        app = self._editable_app()
-        app_sub = self.sub_repo.get_current.return_value
-        app_sub.submission = {"answers": {"q1": "No"}}
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "Yes"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        self.assertEqual(app.stage, ApplicationStage.REJECTED)
 
     def _typed_job(self, question):
         """A published posting whose only question is the one given."""
@@ -1464,30 +1184,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.session.commit.assert_not_awaited()
 
-    async def test_edit_row_locks_the_application(self):
-        """A TOCTOU fix (Task 8 review rider): the edit path must lock the
-        application row so a concurrent owner decision (freeze/advance)
-        can't interleave with — and be silently clobbered by — a candidate
-        edit based on stale state."""
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        await self.service.edit(
-            self.session,
-            self._ctx(),
-            100,
-            ApplicationEditDto(personal=REQUIRED_PERSONAL),
-        )
-        self.app_repo.get_by_id.assert_awaited_once_with(
-            self.session, 100, for_update=True
-        )
-
     async def test_get_mine_does_not_row_lock(self):
         """get_mine is a read; it must stay lock-free (no for_update)."""
         app = ApplicationEntity(
@@ -1504,106 +1200,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.session, 1, 2
         )
 
-    async def test_edit_blocked_when_stage_advanced(self):
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.BEHAVIORAL,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        with self.assertRaises(ValueError):
-            await self.service.edit(
-                self.session,
-                self._ctx(),
-                100,
-                ApplicationEditDto(personal=REQUIRED_PERSONAL),
-            )
-
-    async def test_edit_blocked_when_sub_status_not_pending(self):
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="in_progress",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        with self.assertRaises(ValueError):
-            await self.service.edit(
-                self.session,
-                self._ctx(),
-                100,
-                ApplicationEditDto(personal=REQUIRED_PERSONAL),
-            )
-
-    async def test_edit_blocked_when_current_submission_frozen(self):
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = True
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        with self.assertRaises(ValueError):
-            await self.service.edit(
-                self.session,
-                self._ctx(),
-                100,
-                ApplicationEditDto(personal=REQUIRED_PERSONAL),
-            )
-
-    async def test_get_mine_editable_true_when_first_stage_pending_unfrozen(self):
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        result = await self.service.get_mine(self.session, self._ctx(), 1)
-        self.assertTrue(result.editable)
-
-    async def test_get_mine_editable_false_when_stage_advanced(self):
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.TECH,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        result = await self.service.get_mine(self.session, self._ctx(), 1)
-        self.assertFalse(result.editable)
-
     async def _application_at_first_stage(self):
-        """Seed the caller's own application at the first stage, pending and
-        unfrozen -- the one state in which nothing but the posting's status
-        can lock it."""
+        """Seed the caller's own application at the first stage, pending,
+        with its version-1 submission."""
         app = ApplicationEntity(
             job_id=1,
             user_id=2,
@@ -1616,79 +1215,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
-        current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
         return app
-
-    async def test_get_mine_locked_once_the_posting_stops_being_live(self):
-        """A closed posting freezes the answers it closed on.
-
-        Nothing else locks this application -- first stage, pending,
-        unfrozen -- so without the posting check the candidate would be
-        handed an editable form for a posting that takes no submissions.
-        """
-        for status in (
-            JobStatus.CLOSED,
-            JobStatus.PENDING_REOPEN,
-        ):
-            with self.subTest(status=status):
-                await self._application_at_first_stage()
-                self.job_repo.get_by_job_id = AsyncMock(
-                    return_value=self._job(status=status)
-                )
-                result = await self.service.get_mine(self.session, self._ctx(), 1)
-                self.assertFalse(result.editable)
-                self.assertEqual(result.lock_reason, ApplicationLockReason.CLOSED)
-
-    async def test_get_mine_stays_editable_while_a_close_is_only_under_review(self):
-        """PENDING_CLOSE is still live, so it must not lock anything."""
-        await self._application_at_first_stage()
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(status=JobStatus.PENDING_CLOSE)
-        )
-        result = await self.service.get_mine(self.session, self._ctx(), 1)
-        self.assertTrue(result.editable)
-
-    async def test_get_mine_names_the_stage_over_the_closed_posting(self):
-        """An advanced application is not locked *by* the posting closing.
-
-        Telling the candidate their application moved to Tech says more than
-        telling them the posting shut -- the application is still alive.
-        """
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.TECH,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(status=JobStatus.CLOSED)
-        )
-        result = await self.service.get_mine(self.session, self._ctx(), 1)
-        self.assertEqual(result.lock_reason, ApplicationLockReason.ADVANCED)
-
-    async def test_edit_rejected_once_the_posting_stops_being_live(self):
-        """The same lock that greys out the form has to refuse the write.
-
-        Without it the candidate could PATCH answers onto a posting that has
-        already closed -- the form is only a suggestion, this is the gate.
-        """
-        app = await self._application_at_first_stage()
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(status=JobStatus.CLOSED)
-        )
-        with self.assertRaises(ValueError):
-            await self.service.edit(
-                self.session,
-                self._ctx(),
-                100,
-                ApplicationEditDto(personal=REQUIRED_PERSONAL),
-            )
 
     # -- get_job_for_applicant --
 
@@ -1866,35 +1394,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(created_sub.resume_object_key)
         self.assertIsNone(created_sub.resume_sha256)
 
-    async def test_edit_drops_resume_when_posting_collects_none(self):
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.profile_config = {"resume": "off"}
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
-            job_id=1,
-            user_id=2,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            sub_status="pending",
-            current_round=1,
-        )
-        app.application_id = 100
-        self.app_repo.get_by_id = AsyncMock(return_value=app)
-        current = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"personal": {}}
-        )
-        current.submission_id = 5
-        current.is_frozen = False
-        self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({
-            "personal": REQUIRED_PERSONAL,
-            "resumeObjectKey": "resumes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf",
-            "resumeSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        })
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-        written_sub = self.sub_repo.update.call_args.args[1]
-        self.assertIsNone(written_sub.resume_object_key)
-        self.assertIsNone(written_sub.resume_sha256)
-
     async def test_submit_requires_answers_to_required_questions(self):
         job = self._job(status=JobStatus.PUBLISHED)
         job.form_schema = {
@@ -1942,7 +1441,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_not_awaited()
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(result.sub_status, "pending")
-        self.assertTrue(result.editable)
 
     async def test_reapply_new_row_starts_at_version_1(self):
         """The new row's submission is a fresh version 1, not a bumped
@@ -1971,7 +1469,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.version, 1)
         self.assertEqual(created_sub.application_id, result.id)
-        self.sub_repo.update.assert_not_awaited()
 
     async def test_reapply_inside_cooldown_tags_new_row_cold_freeze(self):
         job = self._job(cooldown_days=90, status=JobStatus.PUBLISHED)
@@ -2027,11 +1524,45 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             rejected_application.tags, {"auto_reject": "screen_rule", "rule_id": "r1"}
         )
         self.app_repo.update.assert_not_awaited()
-        self.sub_repo.update.assert_not_awaited()
+
+    async def test_submit_deletes_the_callers_draft_for_that_job(self):
+        """The draft the submission replaces goes in the same transaction, so
+        a rolled-back submit leaves the draft where it was."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PUBLISHED)
+        )
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.submit(self.session, self._ctx(user_id=37), dto)
+
+        self.draft_repo.delete.assert_awaited_once_with(self.session, 37, 1)
+        self.assertLess(
+            self.call_order.index("delete_draft"), self.call_order.index("commit")
+        )
+
+    async def test_a_refused_submit_keeps_the_draft(self):
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=1
+        )
+        app.application_id = 100
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        with self.assertRaises(ValueError):
+            await self.service.submit(self.session, self._ctx(), dto)
+
+        self.draft_repo.delete.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
 
     async def test_submit_active_application_still_errors(self):
         """A latest attempt that hasn't been rejected must still block a
-        fresh submit — the candidate should edit it instead."""
+        fresh submit: a submitted application is final."""
         app = ApplicationEntity(
             job_id=1,
             user_id=2,
@@ -2120,7 +1651,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
     async def test_reapply_non_activity_uses_updated_timestamp_for_rejected_at(self):
         """The thaw must anchor to the application container's last-update
-        time (the actual rejection moment), not the frozen submission's
+        time (the actual rejection moment), not the submission's
         submitted_at, which can predate it."""
         job = self._job(kind=JobKind.EMPLOYMENT, status=JobStatus.PUBLISHED)
         job.cooldown_days = 90
@@ -2655,6 +2186,35 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.applications[1].application_id, 11)
         self.assertEqual(result.applications[1].mentorship_role, None)
 
+    async def test_list_mine_returns_the_callers_drafts(self):
+        from backend.entity.application_draft_entity import ApplicationDraftEntity
+
+        open_job = self._job(kind=JobKind.EMPLOYMENT, status=JobStatus.PUBLISHED)
+        open_job.job_id = 41
+        open_job.title = "Backend Engineer"
+        closed_job = self._job(kind=JobKind.ACTIVITY, status=JobStatus.CLOSED)
+        closed_job.job_id = 42
+        closed_job.title = "CircleCat Mentee"
+        closed_job.mentorship_role = ParticipantRole.MENTEE
+        newer = ApplicationDraftEntity(user_id=2, job_id=41, content={})
+        newer.updated_timestamp = datetime(2026, 11, 2, tzinfo=timezone.utc)
+        older = ApplicationDraftEntity(user_id=2, job_id=42, content={})
+        older.updated_timestamp = datetime(2026, 10, 3, tzinfo=timezone.utc)
+        self.app_repo.list_by_user = AsyncMock(return_value=[])
+        self.draft_repo.list_by_user_with_job = AsyncMock(
+            return_value=[(newer, open_job), (older, closed_job)]
+        )
+
+        result = await self.service.list_mine(self.session, self._ctx(user_id=58))
+
+        self.draft_repo.list_by_user_with_job.assert_awaited_once_with(self.session, 58)
+        self.assertEqual([41, 42], [d.job_id for d in result.drafts])
+        self.assertEqual("Backend Engineer", result.drafts[0].job_title)
+        self.assertTrue(result.drafts[0].accepting_applications)
+        self.assertFalse(result.drafts[1].accepting_applications)
+        self.assertEqual(ParticipantRole.MENTEE, result.drafts[1].mentorship_role)
+        self.assertEqual([], result.applications)
+
     async def test_list_mine_returns_empty_for_no_applications(self):
         self.app_repo.list_by_user = AsyncMock(return_value=[])
 
@@ -2715,132 +2275,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit(self.session, self._ctx(), dto)
 
         self.notification_repo.create.assert_not_awaited()
-
-
-class LockReasonTest(unittest.TestCase):
-    """Why a candidate can no longer edit -- the one source `editable` derives from."""
-
-    def setUp(self):
-        self.service = ApplicationService(
-            application_repository=MagicMock(),
-            application_submission_repository=MagicMock(),
-            job_repository=MagicMock(),
-            users_repository=MagicMock(),
-            recruiting_mapper=RecruitingMapper(),
-            application_assignment_repository=MagicMock(),
-            notification_repository=MagicMock(),
-            user_emails_repository=MagicMock(),
-            mentorship_admission_service=MagicMock(),
-            application_access=MagicMock(),
-        )
-        self.job = JobEntity(
-            kind=JobKind.EMPLOYMENT,
-            title="T",
-            status=JobStatus.PUBLISHED,
-            pipeline_config={
-                "stages": [
-                    {"stage": ApplicationStage.RECRUITER_SCREENING, "rounds": 1},
-                    {"stage": ApplicationStage.TECH, "rounds": 1},
-                ]
-            },
-        )
-
-    def _app(self, stage=ApplicationStage.RECRUITER_SCREENING, sub_status="pending"):
-        return SimpleNamespace(stage=stage, sub_status=sub_status)
-
-    def _sub(self, is_frozen=False):
-        return SimpleNamespace(is_frozen=is_frozen)
-
-    def test_untouched_first_stage_is_not_locked(self):
-        self.assertIsNone(self.service._lock_reason(self._app(), self.job, self._sub()))
-
-    def test_a_later_stage_is_locked_as_advanced(self):
-        self.assertEqual(
-            self.service._lock_reason(
-                self._app(stage=ApplicationStage.TECH), self.job, self._sub()
-            ),
-            ApplicationLockReason.ADVANCED,
-        )
-
-    def test_a_moved_sub_status_is_locked_as_in_review(self):
-        self.assertEqual(
-            self.service._lock_reason(
-                self._app(sub_status="screening"), self.job, self._sub()
-            ),
-            ApplicationLockReason.IN_REVIEW,
-        )
-
-    def test_a_frozen_submission_is_locked_as_in_review(self):
-        self.assertEqual(
-            self.service._lock_reason(self._app(), self.job, self._sub(is_frozen=True)),
-            ApplicationLockReason.IN_REVIEW,
-        )
-
-    def test_advanced_wins_over_in_review_because_it_says_more(self):
-        self.assertEqual(
-            self.service._lock_reason(
-                self._app(stage=ApplicationStage.TECH, sub_status="screening"),
-                self.job,
-                self._sub(is_frozen=True),
-            ),
-            ApplicationLockReason.ADVANCED,
-        )
-
-    def test_a_null_sub_status_counts_as_pending(self):
-        self.assertIsNone(
-            self.service._lock_reason(self._app(sub_status=None), self.job, self._sub())
-        )
-
-    def test_no_submission_yet_is_not_frozen(self):
-        self.assertIsNone(self.service._lock_reason(self._app(), self.job, None))
-
-    def test_a_posting_that_stopped_being_live_locks_as_closed(self):
-        self.job.status = JobStatus.CLOSED
-        self.assertEqual(
-            self.service._lock_reason(self._app(), self.job, self._sub()),
-            ApplicationLockReason.CLOSED,
-        )
-
-    def test_a_close_still_under_review_locks_nothing(self):
-        self.job.status = JobStatus.PENDING_CLOSE
-        self.assertIsNone(self.service._lock_reason(self._app(), self.job, self._sub()))
-
-    def test_advanced_wins_over_closed_because_the_application_lives_on(self):
-        self.job.status = JobStatus.CLOSED
-        self.assertEqual(
-            self.service._lock_reason(
-                self._app(stage=ApplicationStage.TECH), self.job, self._sub()
-            ),
-            ApplicationLockReason.ADVANCED,
-        )
-
-
-class ApplicationDtoLockConsistencyTest(unittest.TestCase):
-    """`editable` and `lockReason` cannot contradict each other."""
-
-    def setUp(self):
-        self.mapper = RecruitingMapper()
-        self.app = ApplicationEntity(
-            job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
-        )
-        self.app.application_id = 7
-
-    def test_a_lock_reason_forces_editable_false_even_if_the_caller_says_true(self):
-        dto = self.mapper.to_application_dto(
-            self.app, None, editable=True, lock_reason=ApplicationLockReason.ADVANCED
-        )
-        self.assertFalse(dto.editable)
-        self.assertEqual(dto.lock_reason, ApplicationLockReason.ADVANCED)
-
-    def test_owner_facing_callers_get_locked_with_no_reason(self):
-        dto = self.mapper.to_application_dto(self.app, None)
-        self.assertFalse(dto.editable)
-        self.assertIsNone(dto.lock_reason)
-
-    def test_no_reason_and_editable_true_stays_editable(self):
-        dto = self.mapper.to_application_dto(self.app, None, editable=True)
-        self.assertTrue(dto.editable)
-        self.assertIsNone(dto.lock_reason)
 
 
 if __name__ == "__main__":
