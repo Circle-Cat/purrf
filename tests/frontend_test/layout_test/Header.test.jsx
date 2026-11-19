@@ -290,7 +290,7 @@ describe("Header Component", () => {
       "Contact Administrators",
       "If you need support, please contact our admins:",
       "Admin Email:",
-      "outreach-programs-comms@circlecat.org",
+      "contact@circlecat.org",
     ];
 
     expectedTexts.forEach((text) => {

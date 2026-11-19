@@ -214,9 +214,7 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
               </p>
               <div className="my-7"></div>
               <p className="font-normal text-[#555555]">Admin Email:</p>
-              <p className="m-0 text-[#007bff]">
-                outreach-programs-comms@circlecat.org
-              </p>
+              <p className="m-0 text-[#007bff]">contact@circlecat.org</p>
             </div>
           </DialogContent>
         </Dialog>
