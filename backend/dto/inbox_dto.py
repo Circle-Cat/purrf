@@ -51,8 +51,12 @@ class InboxCountsDto(BaseDto):
 
 
 class InboxServiceCountDto(BaseDto):
+    """``address`` is where the service's mail is sent to: its alias, or for
+    Unsorted the mailbox's own address; None when it is unknown here."""
+
     key: InboxService
     needs_reply: int
+    address: str | None = None
 
 
 class InboxListDto(BaseDto):
