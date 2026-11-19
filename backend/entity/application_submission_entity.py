@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -14,7 +14,6 @@ class ApplicationSubmissionEntity(Base):
     """
 
     __tablename__ = "application_submission"
-    __mapper_args__ = {"exclude_properties": ["is_frozen"]}
 
     submission_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
@@ -25,10 +24,6 @@ class ApplicationSubmissionEntity(Base):
         nullable=False,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    # Unused, and dropped in the release after this one. It stays on the table
-    # but is excluded from the mapper (__mapper_args__), so the ORM neither reads nor
-    # writes it and pods on this code keep working after the column is gone.
-    is_frozen = Column(Boolean, nullable=True)
     # Snapshot: {"personal": {...}, "education": [...], "experience": [...],
     #            "answers": {...}, "formSchema": {...}}
     # formSchema is the job's form as it stood when these answers were written,
