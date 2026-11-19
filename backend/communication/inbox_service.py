@@ -181,6 +181,7 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
                     needs_reply=sum(
                         row.needs_reply for _, row in rows if row.service == service
                     ),
+                    address=await self._shown_reply_address(service),
                 )
                 for service in self._listed_services(services, rows)
             ],

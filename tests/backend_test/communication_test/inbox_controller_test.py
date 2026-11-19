@@ -145,7 +145,13 @@ class InboxControllerTest(unittest.TestCase):
         self.service.list_threads.return_value = InboxListDto(
             threads=[],
             counts=InboxCountsDto(needs_reply=2),
-            services=[InboxServiceCountDto(key=InboxService.MENTORSHIP, needs_reply=2)],
+            services=[
+                InboxServiceCountDto(
+                    key=InboxService.MENTORSHIP,
+                    needs_reply=2,
+                    address="mentorship@circlecat.org",
+                )
+            ],
         )
 
         response = self.client.get(
@@ -165,7 +171,13 @@ class InboxControllerTest(unittest.TestCase):
             {
                 "threads": [],
                 "counts": {"needsReply": 2},
-                "services": [{"key": "mentorship", "needsReply": 2}],
+                "services": [
+                    {
+                        "key": "mentorship",
+                        "needsReply": 2,
+                        "address": "mentorship@circlecat.org",
+                    }
+                ],
             },
         )
         session, user, query = self.service.list_threads.await_args.args
