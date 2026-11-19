@@ -46,7 +46,7 @@ class NeedsReplyRenderTest(unittest.IsolatedAsyncioTestCase):
     async def test_each_service_is_named(self):
         for service, name in {
             InboxService.RECRUITING: "Recruiting",
-            InboxService.INQUIRIES: "Inquiries",
+            InboxService.INQUIRIES: "Contact",
         }.items():
             with self.subTest(service=service):
                 _, body = await self._render(service=service)
@@ -61,7 +61,7 @@ class NeedsReplyRenderTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             body.startswith(
                 "<p>An email was transferred from the Recruiting inbox to the "
-                "Inquiries inbox and needs a reply: "
+                "Contact inbox and needs a reply: "
                 "“A question” from asker@ext.com.</p>"
                 "<p>Open Inbox in Purrf to read and reply.</p>"
             )

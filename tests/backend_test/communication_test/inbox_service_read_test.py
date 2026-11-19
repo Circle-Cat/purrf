@@ -242,6 +242,34 @@ class VisibilityTest(_Fixture):
         self.assertEqual(self._ids(result), [3])
         self.assertEqual([s.key for s in result.services], [InboxService.INQUIRIES])
 
+    async def test_each_service_is_listed_with_its_alias(self):
+        self.aliases = InboxAliases(
+            mentorship=_MENTORSHIP_ALIAS,
+            recruiting=_RECRUITING_ALIAS,
+            inquiries="contact-test@circlecat.org",
+        )
+        self.service = self._build_service()
+
+        result = await self._list()
+
+        self.assertEqual(
+            [(s.key, s.address) for s in result.services],
+            [
+                (InboxService.MENTORSHIP, _MENTORSHIP_ALIAS),
+                (InboxService.RECRUITING, _RECRUITING_ALIAS),
+                (InboxService.INQUIRIES, "contact-test@circlecat.org"),
+            ],
+        )
+        self.gmail.mailbox_address.assert_not_called()
+
+    async def test_a_service_without_an_alias_is_listed_without_an_address(self):
+        result = await self._list(_viewer(Permission.INQUIRIES_MANAGE))
+
+        self.assertEqual(
+            [(s.key, s.address) for s in result.services],
+            [(InboxService.INQUIRIES, None)],
+        )
+
     async def test_advance_only_sees_only_the_recruiting_inbox(self):
         result = await self._list(_viewer(Permission.RECRUITING_APPLICATION_ADVANCE))
 
