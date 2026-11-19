@@ -1516,6 +1516,11 @@ describe("ApplicationForm drafts on a new application", () => {
     ).toBeChecked();
     expect(
       screen.getByText(
+        "Your profile will be updated with what you entered here.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
         "Only you can see a draft. You can't change your application after you submit it.",
       ),
     ).toBeInTheDocument();

@@ -504,8 +504,7 @@ const ApplicationForm = ({
                 Also save these changes to my profile
               </Label>
               <p className="text-xs text-muted-foreground">
-                Your profile&apos;s education and experience will be replaced by
-                what you entered here.
+                Your profile will be updated with what you entered here.
               </p>
             </div>
           </div>
