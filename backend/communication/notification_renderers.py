@@ -22,7 +22,7 @@ _FOOTER = (
 _SERVICE_NAMES = {
     InboxService.MENTORSHIP: "Mentorship",
     InboxService.RECRUITING: "Recruiting",
-    InboxService.INQUIRIES: "Inquiries",
+    InboxService.INQUIRIES: "Contact",
     InboxService.UNSORTED: "Unsorted",
 }
 
