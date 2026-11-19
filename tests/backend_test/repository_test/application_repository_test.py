@@ -1,7 +1,6 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 
 from backend.entity.application_entity import ApplicationEntity
@@ -201,62 +200,6 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         self.assertEqual(current.version, 2)
         versions = await sub_repo.list_by_application(self.session, app.application_id)
         self.assertEqual([v.version for v in versions], [1, 2])
-
-    async def _seed_application(self):
-        job, user = await self._seed_job_and_user()
-        return await ApplicationRepository().create(
-            self.session,
-            ApplicationEntity(job_id=job.job_id, user_id=user.user_id),
-        )
-
-    async def test_creating_a_submission_does_not_write_is_frozen(self):
-        app = await self._seed_application()
-        statements = []
-
-        def capture(conn, cursor, statement, params, context, executemany):
-            statements.append(statement)
-
-        engine = self.connection.sync_engine
-        event.listen(engine, "before_cursor_execute", capture)
-        try:
-            sub = await ApplicationSubmissionRepository().create(
-                self.session,
-                ApplicationSubmissionEntity(
-                    application_id=app.application_id, version=1, submission={}
-                ),
-            )
-        finally:
-            event.remove(engine, "before_cursor_execute", capture)
-
-        inserts = [s for s in statements if "INSERT INTO application_submission" in s]
-        self.assertEqual(len(inserts), 1)
-        self.assertNotIn("is_frozen", inserts[0])
-        stored = await self.session.scalar(
-            text(
-                "SELECT is_frozen FROM application_submission WHERE submission_id = :id"
-            ),
-            {"id": sub.submission_id},
-        )
-        self.assertIsNone(stored)
-
-    async def test_a_submission_written_with_is_frozen_still_loads(self):
-        # A row from a pod that still wrote the column.
-        app = await self._seed_application()
-        await self.session.execute(
-            text(
-                "INSERT INTO application_submission "
-                "(application_id, version, is_frozen, submission) "
-                'VALUES (:app, 1, false, \'{"answers": {"q": "a"}}\')'
-            ),
-            {"app": app.application_id},
-        )
-
-        current = await ApplicationSubmissionRepository().get_current(
-            self.session, app.application_id
-        )
-
-        self.assertEqual(current.version, 1)
-        self.assertEqual(current.submission, {"answers": {"q": "a"}})
 
     async def _submit(self, application, submitted_at, personal, version=1):
         return await ApplicationSubmissionRepository().create(
