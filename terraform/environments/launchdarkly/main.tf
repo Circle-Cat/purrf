@@ -99,7 +99,7 @@ locals {
     work_guide = {
       key          = "work-guide"
       name         = "Work Guide"
-      description  = "Shows the Work guide page and its sidebar item, only to the listed people"
+      description  = "Shows the Guide button next to the notification bell, only to the listed people"
       off_in       = []
       public_in    = []
       allow_emails = ["yuji@circlecat.org", "yuji@u.circlecat.org"]
