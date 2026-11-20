@@ -55,7 +55,7 @@ class ExemptionFindingDto(BaseDto):
 
 class MarkCountsDto(BaseDto):
     """How many no show and red flag marks the person got in the row's
-    round."""
+    round, counting only marks after the latest exemption in that round, if any."""
 
     no_show: int = 0
     red_flag: int = 0
@@ -74,7 +74,9 @@ class ParticipantRowDto(PersonRowDto):
     # the request for it waiting on a reviewer, if there is one.
     exemption_findings: list[ExemptionFindingDto] = []
     exemption_request: MentorshipApprovalDto | None = None
-    # The marks the person got in this row's round.
+    # Whether an exemption was granted in this row's round.
+    exempted: bool = False
+    # Marks in this row's round after its latest exemption, if any.
     marks: MarkCountsDto = Field(default_factory=MarkCountsDto)
 
 

@@ -704,6 +704,7 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
               ) : (
                 "—"
               )}
+              {row.exempted && <Badge variant="secondary">Exempted</Badge>}
               <MarkBadges
                 noShow={row.marks?.noShow}
                 redFlag={row.marks?.redFlag}
