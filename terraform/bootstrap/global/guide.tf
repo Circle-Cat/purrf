@@ -8,6 +8,8 @@ locals {
   # Who can open the guide. Keep in step with the work-guide flag's email list.
   purrf_guide_readers = [
     "yuji@circlecat.org",
+    "jasmine@circlecat.org",
+    "daisyisadaisy@circlecat.org",
   ]
 }
 
