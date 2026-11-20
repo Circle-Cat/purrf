@@ -623,6 +623,67 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.getByText("Evaluated by: User 77")).toBeInTheDocument();
   });
 
+  it("owner's evaluation summary leaves out drafts", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: OWNER_ID }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: 77,
+          responses: { bg_strength: { value: 3, notes: "confirmed note" } },
+          isConfirmed: true,
+        },
+        {
+          id: 2,
+          applicationId: 101,
+          stage: "tech",
+          round: 1,
+          evaluatorId: OWNER_ID,
+          responses: { bg_strength: { value: 2, notes: "unfinished note" } },
+          isConfirmed: false,
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText(/confirmed note/)).toBeInTheDocument();
+    expect(screen.queryByText(/unfinished note/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^Evaluated by:/)).toHaveLength(1);
+  });
+
+  it("owner sees the empty state when the only evaluation is a draft", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: OWNER_ID }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 2,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: OWNER_ID,
+          responses: { bg_strength: { value: 2, notes: "unfinished note" } },
+          isConfirmed: false,
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByText("No evaluations submitted yet."),
+    ).toBeInTheDocument();
+  });
+
   it("assignee-only viewer sees the rubric form pre-filled from their draft, no decision footer", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({
