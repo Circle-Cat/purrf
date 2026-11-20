@@ -599,7 +599,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
 
     # -- get_for_application --
 
-    async def test_get_for_application_owner_sees_all_rows(self):
+    async def test_get_for_application_owner_sees_confirmed_rows_only(self):
         application = self._application(job_id=1, stage=ApplicationStage.TECH)
         job = self._job(job_id=1, owner_ids=(2,))
         rows = [
@@ -625,8 +625,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), 10
         )
 
-        self.assertEqual(len(result), 2)
-        self.assertEqual({r.id for r in result}, {201, 202})
+        self.assertEqual([r.id for r in result], [201])
         self.evaluation_repo.list_by_application.assert_awaited_once_with(
             self.session, 10
         )
@@ -657,6 +656,43 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].id, 300)
         self.assertFalse(result[0].is_confirmed)
+
+    async def test_get_for_application_hides_other_evaluators_drafts(self):
+        application = self._application(job_id=1, stage=ApplicationStage.TECH)
+        job = self._job(job_id=1, owner_ids=(9,))
+        assignment = self._assignment(
+            application_id=10, stage=ApplicationStage.TECH, assignee_id=2
+        )
+        rows = [
+            self._evaluation(
+                evaluation_id=300,
+                stage=ApplicationStage.TECH,
+                evaluator_id=2,
+                is_confirmed=False,
+            ),
+            self._evaluation(
+                evaluation_id=301,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                evaluator_id=7,
+                is_confirmed=False,
+            ),
+            self._evaluation(
+                evaluation_id=302,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                evaluator_id=8,
+                is_confirmed=True,
+            ),
+        ]
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = assignment
+        self.evaluation_repo.list_by_application.return_value = rows
+
+        result = await self.service.get_for_application(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(sorted(r.id for r in result), [300, 302])
 
     async def test_get_for_application_third_party_raises(self):
         application = self._application(job_id=1, stage=ApplicationStage.TECH)
