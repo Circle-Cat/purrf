@@ -63,6 +63,8 @@ class LeaveEngineServiceTest(IsolatedAsyncioTestCase):
         self.repository.sum_weekly_accrual = AsyncMock(return_value=Decimal("0.00"))
         self.repository.list_level_changes = AsyncMock(return_value=[])
         self.repository.balance = AsyncMock(return_value=Decimal("0.00"))
+        self.requests = MagicMock()
+        self.requests.sum_pending_paid_hours_by_user_ids = AsyncMock(return_value={})
         self.session = MagicMock()
         self.session.commit = AsyncMock()
         self.repository.balances_by_user_ids = AsyncMock(return_value={})
@@ -75,6 +77,7 @@ class LeaveEngineServiceTest(IsolatedAsyncioTestCase):
             participant_resolver=self.resolver,
             leave_ledger_repository=self.repository,
             users_repository=self.users,
+            leave_request_repository=self.requests,
         )
 
     def _directory(self, profiles, resolved=None):
@@ -557,6 +560,56 @@ class TestOverview(LeaveEngineServiceTest):
         self.assertEqual(
             [held.name for held in overview.people], ["Alice Brown", "zoe Adams"]
         )
+
+    async def test_pending_hours_are_fetched_in_one_batch_for_all_participants(self):
+        self._directory({"ann": _profile(), "bob": _profile()})
+        self.users.get_all_by_ids.return_value = [
+            _person(10, "Ann", "Employee"),
+            _person(11, "Bob", "Report"),
+        ]
+
+        await self.service.overview(self.session)
+
+        self.requests.sum_pending_paid_hours_by_user_ids.assert_awaited_once_with(
+            self.session, [10, 11]
+        )
+
+    async def test_available_hours_subtract_pending_from_balance(self):
+        self._directory({"ann": _profile()})
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+        self.repository.balances_by_user_ids.return_value = {10: Decimal("40.00")}
+        self.requests.sum_pending_paid_hours_by_user_ids.return_value = {
+            10: Decimal("16.00")
+        }
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].pending, Decimal("16.00"))
+        self.assertEqual(overview.people[0].available, Decimal("24.00"))
+
+    async def test_available_hours_can_go_negative_when_pending_exceeds_balance(self):
+        self._directory({"ann": _profile()})
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+        self.repository.balances_by_user_ids.return_value = {10: Decimal("4.00")}
+        self.requests.sum_pending_paid_hours_by_user_ids.return_value = {
+            10: Decimal("8.00")
+        }
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].pending, Decimal("8.00"))
+        self.assertEqual(overview.people[0].available, Decimal("-4.00"))
+
+    async def test_somebody_with_no_pending_requests_holds_zero_pending(self):
+        self._directory({"ann": _profile()})
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+        self.repository.balances_by_user_ids.return_value = {10: Decimal("40.00")}
+        self.requests.sum_pending_paid_hours_by_user_ids.return_value = {}
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].pending, Decimal("0.00"))
+        self.assertEqual(overview.people[0].available, Decimal("40.00"))
 
 
 if __name__ == "__main__":

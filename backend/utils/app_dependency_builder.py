@@ -517,6 +517,7 @@ class AppDependencyBuilder:
         self.users_repository = UsersRepository()
         self.user_emails_repository = UserEmailsRepository()
         self.leave_ledger_repository = LeaveLedgerRepository()
+        self.leave_request_repository = LeaveRequestRepository()
         self.leave_participant_resolver = LeaveParticipantResolver(
             logger=self.logger,
             user_emails_repository=self.user_emails_repository,
@@ -1454,6 +1455,7 @@ class AppDependencyBuilder:
             participant_resolver=self.leave_participant_resolver,
             leave_ledger_repository=self.leave_ledger_repository,
             users_repository=self.users_repository,
+            leave_request_repository=self.leave_request_repository,
         )
         self.leave_job_controller = LeaveJobController(
             self.leave_engine_service,
@@ -1535,7 +1537,6 @@ class AppDependencyBuilder:
             app_origins=app_origin_set(os.getenv(APP_ORIGINS)),
         )
 
-        self.leave_request_repository = LeaveRequestRepository()
         self.leave_request_handler = LeaveRequestHandler(
             leave_request_repository=self.leave_request_repository,
             leave_ledger_repository=self.leave_ledger_repository,
