@@ -280,7 +280,8 @@ const PersonalSection = ({ personal }) => (
 /**
  * One field's recorded response inside the read-only evaluation summary:
  * the field label, then its value rendered by type — a pass/fail icon, a
- * 1-5 score badge — followed by any free-text notes. Renders nothing when
+ * 1-5 score badge — followed by any free-text notes, with their line breaks
+ * kept (a code field also keeps its indentation). Renders nothing when
  * the evaluator left the field entirely blank.
  *
  * @param {{field: {id: string, label: string, valueType: string},
@@ -305,7 +306,14 @@ const EvaluationSummaryRow = ({ field, entry }) => {
       {field.valueType === "score" && value != null && (
         <Badge variant="secondary">{value}</Badge>
       )}
-      {notes && <p className="text-sm text-slate-600">{notes}</p>}
+      {notes &&
+        (field.format === "code" ? (
+          <pre className="overflow-x-auto rounded-md border bg-slate-50 p-3 font-mono text-xs text-slate-700">
+            <code>{notes}</code>
+          </pre>
+        ) : (
+          <p className="whitespace-pre-wrap text-sm text-slate-600">{notes}</p>
+        ))}
     </div>
   );
 };
