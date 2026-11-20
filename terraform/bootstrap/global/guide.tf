@@ -111,6 +111,14 @@ resource "cloudflare_zero_trust_access_policy" "purrf_guide_readers" {
       }
     }
   ]
+
+  # Provider 5.29 fails to update this policy in place (Cloudflare answers
+  # 12130 "unrecognized policy decision"), so a changed list is applied with
+  # -replace. The new policy has to exist before the application can point at
+  # it and the old one can go.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "cloudflare_zero_trust_access_application" "purrf_guide" {
