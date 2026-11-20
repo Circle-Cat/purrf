@@ -2773,6 +2773,156 @@ describe("ParticipantSearchCard", () => {
         }),
       );
     });
+    const HISTORY_EXPLANATION =
+      "Listed only when history is the one thing keeping them out of matching: " +
+      "they are taking part this round (not withdrawn), have finished " +
+      "onboarding training and still have an open pairing slot.";
+
+    const HISTORY_REASONS =
+      "History means: left a pair early or fell short of meetings in their " +
+      "last paired round, or a no show / red flag since their last exemption.";
+
+    const EMPTY_TITLE = "No one in this round needs an exemption.";
+
+    const EMPTY_EXPLANATION =
+      "Someone with a no show or red flag who is not here has withdrawn, " +
+      "is already paired this round, or has not finished training.";
+
+    it("explains Needs exemption when the search returns a person", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([shortOfMeetings()]));
+
+      await renderCard({ url: NEEDS_URL });
+      await screen.findByText("Ann Lee");
+
+      expect(screen.getByText(HISTORY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.getByText(HISTORY_REASONS)).toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+    });
+
+    it("keeps the explanation and shows the empty message when no one is returned", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([]));
+
+      await renderCard({ url: NEEDS_URL });
+
+      expect(await screen.findByText(EMPTY_TITLE)).toBeInTheDocument();
+      expect(screen.getByText(EMPTY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.getByText(HISTORY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.getByText(HISTORY_REASONS)).toBeInTheDocument();
+
+      // The empty message belongs below the table.
+      const table = screen.getByRole("table");
+      const emptyMessage = screen.getByText(EMPTY_TITLE);
+
+      expect(
+        table.compareDocumentPosition(emptyMessage) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0);
+    });
+
+    it.each([
+      ["Registered", SEARCHED_PARTICIPANTS],
+      ["Not registered", "/?round=7&notRegistered=1"],
+      ["Eligible for matching", "/?round=7&eligible=1"],
+    ])("does not show the explanation on %s", async (name, url) => {
+      searchParticipants.mockResolvedValue(resultsOf([]));
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [], total: 0 },
+      });
+
+      await renderCard({ url });
+
+      if (name === "Not registered") {
+        await waitFor(() =>
+          expect(searchUnregistered).toHaveBeenCalledTimes(1),
+        );
+      } else {
+        await mounted();
+      }
+
+      expect(screen.queryByText(HISTORY_EXPLANATION)).not.toBeInTheDocument();
+      expect(screen.queryByText(HISTORY_REASONS)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+    });
+
+    it("shows the explanation before Search without reusing another list's empty result", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([]));
+
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await mounted();
+
+      await pickList("Needs exemption");
+
+      expect(screen.getByText(HISTORY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.getByText(HISTORY_REASONS)).toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+      expect(searchParticipants).toHaveBeenCalledTimes(1);
+
+      await search();
+
+      expect(await screen.findByText(EMPTY_TITLE)).toBeInTheDocument();
+      expect(searchParticipants).toHaveBeenCalledTimes(2);
+    });
+
+    it("hides the explanation and empty message when another list is picked", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([]));
+
+      await renderCard({ url: NEEDS_URL });
+      await screen.findByText(EMPTY_TITLE);
+
+      await pickList("Registered");
+
+      expect(screen.queryByText(HISTORY_EXPLANATION)).not.toBeInTheDocument();
+      expect(screen.queryByText(HISTORY_REASONS)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+    });
+
+    it("does not show the empty message while the search is loading", async () => {
+      let resolveSearch;
+      const pendingSearch = new Promise((resolve) => {
+        resolveSearch = resolve;
+      });
+      searchParticipants.mockReturnValueOnce(pendingSearch);
+
+      await renderCard({ url: NEEDS_URL });
+
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(1));
+
+      expect(screen.getByText(HISTORY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.getByText(HISTORY_REASONS)).toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+
+      resolveSearch(resultsOf([]));
+
+      expect(await screen.findByText(EMPTY_TITLE)).toBeInTheDocument();
+    });
+
+    it("does not report an empty list when the search fails", async () => {
+      searchParticipants.mockResolvedValueOnce(resultsOf([shortOfMeetings()]));
+
+      await renderCard({ url: NEEDS_URL });
+      await screen.findByText("Ann Lee");
+
+      searchParticipants.mockRejectedValueOnce(
+        new Error("Failed to load participants"),
+      );
+
+      await search();
+
+      // The error handler clears the previous rows.
+      await waitFor(() =>
+        expect(screen.queryByText("Ann Lee")).not.toBeInTheDocument(),
+      );
+
+      expect(screen.getByText(HISTORY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.getByText(HISTORY_REASONS)).toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+    });
   });
 
   describe("pending approvals card", () => {
