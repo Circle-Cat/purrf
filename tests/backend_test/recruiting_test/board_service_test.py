@@ -5928,6 +5928,48 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.other_jobs[0].evaluations), 1)
         self.assertEqual(result.other_jobs[0].evaluations[0].id, 900)
 
+    async def test_get_other_applications_leaves_out_draft_evaluations(self):
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+
+        def evaluation(evaluation_id, evaluator_id, is_confirmed):
+            row = EvaluationEntity(
+                application_id=11,
+                stage=ApplicationStage.TECH,
+                round=1,
+                evaluator_id=evaluator_id,
+                responses={"overall": {"value": 3}},
+                is_confirmed=is_confirmed,
+            )
+            row.evaluation_id = evaluation_id
+            return row
+
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = [
+            evaluation(901, evaluator_id=7, is_confirmed=False),
+            evaluation(902, evaluator_id=2, is_confirmed=False),
+            evaluation(903, evaluator_id=8, is_confirmed=True),
+        ]
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual([e.id for e in result.other_jobs[0].evaluations], [903])
+
     async def test_get_other_applications_raises_when_caller_lacks_entry_gate(self):
         entry_job = self._job(job_id=1, owner_ids=(9,))
         entry_app = self._application(application_id=10, job_id=1, user_id=3)
