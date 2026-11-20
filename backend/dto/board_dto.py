@@ -260,7 +260,7 @@ class OtherApplicationDto(BaseDto):
     """One of a candidate's other applications, for the cross-posting
     aggregation view surfaced on the shared application detail page.
 
-    Returned in full (submission snapshot + every evaluation row) to any
+    Returned in full (submission snapshot + every confirmed evaluation) to any
     caller who already passed the entry gate on the application they're
     currently viewing — see BoardService.get_other_applications. ``activity``
     and ``comments`` are the exception: they're populated only for an

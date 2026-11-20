@@ -325,52 +325,56 @@ const evaluatorName = (evaluatorId, interviewPool) =>
   unresolvedPersonLabel(evaluatorId);
 
 /**
- * Read-only summary of every submitted evaluation for an application,
+ * Read-only summary of every confirmed evaluation for an application,
  * newest first (by `id`, a reliable proxy for creation order since it's an
  * auto-incrementing primary key), grouped by stage and, within each stage,
  * by the rubric's own section/field grouping (via `rubricFor`). Each entry
  * is labeled with who submitted it, so a reassignment mid-stage doesn't
  * leave two evaluators' scorecards indistinguishable. Shown to owners so
- * they can see evaluators' scorecards before deciding.
+ * they can see evaluators' scorecards before deciding. Drafts are left out:
+ * a half-filled scorecard must not read as a finished one.
  *
  * @param {{evaluations: {id: number, stage: string, round: number, evaluatorId: number, responses: object}[],
  *          interviewPool: {userId: number, name: string}[]}} props
  */
-const EvaluationSummary = ({ evaluations, interviewPool }) => (
-  <div className="space-y-4">
-    {evaluations.length === 0 ? (
-      <p className="text-sm text-slate-400">No evaluations submitted yet.</p>
-    ) : (
-      [...evaluations]
-        .sort((a, b) => b.id - a.id)
-        .map((evaluation) => (
-          <div key={evaluation.id} className="space-y-3 rounded border p-3">
-            <h3 className="text-sm font-medium text-slate-700">
-              {humanize(evaluation.stage)} — Session {evaluation.round}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Evaluated by:{" "}
-              {evaluatorName(evaluation.evaluatorId, interviewPool)}
-            </p>
-            {(rubricFor(evaluation.stage) ?? []).map((section) => (
-              <div key={section.title} className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase text-slate-500">
-                  {section.title}
-                </h4>
-                {section.fields.map((field) => (
-                  <EvaluationSummaryRow
-                    key={field.id}
-                    field={field}
-                    entry={evaluation.responses?.[field.id]}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        ))
-    )}
-  </div>
-);
+const EvaluationSummary = ({ evaluations, interviewPool }) => {
+  const confirmed = evaluations.filter((evaluation) => evaluation.isConfirmed);
+  return (
+    <div className="space-y-4">
+      {confirmed.length === 0 ? (
+        <p className="text-sm text-slate-400">No evaluations submitted yet.</p>
+      ) : (
+        confirmed
+          .sort((a, b) => b.id - a.id)
+          .map((evaluation) => (
+            <div key={evaluation.id} className="space-y-3 rounded border p-3">
+              <h3 className="text-sm font-medium text-slate-700">
+                {humanize(evaluation.stage)} — Session {evaluation.round}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Evaluated by:{" "}
+                {evaluatorName(evaluation.evaluatorId, interviewPool)}
+              </p>
+              {(rubricFor(evaluation.stage) ?? []).map((section) => (
+                <div key={section.title} className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase text-slate-500">
+                    {section.title}
+                  </h4>
+                  {section.fields.map((field) => (
+                    <EvaluationSummaryRow
+                      key={field.id}
+                      field={field}
+                      entry={evaluation.responses?.[field.id]}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))
+      )}
+    </div>
+  );
+};
 
 /**
  * Format an interview activity detail's UTC instant in the zone the meeting
