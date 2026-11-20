@@ -102,7 +102,7 @@ locals {
       description  = "Shows the Guide button next to the notification bell, only to the listed people"
       off_in       = []
       public_in    = []
-      allow_emails = ["yuji@circlecat.org", "yuji@u.circlecat.org"]
+      allow_emails = ["yuji@circlecat.org", "yuji@u.circlecat.org", "jasmine@circlecat.org", "daisyisadaisy@circlecat.org"]
     }
   }
 
