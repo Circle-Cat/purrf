@@ -57,7 +57,7 @@ resource "cloudflare_dns_record" "purrf_guide" {
   zone_id = local.zone_id
   name    = "guide"
   type    = "CNAME"
-  content = "purrf-guide.pages.dev"
+  content = cloudflare_pages_project.purrf_guide.subdomain
   proxied = true
   ttl     = 1
   lifecycle {
@@ -90,11 +90,12 @@ resource "cloudflare_zero_trust_access_application" "purrf_guide" {
   name       = "purrf-guide"
   domain     = local.purrf_guide_host
   type       = "self_hosted"
-  # The pages.dev hosts serve the same files, so they sit behind Access too.
+  # The pages.dev hosts (production and every preview) serve the same files, so
+  # they sit behind Access too.
   destinations = [
     { type = "public", uri = local.purrf_guide_host },
-    { type = "public", uri = "purrf-guide.pages.dev" },
-    { type = "public", uri = "*.purrf-guide.pages.dev" },
+    { type = "public", uri = cloudflare_pages_project.purrf_guide.subdomain },
+    { type = "public", uri = "*.${cloudflare_pages_project.purrf_guide.subdomain}" },
   ]
   allowed_idps              = [cloudflare_zero_trust_access_identity_provider.mentorship_login_prod.id]
   auto_redirect_to_identity = true
