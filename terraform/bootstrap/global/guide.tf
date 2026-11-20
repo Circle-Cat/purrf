@@ -6,11 +6,25 @@ locals {
   purrf_guide_host = "guide.purrf.io"
 
   # Who can open the guide. Keep in step with the work-guide flag's email list.
+  # GitHub OAuth App "Purrf Guide Editor" (Circle-Cat org): sign-in for the
+  # Decap editor at guide.purrf.io/admin. Its callback is /api/callback.
+  purrf_guide_github_client_id = "Ov23liCiPsPjsBNVywiS"
+
   purrf_guide_readers = [
     "yuji@circlecat.org",
     "jasmine@circlecat.org",
     "daisyisadaisy@circlecat.org",
   ]
+}
+
+# The OAuth App's client secret. No default on purpose: a plan or apply run
+# without it stops with an error instead of blanking the secret on Pages.
+#   export TF_VAR_purrf_guide_github_client_secret='<client secret>'
+# The value is copied into the Pages project, so it also sits in this root's
+# state.
+variable "purrf_guide_github_client_secret" {
+  type      = string
+  sensitive = true
 }
 
 resource "cloudflare_pages_project" "purrf_guide" {
@@ -40,11 +54,23 @@ resource "cloudflare_pages_project" "purrf_guide" {
       compatibility_date                   = "2025-09-18"
       fail_open                            = true
     }
+    # Only production signs in to the editor: GitHub accepts the one callback
+    # on guide.purrf.io, so preview hosts get no OAuth settings.
     production = {
       always_use_latest_compatibility_date = false
       build_image_major_version            = 3
       compatibility_date                   = "2025-09-18"
       fail_open                            = true
+      env_vars = {
+        "GITHUB_CLIENT_ID" = {
+          type  = "plain_text"
+          value = local.purrf_guide_github_client_id
+        }
+        "GITHUB_CLIENT_SECRET" = {
+          type  = "secret_text"
+          value = var.purrf_guide_github_client_secret
+        }
+      }
     }
   }
 }
