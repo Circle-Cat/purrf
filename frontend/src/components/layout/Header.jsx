@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { PanelLeft } from "lucide-react";
+import { BookOpen, PanelLeft } from "lucide-react";
 import { Root, Trigger, Content, Item } from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import NotificationBell from "@/components/layout/NotificationBell";
@@ -22,6 +22,12 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Badge } from "@/components/ui/badge";
 import { useWhatsNew } from "@/whatsNew/WhatsNewContext";
 import WhatsNewIntro from "@/whatsNew/WhatsNewIntro";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+
+// The guide is a separate site behind its own Access list, so the flag only
+// decides who sees the button, not who can open the guide.
+const WORK_GUIDE_URL = "https://guide.purrf.io";
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -45,6 +51,8 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
     openPanel: openWhatsNew,
   } = useWhatsNew();
   const hasUnread = whatsNewEnabled && unreadCount > 0;
+  const flags = useFeatureFlags();
+  const showGuide = Boolean(flags[FEATURE_FLAGS.WORK_GUIDE]);
 
   const goToProfile = () => {
     navigate(ROUTE_PATHS.PROFILE);
@@ -95,6 +103,14 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
         <span>Purrf</span>
       </div>
       <div className="flex items-center gap-1">
+        {showGuide && (
+          <Button variant="ghost" asChild>
+            <a href={WORK_GUIDE_URL} target="_blank" rel="noopener noreferrer">
+              <BookOpen size={20} />
+              Guide
+            </a>
+          </Button>
+        )}
         <NotificationBell />
         <Root>
           <WhatsNewIntro>
