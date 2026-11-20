@@ -278,7 +278,11 @@ class EvaluationService:
         current_user: UserContextDto,
         application_id: int,
     ) -> list[EvaluationDto]:
-        """Return every evaluation row for an application, across all stages.
+        """Return the evaluation rows the caller may see, across all stages.
+
+        Confirmed rows are visible to everyone allowed in. A draft is visible
+        only to its own evaluator, whose rubric form prefills from it; other
+        readers would otherwise mistake a half-filled scorecard for a final one.
 
         Authorization mirrors ``BoardService.get_application_detail``: the
         caller must be either a configured owner of the application's job
@@ -295,10 +299,10 @@ class EvaluationService:
             application_id (int): The application whose evaluation rows to list.
 
         Returns:
-            list[EvaluationDto]: Every evaluator's row for this application,
-                across every stage it has visited (draft and confirmed). The
-                owner's summary shows the full history; a single stage's
-                rubric form filters this list client-side by ``stage``.
+            list[EvaluationDto]: Every confirmed row for this application,
+                across every stage it has visited, plus the caller's own
+                drafts. The owner's summary shows this history; a single
+                stage's rubric form filters it client-side by ``stage``.
 
         Raises:
             ValueError: If the application is missing, or the caller is
@@ -345,4 +349,5 @@ class EvaluationService:
                 confirmed_at=row.confirmed_at,
             )
             for row in rows
+            if row.is_confirmed or row.evaluator_id == current_user.user_id
         ]

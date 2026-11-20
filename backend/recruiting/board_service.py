@@ -1536,6 +1536,7 @@ class BoardService:
                         confirmed_at=row.confirmed_at,
                     )
                     for row in evaluation_rows
+                    if row.is_confirmed
                 ],
             )
 
