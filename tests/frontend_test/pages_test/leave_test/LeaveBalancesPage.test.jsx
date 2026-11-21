@@ -19,6 +19,8 @@ const person = (overrides = {}) => ({
   level: "L3",
   annualHours: 80,
   balanceHours: "72.00",
+  pendingHours: "0.00",
+  availableHours: "72.00",
   problems: [],
   ...overrides,
 });
@@ -331,5 +333,80 @@ describe("LeaveBalancesPage", () => {
 
     await waitFor(() => expect(api.adjustLeaveBalance).toHaveBeenCalled());
     expect(api.adjustLeaveBalance.mock.calls[0][0].userId).toBe(11);
+  });
+
+  it("hides the pending breakdown when nothing is pending, while keeping the balance visible", async () => {
+    api.getLeaveBalances.mockResolvedValue(
+      envelope(
+        overview({
+          people: [
+            person({
+              balanceHours: "72.00",
+              pendingHours: "0.00",
+              availableHours: "72.00",
+            }),
+          ],
+        }),
+      ),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Ann Employee")).toBeInTheDocument(),
+    );
+
+    expect(screen.getByText(/72\.00 h/)).toBeInTheDocument();
+    expect(screen.queryByText(/h pending/)).not.toBeInTheDocument();
+  });
+
+  it("shows pending and available hours, highlighting negative availability in rose", async () => {
+    api.getLeaveBalances.mockResolvedValue(
+      envelope(
+        overview({
+          people: [
+            person({
+              userId: 10,
+              ldap: "ann",
+              name: "Ann Employee",
+              balanceHours: "40.00",
+              pendingHours: "16.00",
+              availableHours: "24.00",
+            }),
+            person({
+              userId: 11,
+              ldap: "bob",
+              name: "Bob Report",
+              balanceHours: "4.00",
+              pendingHours: "8.00",
+              availableHours: "-4.00",
+            }),
+          ],
+          profileCount: 2,
+        }),
+      ),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Ann Employee")).toBeInTheDocument(),
+    );
+
+    expect(screen.getByText(/16\.00 h pending/)).toBeInTheDocument();
+
+    const positiveAvailable = screen.getByText(/24\.00 h available/);
+    expect(positiveAvailable).toBeInTheDocument();
+    expect(positiveAvailable).toHaveClass("text-muted-foreground");
+
+    const bobPending = screen.getByText(/8\.00 h pending/);
+    expect(bobPending).toBeInTheDocument();
+    expect(bobPending).toHaveClass("text-muted-foreground");
+    expect(bobPending).not.toHaveClass("text-rose-600");
+    expect(bobPending.parentElement).not.toHaveClass("text-rose-600");
+
+    const negativeAvailable = screen.getByText(/-4\.00 h available/);
+    expect(negativeAvailable).toBeInTheDocument();
+    expect(negativeAvailable).toHaveClass("text-rose-600");
   });
 });
