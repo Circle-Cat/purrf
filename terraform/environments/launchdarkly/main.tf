@@ -34,70 +34,86 @@ locals {
 
   flags = {
     manual_submit_meeting = {
-      key         = "manual-submit-meeting"
-      name        = "Manual Submit Meeting"
-      description = "Enables the manual meeting submit flow"
-      off_in      = []
-      public_in   = ["production", "staging", "test"]
+      key          = "manual-submit-meeting"
+      name         = "Manual Submit Meeting"
+      description  = "Enables the manual meeting submit flow"
+      off_in       = []
+      public_in    = ["production", "staging", "test"]
+      allow_emails = []
     }
     view_personal_summary = {
-      key         = "view-personal-summary"
-      name        = "View Personal Summary"
-      description = "Enables the view personal summary feature"
-      off_in      = []
-      public_in   = ["production", "staging", "test"]
+      key          = "view-personal-summary"
+      name         = "View Personal Summary"
+      description  = "Enables the view personal summary feature"
+      off_in       = []
+      public_in    = ["production", "staging", "test"]
+      allow_emails = []
     }
     create_google_meeting = {
-      key         = "create-google-meeting"
-      name        = "Create Google Meeting"
-      description = "Enables the Google Meeting related feature"
-      off_in      = ["production"]
-      public_in   = ["staging", "test"]
+      key          = "create-google-meeting"
+      name         = "Create Google Meeting"
+      description  = "Enables the Google Meeting related feature"
+      off_in       = ["production"]
+      public_in    = ["staging", "test"]
+      allow_emails = []
     }
     # Until production has a matcher job, a press there is refused and the
     # round's lock released; once it does, each press is an hour of a paid job.
     matching_run = {
-      key         = "matching-run"
-      name        = "Matching Run"
-      description = "Lets an admin start a mentorship matching run"
-      off_in      = []
-      public_in   = ["production", "staging", "test"]
+      key          = "matching-run"
+      name         = "Matching Run"
+      description  = "Lets an admin start a mentorship matching run"
+      off_in       = []
+      public_in    = ["production", "staging", "test"]
+      allow_emails = []
     }
     # Gates every leave screen. The backend has no flag of its own, so off here
     # hides the feature rather than disabling it.
     leave_management = {
-      key         = "leave-management"
-      name        = "Leave Management"
-      description = "Shows the leave screens: requests, approvals, balances and administration"
-      off_in      = ["staging", "production"]
-      public_in   = ["test"]
+      key          = "leave-management"
+      name         = "Leave Management"
+      description  = "Shows the leave screens: requests, approvals, balances and administration"
+      off_in       = ["staging", "production"]
+      public_in    = ["test"]
+      allow_emails = []
     }
     # Gates sending mentorship notifications through Kit, backend and frontend.
     mentorship_kit_email = {
-      key         = "mentorship-kit-email"
-      name        = "Mentorship Kit Email"
-      description = "Lets a mentorship admin send notifications to participants through Kit"
-      off_in      = []
-      public_in   = ["production", "staging", "test"]
+      key          = "mentorship-kit-email"
+      name         = "Mentorship Kit Email"
+      description  = "Lets a mentorship admin send notifications to participants through Kit"
+      off_in       = []
+      public_in    = ["production", "staging", "test"]
+      allow_emails = []
     }
     # Gates the What's new panel, its dot on the avatar and the first-login
     # pointer to it.
     whats_new = {
-      key         = "whats-new"
-      name        = "What's New"
-      description = "Shows the What's new panel in the account menu and the unread dot on the avatar"
-      off_in      = []
-      public_in   = ["production", "staging", "test"]
+      key          = "whats-new"
+      name         = "What's New"
+      description  = "Shows the What's new panel in the account menu and the unread dot on the avatar"
+      off_in       = []
+      public_in    = ["production", "staging", "test"]
+      allow_emails = []
+    }
+    work_guide = {
+      key          = "work-guide"
+      name         = "Work Guide"
+      description  = "Shows the Guide button next to the notification bell, only to the listed people"
+      off_in       = []
+      public_in    = []
+      allow_emails = ["yuji@circlecat.org", "jasmine@circlecat.org", "daisyisadaisy@circlecat.org"]
     }
   }
 
   flag_env_matrix = {
     for pair in setproduct(keys(local.flags), keys(local.ld_envs)) :
     "${pair[0]}/${pair[1]}" => {
-      flag_id    = pair[0]
-      env_key    = pair[1]
-      beta_gated = local.ld_envs[pair[1]].beta_gated && !contains(local.flags[pair[0]].public_in, pair[1])
-      on         = !contains(local.flags[pair[0]].off_in, pair[1])
+      flag_id      = pair[0]
+      env_key      = pair[1]
+      allow_emails = local.flags[pair[0]].allow_emails
+      beta_gated   = length(local.flags[pair[0]].allow_emails) == 0 && local.ld_envs[pair[1]].beta_gated && !contains(local.flags[pair[0]].public_in, pair[1])
+      on           = !contains(local.flags[pair[0]].off_in, pair[1])
     }
   }
 }
@@ -197,8 +213,20 @@ resource "launchdarkly_feature_flag_environment" "this" {
     }
   }
 
+  dynamic "rules" {
+    for_each = length(each.value.allow_emails) > 0 ? [1] : []
+    content {
+      clauses {
+        attribute = "email"
+        op        = "in"
+        values    = each.value.allow_emails
+      }
+      variation = 0
+    }
+  }
+
   fallthrough {
-    variation = each.value.beta_gated ? 1 : 0
+    variation = each.value.beta_gated || length(each.value.allow_emails) > 0 ? 1 : 0
   }
 
   off_variation = 1
