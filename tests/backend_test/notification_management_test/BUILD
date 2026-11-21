@@ -171,3 +171,12 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "notification_teams_service_test",
+    srcs = ["notification_teams_service_test.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/notification_management:notification_teams_service",
+    ],
+)

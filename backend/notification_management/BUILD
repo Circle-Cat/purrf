@@ -161,3 +161,16 @@ py_library(
         "@pypi//httpx",
     ],
 )
+
+py_library(
+    name = "notification_teams_service",
+    srcs = [
+        "notification_teams_service.py",
+    ],
+    deps = [
+        ":notification_event_email_service",
+        "//backend/common:constants",
+        "//backend/entity:entities",
+        "@pypi//sqlalchemy",
+    ],
+)
