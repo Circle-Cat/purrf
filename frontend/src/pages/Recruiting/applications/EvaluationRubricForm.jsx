@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -12,6 +12,32 @@ import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 
 /** The 1-5 score options rendered as a button group for `valueType: "score"` fields. */
 const SCORE_OPTIONS = [1, 2, 3, 4, 5];
+
+const CODE_INDENT = "  ";
+
+/**
+ * Tab in a code field indents instead of leaving it. Escape first lets the
+ * next Tab move focus as usual, so keyboard users can still get out.
+ */
+const handleCodeKeyDown = (event, tabReleased, onNotesChange, fieldId) => {
+  if (event.key === "Escape") {
+    tabReleased.current = true;
+    return;
+  }
+  if (event.key !== "Tab" || event.shiftKey || tabReleased.current) {
+    tabReleased.current = false;
+    return;
+  }
+  event.preventDefault();
+  const el = event.currentTarget;
+  const { selectionStart, selectionEnd, value } = el;
+  const next =
+    value.slice(0, selectionStart) + CODE_INDENT + value.slice(selectionEnd);
+  onNotesChange(fieldId, next);
+  requestAnimationFrame(() => {
+    el.selectionStart = el.selectionEnd = selectionStart + CODE_INDENT.length;
+  });
+};
 
 /**
  * One rubric field's input(s): a Pass/Fail toggle for `pass_fail`, a 1-5
@@ -36,6 +62,8 @@ const RubricFieldInput = ({
   const value = entry?.value;
   const notes = entry?.notes ?? "";
   const showNotes = field.valueType === "notes" || field.hasNotes;
+  const isCode = field.format === "code";
+  const tabReleased = useRef(false);
 
   return (
     <div className="space-y-2">
@@ -83,10 +111,16 @@ const RubricFieldInput = ({
       )}
       {showNotes && (
         <Textarea
-          placeholder="Notes"
+          placeholder={isCode ? "Paste the candidate's code" : "Notes"}
           value={notes}
           disabled={readOnly}
           onChange={(e) => onNotesChange(field.id, e.target.value)}
+          {...(isCode && {
+            className: "min-h-40 font-mono text-xs",
+            spellCheck: false,
+            onKeyDown: (e) =>
+              handleCodeKeyDown(e, tabReleased, onNotesChange, field.id),
+          })}
         />
       )}
     </div>
