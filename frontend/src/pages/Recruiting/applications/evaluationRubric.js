@@ -162,7 +162,13 @@ export const RUBRICS = {
           label: "Candidate Understanding and Approach",
           valueType: "notes",
         },
-        { id: "code_snippet", label: "Code Snippet", valueType: "notes" },
+        {
+          id: "code_snippet",
+          label: "Code Snippet",
+          valueType: "notes",
+          // Frontend-only: shown in a monospace box that keeps indentation.
+          format: "code",
+        },
       ],
     },
     {

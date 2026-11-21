@@ -658,6 +658,42 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.getAllByText(/^Evaluated by:/)).toHaveLength(1);
   });
 
+  it("evaluation summary keeps a code snippet's indentation and a note's line breaks", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    const code = "def two_sum(nums, target):\n    seen = {}\n    return seen";
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          applicationId: 101,
+          stage: "tech",
+          round: 1,
+          evaluatorId: 77,
+          responses: {
+            problem_statement: { notes: "Two sum\nReturn the indices" },
+            code_snippet: { notes: code },
+          },
+          isConfirmed: true,
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    const codeBlock = screen.getByText(
+      (_, el) => el?.tagName === "CODE" && el.textContent === code,
+    );
+    expect(codeBlock.closest("pre")).toHaveClass("font-mono");
+    const note = screen.getByText(
+      (_, el) =>
+        el?.tagName === "P" && el.textContent === "Two sum\nReturn the indices",
+    );
+    expect(note).toHaveClass("whitespace-pre-wrap");
+  });
+
   it("owner sees the empty state when the only evaluation is a draft", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({

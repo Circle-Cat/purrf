@@ -17,6 +17,8 @@ import {
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import userEvent from "@testing-library/user-event";
+import { FlagsContext } from "@/context/flags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 
 import "@testing-library/jest-dom/vitest";
 
@@ -381,5 +383,33 @@ describe("Header Component", () => {
       "Contact Us",
       "Log out",
     ]);
+  });
+
+  const renderWithFlags = (flags) =>
+    render(
+      <FlagsContext.Provider
+        value={{ flags, setFlags: () => {}, ready: true, setReady: () => {} }}
+      >
+        <MemoryRouter>
+          <Header />
+        </MemoryRouter>
+      </FlagsContext.Provider>,
+    );
+
+  test("shows a Guide link to guide.purrf.io when the work-guide flag is on", () => {
+    renderWithFlags({ [FEATURE_FLAGS.WORK_GUIDE]: true });
+
+    const guide = screen.getByRole("link", { name: "Guide" });
+    expect(guide).toHaveAttribute("href", "https://guide.purrf.io");
+    expect(guide).toHaveAttribute("target", "_blank");
+    expect(guide).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  test("hides the Guide link when the work-guide flag is off", () => {
+    renderWithFlags({ [FEATURE_FLAGS.WORK_GUIDE]: false });
+
+    expect(
+      screen.queryByRole("link", { name: "Guide" }),
+    ).not.toBeInTheDocument();
   });
 });
