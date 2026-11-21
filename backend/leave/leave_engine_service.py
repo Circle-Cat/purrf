@@ -110,9 +110,15 @@ class _Held:
     level: str | None
     annual_hours: int
     balance: Decimal
+    pending: Decimal = NO_HOURS
     # Kept on the row rather than gathered into its own list: these people are
     # already here, and a second list would be two places to read.
     problems: tuple[str, ...] = ()
+
+    @property
+    def available(self) -> Decimal:
+        """Balance less what undecided paid requests hold; can be negative."""
+        return self.balance - self.pending
 
 
 @dataclass(frozen=True)
@@ -135,6 +141,7 @@ class LeaveEngineService:
         participant_resolver,
         leave_ledger_repository,
         users_repository,
+        leave_request_repository,
     ):
         """
         Args:
@@ -144,6 +151,7 @@ class LeaveEngineService:
             participant_resolver (LeaveParticipantResolver): ldap to account.
             leave_ledger_repository (LeaveLedgerRepository): Ledger access.
             users_repository (UsersRepository): Names, for the overview.
+            leave_request_repository (LeaveRequestRepository): Pending paid hours.
         """
         self.logger = logger
         self.redis_client = redis_client
@@ -151,6 +159,7 @@ class LeaveEngineService:
         self.participant_resolver = participant_resolver
         self.leave_ledger_repository = leave_ledger_repository
         self.users_repository = users_repository
+        self.leave_request_repository = leave_request_repository
 
     async def run_weekly_accrual(
         self, session: AsyncSession, today: datetime.date | None = None
@@ -321,6 +330,11 @@ class LeaveEngineService:
         balances = await self.leave_ledger_repository.balances_by_user_ids(
             session, user_ids
         )
+        pending_by_user = (
+            await self.leave_request_repository.sum_pending_paid_hours_by_user_ids(
+                session, user_ids
+            )
+        )
         people_rows = await self.users_repository.get_all_by_ids(
             session, sorted(user_ids)
         )
@@ -343,6 +357,7 @@ class LeaveEngineService:
                 # Absent rows mean nothing granted yet, which is a balance of
                 # zero rather than an unknown one: the engine has them.
                 balance=balances.get(participant.user_id, NO_HOURS),
+                pending=pending_by_user.get(participant.user_id, NO_HOURS),
                 problems=participant.problems,
             )
             for participant in participants
