@@ -151,3 +151,13 @@ py_binary(
         ":gerrit_webhook_lib",
     ],
 )
+
+py_library(
+    name = "teams_message_service",
+    srcs = [
+        "teams_message_service.py",
+    ],
+    deps = [
+        "@pypi//httpx",
+    ],
+)

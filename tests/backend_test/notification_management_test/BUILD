@@ -162,3 +162,12 @@ py_test(
         "//backend/utils:fast_app_factory",
     ],
 )
+
+py_test(
+    name = "teams_message_service_test",
+    srcs = ["teams_message_service_test.py"],
+    deps = [
+        "//backend/notification_management:teams_message_service",
+        "@pypi//httpx",
+    ],
+)
