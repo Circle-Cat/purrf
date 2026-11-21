@@ -30,6 +30,20 @@ def with_link(body: str, url: str) -> str:
     return body[:at] + paragraph + body[at:]
 
 
+def without_footer(body: str) -> str:
+    """``body`` with its closing footer paragraph removed, for copies sent
+    outside email; unchanged when it has none.
+
+    Args:
+        body (str): The rendered HTML body.
+
+    Returns:
+        str: The body up to the last footer paragraph.
+    """
+    at = body.rfind(_FOOTER_START)
+    return body if at < 0 else body[:at]
+
+
 class NotificationEventEmailService:
     """Turns one ``NotificationEntity`` into a sent email, or raises why not.
 
@@ -78,6 +92,31 @@ class NotificationEventEmailService:
         self.link = link
         self.app_origin = app_origin.rstrip("/") if app_origin else None
 
+    async def compose(
+        self, session: AsyncSession, notification: NotificationEntity
+    ) -> tuple[str, str]:
+        """Render ``notification``'s email, with its "Open in Purrf" link.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            notification (NotificationEntity): The row being delivered.
+
+        Returns:
+            tuple[str, str]: Subject line and HTML body.
+
+        Raises:
+            LookupError: The event's event_type has no renderer.
+        """
+        # event_id is NOT NULL and FK'd with ON DELETE CASCADE, so the row
+        # cannot outlive the event it points at.
+        event = await self.event_repository.get_by_id(session, notification.event_id)
+        subject, body = await self.render(session, event)
+        if self.link is not None and self.app_origin:
+            path = await self.link(session, event, notification.user_id)
+            if path:
+                body = with_link(body, f"{self.app_origin}{path}")
+        return subject, body
+
     async def send(
         self, session: AsyncSession, notification: NotificationEntity
     ) -> None:
@@ -94,14 +133,7 @@ class NotificationEventEmailService:
             RuntimeError: The underlying transport reported failure (e.g.
                 Gmail down) -- ask the caller for a retry.
         """
-        # event_id is NOT NULL and FK'd with ON DELETE CASCADE, so the row
-        # cannot outlive the event it points at.
-        event = await self.event_repository.get_by_id(session, notification.event_id)
-        subject, body = await self.render(session, event)
-        if self.link is not None and self.app_origin:
-            path = await self.link(session, event, notification.user_id)
-            if path:
-                body = with_link(body, f"{self.app_origin}{path}")
+        subject, body = await self.compose(session, notification)
 
         address = await self.user_emails_repository.get_contact_email(
             session, notification.user_id

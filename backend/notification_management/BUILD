@@ -151,3 +151,30 @@ py_binary(
         ":gerrit_webhook_lib",
     ],
 )
+
+py_library(
+    name = "teams_message_service",
+    srcs = [
+        "teams_message_service.py",
+    ],
+    deps = [
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "notification_teams_service",
+    srcs = [
+        "notification_teams_service.py",
+    ],
+    deps = [
+        ":notification_event_email_service",
+        ":teams_message_service",
+        "//backend/common:constants",
+        "//backend/common:environment_constants",
+        "//backend/entity:entities",
+        "@pypi//azure_identity",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+    ],
+)

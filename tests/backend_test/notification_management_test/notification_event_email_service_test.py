@@ -9,6 +9,7 @@ from backend.entity.users_entity import UsersEntity
 from backend.notification_management.notification_event_email_service import (
     NotificationEventEmailService,
     with_link,
+    without_footer,
 )
 from backend.repository.event_repository import EventRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -160,6 +161,29 @@ class NotificationEventEmailServiceTest(BaseRepositoryTestLib):
 
         link.assert_not_awaited()
         self.assertEqual(email_service.send.await_args.args[2], f"<p>body</p>{_FOOTER}")
+
+    async def test_compose_returns_the_linked_email_without_sending(self):
+        notification = await self._make_notification()
+        email_service = AsyncMock()
+        service = self._linked_service(email_service, AsyncMock(return_value="/inbox"))
+
+        subject, body = await service.compose(self.session, notification)
+
+        self.assertEqual(subject, "s")
+        self.assertEqual(
+            body,
+            '<p>body</p><p><a href="https://app.example.test/inbox">Open in Purrf</a></p>'
+            + _FOOTER,
+        )
+        email_service.send.assert_not_awaited()
+
+
+class WithoutFooterTest(unittest.TestCase):
+    def test_drops_the_footer_paragraph(self):
+        self.assertEqual(without_footer(f"<p>a</p>{_FOOTER}"), "<p>a</p>")
+
+    def test_keeps_a_body_without_footer(self):
+        self.assertEqual(without_footer("<p>a</p>"), "<p>a</p>")
 
 
 class WithLinkTest(unittest.TestCase):
