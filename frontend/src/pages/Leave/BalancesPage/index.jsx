@@ -138,15 +138,35 @@ const LeaveBalancesPage = ({ onViewHistory }) => {
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <span
-                          className={`text-base font-semibold tabular-nums ${
-                            Number(person.balanceHours) < 0
-                              ? "text-rose-600"
-                              : ""
-                          }`}
-                        >
-                          {`${person.balanceHours} h`}
-                        </span>
+                        <div className="flex flex-col items-end">
+                          <span
+                            className={`text-base font-semibold tabular-nums ${
+                              Number(person.balanceHours) < 0
+                                ? "text-rose-600"
+                                : ""
+                            }`}
+                          >
+                            {`${person.balanceHours} h`}
+                          </span>
+
+                          {person.pendingHours !== "0.00" && (
+                            <p className="m-0 text-xs tabular-nums">
+                              <span className="text-muted-foreground">
+                                {`${person.pendingHours} h pending · `}
+                              </span>
+                              <span
+                                className={
+                                  Number(person.availableHours) < 0
+                                    ? "text-rose-600"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                {`${person.availableHours} h available`}
+                              </span>
+                            </p>
+                          )}
+                        </div>
+
                         <Button
                           variant="ghost"
                           size="sm"
