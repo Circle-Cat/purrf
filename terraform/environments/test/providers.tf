@@ -37,3 +37,8 @@ provider "kubernetes" {
     command     = "gke-gcloud-auth-plugin"
   }
 }
+
+# Subscription comes from ARM_SUBSCRIPTION_ID; sign in with `az login`.
+provider "azurerm" {
+  features {}
+}

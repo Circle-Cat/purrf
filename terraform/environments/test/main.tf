@@ -66,3 +66,18 @@ module "purrf_instance" {
   matcher_llm_stub  = true
 }
 
+
+# The bot that sends Purrf notifications as Teams direct messages. The Teams
+# app that carries it is uploaded by hand and installed only for testers, so
+# this environment cannot message anyone else.
+module "teams_bot" {
+  source = "../../modules/teams_bot"
+
+  name = "purrf-bot-test"
+  federated_identities = {
+    backend = {
+      issuer  = "https://container.googleapis.com/v1/projects/circlecat/locations/us-west1/clusters/dev"
+      subject = "system:serviceaccount:purrf-test:purrf-test"
+    }
+  }
+}

@@ -98,3 +98,11 @@ output "notification_pusher_sub" {
 output "matcher_job_sub" {
   value = module.purrf_instance.matcher_job_sub
 }
+
+output "teams_bot_app_id" {
+  value = module.teams_bot.app_id
+}
+
+output "teams_bot_tenant_id" {
+  value = module.teams_bot.tenant_id
+}
