@@ -364,7 +364,6 @@ class TestMicrosoftMemberSyncService(IsolatedAsyncioTestCase):
         self.assertEqual(self.mock_pipeline.hset.call_count, 0)
         self.mock_pipeline.execute.assert_called_once()
 
-
     @patch(
         "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_current_redis_members_by_group_and_status"
     )

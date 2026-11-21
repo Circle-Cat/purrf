@@ -44,9 +44,7 @@ class NotificationTeamsServiceTest(unittest.IsolatedAsyncioTestCase):
 
         await service.send(session, notification)
 
-        self.user_emails_repository.list_by_user_id.assert_awaited_once_with(
-            session, 7
-        )
+        self.user_emails_repository.list_by_user_id.assert_awaited_once_with(session, 7)
         self.redis_client.hget.assert_called_once_with(
             MICROSOFT_AAD_ID_BY_LDAP_KEY, "alice"
         )

@@ -24,9 +24,7 @@ class TeamsMessageServiceTest(unittest.IsolatedAsyncioTestCase):
             return queue.pop(0)
 
         self.credential = MagicMock()
-        self.credential.get_token = AsyncMock(
-            return_value=SimpleNamespace(token="tok")
-        )
+        self.credential.get_token = AsyncMock(return_value=SimpleNamespace(token="tok"))
         return TeamsMessageService(
             logger=MagicMock(),
             app_id="app",

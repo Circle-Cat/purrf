@@ -83,7 +83,9 @@ class NotificationTeamsService:
             aad_id = aad_id.decode()
 
         subject, body = await self.compose(session, notification)
-        message = f"<p><strong>{html.escape(subject)}</strong></p>{without_footer(body)}"
+        message = (
+            f"<p><strong>{html.escape(subject)}</strong></p>{without_footer(body)}"
+        )
         await self.teams_message_service.send(aad_id, message)
 
 
