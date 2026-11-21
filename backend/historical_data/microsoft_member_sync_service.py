@@ -3,6 +3,7 @@ from backend.common.constants import (
     MicrosoftAccountStatus,
     MicrosoftGroups,
     LDAP_KEY_TEMPLATE,
+    MICROSOFT_AAD_ID_BY_LDAP_KEY,
 )
 
 
@@ -78,7 +79,7 @@ class MicrosoftMemberSyncService:
         return all_current_redis_members
 
     async def get_latest_members_by_group_and_status(
-        self,
+        self, latest_members_info: list | None = None
     ) -> dict[tuple[str, str], dict]:
         """
         Fetch the latest Microsoft 365 members from Graph API and
@@ -90,6 +91,10 @@ class MicrosoftMemberSyncService:
         - Fetch members of each target group.
         - Determine each member's account status (active/terminated).
         - Build mapping keyed by (status, group).
+
+        Args:
+            latest_members_info (list | None): Members already fetched from
+                Graph; fetched here when None.
 
         Returns:
             dict[tuple[str, str], dict]:
@@ -103,7 +108,10 @@ class MicrosoftMemberSyncService:
                 If critical groups (Interns or Employees) are missing.
         """
         all_groups = await self.microsoft_service.list_all_groups()
-        latest_members_info = await self.microsoft_service.get_all_microsoft_members()
+        if latest_members_info is None:
+            latest_members_info = (
+                await self.microsoft_service.get_all_microsoft_members()
+            )
 
         if not latest_members_info:
             self.logger.error(
@@ -181,6 +189,7 @@ class MicrosoftMemberSyncService:
         - Compare latest Graph API data with current Redis data.
         - Update Redis with new/changed members.
         - Delete stale members no longer present in Graph API.
+        - Rewrite the ldap -> AAD object id hash whole.
 
         Logging:
             - Logs newly added, updated, and deleted members.
@@ -193,12 +202,24 @@ class MicrosoftMemberSyncService:
         current_redis_saved_members = (
             self.get_current_redis_members_by_group_and_status()
         )
+        latest_members_info = await self.microsoft_service.get_all_microsoft_members()
         new_members_by_group_and_status = (
-            await self.get_latest_members_by_group_and_status()
+            await self.get_latest_members_by_group_and_status(latest_members_info)
         )
 
         pipe = self.redis_client.pipeline()
         changes_made = False
+
+        # Rewritten whole so that members who are gone from Graph drop out.
+        aad_ids = {
+            member.mail.split("@")[0]: member.id
+            for member in latest_members_info
+            if member.mail and "@" in member.mail
+        }
+        if aad_ids:
+            pipe.delete(MICROSOFT_AAD_ID_BY_LDAP_KEY)
+            pipe.hset(MICROSOFT_AAD_ID_BY_LDAP_KEY, mapping=aad_ids)
+            changes_made = True
 
         for (status, group), new_data in new_members_by_group_and_status.items():
             redis_key = LDAP_KEY_TEMPLATE.format(account_status=status, group=group)
