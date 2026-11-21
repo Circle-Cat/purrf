@@ -54,6 +54,9 @@ MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
     "microsoft:client_state:{subscription_id}"
 )
 LDAP_KEY_TEMPLATE = "ldap:{account_status}:{group}"
+# Hash of every Microsoft member's ldap to their AAD object id, rewritten whole
+# by the daily member sync.
+MICROSOFT_AAD_ID_BY_LDAP_KEY = "microsoft:aad_id_by_ldap"
 MICROSOFT_CHAT_MESSAGES_INDEX_KEY = "microsoft:chat:{message_status}:{sender_ldap}"
 MICROSOFT_CHAT_MESSAGES_DETAILS_KEY = "microsoft:messages:{message_id}"
 MICROSOFT_CHAT_TOPICS = "microsoft:chat:topics"

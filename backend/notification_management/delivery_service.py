@@ -23,9 +23,16 @@ class DeliveryOutcome(Enum):
 
 
 class DeliveryService:
-    """Turns one notification row into one email, exactly once."""
+    """Turns one notification row into one email, exactly once.
 
-    def __init__(self, logger, email_service, notification_repository):
+    With a Teams service, a copy also goes to Teams once the email's outcome
+    is settled. That copy is best effort: it is not retried and never changes
+    the outcome, so an email retry can never send it twice.
+    """
+
+    def __init__(
+        self, logger, email_service, notification_repository, teams_service=None
+    ):
         """
         Args:
             logger: Logger instance.
@@ -33,10 +40,13 @@ class DeliveryService:
                 raising LookupError when the recipient can never be emailed.
             notification_repository (NotificationRepository): Owns every read
                 and write of the notification row, the claim included.
+            teams_service: Object with ``async send(session, notification)``,
+                or None for email only.
         """
         self.logger = logger
         self.email_service = email_service
         self.notification_repository = notification_repository
+        self.teams_service = teams_service
 
     async def deliver(
         self, session: AsyncSession, notification_id: int
@@ -76,6 +86,7 @@ class DeliveryService:
                 "[Delivery] %s can never be emailed; marking failed", notification_id
             )
             await self._settle(session, notification_id, NotificationStatus.FAILED)
+            await self._copy_to_teams(session, notification)
             return DeliveryOutcome.ACKED
         except Exception:
             self.logger.exception("[Delivery] %s failed transiently", notification_id)
@@ -83,7 +94,27 @@ class DeliveryService:
             return DeliveryOutcome.RETRY
 
         await self._settle(session, notification_id, NotificationStatus.SENT)
+        await self._copy_to_teams(session, notification)
         return DeliveryOutcome.ACKED
+
+    async def _copy_to_teams(self, session: AsyncSession, notification) -> None:
+        """Send the Teams copy, if there is a Teams service; log, never raise."""
+        if self.teams_service is None:
+            return
+        try:
+            await self.teams_service.send(session, notification)
+        except LookupError as error:
+            self.logger.info(
+                "[Delivery] %s has no Teams chat: %s",
+                notification.notification_id,
+                error,
+            )
+        except Exception:
+            self.logger.warning(
+                "[Delivery] %s Teams copy failed",
+                notification.notification_id,
+                exc_info=True,
+            )
 
     async def _claim(
         self, session: AsyncSession, notification_id: int, now: datetime

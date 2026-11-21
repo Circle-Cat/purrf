@@ -1,5 +1,6 @@
 from unittest import IsolatedAsyncioTestCase, main
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock, MagicMock, call as unittest_call
+from backend.common.constants import MICROSOFT_AAD_ID_BY_LDAP_KEY
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
 )
@@ -362,6 +363,88 @@ class TestMicrosoftMemberSyncService(IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.mock_pipeline.hset.call_count, 0)
         self.mock_pipeline.execute.assert_called_once()
+
+    @patch(
+        "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_current_redis_members_by_group_and_status"
+    )
+    @patch(
+        "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_latest_members_by_group_and_status"
+    )
+    async def test_sync_writes_aad_ids_by_ldap(
+        self, mock_get_latest_data, mock_get_current_data
+    ):
+        members = [
+            make_mock_user("aad-a", "alice@u.circlecat.org", "Alice", True),
+            make_mock_user("aad-b", "bob@u.circlecat.org", "Bob", False),
+        ]
+        self.mock_microsoft_service.get_all_microsoft_members.return_value = members
+        mock_get_current_data.return_value = {}
+        mock_get_latest_data.return_value = {}
+        calls = MagicMock()
+        calls.attach_mock(self.mock_pipeline.delete, "delete")
+        calls.attach_mock(self.mock_pipeline.hset, "hset")
+
+        await self.microsoft_member_service.sync_microsoft_members_to_redis()
+
+        mock_get_latest_data.assert_awaited_once_with(members)
+        self.assertEqual(
+            calls.mock_calls,
+            [
+                unittest_call.delete(MICROSOFT_AAD_ID_BY_LDAP_KEY),
+                unittest_call.hset(
+                    MICROSOFT_AAD_ID_BY_LDAP_KEY,
+                    mapping={"alice": "aad-a", "bob": "aad-b"},
+                ),
+            ],
+        )
+        self.mock_pipeline.execute.assert_called_once()
+        self.mock_microsoft_service.get_all_microsoft_members.assert_awaited_once()
+
+    @patch(
+        "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_current_redis_members_by_group_and_status"
+    )
+    @patch(
+        "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_latest_members_by_group_and_status"
+    )
+    async def test_sync_aad_ids_skip_members_without_mail(
+        self, mock_get_latest_data, mock_get_current_data
+    ):
+        self.mock_microsoft_service.get_all_microsoft_members.return_value = [
+            make_mock_user("aad-a", "alice@u.circlecat.org", "Alice", True),
+            make_mock_user("aad-x", None, "No Mail", True),
+            make_mock_user("aad-y", "not-an-address", "Bad Mail", True),
+        ]
+        mock_get_current_data.return_value = {}
+        mock_get_latest_data.return_value = {}
+
+        await self.microsoft_member_service.sync_microsoft_members_to_redis()
+
+        self.mock_pipeline.hset.assert_called_once_with(
+            MICROSOFT_AAD_ID_BY_LDAP_KEY, mapping={"alice": "aad-a"}
+        )
+
+    @patch(
+        "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_current_redis_members_by_group_and_status"
+    )
+    @patch(
+        "backend.historical_data.microsoft_member_sync_service.MicrosoftMemberSyncService.get_latest_members_by_group_and_status"
+    )
+    async def test_sync_aad_ids_only_from_microsoft_domain(
+        self, mock_get_latest_data, mock_get_current_data
+    ):
+        self.mock_microsoft_service.get_all_microsoft_members.return_value = [
+            make_mock_user("aad-bob", "Bob@U.CircleCat.org", "Bob", True),
+            make_mock_user("aad-g", "carol@circlecat.org", "Google Carol", True),
+            make_mock_user("aad-x", "dan@xu.circlecat.org", "X Dan", True),
+        ]
+        mock_get_current_data.return_value = {}
+        mock_get_latest_data.return_value = {}
+
+        await self.microsoft_member_service.sync_microsoft_members_to_redis()
+
+        self.mock_pipeline.hset.assert_called_once_with(
+            MICROSOFT_AAD_ID_BY_LDAP_KEY, mapping={"bob": "aad-bob"}
+        )
 
 
 if __name__ == "__main__":

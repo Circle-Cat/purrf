@@ -180,6 +180,9 @@ from backend.repository.user_guide_progress_repository import (
     UserGuideProgressRepository,
 )
 from backend.communication.notification_email_service import NotificationEmailService
+from backend.notification_management.notification_teams_service import (
+    build_notification_teams_service,
+)
 from backend.notification_management.notification_event_email_service import (
     NotificationEventEmailService,
 )
@@ -1063,6 +1066,12 @@ class AppDependencyBuilder:
             logger=self.logger,
             email_service=self.notification_event_email_service,
             notification_repository=self.notification_repository,
+            teams_service=build_notification_teams_service(
+                logger=self.logger,
+                user_emails_repository=self.user_emails_repository,
+                redis_client=self.redis_client,
+                compose=self.notification_event_email_service.compose,
+            ),
         )
         self.notification_delivery_controller = NotificationDeliveryController(
             logger=self.logger,
