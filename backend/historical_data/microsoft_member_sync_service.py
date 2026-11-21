@@ -2,6 +2,7 @@ import asyncio
 from backend.common.constants import (
     MicrosoftAccountStatus,
     MicrosoftGroups,
+    INTERNAL_MICROSOFT_ACCOUNT_DOMAIN,
     LDAP_KEY_TEMPLATE,
     MICROSOFT_AAD_ID_BY_LDAP_KEY,
 )
@@ -211,10 +212,16 @@ class MicrosoftMemberSyncService:
         changes_made = False
 
         # Rewritten whole so that members who are gone from Graph drop out.
+        # Keyed by the local part of the Microsoft address (@u.circlecat.org),
+        # which is the same ldap as the person's Google address
+        # (@circlecat.org) that recipients are resolved from.
         aad_ids = {
-            member.mail.split("@")[0]: member.id
+            member.mail.lower().removesuffix(
+                INTERNAL_MICROSOFT_ACCOUNT_DOMAIN
+            ): member.id
             for member in latest_members_info
-            if member.mail and "@" in member.mail
+            if member.mail
+            and member.mail.lower().endswith(INTERNAL_MICROSOFT_ACCOUNT_DOMAIN)
         }
         if aad_ids:
             pipe.delete(MICROSOFT_AAD_ID_BY_LDAP_KEY)
