@@ -130,6 +130,12 @@ variable "azure_tenant_id" {
   type = string
 }
 
+variable "teams_bot_app_id" {
+  description = "Application id of the Teams bot that sends notification copies as direct messages. Empty turns Teams off."
+  type        = string
+  default     = ""
+}
+
 variable "ld_sdk_key" {
   description = "LaunchDarkly server-side SDK key for this environment"
   type        = string

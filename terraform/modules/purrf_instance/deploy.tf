@@ -13,6 +13,7 @@ resource "kubernetes_secret" "purrf_app" {
   data = {
     AZURE_CLIENT_ID                   = var.azure_client_id
     AZURE_TENANT_ID                   = var.azure_tenant_id
+    TEAMS_BOT_APP_ID                  = var.teams_bot_app_id
     USER_EMAIL                        = "purrf@circlecat.org"
     ADMIN_EMAIL                       = "admin@circlecat.org"
     SERVICE_ACCOUNT_EMAIL             = "purrf-service@purrf-452300.iam.gserviceaccount.com"

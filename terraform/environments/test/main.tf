@@ -39,6 +39,7 @@ module "purrf_instance" {
   cf_aud_tag                  = "8187a0acb20eed9fe7b5d2290977c85490f6c7f3844595f521dc6f3328ca37d0"
   azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
   azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
+  teams_bot_app_id            = module.teams_bot.app_id
   ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["test"]
 
   auth0_google_client_id     = var.auth0_google_client_id
