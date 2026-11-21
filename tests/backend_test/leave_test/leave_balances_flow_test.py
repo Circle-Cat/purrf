@@ -44,12 +44,15 @@ def _user(first: str) -> UsersEntity:
     )
 
 
-def _profile_json(level: str = "L2") -> str:
+def _profile_json(level: str = "L2", annual_hours: int = 80) -> str:
     return json.dumps({
-        "job_title": f"{level} Software Engineer",
+        "level": level,
+        "annual_hours": annual_hours,
         "hire_date": "2024-01-15",
-        "employment_status": "active",
+        "leave_date": None,
         "manager_ldap": "mgr",
+        "account_enabled": True,
+        "problems": [],
     })
 
 
