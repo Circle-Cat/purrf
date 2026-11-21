@@ -102,6 +102,7 @@ No modules.
 | <a name="input_microsoft_lifecycle_entry_point"></a> [microsoft\_lifecycle\_entry\_point](#input\_microsoft\_lifecycle\_entry\_point) | The name of the Python function to be executed for Microsoft Lifecycle events. | `string` | n/a | yes |
 | <a name="input_neon_org_id"></a> [neon\_org\_id](#input\_neon\_org\_id) | n/a | `string` | n/a | yes |
 | <a name="input_tailscale_proxy"></a> [tailscale\_proxy](#input\_tailscale\_proxy) | Tailscale outbound proxy URL. If empty, TAILSCALE\_PROXY is not set. | `string` | `""` | no |
+| <a name="input_teams_bot_app_id"></a> [teams\_bot\_app\_id](#input\_teams\_bot\_app\_id) | Application id of the Teams bot that sends notification copies as direct messages. Empty turns Teams off. | `string` | `""` | no |
 
 ## Outputs
 
