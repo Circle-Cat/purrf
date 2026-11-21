@@ -197,6 +197,78 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
         self.logger.exception.assert_called_once()
 
 
+class DeliveryServiceTeamsTest(DeliveryServiceTest):
+    """Teams is a best-effort copy sent once the email's outcome is settled."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.teams = AsyncMock()
+        self.service = DeliveryService(
+            logger=self.logger,
+            email_service=self.email,
+            notification_repository=NotificationRepository(),
+            teams_service=self.teams,
+        )
+
+    async def test_teams_sent_after_email_sent(self):
+        notification = await self._make_notification()
+
+        outcome = await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.assertEqual(notification.status, NotificationStatus.SENT)
+        self.teams.send.assert_awaited_once()
+        self.assertEqual(
+            self.teams.send.await_args.args[1].notification_id,
+            notification.notification_id,
+        )
+
+    async def test_teams_sent_after_permanent_email_failure(self):
+        notification = await self._make_notification()
+        self.email.send.side_effect = LookupError("no address")
+
+        await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(notification.status, NotificationStatus.FAILED)
+        self.teams.send.assert_awaited_once()
+
+    async def test_teams_not_sent_on_retry(self):
+        notification = await self._make_notification()
+        self.email.send.side_effect = RuntimeError("gmail down")
+
+        outcome = await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(outcome, DeliveryOutcome.RETRY)
+        self.teams.send.assert_not_awaited()
+
+    async def test_teams_not_sent_when_claim_lost(self):
+        notification = await self._make_notification(status=NotificationStatus.SENT)
+
+        await self.service.deliver(self.session, notification.notification_id)
+
+        self.teams.send.assert_not_awaited()
+
+    async def test_teams_error_does_not_change_outcome(self):
+        notification = await self._make_notification()
+        self.teams.send.side_effect = RuntimeError("bot connector down")
+
+        outcome = await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.assertEqual(notification.status, NotificationStatus.SENT)
+        self.logger.warning.assert_called_once()
+
+    async def test_teams_lookup_error_logged_at_info(self):
+        notification = await self._make_notification()
+        self.teams.send.side_effect = LookupError("app not installed")
+
+        outcome = await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.logger.warning.assert_not_called()
+        self.logger.info.assert_called_once()
+
+
 if __name__ == "__main__":
     import unittest
 
