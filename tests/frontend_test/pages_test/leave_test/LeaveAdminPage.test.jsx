@@ -37,6 +37,8 @@ describe("LeaveAdminPage", () => {
           ldap: "asmith",
           annualHours: 160,
           balanceHours: "40.00",
+          pendingHours: "0.00",
+          availableHours: "40.00",
           level: "L3",
           problems: [],
         },
