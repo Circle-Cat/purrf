@@ -1,10 +1,12 @@
+import os
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.constants import MICROSOFT_AAD_ID_BY_LDAP_KEY
 from backend.notification_management.notification_teams_service import (
     NotificationTeamsService,
+    build_notification_teams_service,
 )
 
 _FOOTER = "<p>This is an automated message from Purrf.</p>"
@@ -84,6 +86,36 @@ class NotificationTeamsServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.compose.assert_not_awaited()
         self.teams.send.assert_not_awaited()
+
+
+class BuildNotificationTeamsServiceTest(unittest.TestCase):
+    def _build(self):
+        return build_notification_teams_service(
+            logger=MagicMock(),
+            user_emails_repository=MagicMock(),
+            redis_client=MagicMock(),
+            compose=AsyncMock(),
+        )
+
+    def test_no_bot_id_means_no_teams(self):
+        with patch.dict(os.environ, {"TEAMS_BOT_APP_ID": ""}):
+            self.assertIsNone(self._build())
+
+    @patch(
+        "backend.notification_management.notification_teams_service.WorkloadIdentityCredential"
+    )
+    def test_bot_id_builds_the_service(self, credential):
+        with patch.dict(
+            os.environ, {"TEAMS_BOT_APP_ID": "app", "AZURE_TENANT_ID": "tenant"}
+        ):
+            service = self._build()
+
+        credential.assert_called_once_with(client_id="app")
+        sender = service.teams_message_service
+        self.assertEqual(sender.app_id, "app")
+        self.assertEqual(sender.tenant_id, "tenant")
+        self.assertEqual(sender.http_client.timeout.read, 10.0)
+        self.assertEqual(sender.http_client.timeout.connect, 10.0)
 
 
 if __name__ == "__main__":

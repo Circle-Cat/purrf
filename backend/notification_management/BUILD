@@ -169,8 +169,12 @@ py_library(
     ],
     deps = [
         ":notification_event_email_service",
+        ":teams_message_service",
         "//backend/common:constants",
+        "//backend/common:environment_constants",
         "//backend/entity:entities",
+        "@pypi//azure_identity",
+        "@pypi//httpx",
         "@pypi//sqlalchemy",
     ],
 )

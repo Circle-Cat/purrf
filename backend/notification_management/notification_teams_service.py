@@ -1,12 +1,20 @@
 import html
+import os
 
+import httpx
+from azure.identity.aio import WorkloadIdentityCredential
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.constants import MICROSOFT_AAD_ID_BY_LDAP_KEY, ldap_from_addresses
+from backend.common.environment_constants import AZURE_TENANT_ID, TEAMS_BOT_APP_ID
 from backend.entity.notification_entity import NotificationEntity
 from backend.notification_management.notification_event_email_service import (
     without_footer,
 )
+from backend.notification_management.teams_message_service import TeamsMessageService
+
+# Each Bot Connector call is made while a Pub/Sub push waits for its answer.
+_BOT_CONNECTOR_TIMEOUT_SECONDS = 10.0
 
 
 class NotificationTeamsService:
@@ -77,3 +85,39 @@ class NotificationTeamsService:
         subject, body = await self.compose(session, notification)
         message = f"<p><strong>{html.escape(subject)}</strong></p>{without_footer(body)}"
         await self.teams_message_service.send(aad_id, message)
+
+
+def build_notification_teams_service(
+    logger, user_emails_repository, redis_client, compose
+) -> NotificationTeamsService | None:
+    """The Teams service for this environment, or None when it has no bot.
+
+    The bot signs in through the pod's workload identity, which also supplies
+    the tenant and the federated token file.
+
+    Args:
+        logger: Logger instance.
+        user_emails_repository (UserEmailsRepository): See NotificationTeamsService.
+        redis_client: See NotificationTeamsService.
+        compose: See NotificationTeamsService.
+
+    Returns:
+        NotificationTeamsService | None: None unless ``TEAMS_BOT_APP_ID`` is set.
+    """
+    app_id = (os.getenv(TEAMS_BOT_APP_ID) or "").strip()
+    if not app_id:
+        return None
+    sender = TeamsMessageService(
+        logger=logger,
+        app_id=app_id,
+        tenant_id=os.getenv(AZURE_TENANT_ID),
+        credential=WorkloadIdentityCredential(client_id=app_id),
+        http_client=httpx.AsyncClient(timeout=_BOT_CONNECTOR_TIMEOUT_SECONDS),
+    )
+    return NotificationTeamsService(
+        logger=logger,
+        user_emails_repository=user_emails_repository,
+        redis_client=redis_client,
+        compose=compose,
+        teams_message_service=sender,
+    )

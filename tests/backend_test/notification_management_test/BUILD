@@ -178,5 +178,6 @@ py_test(
     deps = [
         "//backend/common:constants",
         "//backend/notification_management:notification_teams_service",
+        "@pypi//httpx",
     ],
 )
