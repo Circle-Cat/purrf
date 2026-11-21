@@ -60,8 +60,12 @@ describe("EvaluationRubricForm", () => {
       );
     }
 
-    // Notes fields (3 valueType="notes" + 1 hasNotes on "overall") = 4 textareas
-    expect(screen.getAllByPlaceholderText("Notes")).toHaveLength(4);
+    // Notes fields (3 valueType="notes" + 1 hasNotes on "overall") = 4
+    // textareas; the Code Snippet one asks for code instead of notes.
+    expect(screen.getAllByPlaceholderText("Notes")).toHaveLength(3);
+    expect(
+      screen.getByPlaceholderText("Paste the candidate's code"),
+    ).toBeInTheDocument();
   });
 
   it("toggling a pass_fail field updates local display state", async () => {
@@ -233,5 +237,57 @@ describe("EvaluationRubricForm", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  describe("Code Snippet field", () => {
+    const renderTech = (onSaveDraft = vi.fn()) =>
+      render(
+        <EvaluationRubricForm
+          stage="tech"
+          initialResponses={{}}
+          onSaveDraft={onSaveDraft}
+          onConfirm={vi.fn()}
+        />,
+      );
+
+    it("is a monospace box asking for the candidate's code", () => {
+      renderTech();
+      const box = screen.getByPlaceholderText("Paste the candidate's code");
+      expect(box).toHaveClass("font-mono");
+      expect(box).toHaveAttribute("spellcheck", "false");
+    });
+
+    it("indents on Tab instead of leaving the box", async () => {
+      const user = userEvent.setup();
+      renderTech();
+      const box = screen.getByPlaceholderText("Paste the candidate's code");
+      await user.click(box);
+      await user.keyboard("if x:{Enter}{Tab}y");
+
+      expect(box).toHaveValue("if x:\n  y");
+      expect(box).toHaveFocus();
+    });
+
+    it("lets Tab leave the box after Escape", async () => {
+      const user = userEvent.setup();
+      renderTech();
+      const box = screen.getByPlaceholderText("Paste the candidate's code");
+      await user.click(box);
+      await user.keyboard("x{Escape}{Tab}");
+
+      expect(box).toHaveValue("x");
+      expect(box).not.toHaveFocus();
+    });
+
+    it("keeps Tab moving focus in the other notes boxes", async () => {
+      const user = userEvent.setup();
+      renderTech();
+      const [problem] = screen.getAllByPlaceholderText("Notes");
+      await user.click(problem);
+      await user.keyboard("a{Tab}");
+
+      expect(problem).toHaveValue("a");
+      expect(problem).not.toHaveFocus();
+    });
   });
 });
