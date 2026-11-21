@@ -20,6 +20,8 @@ class LeaveHeldDto(BaseDto):
     level: str | None
     annual_hours: int
     balance_hours: str
+    pending_hours: str
+    available_hours: str
     # Gaps the nightly sync recorded about this person. They accrue normally
     # and are still broken -- one cannot file a request at all, and one accrues
     # nothing while looking like an L1, whose annual figure is legitimately
@@ -75,6 +77,8 @@ class LeaveOverviewDto(BaseDto):
                     level=held.level,
                     annual_hours=held.annual_hours,
                     balance_hours=f"{Decimal(held.balance):.2f}",
+                    pending_hours=f"{Decimal(held.pending):.2f}",
+                    available_hours=f"{Decimal(held.available):.2f}",
                     problems=list(held.problems),
                 )
                 for held in overview.people
