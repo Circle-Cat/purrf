@@ -6,6 +6,7 @@ py_library(
     name = "ops",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/common:monitor_events",
         "//backend/common:ops_enums",
         "//backend/common:permissions",
         "//backend/entity:entities",
