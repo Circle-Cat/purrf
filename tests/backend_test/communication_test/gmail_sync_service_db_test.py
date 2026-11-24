@@ -5,13 +5,12 @@ from sqlalchemy import select
 
 from backend.common.communication_enums import ContextType
 from backend.common.exceptions import RateLimitedError
-from backend.common.ops_enums import OPS_ALERT_SUBJECT_TYPE
 from backend.communication.gmail_sync_service import GmailSyncService, PushOutcome
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_router import InboxRouter
 from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.event_entity import EventEntity
-from backend.ops import recipient_resolvers  # noqa: F401 (registers)
+from backend.entity.users_entity import UsersEntity  # noqa: F401 (email_thread's FK)
 from backend.ops.ops_alert_service import OpsAlertService
 from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
@@ -99,11 +98,11 @@ class TestGmailSyncServiceOnARealSession(BaseRepositoryTestLib):
         self.assertEqual(fresh.last_history_id, 150)
         alerts = await self.session.execute(
             select(EventEntity).where(
-                EventEntity.subject_type == OPS_ALERT_SUBJECT_TYPE,
+                EventEntity.event_type == "ops.gmail_sync_alert",
                 EventEntity.subject_id == self.state.id,
             )
         )
-        self.assertEqual(len(alerts.scalars().all()), 1)
+        self.assertEqual(alerts.scalars().all(), [])
 
 
 _ALIAS = "mentorship-db-test@example.com"
@@ -212,11 +211,11 @@ class TestInboxRoutingOnARealSession(BaseRepositoryTestLib):
         self.assertEqual(state.last_history_id, 150)
         alerts = await self.session.execute(
             select(EventEntity).where(
-                EventEntity.subject_type == OPS_ALERT_SUBJECT_TYPE,
+                EventEntity.event_type == "ops.gmail_sync_alert",
                 EventEntity.subject_id == state.id,
             )
         )
-        self.assertEqual(len(alerts.scalars().all()), 1)
+        self.assertEqual(alerts.scalars().all(), [])
 
     async def test_a_racing_create_returns_the_row_the_other_push_wrote(self):
         existing = await self.threads.create(

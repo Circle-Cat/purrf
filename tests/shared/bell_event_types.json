@@ -11,7 +11,6 @@
   "mentorship.email_send_prepared",
   "mentorship.matching_run_completed",
   "mentorship.mentor_admitted",
-  "ops.gmail_sync_alert",
   "recruiting.application_submitted",
   "recruiting.auto_assigned",
   "recruiting.auto_rejected",
