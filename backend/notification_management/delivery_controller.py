@@ -94,11 +94,16 @@ class NotificationDeliveryController:
 
         async with self.database.session() as session:
             outcome = await self.delivery_service.deliver(session, notification_id)
-            for straggler in await self.delivery_service.sweep_stragglers(session):
-                self.publisher.publish(
-                    self.topic_path,
-                    json.dumps({"notification_id": straggler}).encode(),
-                )
+            # Only a send that just worked says republishing could help. While
+            # sends fail, a sweep would republish rows that fail the same way,
+            # each as a new message outside the dead-letter limit, and every
+            # one of those would sweep again.
+            if outcome is DeliveryOutcome.SENT:
+                for straggler in await self.delivery_service.sweep_stragglers(session):
+                    self.publisher.publish(
+                        self.topic_path,
+                        json.dumps({"notification_id": straggler}).encode(),
+                    )
 
         if outcome is DeliveryOutcome.RETRY:
             return Response(status_code=HTTPStatus.SERVICE_UNAVAILABLE)

@@ -127,6 +127,15 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
         self.delivery_service.deliver.assert_not_awaited()
         self.logger.warning.assert_called_once()
 
+    def test_sent_outcome_returns_200(self):
+        self.delivery_service.deliver.return_value = DeliveryOutcome.SENT
+
+        response = self.client.post(
+            NOTIFICATION_DELIVER_ENDPOINT, json=_envelope(42), headers=_PUSH_HEADERS
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
     def test_acked_outcome_returns_200(self):
         self.delivery_service.deliver.return_value = DeliveryOutcome.ACKED
 
@@ -148,8 +157,8 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.SERVICE_UNAVAILABLE)
 
-    def test_stragglers_are_republished(self):
-        self.delivery_service.deliver.return_value = DeliveryOutcome.ACKED
+    def test_stragglers_are_republished_after_a_send(self):
+        self.delivery_service.deliver.return_value = DeliveryOutcome.SENT
         self.delivery_service.sweep_stragglers.return_value = [7, 8]
 
         self.client.post(
@@ -164,6 +173,32 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
         self.assertEqual(published_ids, {7, 8})
         for call in self.publisher.publish.call_args_list:
             self.assertEqual(call.args[0], "projects/p/topics/notifications")
+
+    def test_no_sweep_when_the_send_must_be_retried(self):
+        """While sends fail, a sweep would republish rows that fail the same
+        way, and each of those would sweep again."""
+        self.delivery_service.deliver.return_value = DeliveryOutcome.RETRY
+        self.delivery_service.sweep_stragglers.return_value = [7, 8]
+
+        self.client.post(
+            NOTIFICATION_DELIVER_ENDPOINT, json=_envelope(42), headers=_PUSH_HEADERS
+        )
+
+        self.delivery_service.sweep_stragglers.assert_not_awaited()
+        self.publisher.publish.assert_not_called()
+
+    def test_no_sweep_when_nothing_was_sent(self):
+        """Duplicates, lost claims, expired rows and permanent failures say
+        nothing about whether email works now."""
+        self.delivery_service.deliver.return_value = DeliveryOutcome.ACKED
+        self.delivery_service.sweep_stragglers.return_value = [7, 8]
+
+        self.client.post(
+            NOTIFICATION_DELIVER_ENDPOINT, json=_envelope(42), headers=_PUSH_HEADERS
+        )
+
+        self.delivery_service.sweep_stragglers.assert_not_awaited()
+        self.publisher.publish.assert_not_called()
 
 
 if __name__ == "__main__":
