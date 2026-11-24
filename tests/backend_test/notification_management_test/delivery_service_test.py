@@ -85,7 +85,7 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
         first = await self.service.deliver(self.session, notification.notification_id)
         second = await self.service.deliver(self.session, notification.notification_id)
 
-        self.assertEqual(first, DeliveryOutcome.ACKED)
+        self.assertEqual(first, DeliveryOutcome.SENT)
         self.assertEqual(second, DeliveryOutcome.ACKED)
         self.assertEqual(self.email.send.await_count, 1)
 
@@ -107,7 +107,7 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
 
         outcome = await self.service.deliver(self.session, notification.notification_id)
 
-        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.assertEqual(outcome, DeliveryOutcome.SENT)
         self.assertEqual(self.email.send.await_count, 1)
 
     async def test_a_fresh_claim_is_left_alone(self):
@@ -215,7 +215,7 @@ class DeliveryServiceTeamsTest(DeliveryServiceTest):
 
         outcome = await self.service.deliver(self.session, notification.notification_id)
 
-        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.assertEqual(outcome, DeliveryOutcome.SENT)
         self.assertEqual(notification.status, NotificationStatus.SENT)
         self.teams.send.assert_awaited_once()
         self.assertEqual(
@@ -254,7 +254,7 @@ class DeliveryServiceTeamsTest(DeliveryServiceTest):
 
         outcome = await self.service.deliver(self.session, notification.notification_id)
 
-        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.assertEqual(outcome, DeliveryOutcome.SENT)
         self.assertEqual(notification.status, NotificationStatus.SENT)
         self.logger.warning.assert_called_once()
 
@@ -264,7 +264,7 @@ class DeliveryServiceTeamsTest(DeliveryServiceTest):
 
         outcome = await self.service.deliver(self.session, notification.notification_id)
 
-        self.assertEqual(outcome, DeliveryOutcome.ACKED)
+        self.assertEqual(outcome, DeliveryOutcome.SENT)
         self.logger.warning.assert_not_called()
         self.logger.info.assert_called_once()
 
