@@ -280,12 +280,43 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
             created_index_key, {self.TEST_MESSAGE_ID: self.TEST_SCORE}
         )
 
-    def test_handle_update_message_not_found_in_any_index_raises(self):
+    def test_handle_update_message_for_an_unknown_message_stores_it_as_created(self):
+        """Its "created" event was lost (e.g. dead-lettered), and a retry
+        could never find it. The message is re-fetched from Graph, so it can
+        be stored whole."""
         self.mock_redis_client.zscore.side_effect = [None, None]
-        with self.assertRaises(ValueError):
-            self.microsoft_chat_message_util._handle_update_message(
-                self.TEST_MESSAGE, self.TEST_USER_LDAP, self.mock_pipeline
-            )
+
+        self.microsoft_chat_message_util._handle_update_message(
+            self.TEST_MESSAGE, self.TEST_USER_LDAP, self.mock_pipeline
+        )
+
+        created_index_key = MICROSOFT_CHAT_MESSAGES_INDEX_KEY.format(
+            message_status=MicrosoftChatMessagesChangeType.CREATED.value,
+            sender_ldap=self.TEST_USER_LDAP,
+        )
+        self.mock_pipeline.zadd.assert_called_once_with(
+            created_index_key,
+            {self.TEST_MESSAGE_ID: self.TEST_DATATIME.timestamp()},
+        )
+        self.mock_pipeline.set.assert_called_once()
+        args, _ = self.mock_pipeline.set.call_args
+        self.assertEqual(
+            args[0],
+            MICROSOFT_CHAT_MESSAGES_DETAILS_KEY.format(message_id=self.TEST_MESSAGE_ID),
+        )
+        self.assertEqual(json.loads(args[1])["text"][0]["value"], "Hello world")
+        self.mock_logger.warning.assert_called_once()
+
+    def test_handle_update_message_for_an_unknown_deleted_message_stores_nothing(self):
+        self.mock_redis_client.zscore.side_effect = [None, None]
+
+        self.microsoft_chat_message_util._handle_update_message(
+            self.TEST_DELETED_MESSAGE, self.TEST_USER_LDAP, self.mock_pipeline
+        )
+
+        self.mock_pipeline.zadd.assert_not_called()
+        self.mock_pipeline.set.assert_not_called()
+        self.mock_logger.warning.assert_called_once()
 
     def test_handle_update_message_no_saved_data_raises(self):
         self.mock_redis_client.zscore.return_value = self.TEST_SCORE
@@ -428,26 +459,29 @@ class TestMicrosoftChatMessageUtil(IsolatedAsyncioTestCase):
     @patch.object(
         MicrosoftChatMessageUtil, "_handle_update_message", new_callable=MagicMock
     )
-    async def test_sync_near_real_time_message_to_redis_deleted_but_data_inconsistency(
+    async def test_sync_near_real_time_message_to_redis_deleted_unknown_message_is_skipped(
         self,
         mock_handle_update,
         mock_handle_deleted,
         mock_handle_created,
     ):
+        """Nothing stored means nothing to delete; raising would only make
+        Pub/Sub retry a message that can never succeed."""
         self.mock_microsoft_service.get_message_by_id.return_value = self.TEST_MESSAGE
         self.mock_microsoft_service.get_ldap_by_id.return_value = self.TEST_USER_LDAP
         self.mock_redis_client.zscore.return_value = None
 
-        with self.assertRaises(ValueError):
-            await self.microsoft_chat_message_util.sync_near_real_time_message_to_redis(
-                MicrosoftChatMessagesChangeType.DELETED.value, self.TEST_RESOURCE
-            )
+        await self.microsoft_chat_message_util.sync_near_real_time_message_to_redis(
+            MicrosoftChatMessagesChangeType.DELETED.value, self.TEST_RESOURCE
+        )
 
         self.mock_microsoft_service.get_message_by_id.assert_called_once()
         self.mock_microsoft_service.get_ldap_by_id.assert_called_once()
         mock_handle_created.assert_not_called()
         mock_handle_update.assert_not_called()
         mock_handle_deleted.assert_not_called()
+        self.mock_retry_utils.execute_pipeline.assert_not_called()
+        self.mock_logger.warning.assert_called_once()
 
     async def test_sync_near_real_time_message_to_redis_system_message_skipped(self):
         self.mock_microsoft_service.get_message_by_id.return_value = (
