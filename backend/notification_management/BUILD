@@ -129,6 +129,7 @@ py_library(
     srcs = ["chat_subscription_check_service.py"],
     deps = [
         "//backend/common:constants",
+        "//backend/common:monitor_events",
     ],
 )
 
