@@ -111,11 +111,21 @@ variable "ingress_class_name" {
 variable "jira_password" {
   type      = string
   sensitive = true
+
+  validation {
+    condition     = can(regex("^[ -~]*$", var.jira_password))
+    error_message = "jira_password must be printable ASCII. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "gerrit_http_pass" {
   type      = string
   sensitive = true
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.gerrit_http_pass))
+    error_message = "gerrit_http_pass must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "cf_aud_tag" {
@@ -140,6 +150,11 @@ variable "ld_sdk_key" {
   description = "LaunchDarkly server-side SDK key for this environment"
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.ld_sdk_key))
+    error_message = "ld_sdk_key must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "tailscale_proxy" {
@@ -157,29 +172,54 @@ variable "auth0_email_disable_signup" {
 variable "auth0_google_client_id" {
   description = "Client ID of the Google OAuth app backing the Auth0 Google social connection."
   type        = string
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.auth0_google_client_id))
+    error_message = "auth0_google_client_id must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "auth0_google_client_secret" {
   description = "Client secret of the Google OAuth app backing the Auth0 Google social connection."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.auth0_google_client_secret))
+    error_message = "auth0_google_client_secret must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "gmail_client_id" {
   description = "Client ID of the Google OAuth app used to send/read recruiting candidate emails (purrf-auth GCP project)."
   type        = string
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.gmail_client_id))
+    error_message = "gmail_client_id must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "gmail_client_secret" {
   description = "Client secret paired with gmail_client_id (purrf-auth GCP project)."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.gmail_client_secret))
+    error_message = "gmail_client_secret must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "gmail_refresh_token" {
   description = "OAuth refresh token authorizing send/read on the sender mailbox. Minted once via interactive consent; not Terraform-managed."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.gmail_refresh_token))
+    error_message = "gmail_refresh_token must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "gmail_sender_recruiting" {
@@ -273,6 +313,11 @@ variable "kit_api_key" {
   type        = string
   sensitive   = true
   default     = ""
+
+  validation {
+    condition     = can(regex("^[!-~]*$", var.kit_api_key))
+    error_message = "kit_api_key must be printable ASCII with no spaces. A pasted value can carry an invisible character such as U+2028 or trailing text; copy it again."
+  }
 }
 
 variable "alerting" {
