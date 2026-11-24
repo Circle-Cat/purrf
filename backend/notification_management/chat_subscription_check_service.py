@@ -6,7 +6,6 @@ from backend.common.constants import (
 )
 from backend.common.monitor_events import MonitorEvent
 
-MONITOR_EVENT = MonitorEvent.CHAT_SUBSCRIPTION_STATUS
 STATUS_OK = "ok"
 STATUS_MISSING = "missing"
 STATUS_EXPIRED = "expired"
@@ -157,7 +156,7 @@ class ChatSubscriptionCheckService:
             result["target"],
             result["status"],
             extra={
-                "monitor_event": MONITOR_EVENT,
+                "monitor_event": MonitorEvent.CHAT_SUBSCRIPTION_STATUS,
                 "provider": provider,
                 "target": result["target"],
                 "status": result["status"],

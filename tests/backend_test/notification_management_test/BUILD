@@ -24,6 +24,7 @@ py_test(
     name = "chat_subscription_check_service_test",
     srcs = ["chat_subscription_check_service_test.py"],
     deps = [
+        "//backend/common:monitor_events",
         "//backend/notification_management:chat_subscription_check_service",
     ],
 )
