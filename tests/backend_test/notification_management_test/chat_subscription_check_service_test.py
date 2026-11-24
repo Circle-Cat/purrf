@@ -3,8 +3,8 @@ from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.monitor_events import MonitorEvent
 from backend.notification_management.chat_subscription_check_service import (
-    MONITOR_EVENT,
     ChatSubscriptionCheckService,
 )
 
@@ -217,7 +217,7 @@ class TestChatSubscriptionCheckService(IsolatedAsyncioTestCase):
         self.assertEqual(
             self.logger.info.call_args.kwargs["extra"],
             {
-                "monitor_event": MONITOR_EVENT,
+                "monitor_event": MonitorEvent.CHAT_SUBSCRIPTION_STATUS,
                 "provider": "teams",
                 "target": TEAMS_CHAT,
                 "status": "ok",
@@ -228,7 +228,7 @@ class TestChatSubscriptionCheckService(IsolatedAsyncioTestCase):
         self.assertEqual(
             self.logger.warning.call_args.kwargs["extra"],
             {
-                "monitor_event": MONITOR_EVENT,
+                "monitor_event": MonitorEvent.CHAT_SUBSCRIPTION_STATUS,
                 "provider": "google_chat",
                 "target": SPACE,
                 "status": "missing",
