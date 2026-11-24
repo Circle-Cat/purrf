@@ -36,6 +36,7 @@ module "purrf_instance" {
   azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
   azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
   ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["production"]
+  teams_bot_app_id            = module.teams_bot.app_id
   tailscale_proxy             = "http://outbound.tailscale.svc.cluster.local:1055"
 
   auth0_google_client_id     = var.auth0_google_client_id
@@ -82,5 +83,21 @@ module "purrf_instance" {
   expected_chat_subscriptions = {
     teams_chats        = ["19:meeting_OWJmOWJiYWMtNWQyOS00YzExLTgxNTUtMzA1NWY4MDlhZjVl@thread.v2"]
     google_chat_spaces = ["spaces/AAAA84ojBJY"]
+  }
+}
+
+# The bot that sends Purrf notifications to staff as Teams direct messages.
+# Its Teams app ("Purrf Notifications") is uploaded by hand and reaches staff
+# through a Teams setup policy.
+module "teams_bot" {
+  source = "../../modules/teams_bot"
+
+  name         = "purrf-bot-prod"
+  display_name = "Purrf Notifications"
+  federated_identities = {
+    backend = {
+      issuer  = "https://container.googleapis.com/v1/projects/circlecat-prod-iad/locations/us-east4/clusters/prod"
+      subject = "system:serviceaccount:purrf-prod:purrf-prod"
+    }
   }
 }
