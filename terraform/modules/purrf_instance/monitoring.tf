@@ -577,3 +577,41 @@ resource "google_monitoring_alert_policy" "chat_subscription_unhealthy" {
     content   = "A chat this environment should receive has no healthy subscription, so its messages are not arriving. The labels give the provider, chat and status. Teams: subscribe the chat again with POST /api/microsoft/chat/subscribe. Google Chat: POST /api/google/chat/spaces/subscribe, or reactivate a suspended subscription. Never subscribe from a non-prod environment against a real chat."
   }
 }
+
+# ---------------------------------------------------------------------------
+# Gmail sync (cluster project)
+# ---------------------------------------------------------------------------
+
+# Gmail sync trouble is reported from here rather than by Purrf itself: when
+# the trouble is Gmail, a Purrf notification email about it cannot go out.
+resource "google_monitoring_alert_policy" "gmail_sync_alert" {
+  count                 = local.alerting_enabled ? 1 : 0
+  project               = var.k8s_project_id
+  display_name          = "${local.name_prefix}: Gmail sync needs attention"
+  combiner              = "OR"
+  notification_channels = local.alert_k8s_channels
+
+  conditions {
+    display_name = "Backend logged a Gmail sync alert"
+    condition_matched_log {
+      # MonitorEvent.GMAIL_SYNC_ALERT in backend/common/monitor_events.py.
+      filter = "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"${local.name_prefix}\" AND jsonPayload.monitor_event=\"gmail_sync.alert\""
+      label_extractors = {
+        kind    = "EXTRACT(jsonPayload.kind)"
+        mailbox = "EXTRACT(jsonPayload.mailbox)"
+      }
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "86400s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "The Gmail sync for the mailbox in the labels hit a problem a person has to look at. The backend raises each kind at most once every six hours. Kinds: watch_renewal_failed (without a renewed watch, new mail stops arriving within seven days), sync_failed, history_expired (a full resync has started). The log line, `[GmailSync] alert ...` in namespace ${local.name_prefix}, gives the cause. For a failed token refresh it includes Google's reason: invalid_client means check GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET; invalid_grant means re-authorize the mailbox and replace GMAIL_REFRESH_TOKEN."
+  }
+}
