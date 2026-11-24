@@ -111,6 +111,42 @@ def _with_explanation(text, error):
     return f"{text}: {explanation}" if explanation else text
 
 
+# What to fix for each OAuth error the token endpoint can return. The codes
+# that matter here need different fixes: the secret in the environment, or a
+# new consent from the mailbox owner.
+_REFRESH_ERROR_FIXES = {
+    "invalid_client": "check GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET",
+    "invalid_grant": "the refresh token was revoked or expired; "
+    "re-authorize the sender account and replace GMAIL_REFRESH_TOKEN",
+}
+_REFRESH_ERROR_FALLBACK_FIX = (
+    "check GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN"
+)
+
+
+def _describe_refresh_error(error):
+    """Google's own reason for a failed token refresh, plus what to fix.
+
+    google-auth raises ``RefreshError("<error>: <error_description>",
+    response_data)`` for an error response from the token endpoint.
+
+    Args:
+        error (RefreshError): The error google-auth raised.
+
+    Returns:
+        str: Such as ``invalid_client: Unauthorized (check GMAIL_CLIENT_ID
+        and GMAIL_CLIENT_SECRET)``.
+    """
+    detail = str(error.args[0]) if error.args else str(error)
+    response = error.args[1] if len(error.args) > 1 else None
+    if isinstance(response, dict) and response.get("error"):
+        code = response["error"]
+    else:
+        code = detail.split(":", 1)[0].strip()
+    fix = _REFRESH_ERROR_FIXES.get(code, _REFRESH_ERROR_FALLBACK_FIX)
+    return f"{detail} ({fix})"
+
+
 class GmailClient:
     """Domain-agnostic Gmail send/read transport (see module docstring)."""
 
@@ -641,18 +677,18 @@ class GmailClient:
             return self._retry_utils.get_retry_on_transient(request.execute)
         except RefreshError as error:
             # google-auth could not exchange the refresh token for an access
-            # token — almost always because the token was revoked or expired
-            # (e.g. the sender account's password changed, or the OAuth app
-            # slipped out of Internal/published status). Re-authorize the
-            # account per the runbook (RFC appendix A) and update the secret.
+            # token. Google's reason tells the causes apart: invalid_grant is a
+            # revoked or expired token (re-authorize the account per the
+            # runbook, RFC appendix A); invalid_client is a wrong client id or
+            # secret in the environment, with the token still good.
+            reason = _describe_refresh_error(error)
             self._logger.error(
-                "[GmailClient] %s failed: refresh token rejected — "
-                "re-authorization of the sender account is required.",
+                "[GmailClient] %s failed: token refresh rejected: %s",
                 operation,
+                reason,
             )
             raise RuntimeError(
-                f"Gmail authentication failed during {operation}: "
-                "refresh token rejected (re-authorization required)"
+                f"Gmail authentication failed during {operation}: {reason}"
             ) from error
         except HttpError as error:
             self._raise_http_error(error, operation, f"{operation} failed")
