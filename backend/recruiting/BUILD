@@ -17,7 +17,6 @@ py_library(
         "//backend/common:leave_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:name_utils",
-        "//backend/common:ops_enums",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/common:user_enums",

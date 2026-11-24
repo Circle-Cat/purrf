@@ -356,7 +356,6 @@ py_test(
         "//backend/common:leave_enums",
         "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",
-        "//backend/common:ops_enums",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/common:user_enums",
