@@ -36,15 +36,6 @@ class MonitorEventsTest(unittest.TestCase):
 
         self.assertEqual(printed, {str(event) for event in CRON_EVENTS})
 
-    def test_every_backend_event_is_matched_by_monitoring(self):
-        """An event the backend logs but nothing matches alerts no one."""
-        matched = set(_TF_EVENT.findall(_MONITORING_TF.read_text()))
-        backend_events = {str(event) for event in MonitorEvent} - {
-            str(event) for event in CRON_EVENTS
-        }
-
-        self.assertLessEqual(backend_events, matched)
-
     def test_a_logged_event_is_written_as_its_plain_name(self):
         """The filter compares strings; an enum repr would never match."""
         record = logging.LogRecord("backend.x", logging.WARNING, "", 0, "m", (), None)

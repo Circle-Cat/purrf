@@ -13,6 +13,7 @@ class MonitorEvent(StrEnum):
     """Every ``monitor_event`` value in use."""
 
     CHAT_SUBSCRIPTION_STATUS = "subscription.status"
+    GMAIL_SYNC_ALERT = "gmail_sync.alert"
     # Printed by the cron job script in helm/purrf/templates/cronjobs.yaml,
     # not by the backend.
     CRON_SUCCEEDED = "cron.succeeded"
