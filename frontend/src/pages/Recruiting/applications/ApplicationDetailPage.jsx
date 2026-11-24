@@ -2362,6 +2362,21 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Reject</DialogTitle>
           </DialogHeader>
+          {showWriteEvaluation ? (
+            <WriteEvaluationCallout
+              lines={[
+                "No confirmed evaluation for this session.",
+                "You're the interviewer — write it before deciding.",
+              ]}
+              onClick={goToEvaluation}
+            />
+          ) : (
+            needsEvalReminder && (
+              <p className="text-sm text-slate-500">
+                No confirmed evaluation for this session.
+              </p>
+            )
+          )}
           <Select value={rejectReason} onValueChange={setRejectReason}>
             <SelectTrigger aria-label="Rejection reason" className="w-full">
               <SelectValue placeholder="Select a reason…" />
@@ -2396,6 +2411,7 @@ const ApplicationDetailPage = () => {
               Cancel
             </Button>
             <Button
+              variant={showWriteEvaluation ? "outline" : "default"}
               onClick={handleConfirmReject}
               disabled={!rejectReason || rejecting}
             >
