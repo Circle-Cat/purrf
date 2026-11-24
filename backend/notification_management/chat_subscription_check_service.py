@@ -4,8 +4,9 @@ from backend.common.constants import (
     MICROSOFT_TEAMS_CHAT_MESSAGES_SUBSCRIPTION_RESOURCE,
     SINGLE_GOOGLE_CHAT_EVENT_TYPES,
 )
+from backend.common.monitor_events import MonitorEvent
 
-MONITOR_EVENT = "subscription.status"
+MONITOR_EVENT = MonitorEvent.CHAT_SUBSCRIPTION_STATUS
 STATUS_OK = "ok"
 STATUS_MISSING = "missing"
 STATUS_EXPIRED = "expired"

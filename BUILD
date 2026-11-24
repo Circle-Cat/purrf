@@ -22,6 +22,16 @@ exports_files(
     visibility = ["//tools/lint:lint_access_file_group"],  #lint file group
 )
 
+# Files that log or match monitor_event names, read by monitor_events_test.
+filegroup(
+    name = "monitor_event_consumers",
+    srcs = [
+        "helm/purrf/templates/cronjobs.yaml",
+        "terraform/modules/purrf_instance/monitoring.tf",
+    ],
+    visibility = ["//tests/backend_test/common_test:__pkg__"],
+)
+
 filegroup(
     name = "alembic_files",
     srcs = glob(

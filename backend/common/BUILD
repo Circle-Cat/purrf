@@ -235,6 +235,11 @@ py_library(
 )
 
 py_library(
+    name = "monitor_events",
+    srcs = ["monitor_events.py"],
+)
+
+py_library(
     name = "communication_enums",
     srcs = ["communication_enums.py"],
 )
