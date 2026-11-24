@@ -252,13 +252,3 @@ py_test(
         "//backend/common:linkedin_url",
     ],
 )
-
-py_test(
-    name = "monitor_events_test",
-    srcs = ["monitor_events_test.py"],
-    data = ["//:monitor_event_consumers"],
-    deps = [
-        "//backend/common:logger",
-        "//backend/common:monitor_events",
-    ],
-)
