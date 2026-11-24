@@ -62,9 +62,13 @@ resource "google_pubsub_subscription" "notifications_push" {
     }
   }
 
+  # The Pub/Sub minimum: about 2.5 minutes of retries with the backoff below,
+  # enough for a brief Gmail error (each attempt also retries transient Gmail
+  # errors in-process). Longer outages are recovered by the backend's straggler
+  # sweep after the next successful send, not by more attempts here.
   dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.notifications_dlq.id
-    max_delivery_attempts = 10
+    max_delivery_attempts = 5
   }
 
   retry_policy {
