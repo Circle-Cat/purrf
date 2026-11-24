@@ -1,7 +1,7 @@
 import logging
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
 from backend.ops.ops_alert_service import OpsAlertService
 
@@ -18,14 +18,11 @@ def _state(kind=None, age=None):
 class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.service = OpsAlertService(logging.getLogger("test"))
-        patcher = patch(
-            "backend.ops.ops_alert_service.record_event", new_callable=AsyncMock
-        )
-        self.record_event = patcher.start()
-        self.addCleanup(patcher.stop)
         self.session = Mock()
 
-    async def test_first_alert_records_an_event(self):
+    async def test_first_alert_is_raised_without_touching_the_database(self):
+        """The alert reaches people through Cloud Monitoring, so nothing is
+        recorded for Purrf to deliver."""
         state = _state()
 
         raised = await self.service.raise_alert(
@@ -33,18 +30,7 @@ class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(raised)
-        self.record_event.assert_awaited_once_with(
-            self.session,
-            subject_type="gmail_sync_state",
-            subject_id=3,
-            actor_id=None,
-            event_type="ops.gmail_sync_alert",
-            details={
-                "kind": "history_expired",
-                "detail": "x",
-                "mailbox": "purrf@example.com",
-            },
-        )
+        self.assertEqual(self.session.method_calls, [])
         self.assertEqual(state.last_alert_kind, "history_expired")
         self.assertIsNotNone(state.last_alert_at)
 
@@ -54,7 +40,6 @@ class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
         raised = await self.service.raise_alert(self.session, state, "sync_failed", "x")
 
         self.assertFalse(raised)
-        self.record_event.assert_not_awaited()
 
     async def test_same_kind_after_six_hours_alerts_again(self):
         state = _state("sync_failed", timedelta(hours=7))
@@ -62,7 +47,6 @@ class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
         raised = await self.service.raise_alert(self.session, state, "sync_failed", "x")
 
         self.assertTrue(raised)
-        self.record_event.assert_awaited_once()
 
     async def test_a_different_kind_is_never_suppressed(self):
         state = _state("sync_failed", timedelta(minutes=1))
@@ -72,7 +56,6 @@ class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(raised)
-        self.record_event.assert_awaited_once()
 
     async def test_an_alert_is_logged_for_cloud_monitoring(self):
         """Cloud Monitoring alerts on this structured line, so it must not
@@ -105,14 +88,6 @@ class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         logger.warning.assert_not_called()
-
-    async def test_detail_is_truncated(self):
-        await self.service.raise_alert(
-            self.session, _state(), "sync_failed", "a" * 2000
-        )
-
-        details = self.record_event.await_args.kwargs["details"]
-        self.assertEqual(len(details["detail"]), 500)
 
 
 if __name__ == "__main__":

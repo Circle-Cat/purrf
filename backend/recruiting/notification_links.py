@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.inbox_enums import InboxEvent
 from backend.common.leave_enums import LeaveEvent
 from backend.common.mentorship_enums import MentorshipEvent
-from backend.common.ops_enums import OpsEvent
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import RecruitingEvent
 from backend.common.user_enums import UserEvent
@@ -67,7 +66,7 @@ MENTORSHIP_PARTICIPANT_SOURCE = "mentorship_participant"
 RECRUITING_APPLICATION_SOURCE = "recruiting_application"
 
 # Event types that reach the bell but have no page to act on.
-LINKLESS = frozenset({OpsEvent.GMAIL_SYNC_ALERT})
+LINKLESS = frozenset()
 
 # Application events that can reach a current assignee. An assignee who
 # neither owns the posting nor reads every application sees the application
