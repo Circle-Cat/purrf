@@ -74,6 +74,38 @@ class OpsAlertServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(raised)
         self.record_event.assert_awaited_once()
 
+    async def test_an_alert_is_logged_for_cloud_monitoring(self):
+        """Cloud Monitoring alerts on this structured line, so it must not
+        depend on Purrf being able to deliver anything."""
+        logger = Mock()
+        service = OpsAlertService(logger)
+
+        await service.raise_alert(
+            self.session, _state(), "watch_renewal_failed", "token refresh rejected"
+        )
+
+        logger.warning.assert_called_once()
+        args, kwargs = logger.warning.call_args
+        self.assertIn("token refresh rejected", args[0] % args[1:])
+        self.assertEqual(
+            kwargs["extra"],
+            {
+                "monitor_event": "gmail_sync.alert",
+                "kind": "watch_renewal_failed",
+                "mailbox": "purrf@example.com",
+            },
+        )
+
+    async def test_a_suppressed_alert_is_not_logged(self):
+        logger = Mock()
+        service = OpsAlertService(logger)
+
+        await service.raise_alert(
+            self.session, _state("sync_failed", timedelta(hours=1)), "sync_failed", "x"
+        )
+
+        logger.warning.assert_not_called()
+
     async def test_detail_is_truncated(self):
         await self.service.raise_alert(
             self.session, _state(), "sync_failed", "a" * 2000

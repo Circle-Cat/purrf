@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from backend.common.monitor_events import MonitorEvent
 from backend.common.ops_enums import OPS_ALERT_SUBJECT_TYPE, OpsEvent
 from backend.notification_management.event_recorder import record_event
 
@@ -51,6 +52,16 @@ class OpsAlertService:
         )
         state.last_alert_kind, state.last_alert_at = kind, now
         self._logger.warning(
-            "[GmailSync] alert %s for %s: %s", kind, state.email_address, detail
+            "[GmailSync] alert %s for %s: %s",
+            kind,
+            state.email_address,
+            detail,
+            extra={
+                # Cloud Monitoring alerts on this, so the alert reaches people
+                # even when Purrf cannot send mail.
+                "monitor_event": MonitorEvent.GMAIL_SYNC_ALERT,
+                "kind": kind,
+                "mailbox": state.email_address,
+            },
         )
         return True
