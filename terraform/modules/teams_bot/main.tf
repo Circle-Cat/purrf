@@ -3,7 +3,7 @@ data "azuread_client_config" "current" {}
 # The bot's identity. Single tenant: it can only message people in our own
 # Microsoft 365 tenant.
 resource "azuread_application" "bot" {
-  display_name     = var.name
+  display_name     = coalesce(var.display_name, var.name)
   sign_in_audience = "AzureADMyOrg"
   owners           = [data.azuread_client_config.current.object_id]
 }
@@ -32,6 +32,7 @@ resource "azurerm_resource_group" "bot" {
 # endpoint.
 resource "azurerm_bot_service_azure_bot" "bot" {
   name                    = var.name
+  display_name            = coalesce(var.display_name, var.name)
   resource_group_name     = azurerm_resource_group.bot.name
   location                = "global"
   sku                     = "F0"

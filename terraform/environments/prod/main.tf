@@ -92,7 +92,8 @@ module "purrf_instance" {
 module "teams_bot" {
   source = "../../modules/teams_bot"
 
-  name = "purrf-bot-prod"
+  name         = "purrf-bot-prod"
+  display_name = "Purrf Notifications"
   federated_identities = {
     backend = {
       issuer  = "https://container.googleapis.com/v1/projects/circlecat-prod-iad/locations/us-east4/clusters/prod"
