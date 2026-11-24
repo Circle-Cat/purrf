@@ -52,3 +52,8 @@ provider "postgresql" {
   sslmode   = "require"
   superuser = false
 }
+
+# Subscription comes from ARM_SUBSCRIPTION_ID; sign in with `az login`.
+provider "azurerm" {
+  features {}
+}
