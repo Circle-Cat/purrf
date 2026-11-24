@@ -6,9 +6,13 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  * The application detail page's way back out, aimed at wherever the viewer
  * came from.
  *
- * Three outcomes, in order:
- * - In evaluate mode the viewer arrived from My Interview Evaluations, and may not own
- *   the posting at all, so that's where they go back to.
+ * Four outcomes, in order:
+ * - In evaluate mode, a viewer with `canView` (an owner who is also the
+ *   interviewer, typically sent here from the advance or reject dialog to
+ *   write their evaluation first) goes back to the application's own page to
+ *   finish deciding.
+ * - Any other evaluate-mode viewer arrived from My Interview Evaluations and
+ *   may not own the posting at all, so that's where they go back to.
  * - A viewer with `canView` (an owner, or a `read.all` holder) goes back to
  *   the board, carrying the job so their selection survives and the
  *   application id as `focus` so the board scrolls to and rings that card.
@@ -31,6 +35,18 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 const BackToBoardLink = ({ jobId, applicationId, evaluatorMode, canView }) => {
   const className =
     "inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900";
+
+  if (evaluatorMode && canView) {
+    return (
+      <Link
+        to={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(applicationId)}
+        className={className}
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Back to application
+      </Link>
+    );
+  }
 
   if (evaluatorMode) {
     return (
