@@ -274,7 +274,8 @@ class MicrosoftChatMessageUtil:
         Handles an updated chat message. This function is responsible for retrieving
         old message data from Redis, comparing it with new message data, and updating
         the record in Redis. It also manages updating the message's status in Redis
-        sorted sets.
+        sorted sets. A message in neither index is stored as created, unless it
+        is already deleted in Teams.
 
         Args:
             message: The microsoft.graph.chatMessage object containing the latest information.
@@ -282,7 +283,8 @@ class MicrosoftChatMessageUtil:
             pipeline: A Redis pipeline object for batching Redis commands.
 
         Raises:
-            ValueError: If input parameters are invalid or if data inconsistencies are found.
+            ValueError: If input parameters are invalid, or the message is indexed
+                but its details are missing.
         """
         if not message:
             self.logger.error(
@@ -314,12 +316,23 @@ class MicrosoftChatMessageUtil:
 
             score = self.redis_client.zscore(deleted_index_redis_key, message_id)
             if not score:
-                self.logger.error(
-                    "[MicrosoftChatMessageUtil] Message %s not found in either CREATED or DELETED index for sender %s.",
+                # Its "created" event never got here (it can be dead-lettered),
+                # so no retry could find it. The message was just fetched from
+                # Graph, so store it as created rather than lose it.
+                if message.deleted_date_time:
+                    self.logger.warning(
+                        "[MicrosoftChatMessageUtil] Update for unknown message %s from %s, already deleted in Teams; skipping.",
+                        message_id,
+                        sender_ldap,
+                    )
+                    return
+                self.logger.warning(
+                    "[MicrosoftChatMessageUtil] Update for unknown message %s from %s; storing it as created.",
                     message_id,
                     sender_ldap,
                 )
-                raise ValueError("Redis data inconsistent: Message not found in index.")
+                self._handle_created_messages(message, sender_ldap, pipeline)
+                return
             self.logger.info(
                 "[MicrosoftChatMessageUtil] Undoing deletion for message %s. Moving from DELETED to CREATED index.",
                 message_id,
@@ -461,11 +474,13 @@ class MicrosoftChatMessageUtil:
             if score:
                 self._handle_deleted_message(message_id, sender_ldap, score, pipeline)
             else:
+                # Never stored (its "created" event was lost), so there is
+                # nothing to delete, and a retry could not change that.
                 self.logger.warning(
-                    "[MicrosoftChatMessageUtil] Message ID %s not found in created index, cannot properly mark as deleted.",
+                    "[MicrosoftChatMessageUtil] Message ID %s not found in created index; nothing to mark as deleted, skipping.",
                     message_id,
                 )
-                raise ValueError("Redis datat inconsistency.")
+                return
 
         elif MicrosoftChatMessagesChangeType.CREATED.value == change_type:
             self._handle_created_messages(message, sender_ldap, pipeline)
