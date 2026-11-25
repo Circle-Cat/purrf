@@ -295,6 +295,54 @@ class LeaveRenderTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(event_type, recipient_registry._RESOLVERS)
                 self.assertIn(event_type, render_registry._RENDERERS)
 
+    # -- sick leave approved on submission ---------------------------------
+
+    async def _auto_approved(self, **details):
+        """No actor: nobody decided it. Sick leave carries no approval id."""
+        event = _event(
+            LeaveEvent.SICK_LEAVE_AUTO_APPROVED,
+            None,
+            leaveType="sick",
+            endDate="2026-08-13",
+            hours="8.00",
+            **details,
+        )
+        del event.details["requestId"]
+        return await self._render(event)
+
+    async def test_auto_approved_sick_leave_tells_the_manager_it_is_sick_leave(self):
+        subject, body = await self._auto_approved()
+
+        self.assertEqual(subject, "Sick leave was approved automatically")
+        self.assertIn("Ann Employee took sick leave on 2026-08-13 (8.00 hours).", body)
+        self.assertIn("approved automatically", body)
+        self.assertIn("nothing for you to decide", body)
+        self.assertIn("<p>Their reason: Family wedding</p>", body)
+        self.assertIn("Decided", body)
+
+    async def test_auto_approved_sick_leave_names_nobody_as_deciding(self):
+        """Nobody decided it, so neither manager nor employee is the actor."""
+        _, body = await self._auto_approved()
+
+        self.assertNotIn("Bob", body)
+        self.assertNotIn("Your manager", body)
+
+    async def test_auto_approved_sick_leave_without_a_reason_has_no_reason_line(self):
+        self.leave = _leave(None)
+
+        _, body = await self._auto_approved()
+
+        self.assertNotIn("Their reason", body)
+
+    async def test_auto_approved_sick_leave_escapes_the_name_and_reason(self):
+        self.leave = _leave("<i>flu</i>")
+
+        subject, body = await self._auto_approved(employeeName="<b>Ann</b>")
+
+        self.assertIn("&lt;b&gt;Ann&lt;/b&gt;", body)
+        self.assertIn("&lt;i&gt;flu&lt;/i&gt;", body)
+        self.assertNotIn("Ann", subject)
+
 
 class LeaveEmailCopyTest(unittest.TestCase):
     """The copy on its own: names arrive escaped, person-written text does

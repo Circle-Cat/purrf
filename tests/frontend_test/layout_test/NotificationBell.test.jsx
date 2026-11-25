@@ -1036,6 +1036,26 @@ describe("NotificationBell", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
+  it("tells a manager sick leave was approved automatically, naming the employee", async () => {
+    // Nobody decided it, so the row carries no actor; the name is the
+    // employee's, from details.
+    await openWith({
+      ...leaveRow("leave.sick_leave_auto_approved", {
+        leaveType: "sick",
+        startDate: "2026-11-26",
+        endDate: "2026-11-26",
+        employeeName: "Ann Lee",
+      }),
+      actorName: null,
+    });
+
+    expect(
+      screen.getByText(
+        "Ann Lee took sick leave, Nov 26, 2026, approved automatically",
+      ),
+    ).toBeInTheDocument();
+  });
+
   // -- the matching-run line ---------------------------------------------
   //
   // Written under subject_type "mentorship_round", so everything it says comes
