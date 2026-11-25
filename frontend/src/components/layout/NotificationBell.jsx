@@ -153,6 +153,10 @@ const wordOf = (n) => {
         default:
           return "";
       }
+    // Told to the manager. Nobody decided it, so there is no actor: the
+    // employee's name comes from details.
+    case "leave.sick_leave_auto_approved":
+      return `${n.details?.employeeName || "Someone"} took ${leaveAsk(n.details)}, approved automatically`;
     // Told to whoever can handle that service's Inbox threads, for new mail
     // or for a thread moved in from another service.
     case "inbox.needs_reply": {

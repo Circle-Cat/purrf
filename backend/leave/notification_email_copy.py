@@ -128,3 +128,35 @@ def request_withdrawn(
         f"{_when(start_date, end_date)}. There is nothing left for you to "
         "do.</p>" + _FOOTER,
     )
+
+
+def sick_leave_auto_approved(
+    employee: str,
+    start_date: str | None,
+    end_date: str | None,
+    hours: str | None,
+    reason: str | None,
+) -> tuple[str, str]:
+    """The email a manager gets when sick leave filed with them is approved on
+    submission, which it is up to three days.
+
+    Args:
+        employee (str): Who is off sick, already HTML-escaped.
+        start_date (str | None): First day, ISO.
+        end_date (str | None): Last day, ISO.
+        hours (str | None): The hours it covers.
+        reason (str | None): The employee's reason.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    covers = f" ({html.escape(hours)} hours)" if hours else ""
+    return (
+        "Sick leave was approved automatically",
+        f"<p>{employee} took sick leave {_when(start_date, end_date)}{covers}. "
+        "Sick leave of three days or less is approved automatically, so there "
+        "is nothing for you to decide.</p>"
+        + _quoted("Their reason", reason)
+        + "<p>It is under Decided in Approvals on the Time off card in "
+        "Purrf.</p>" + _FOOTER,
+    )

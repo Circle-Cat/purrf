@@ -32,10 +32,13 @@ from backend.common.constants import ldap_from_addresses
 from backend.common.exceptions import ConflictError
 from backend.common.leave_enums import (
     LEAVE_APPROVAL,
+    LEAVE_REQUEST_SUBJECT,
     LeaveEntryType,
+    LeaveEvent,
     LeaveRequestStatus,
     LeaveRequestType,
 )
+from backend.common.name_utils import user_display_name
 from backend.dto.leave_request_dto import LeaveRequestDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
@@ -46,6 +49,7 @@ from backend.leave.leave_workdays import (
     required_notice_workdays,
     workdays_before,
 )
+from backend.notification_management.event_recorder import record_event
 
 LEAVE_EMPLOYMENT_KEY = "leave:employment"
 
@@ -304,7 +308,7 @@ class LeaveRequestService:
         Returns:
             The stored request. Sick leave of three days or less comes back
             already approved, with no approval behind it: nobody decided it,
-            so ``decided_by`` is empty.
+            so ``decided_by`` is empty. Its manager is told all the same.
 
         Raises:
             ValueError: Any of the refusals. Each message says what to do
@@ -373,13 +377,15 @@ class LeaveRequestService:
         if auto_approved:
             # Approved on submission, and the approver is still recorded: what
             # is automatic is the decision, not who it belonged to. It never
-            # goes to the approver, so there is no approval behind it, and
-            # nobody is named as having decided it.
+            # goes to the approver for a decision, so there is no approval
+            # behind it and nobody is named as having decided it; the approver
+            # is only told.
             request.status = LeaveRequestStatus.APPROVED
 
         stored = await self.leave_request_repository.add(session, request)
         approval = None
         if auto_approved:
+            await self._tell_manager_of_auto_approval(session, stored)
             await session.commit()
         else:
             # Commits the request with its approval.
@@ -403,6 +409,42 @@ class LeaveRequestService:
             stored.status.value,
         )
         return self._read_model(stored, approval)
+
+    async def _tell_manager_of_auto_approval(
+        self, session: AsyncSession, request: LeaveRequestEntity
+    ) -> None:
+        """Records the auto-approved sick leave for the manager it was filed
+        with. Nobody decided it, so the event names no actor.
+
+        Args:
+            session: The submission's session; the caller commits.
+            request: The stored request, already approved.
+        """
+        employee = await self.users_repository.get_user_by_user_id(
+            session, request.user_id
+        )
+        await record_event(
+            session,
+            subject_type=LEAVE_REQUEST_SUBJECT,
+            subject_id=request.leave_request_id,
+            actor_id=None,
+            event_type=LeaveEvent.SICK_LEAVE_AUTO_APPROVED,
+            details={
+                "employeeName": (
+                    user_display_name(
+                        first_name=employee.first_name,
+                        last_name=employee.last_name,
+                        preferred_name=employee.preferred_name,
+                    )
+                    if employee is not None
+                    else ""
+                ),
+                "leaveType": request.type.value,
+                "startDate": request.start_date.isoformat(),
+                "endDate": request.end_date.isoformat(),
+                "hours": f"{request.hours:.2f}",
+            },
+        )
 
     async def decide(
         self,
