@@ -26,6 +26,16 @@ const EMPTY = {
 };
 
 /**
+ * Every time a part day may start or end at: the server takes leave in
+ * half-hour steps and refuses anything else, so nothing else is offered.
+ * "HH:MM", the shape the request sends.
+ */
+const HALF_HOURS = Array.from({ length: 48 }, (_, index) => {
+  const hour = String(Math.floor(index / 2)).padStart(2, "0");
+  return `${hour}:${index % 2 ? "30" : "00"}`;
+});
+
+/**
  * Whether this request can carry clock times.
  *
  * Only a single day of leave can. A range is always whole days and an exchange
@@ -176,21 +186,35 @@ const FileLeaveDialog = ({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="leave-start-time">From (optional)</Label>
-                <Input
+                <select
                   id="leave-start-time"
-                  type="time"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                   value={form.startTime}
                   onChange={set("startTime")}
-                />
+                >
+                  <option value="">—</option>
+                  {HALF_HOURS.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="leave-end-time">To (optional)</Label>
-                <Input
+                <select
                   id="leave-end-time"
-                  type="time"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                   value={form.endTime}
                   onChange={set("endTime")}
-                />
+                >
+                  <option value="">—</option>
+                  {HALF_HOURS.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           )}

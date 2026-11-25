@@ -55,6 +55,19 @@ describe("LeaveCalendarAdminPage", () => {
     expect(screen.getByText(/2026 — 1 holidays, 3 days/)).toBeInTheDocument();
   });
 
+  it("says which days of the week are working days", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(
+        "Dates in Asia/Shanghai · Working days are Tuesday to Saturday. Sunday and Monday are days off.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("says what an empty year would do, rather than looking blank", async () => {
     api.getLeaveHolidays.mockResolvedValue(
       envelope({ year: 2026, totalDays: 0, segments: [] }),
