@@ -761,14 +761,20 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
           ]
         : [...notifySelect, ...COLUMNS, ...notificationsColumns];
   const showNeedsExemptionEmpty =
-    listNeedsExemption &&
     needsExemption &&
-    hasSearched &&
-    canSearch &&
     !filtersEdited &&
     !loading &&
     searchSucceeded &&
     total === 0;
+  const hasAdditionalParticipantFilters = Boolean(
+    userId ||
+    q.trim() ||
+    participantRole ||
+    internal ||
+    accountStatus ||
+    onboardingStatus ||
+    approvalStatus,
+  );
 
   return (
     <Card className="mt-6 border-gray-200">
@@ -1001,8 +1007,9 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
           <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
             <p>
               Listed only when history is the one thing keeping them out of
-              matching: they are taking part this round (not withdrawn), have
-              finished onboarding training and still have an open pairing slot.
+              matching: they have an active account, are taking part this round,
+              have finished onboarding training and still have an open pairing
+              slot.
             </p>
             <p className="mt-2">
               History means: left a pair early or fell short of meetings in
@@ -1047,12 +1054,24 @@ const ParticipantSearchCard = ({ onApprovalsChanged }) => {
 
             {showNeedsExemptionEmpty && (
               <div className="mt-3 text-sm text-muted-foreground">
-                <p>No one in this round needs an exemption.</p>
-                <p className="mt-1">
-                  Someone with a no show or red flag who is not here has
-                  withdrawn, is already paired this round, or has not finished
-                  training.
-                </p>
+                {hasAdditionalParticipantFilters ? (
+                  <>
+                    <p>No one matches these filters.</p>
+                    <p className="mt-1">
+                      Adjust or clear the additional filters to see who needs an
+                      exemption in this round.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>No one in this round needs an exemption.</p>
+                    <p className="mt-1">
+                      Someone with a no show or red flag who is not here is
+                      blocked or deactivated, is not taking part, has no open
+                      slot, or has not finished training.
+                    </p>
+                  </>
+                )}
               </div>
             )}
 

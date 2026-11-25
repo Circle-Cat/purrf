@@ -2775,7 +2775,7 @@ describe("ParticipantSearchCard", () => {
     });
     const HISTORY_EXPLANATION =
       "Listed only when history is the one thing keeping them out of matching: " +
-      "they are taking part this round (not withdrawn), have finished " +
+      "they have an active account, are taking part this round, have finished " +
       "onboarding training and still have an open pairing slot.";
 
     const HISTORY_REASONS =
@@ -2785,8 +2785,15 @@ describe("ParticipantSearchCard", () => {
     const EMPTY_TITLE = "No one in this round needs an exemption.";
 
     const EMPTY_EXPLANATION =
-      "Someone with a no show or red flag who is not here has withdrawn, " +
-      "is already paired this round, or has not finished training.";
+      "Someone with a no show or red flag who is not here is blocked " +
+      "or deactivated, is not taking part, has no open slot, or has not " +
+      "finished training.";
+
+    const FILTERED_EMPTY_TITLE = "No one matches these filters.";
+
+    const FILTERED_EMPTY_HINT =
+      "Adjust or clear the additional filters to see who needs an " +
+      "exemption in this round.";
 
     it("explains Needs exemption when the search returns a person", async () => {
       searchParticipants.mockResolvedValue(resultsOf([shortOfMeetings()]));
@@ -2799,6 +2806,34 @@ describe("ParticipantSearchCard", () => {
       expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
       expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
     });
+
+    it.each([
+      ["User ID", "id=21"],
+      ["Name / email", "q=Ann"],
+      ["Account", "account=active"],
+      ["Internal or external", "internal=external"],
+      ["Role", "role=mentee"],
+      ["Training", "training=completed"],
+      ["Approval", "approval=signed_up"],
+    ])(
+      "shows the filtered empty message and guidance when %s is set",
+      async (_name, filter) => {
+        searchParticipants.mockResolvedValue(resultsOf([]));
+
+        await renderCard({ url: `${NEEDS_URL}&${filter}` });
+
+        expect(
+          await screen.findByText(FILTERED_EMPTY_TITLE),
+        ).toBeInTheDocument();
+        expect(screen.getByText(FILTERED_EMPTY_HINT)).toBeInTheDocument();
+
+        expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+        expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+
+        expect(screen.getByText(HISTORY_EXPLANATION)).toBeInTheDocument();
+        expect(screen.getByText(HISTORY_REASONS)).toBeInTheDocument();
+      },
+    );
 
     it("keeps the explanation and shows the empty message when no one is returned", async () => {
       searchParticipants.mockResolvedValue(resultsOf([]));
@@ -2818,6 +2853,8 @@ describe("ParticipantSearchCard", () => {
         table.compareDocumentPosition(emptyMessage) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).not.toBe(0);
+      expect(screen.queryByText(FILTERED_EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(FILTERED_EMPTY_HINT)).not.toBeInTheDocument();
     });
 
     it.each([
@@ -2844,6 +2881,29 @@ describe("ParticipantSearchCard", () => {
       expect(screen.queryByText(HISTORY_REASONS)).not.toBeInTheDocument();
       expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
       expect(screen.queryByText(EMPTY_EXPLANATION)).not.toBeInTheDocument();
+    });
+
+    it("shows the round empty message after the additional filter is cleared and searched", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([]));
+
+      await renderCard({ url: `${NEEDS_URL}&q=Ann` });
+      await screen.findByText(FILTERED_EMPTY_TITLE);
+
+      expect(screen.getByText(FILTERED_EMPTY_HINT)).toBeInTheDocument();
+
+      await userEvent.clear(screen.getByLabelText("Name / email"));
+
+      // The displayed results still belong to the previous search.
+      expect(screen.queryByText(FILTERED_EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(FILTERED_EMPTY_HINT)).not.toBeInTheDocument();
+      expect(screen.queryByText(EMPTY_TITLE)).not.toBeInTheDocument();
+
+      await search();
+
+      expect(await screen.findByText(EMPTY_TITLE)).toBeInTheDocument();
+      expect(screen.getByText(EMPTY_EXPLANATION)).toBeInTheDocument();
+      expect(screen.queryByText(FILTERED_EMPTY_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText(FILTERED_EMPTY_HINT)).not.toBeInTheDocument();
     });
 
     it("shows the explanation before Search without reusing another list's empty result", async () => {
