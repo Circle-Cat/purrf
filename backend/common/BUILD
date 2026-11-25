@@ -230,8 +230,8 @@ py_library(
 )
 
 py_library(
-    name = "ops_enums",
-    srcs = ["ops_enums.py"],
+    name = "monitor_events",
+    srcs = ["monitor_events.py"],
 )
 
 py_library(

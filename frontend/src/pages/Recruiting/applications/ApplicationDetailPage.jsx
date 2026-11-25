@@ -6,9 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Check, X } from "lucide-react";
+import { ArrowRight, Check, X } from "lucide-react";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -443,6 +444,34 @@ const CancelUpcomingMeetingField = ({
     </div>
   );
 };
+
+/**
+ * Shown inside the advance and reject dialogs when the current session has
+ * no confirmed evaluation. When the viewer is that session's interviewer,
+ * writing the evaluation is the action the dialog steers toward, so its
+ * button is the dialog's only filled one and takes focus.
+ *
+ * @param {{onWriteEvaluation?: () => void}} props Pass it only when the
+ *   viewer is the session's interviewer.
+ */
+const NoEvaluationNotice = ({ onWriteEvaluation }) => (
+  <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+    <div>
+      <p className="font-medium">
+        This session has no confirmed evaluation yet.
+      </p>
+      {onWriteEvaluation && (
+        <p>You're the interviewer — write your evaluation before deciding.</p>
+      )}
+    </div>
+    {onWriteEvaluation && (
+      <Button className="w-full" autoFocus onClick={onWriteEvaluation}>
+        Write evaluation
+        <ArrowRight className="h-4 w-4" aria-hidden />
+      </Button>
+    )}
+  </div>
+);
 
 /**
  * Human-readable one-line description of a single activity entry, built
@@ -1027,6 +1056,7 @@ const OtherApplicationsSection = ({
 const ApplicationDetailPage = () => {
   const { applicationId } = useParams();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const evaluatorMode = searchParams.get("mode") === "evaluate";
   const { user, permissions = [] } = useAuth();
   const currentUserId = user?.userId;
@@ -1305,6 +1335,10 @@ const ApplicationDetailPage = () => {
     detail != null &&
     INTERVIEW_STAGES.has(detail.application.stage) &&
     !hasCurrentRoundEvaluation;
+  const showWriteEvaluation =
+    needsEvalReminder &&
+    currentUserId != null &&
+    detail.assigneeId === currentUserId;
 
   // The interview meeting card mounts for a behavioral/tech application, or
   // -- defensively -- whenever a meeting row is still attached even if the
@@ -1555,6 +1589,15 @@ const ApplicationDetailPage = () => {
     setRejectFormOpen(false);
     setRejectReason("");
     setRejectNote("");
+  };
+
+  /** Leave the decision dialogs for this application's evaluate view. */
+  const goToEvaluation = () => {
+    setEvalReminderFor(null);
+    handleCancelReject();
+    navigate(
+      `${ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(applicationId)}?mode=evaluate`,
+    );
   };
 
   const handleConfirmReject = () => {
@@ -2261,14 +2304,19 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>No evaluation recorded</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-700">
-            This session has no confirmed evaluation yet. Advance anyway?
-          </p>
+          <NoEvaluationNotice
+            onWriteEvaluation={showWriteEvaluation ? goToEvaluation : undefined}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEvalReminderFor(null)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmEvalReminder}>Advance anyway</Button>
+            <Button
+              variant={showWriteEvaluation ? "outline" : "default"}
+              onClick={handleConfirmEvalReminder}
+            >
+              Advance anyway
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2305,6 +2353,13 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Reject</DialogTitle>
           </DialogHeader>
+          {needsEvalReminder && (
+            <NoEvaluationNotice
+              onWriteEvaluation={
+                showWriteEvaluation ? goToEvaluation : undefined
+              }
+            />
+          )}
           <Select value={rejectReason} onValueChange={setRejectReason}>
             <SelectTrigger aria-label="Rejection reason" className="w-full">
               <SelectValue placeholder="Select a reason…" />
@@ -2339,6 +2394,7 @@ const ApplicationDetailPage = () => {
               Cancel
             </Button>
             <Button
+              variant={showWriteEvaluation ? "outline" : "default"}
               onClick={handleConfirmReject}
               disabled={!rejectReason || rejecting}
             >

@@ -4,8 +4,8 @@ from backend.common.constants import (
     MICROSOFT_TEAMS_CHAT_MESSAGES_SUBSCRIPTION_RESOURCE,
     SINGLE_GOOGLE_CHAT_EVENT_TYPES,
 )
+from backend.common.monitor_events import MonitorEvent
 
-MONITOR_EVENT = "subscription.status"
 STATUS_OK = "ok"
 STATUS_MISSING = "missing"
 STATUS_EXPIRED = "expired"
@@ -156,7 +156,7 @@ class ChatSubscriptionCheckService:
             result["target"],
             result["status"],
             extra={
-                "monitor_event": MONITOR_EVENT,
+                "monitor_event": MonitorEvent.CHAT_SUBSCRIPTION_STATUS,
                 "provider": provider,
                 "target": result["target"],
                 "status": result["status"],

@@ -153,9 +153,6 @@ const wordOf = (n) => {
         default:
           return "";
       }
-    // Told to ops.maintain holders; the kind comes from details.
-    case "ops.gmail_sync_alert":
-      return `Gmail sync needs attention: ${(n.details?.kind ?? "unknown").replaceAll("_", " ")}`;
     // Told to whoever can handle that service's Inbox threads, for new mail
     // or for a thread moved in from another service.
     case "inbox.needs_reply": {

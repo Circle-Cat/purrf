@@ -1135,23 +1135,6 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
-  it("tells an ops.maintain holder the Gmail sync needs attention", async () => {
-    await openWith({
-      id: 6,
-      eventType: "ops.gmail_sync_alert",
-      jobTitle: "",
-      applicantName: "",
-      subjectName: "",
-      actorName: null,
-      createdAt: "2026-09-30T00:00:00Z",
-      details: { kind: "watch_renewal_failed" },
-    });
-
-    expect(
-      screen.getByText("Gmail sync needs attention: watch renewal failed"),
-    ).toBeInTheDocument();
-  });
-
   it("tells the recipients a reply arrived, naming the application", async () => {
     // The actor is the candidate under their preferred name; the line reads
     // the application's applicant name, so the two differ here.

@@ -1456,6 +1456,104 @@ describe("ApplicationDetailPage — reject dialog", () => {
     ).not.toBeInTheDocument();
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
   });
+
+  describe("with no confirmed evaluation for the current session", () => {
+    const renderOwnerWithAssignee = (assigneeId) => {
+      authState.userId = OWNER_ID;
+      api.getApplicationDetail.mockResolvedValue({
+        data: makeDetail({ isOwner: true, assigneeId }),
+      });
+      return renderPage();
+    };
+
+    it("the interviewer-owner sees the callout and Write evaluation at the top", async () => {
+      const user = userEvent.setup();
+      renderOwnerWithAssignee(OWNER_ID);
+      await waitLoaded();
+
+      await user.click(screen.getByRole("button", { name: "Reject" }));
+
+      expect(
+        screen.getByText("This session has no confirmed evaluation yet."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "You're the interviewer — write your evaluation before deciding.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Write evaluation" }),
+      ).toBeInTheDocument();
+    });
+
+    it("Write evaluation rejects nothing and leaves the form empty for next time", async () => {
+      const user = userEvent.setup();
+      const { router } = renderOwnerWithAssignee(OWNER_ID);
+      await waitLoaded();
+
+      await user.click(screen.getByRole("button", { name: "Reject" }));
+      await user.click(
+        screen.getByRole("combobox", { name: /rejection reason/i }),
+      );
+      await user.click(await screen.findByText("Insufficient experience"));
+      await user.type(
+        screen.getByPlaceholderText("Note (optional)"),
+        "weak answers",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Write evaluation" }),
+      );
+
+      await waitFor(() =>
+        expect(router.state.location.search).toBe("?mode=evaluate"),
+      );
+      expect(api.changeApplicationStage).not.toHaveBeenCalled();
+
+      await act(() => router.navigate(-1));
+      await waitLoaded();
+      await user.click(screen.getByRole("button", { name: "Reject" }));
+
+      expect(screen.getByText("Select a reason…")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Note (optional)")).toHaveValue("");
+    });
+
+    it("an owner who is not the interviewer sees only the reminder line", async () => {
+      const user = userEvent.setup();
+      renderOwnerWithAssignee(ASSIGNEE_ID);
+      await waitLoaded();
+
+      await user.click(screen.getByRole("button", { name: "Reject" }));
+
+      expect(
+        screen.getByText("This session has no confirmed evaluation yet."),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Write evaluation" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("a confirmed evaluation leaves the reject dialog unchanged", async () => {
+    const user = userEvent.setup();
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening")],
+    });
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: OWNER_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+
+    expect(
+      screen.queryByText("This session has no confirmed evaluation yet."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Write evaluation" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("ApplicationDetailPage — advance round", () => {
@@ -3451,9 +3549,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
 
     expect(
-      screen.getByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.getByText("This session has no confirmed evaluation yet."),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm advance" }),
@@ -3493,9 +3589,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(
-      screen.queryByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.queryByText("This session has no confirmed evaluation yet."),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm advance" }),
@@ -3517,9 +3611,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
 
     expect(
-      screen.queryByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.queryByText("This session has no confirmed evaluation yet."),
     ).not.toBeInTheDocument();
     // Straight into the assignee dialog, with nothing advanced yet.
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
@@ -3545,9 +3637,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
 
     expect(
-      screen.getByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.getByText("This session has no confirmed evaluation yet."),
     ).toBeInTheDocument();
   });
 
@@ -3592,9 +3682,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
       screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(
-      screen.getByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.getByText("This session has no confirmed evaluation yet."),
     ).toBeInTheDocument();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
 
@@ -3672,6 +3760,127 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
         /Advanced to session 2 of Tech \(no evaluation recorded\), by Owen Owner/,
       ),
     ).toBeInTheDocument();
+  });
+
+  describe("when the owner is also this session's interviewer", () => {
+    const renderOwnerAssignee = (detailOverrides = {}) => {
+      authState.userId = OWNER_ID;
+      api.getApplicationDetail.mockResolvedValue({
+        data: makeDetail({
+          isOwner: true,
+          assigneeId: OWNER_ID,
+          ...detailOverrides,
+        }),
+      });
+      return renderPage();
+    };
+
+    it("shows Write evaluation in the reminder, focused", async () => {
+      const user = userEvent.setup();
+      renderOwnerAssignee({ stage: "recruiter_screening" });
+      await waitLoaded();
+
+      await user.click(
+        screen.getByRole("button", { name: "Advance to Behavioral" }),
+      );
+
+      expect(
+        screen.getByText(
+          "You're the interviewer — write your evaluation before deciding.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Write evaluation" }),
+      ).toHaveFocus();
+    });
+
+    it("Write evaluation opens the evaluate view without advancing", async () => {
+      const user = userEvent.setup();
+      const { router } = renderOwnerAssignee({ stage: "recruiter_screening" });
+      await waitLoaded();
+
+      await user.click(
+        screen.getByRole("button", { name: "Advance to Behavioral" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Write evaluation" }),
+      );
+
+      await waitFor(() =>
+        expect(router.state.location.search).toBe("?mode=evaluate"),
+      );
+      expect(
+        await screen.findByRole("tab", { name: "Your evaluation" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("No evaluation recorded"),
+      ).not.toBeInTheDocument();
+      expect(api.changeApplicationStage).not.toHaveBeenCalled();
+    });
+
+    it("Advance anyway still advances", async () => {
+      const user = userEvent.setup();
+      api.changeApplicationStage.mockResolvedValue({ data: {} });
+      renderOwnerAssignee({ stage: "recruiter_screening" });
+      await waitLoaded();
+
+      await user.click(
+        screen.getByRole("button", { name: "Advance to Behavioral" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Advance anyway" }));
+      await user.click(screen.getByRole("button", { name: "Confirm advance" }));
+
+      await waitFor(() =>
+        expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+          toStage: "behavioral",
+          assigneeId: 11,
+        }),
+      );
+    });
+
+    it("the round-advance reminder also offers Write evaluation", async () => {
+      const user = userEvent.setup();
+      api.getJob.mockResolvedValue({
+        data: {
+          ...JOB,
+          pipelineConfig: {
+            ...JOB.pipelineConfig,
+            stages: JOB.pipelineConfig.stages.map((s) =>
+              s.stage === "tech" ? { ...s, rounds: 3 } : s,
+            ),
+          },
+        },
+      });
+      renderOwnerAssignee({ stage: "tech", currentRound: 1 });
+      await waitLoaded();
+
+      await user.click(
+        screen.getByRole("button", { name: "Advance to Session 2" }),
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Write evaluation" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("an owner who is not the interviewer gets no Write evaluation button", async () => {
+    const user = userEvent.setup();
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Write evaluation" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "You're the interviewer — write your evaluation before deciding.",
+      ),
+    ).not.toBeInTheDocument();
   });
 });
 

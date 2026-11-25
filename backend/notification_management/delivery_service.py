@@ -12,20 +12,30 @@ CLAIM_TIMEOUT = timedelta(minutes=10)
 class DeliveryOutcome(Enum):
     """What the caller should tell Pub/Sub.
 
-    ACKED means "do not send this message again" -- including every case
-    where retrying could not produce a different result. RETRY is reserved
-    for "not right now, but maybe shortly", because Pub/Sub redelivers a
-    non-2xx with backoff until the message expires, up to seven days.
+    SENT and ACKED both mean "do not send this message again". SENT is the
+    one case where this call sent the email, which shows email is working
+    right now; ACKED covers everything else where retrying could not produce
+    a different result. RETRY is reserved for "not right now, but maybe
+    shortly", because Pub/Sub redelivers a non-2xx with backoff until the
+    message expires, up to seven days.
     """
 
+    SENT = "sent"
     ACKED = "acked"
     RETRY = "retry"
 
 
 class DeliveryService:
-    """Turns one notification row into one email, exactly once."""
+    """Turns one notification row into one email, exactly once.
 
-    def __init__(self, logger, email_service, notification_repository):
+    With a Teams service, a copy also goes to Teams once the email's outcome
+    is settled. That copy is best effort: it is not retried and never changes
+    the outcome, so an email retry can never send it twice.
+    """
+
+    def __init__(
+        self, logger, email_service, notification_repository, teams_service=None
+    ):
         """
         Args:
             logger: Logger instance.
@@ -33,10 +43,13 @@ class DeliveryService:
                 raising LookupError when the recipient can never be emailed.
             notification_repository (NotificationRepository): Owns every read
                 and write of the notification row, the claim included.
+            teams_service: Object with ``async send(session, notification)``,
+                or None for email only.
         """
         self.logger = logger
         self.email_service = email_service
         self.notification_repository = notification_repository
+        self.teams_service = teams_service
 
     async def deliver(
         self, session: AsyncSession, notification_id: int
@@ -48,8 +61,9 @@ class DeliveryService:
             notification_id (int): Row to deliver.
 
         Returns:
-            DeliveryOutcome: ACKED when Pub/Sub should stop, RETRY when it
-                should back off and try again.
+            DeliveryOutcome: SENT when this call sent the email, ACKED when
+                Pub/Sub should stop for any other reason, RETRY when it should
+                back off and try again.
         """
         notification = await self.notification_repository.get_by_id(
             session, notification_id
@@ -76,6 +90,7 @@ class DeliveryService:
                 "[Delivery] %s can never be emailed; marking failed", notification_id
             )
             await self._settle(session, notification_id, NotificationStatus.FAILED)
+            await self._copy_to_teams(session, notification)
             return DeliveryOutcome.ACKED
         except Exception:
             self.logger.exception("[Delivery] %s failed transiently", notification_id)
@@ -83,7 +98,27 @@ class DeliveryService:
             return DeliveryOutcome.RETRY
 
         await self._settle(session, notification_id, NotificationStatus.SENT)
-        return DeliveryOutcome.ACKED
+        await self._copy_to_teams(session, notification)
+        return DeliveryOutcome.SENT
+
+    async def _copy_to_teams(self, session: AsyncSession, notification) -> None:
+        """Send the Teams copy, if there is a Teams service; log, never raise."""
+        if self.teams_service is None:
+            return
+        try:
+            await self.teams_service.send(session, notification)
+        except LookupError as error:
+            self.logger.info(
+                "[Delivery] %s has no Teams chat: %s",
+                notification.notification_id,
+                error,
+            )
+        except Exception:
+            self.logger.warning(
+                "[Delivery] %s Teams copy failed",
+                notification.notification_id,
+                exc_info=True,
+            )
 
     async def _claim(
         self, session: AsyncSession, notification_id: int, now: datetime
@@ -125,8 +160,10 @@ class DeliveryService:
         """Return ids of PENDING rows old enough that their publish likely never landed.
 
         This is the only backstop for "the transaction committed but the
-        publish did not". It rides along on real deliveries instead of a
-        timer, which is the price of having no scheduled job.
+        publish did not". It rides along on successful sends instead of a
+        timer, which is the price of having no scheduled job. It also picks up
+        rows whose messages ran out of retries while email was failing, so
+        they go out once a send works again (within their 24-hour shelf life).
 
         Args:
             session (AsyncSession): Active database async session.
