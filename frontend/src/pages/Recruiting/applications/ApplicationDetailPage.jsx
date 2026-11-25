@@ -446,24 +446,30 @@ const CancelUpcomingMeetingField = ({
 };
 
 /**
- * Shown inside the advance and reject dialogs when the viewer is the current
- * session's interviewer and has not confirmed an evaluation yet. Writing the
- * evaluation is the action the dialog steers toward, so its button is the
- * dialog's only filled one and takes focus.
+ * Shown inside the advance and reject dialogs when the current session has
+ * no confirmed evaluation. When the viewer is that session's interviewer,
+ * writing the evaluation is the action the dialog steers toward, so its
+ * button is the dialog's only filled one and takes focus.
  *
- * @param {{lines: string[], onClick: () => void}} props
+ * @param {{onWriteEvaluation?: () => void}} props Pass it only when the
+ *   viewer is the session's interviewer.
  */
-const WriteEvaluationCallout = ({ lines, onClick }) => (
+const NoEvaluationNotice = ({ onWriteEvaluation }) => (
   <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
     <div>
-      {lines.map((line) => (
-        <p key={line}>{line}</p>
-      ))}
+      <p className="font-medium">
+        This session has no confirmed evaluation yet.
+      </p>
+      {onWriteEvaluation && (
+        <p>You're the interviewer — write your evaluation before deciding.</p>
+      )}
     </div>
-    <Button className="w-full" autoFocus onClick={onClick}>
-      Write evaluation
-      <ArrowRight className="h-4 w-4" aria-hidden />
-    </Button>
+    {onWriteEvaluation && (
+      <Button className="w-full" autoFocus onClick={onWriteEvaluation}>
+        Write evaluation
+        <ArrowRight className="h-4 w-4" aria-hidden />
+      </Button>
+    )}
   </div>
 );
 
@@ -2298,24 +2304,9 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>No evaluation recorded</DialogTitle>
           </DialogHeader>
-          {showWriteEvaluation ? (
-            <>
-              <p className="text-sm text-slate-700">
-                This session has no confirmed evaluation yet.
-              </p>
-              <WriteEvaluationCallout
-                lines={[
-                  "You're the interviewer for this session.",
-                  "Write your evaluation before deciding.",
-                ]}
-                onClick={goToEvaluation}
-              />
-            </>
-          ) : (
-            <p className="text-sm text-slate-700">
-              This session has no confirmed evaluation yet. Advance anyway?
-            </p>
-          )}
+          <NoEvaluationNotice
+            onWriteEvaluation={showWriteEvaluation ? goToEvaluation : undefined}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEvalReminderFor(null)}>
               Cancel
@@ -2362,20 +2353,12 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Reject</DialogTitle>
           </DialogHeader>
-          {showWriteEvaluation ? (
-            <WriteEvaluationCallout
-              lines={[
-                "No confirmed evaluation for this session.",
-                "You're the interviewer — write it before deciding.",
-              ]}
-              onClick={goToEvaluation}
+          {needsEvalReminder && (
+            <NoEvaluationNotice
+              onWriteEvaluation={
+                showWriteEvaluation ? goToEvaluation : undefined
+              }
             />
-          ) : (
-            needsEvalReminder && (
-              <p className="text-sm text-slate-500">
-                No confirmed evaluation for this session.
-              </p>
-            )
           )}
           <Select value={rejectReason} onValueChange={setRejectReason}>
             <SelectTrigger aria-label="Rejection reason" className="w-full">
