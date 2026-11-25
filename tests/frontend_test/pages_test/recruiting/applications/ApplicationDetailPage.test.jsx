@@ -1474,10 +1474,12 @@ describe("ApplicationDetailPage — reject dialog", () => {
       await user.click(screen.getByRole("button", { name: "Reject" }));
 
       expect(
-        screen.getByText("No confirmed evaluation for this session."),
+        screen.getByText("This session has no confirmed evaluation yet."),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("You're the interviewer — write it before deciding."),
+        screen.getByText(
+          "You're the interviewer — write your evaluation before deciding.",
+        ),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: "Write evaluation" }),
@@ -1523,7 +1525,7 @@ describe("ApplicationDetailPage — reject dialog", () => {
       await user.click(screen.getByRole("button", { name: "Reject" }));
 
       expect(
-        screen.getByText("No confirmed evaluation for this session."),
+        screen.getByText("This session has no confirmed evaluation yet."),
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: "Write evaluation" }),
@@ -1546,7 +1548,7 @@ describe("ApplicationDetailPage — reject dialog", () => {
     await user.click(screen.getByRole("button", { name: "Reject" }));
 
     expect(
-      screen.queryByText("No confirmed evaluation for this session."),
+      screen.queryByText("This session has no confirmed evaluation yet."),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Write evaluation" }),
@@ -3547,9 +3549,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
 
     expect(
-      screen.getByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.getByText("This session has no confirmed evaluation yet."),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm advance" }),
@@ -3589,9 +3589,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(
-      screen.queryByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.queryByText("This session has no confirmed evaluation yet."),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm advance" }),
@@ -3613,9 +3611,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
 
     expect(
-      screen.queryByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.queryByText("This session has no confirmed evaluation yet."),
     ).not.toBeInTheDocument();
     // Straight into the assignee dialog, with nothing advanced yet.
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
@@ -3641,9 +3637,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
 
     expect(
-      screen.getByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.getByText("This session has no confirmed evaluation yet."),
     ).toBeInTheDocument();
   });
 
@@ -3688,9 +3682,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
       screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(
-      screen.getByText(
-        "This session has no confirmed evaluation yet. Advance anyway?",
-      ),
+      screen.getByText("This session has no confirmed evaluation yet."),
     ).toBeInTheDocument();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
 
@@ -3793,7 +3785,9 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
       );
 
       expect(
-        screen.getByText("You're the interviewer for this session."),
+        screen.getByText(
+          "You're the interviewer — write your evaluation before deciding.",
+        ),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: "Write evaluation" }),
@@ -3883,7 +3877,9 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
       screen.queryByRole("button", { name: "Write evaluation" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText("You're the interviewer for this session."),
+      screen.queryByText(
+        "You're the interviewer — write your evaluation before deciding.",
+      ),
     ).not.toBeInTheDocument();
   });
 });
