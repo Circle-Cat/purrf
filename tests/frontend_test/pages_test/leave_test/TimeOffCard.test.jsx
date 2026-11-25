@@ -144,6 +144,12 @@ describe("TimeOffCard", () => {
       expect(screen.getByText("National Day")).toBeInTheDocument(),
     );
     expect(api.getLeaveHolidays).toHaveBeenCalledWith(2026);
+    // A Saturday counts and a Monday does not, which nobody guesses.
+    expect(
+      screen.getByText(
+        "Dates in Asia/Shanghai · Working days are Tuesday to Saturday. Sunday and Monday are days off.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("sends the history to a page of its own", async () => {
