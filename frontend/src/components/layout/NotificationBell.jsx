@@ -153,10 +153,10 @@ const wordOf = (n) => {
         default:
           return "";
       }
-    // Told to the manager. Nobody decided it, so there is no actor: the
-    // employee's name comes from details.
+    // Told to the employee and their manager, so it reads for either. Nobody
+    // decided it, so there is no actor: the name comes from details.
     case "leave.sick_leave_auto_approved":
-      return `${n.details?.employeeName || "Someone"} took ${leaveAsk(n.details)}, approved automatically`;
+      return `Approved automatically: ${n.details?.employeeName || "Someone"}'s ${leaveAsk(n.details)}`;
     // Told to the employee whose balance an admin corrected, an opening
     // balance included. The sign is the point, so a gain carries "+".
     case "leave.balance_adjusted": {
