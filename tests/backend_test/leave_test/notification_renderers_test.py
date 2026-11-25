@@ -311,15 +311,28 @@ class LeaveRenderTest(unittest.IsolatedAsyncioTestCase):
         del event.details["requestId"]
         return await self._render(event)
 
-    async def test_auto_approved_sick_leave_tells_the_manager_it_is_sick_leave(self):
+    async def test_auto_approved_sick_leave_reads_for_employee_and_manager(self):
+        """One email goes to both, so it names the employee and asks nothing
+        of whoever reads it."""
         subject, body = await self._auto_approved()
 
         self.assertEqual(subject, "Sick leave was approved automatically")
-        self.assertIn("Ann Employee took sick leave on 2026-08-13 (8.00 hours).", body)
-        self.assertIn("approved automatically", body)
-        self.assertIn("nothing for you to decide", body)
-        self.assertIn("<p>Their reason: Family wedding</p>", body)
-        self.assertIn("Decided", body)
+        self.assertIn(
+            "Ann Employee's sick leave on 2026-08-13 (8.00 hours) was approved "
+            "automatically.",
+            body,
+        )
+        self.assertIn("<p>Reason: Family wedding</p>", body)
+        self.assertNotIn("Their reason", body)
+        self.assertNotIn("for you to decide", body)
+
+    async def test_auto_approved_sick_leave_states_the_rule_in_working_hours(self):
+        """The old wording, three days or less, read as calendar dates: 27 to
+        29 November is three dates but 16 hours, since Sunday is a day off."""
+        _, body = await self._auto_approved()
+
+        self.assertIn("up to 24 working hours (three working days)", body)
+        self.assertNotIn("three days or less", body)
 
     async def test_auto_approved_sick_leave_names_nobody_as_deciding(self):
         """Nobody decided it, so neither manager nor employee is the actor."""
@@ -333,7 +346,7 @@ class LeaveRenderTest(unittest.IsolatedAsyncioTestCase):
 
         _, body = await self._auto_approved()
 
-        self.assertNotIn("Their reason", body)
+        self.assertNotIn("Reason:", body)
 
     async def test_auto_approved_sick_leave_escapes_the_name_and_reason(self):
         self.leave = _leave("<i>flu</i>")

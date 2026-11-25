@@ -90,7 +90,8 @@ async def _render_decided(session: AsyncSession, event: EventEntity):
 
 @register_render(LeaveEvent.SICK_LEAVE_AUTO_APPROVED)
 async def _render_sick_leave_auto_approved(session: AsyncSession, event: EventEntity):
-    """Tell the manager sick leave was approved without them."""
+    """Tell the employee and their manager sick leave went through on its
+    own."""
     details = event.details
     leave = await _leave_request_repository.get_by_id(session, event.subject_id)
     return copy.sick_leave_auto_approved(

@@ -251,8 +251,9 @@ class NotificationLinks:
         return "/leave/balance-history"
 
     async def _leave_decided(self, event: EventEntity) -> str:
-        """The employee reads the outcome on their requests; the manager is
-        told only of a withdrawal, which leaves their approvals list."""
+        """The employee reads the outcome on their requests; anyone else (the
+        manager, told of a withdrawal or of sick leave approved on submission)
+        finds the request on their approvals."""
         leave = await _leave_requests.get_by_id(self.session, event.subject_id)
         if leave is not None and leave.user_id == self.user_id:
             return "/leave/requests"
@@ -350,7 +351,7 @@ _RULES: dict[str, Rule] = {
     InboxEvent.BOUNCED: NotificationLinks._inbox_bounced,
     LeaveEvent.REQUEST_SUBMITTED: NotificationLinks._leave_approvals,
     LeaveEvent.REQUEST_DECIDED: NotificationLinks._leave_decided,
-    LeaveEvent.SICK_LEAVE_AUTO_APPROVED: NotificationLinks._leave_approvals,
+    LeaveEvent.SICK_LEAVE_AUTO_APPROVED: NotificationLinks._leave_decided,
     LeaveEvent.BALANCE_ADJUSTED: NotificationLinks._leave_balance_history,
     MentorshipEvent.APPROVAL_REQUESTED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_REASSIGNED: NotificationLinks._approval_waiting,

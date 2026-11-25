@@ -386,13 +386,15 @@ class NotificationLinksTest(BaseRepositoryTestLib):
 
         self.assertEqual(await self._link(event, MANAGER), "/leave/approvals")
 
-    async def test_auto_approved_sick_leave_opens_the_managers_approvals(self):
-        """It is listed under Decided there; nothing else shows it to them."""
+    async def test_auto_approved_sick_leave_opens_each_readers_own_list(self):
+        """The employee finds it among their requests; the manager under
+        Decided in their approvals."""
         await self._leave()
         event = _event(
             LeaveEvent.SICK_LEAVE_AUTO_APPROVED, LEAVE_REQUEST_SUBJECT, LEAVE, {}
         )
 
+        self.assertEqual(await self._link(event, EMPLOYEE), "/leave/requests")
         self.assertEqual(await self._link(event, MANAGER), "/leave/approvals")
 
     async def test_an_adjustment_opens_the_employees_balance_history(self):

@@ -1036,7 +1036,7 @@ describe("NotificationBell", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
-  it("tells a manager sick leave was approved automatically, naming the employee", async () => {
+  it("tells the employee and their manager sick leave was approved automatically", async () => {
     // Nobody decided it, so the row carries no actor; the name is the
     // employee's, from details.
     await openWith({
@@ -1051,7 +1051,7 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "Ann Lee took sick leave, Nov 26, 2026, approved automatically",
+        "Approved automatically: Ann Lee's sick leave, Nov 26, 2026",
       ),
     ).toBeInTheDocument();
   });
