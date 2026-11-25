@@ -62,6 +62,24 @@ describe("FileLeaveDialog", () => {
     expect(screen.getByLabelText("From (optional)")).toBeInTheDocument();
   });
 
+  it("offers only half-hour times, the steps the server takes leave in", () => {
+    open();
+    setDates("2026-10-01", "2026-10-01");
+
+    for (const label of ["From (optional)", "To (optional)"]) {
+      const choices = Array.from(
+        screen.getByLabelText(label).querySelectorAll("option"),
+        (option) => option.value,
+      );
+      // A blank for "no times", then every half hour of the day.
+      expect(choices).toHaveLength(49);
+      expect(choices[0]).toBe("");
+      expect(choices.slice(1, 4)).toEqual(["00:00", "00:30", "01:00"]);
+      expect(choices.at(-1)).toBe("23:30");
+      expect(choices).not.toContain("16:20");
+    }
+  });
+
   it("offers no times on an exchange, which is always whole days", () => {
     open();
     setDates("2026-10-01", "2026-10-01");

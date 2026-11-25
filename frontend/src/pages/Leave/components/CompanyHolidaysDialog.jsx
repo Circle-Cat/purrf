@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { getLeaveHolidayYears, getLeaveHolidays } from "@/api/leaveApi";
 import {
   LEAVE_CALENDAR_ZONE_LABEL,
+  LEAVE_WORKWEEK_LABEL,
   formatBusinessRange,
 } from "@/pages/Leave/utils/leaveDates";
 
@@ -81,8 +82,8 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
         </DialogHeader>
 
         <div className="flex flex-col min-h-0 flex-1 space-y-4">
-          <div className="flex items-end justify-between gap-3">
-            <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
               <Label htmlFor="holiday-year">Year</Label>
               <select
                 id="holiday-year"
@@ -98,7 +99,7 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
               </select>
             </div>
             <span className="text-xs text-muted-foreground">
-              {LEAVE_CALENDAR_ZONE_LABEL}
+              {LEAVE_CALENDAR_ZONE_LABEL} · {LEAVE_WORKWEEK_LABEL}
             </span>
           </div>
 

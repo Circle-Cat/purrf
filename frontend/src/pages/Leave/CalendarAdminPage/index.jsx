@@ -11,7 +11,10 @@ import {
 import { Label } from "@/components/ui/label";
 import SegmentRow from "@/pages/Leave/CalendarAdminPage/components/SegmentRow";
 import { useLeaveCalendarAdmin } from "@/pages/Leave/hooks/useLeaveCalendarAdmin";
-import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
+import {
+  LEAVE_CALENDAR_ZONE_LABEL,
+  LEAVE_WORKWEEK_LABEL,
+} from "@/pages/Leave/utils/leaveDates";
 
 /**
  * LeaveCalendarAdminPage
@@ -77,12 +80,12 @@ const LeaveCalendarAdminPage = () => {
     <div className="space-y-5">
       <div className="flex justify-end">
         <span className="text-sm text-muted-foreground">
-          {LEAVE_CALENDAR_ZONE_LABEL}
+          {LEAVE_CALENDAR_ZONE_LABEL} · {LEAVE_WORKWEEK_LABEL}
         </span>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
           <Label htmlFor="calendar-year">Year</Label>
           <select
             id="calendar-year"
