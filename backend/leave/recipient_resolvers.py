@@ -4,6 +4,9 @@ The same rule every approval follows: a filed request goes to the manager it
 waits on, a decision goes to the employee, and a withdrawal goes back to the
 manager. Recipients come from the approval row the event names.
 
+Sick leave approved on submission has no approval row; its manager is read off
+the request itself.
+
 Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.
 """
@@ -17,9 +20,11 @@ from backend.notification_management.recipient_registry import register_recipien
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
+from backend.repository.leave_request_repository import LeaveRequestRepository
 
 # Stateless, so one module-level instance serves every resolver.
 _approval_request_repository = ApprovalRequestRepository()
+_leave_request_repository = LeaveRequestRepository()
 
 
 async def _approval_request(session: AsyncSession, event: EventEntity):
@@ -68,3 +73,28 @@ async def _the_other_side(session: AsyncSession, event: EventEntity) -> set[int]
     if event.details.get("decision") == ApprovalRequestStatus.WITHDRAWN.value:
         return {row.reviewer_id}
     return {row.raised_by}
+
+
+@register_recipients(
+    LeaveEvent.SICK_LEAVE_AUTO_APPROVED, subject_type=LEAVE_REQUEST_SUBJECT
+)
+async def _the_approver(session: AsyncSession, event: EventEntity) -> set[int]:
+    """The manager the sick leave was filed with.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; its subject is the leave request.
+
+    Returns:
+        set[int]: The manager's user id.
+
+    Raises:
+        ValueError: The request does not exist. Failing loudly beats telling
+            nobody.
+    """
+    leave = await _leave_request_repository.get_by_id(session, event.subject_id)
+    if leave is None:
+        raise ValueError(
+            f"{event.event_type!r} names unknown leave request {event.subject_id}"
+        )
+    return {leave.approver_user_id}

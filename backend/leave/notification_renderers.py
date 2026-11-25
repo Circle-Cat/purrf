@@ -86,3 +86,17 @@ async def _render_decided(session: AsyncSession, event: EventEntity):
         details.get("endDate"),
         row.decision_comment if row is not None else None,
     )
+
+
+@register_render(LeaveEvent.SICK_LEAVE_AUTO_APPROVED)
+async def _render_sick_leave_auto_approved(session: AsyncSession, event: EventEntity):
+    """Tell the manager sick leave was approved without them."""
+    details = event.details
+    leave = await _leave_request_repository.get_by_id(session, event.subject_id)
+    return copy.sick_leave_auto_approved(
+        _employee(event),
+        details.get("startDate"),
+        details.get("endDate"),
+        details.get("hours"),
+        leave.reason if leave is not None else None,
+    )
