@@ -173,6 +173,7 @@ py_library(
     deps = [
         ":leave_clock",
         ":leave_participants",
+        ":leave_policy",
         ":leave_workdays",
         "//backend/common:constants",
         "//backend/common:exceptions",
