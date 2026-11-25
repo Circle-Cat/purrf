@@ -23,7 +23,6 @@ from backend.common.mentorship_email_enums import (
     MentorshipEmailSendStatus,
 )
 from backend.common.mentorship_enums import CommunicationMethod, MentorshipEvent
-from backend.common.ops_enums import OPS_ALERT_SUBJECT_TYPE, OpsEvent
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     ApplicationStage,
@@ -672,13 +671,6 @@ class NotificationLinksTest(BaseRepositoryTestLib):
 
         self.assertIsNone(await self._link(event, RAISER))
 
-    # Ops
-
-    async def test_a_gmail_sync_alert_has_no_link(self):
-        event = _event(OpsEvent.GMAIL_SYNC_ALERT, OPS_ALERT_SUBJECT_TYPE, 1)
-
-        self.assertIsNone(await self._link(event, SUPER_ADMIN))
-
     # A page
 
     async def test_a_page_links_every_event_by_id(self):
@@ -695,7 +687,6 @@ class NotificationLinksTest(BaseRepositoryTestLib):
             _event(
                 RecruitingEvent.AUTO_ASSIGNED, "application", APPLICATION, event_id=62
             ),
-            _event(OpsEvent.GMAIL_SYNC_ALERT, OPS_ALERT_SUBJECT_TYPE, 1, event_id=63),
         ]
 
         links = await links_for_page(self.session, events, ASSIGNEE)
@@ -706,7 +697,6 @@ class NotificationLinksTest(BaseRepositoryTestLib):
                 61: f"/mentorship-management/participants/{PERSON}"
                 f"?round={ROUND}&review={EXEMPT_REQUEST}",
                 62: f"/recruiting/applications/{APPLICATION}?mode=evaluate",
-                63: None,
             },
         )
 

@@ -416,6 +416,60 @@ class TestGmailClient(TestCase):
                 sender=TEST_SENDER,
             )
 
+    def _send_raising(self, error):
+        self.mock_service.users().messages().send().execute.side_effect = error
+        with self.assertRaises(RuntimeError) as caught:
+            self.client.send_message(
+                to=["a@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+        return str(caught.exception)
+
+    def test_refresh_error_names_a_bad_client_secret(self):
+        """A wrong client secret must not read as a revoked token: they are
+        fixed in different places (the secret vs. re-authorizing the mailbox)."""
+        message = self._send_raising(
+            RefreshError(
+                "invalid_client: Unauthorized",
+                {"error": "invalid_client", "error_description": "Unauthorized"},
+            )
+        )
+
+        self.assertIn("invalid_client: Unauthorized", message)
+        self.assertIn("GMAIL_CLIENT_SECRET", message)
+        self.assertNotIn("re-authoriz", message)
+        logged = " ".join(str(a) for a in self.logger.error.call_args.args)
+        self.assertIn("invalid_client: Unauthorized", logged)
+
+    def test_refresh_error_names_a_revoked_token(self):
+        message = self._send_raising(
+            RefreshError(
+                "invalid_grant: Token has been expired or revoked.",
+                {
+                    "error": "invalid_grant",
+                    "error_description": "Token has been expired or revoked.",
+                },
+            )
+        )
+
+        self.assertIn("invalid_grant: Token has been expired or revoked.", message)
+        self.assertIn("re-authoriz", message)
+
+    def test_refresh_error_without_response_data_keeps_its_text(self):
+        message = self._send_raising(RefreshError("invalid_grant"))
+
+        self.assertIn("invalid_grant", message)
+        self.assertIn("re-authoriz", message)
+
+    def test_refresh_error_with_an_unknown_code_keeps_its_text(self):
+        message = self._send_raising(
+            RefreshError("unauthorized_client: nope", {"error": "unauthorized_client"})
+        )
+
+        self.assertIn("unauthorized_client: nope", message)
+
     def test_service_built_once_across_calls(self):
         self._stub_send_result()
         self.client.send_message(

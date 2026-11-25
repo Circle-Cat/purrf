@@ -237,3 +237,19 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "leave_balances_flow_test",
+    srcs = ["leave_balances_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/leave:leave_engine_service",
+        "//backend/leave:leave_participants",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

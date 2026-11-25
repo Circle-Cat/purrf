@@ -180,6 +180,9 @@ from backend.repository.user_guide_progress_repository import (
     UserGuideProgressRepository,
 )
 from backend.communication.notification_email_service import NotificationEmailService
+from backend.notification_management.notification_teams_service import (
+    build_notification_teams_service,
+)
 from backend.notification_management.notification_event_email_service import (
     NotificationEventEmailService,
 )
@@ -517,6 +520,7 @@ class AppDependencyBuilder:
         self.users_repository = UsersRepository()
         self.user_emails_repository = UserEmailsRepository()
         self.leave_ledger_repository = LeaveLedgerRepository()
+        self.leave_request_repository = LeaveRequestRepository()
         self.leave_participant_resolver = LeaveParticipantResolver(
             logger=self.logger,
             user_emails_repository=self.user_emails_repository,
@@ -1062,6 +1066,12 @@ class AppDependencyBuilder:
             logger=self.logger,
             email_service=self.notification_event_email_service,
             notification_repository=self.notification_repository,
+            teams_service=build_notification_teams_service(
+                logger=self.logger,
+                user_emails_repository=self.user_emails_repository,
+                redis_client=self.redis_client,
+                compose=self.notification_event_email_service.compose,
+            ),
         )
         self.notification_delivery_controller = NotificationDeliveryController(
             logger=self.logger,
@@ -1454,6 +1464,7 @@ class AppDependencyBuilder:
             participant_resolver=self.leave_participant_resolver,
             leave_ledger_repository=self.leave_ledger_repository,
             users_repository=self.users_repository,
+            leave_request_repository=self.leave_request_repository,
         )
         self.leave_job_controller = LeaveJobController(
             self.leave_engine_service,
@@ -1535,7 +1546,6 @@ class AppDependencyBuilder:
             app_origins=app_origin_set(os.getenv(APP_ORIGINS)),
         )
 
-        self.leave_request_repository = LeaveRequestRepository()
         self.leave_request_handler = LeaveRequestHandler(
             leave_request_repository=self.leave_request_repository,
             leave_ledger_repository=self.leave_ledger_repository,

@@ -48,6 +48,7 @@ py_test(
     name = "microsoft_member_sync_service_test",
     srcs = ["microsoft_member_sync_service_test.py"],
     deps = [
+        "//backend/common:constants",
         "//backend/historical_data:microsoft_member_sync_service",
     ],
 )
