@@ -353,6 +353,20 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
                 ],
             )
 
+    async def test_a_row_is_read_back_by_its_id(self):
+        entry = self._entry(
+            LeaveEntryType.MANUAL_ADJUSTMENT, "8.00", datetime.date(2026, 3, 1)
+        )
+        await self.repository.add_entries(self.session, [entry])
+
+        found = await self.repository.get_by_id(self.session, entry.leave_ledger_id)
+
+        self.assertEqual(found.user_id, self.user.user_id)
+        self.assertEqual(found.hours, Decimal("8.00"))
+
+    async def test_an_unknown_id_reads_as_none(self):
+        self.assertIsNone(await self.repository.get_by_id(self.session, 987654))
+
     async def test_entries_are_written_without_being_committed(self):
         """The caller owns the transaction: a job writes for many people and
         either the whole run lands or none of it does."""

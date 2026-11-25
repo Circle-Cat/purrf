@@ -3,15 +3,22 @@
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from backend.common.leave_enums import LEAVE_REQUEST_SUBJECT, LeaveEvent
+from backend.common.leave_enums import (
+    LEAVE_LEDGER_SUBJECT,
+    LEAVE_REQUEST_SUBJECT,
+    LeaveEntryType,
+    LeaveEvent,
+)
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.event_entity import EventEntity
 from backend.leave import recipient_resolvers  # noqa: F401 (registers)
 from backend.notification_management import recipient_registry
+from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
+from backend.repository.leave_ledger_repository import LeaveLedgerRepository
 from backend.repository.leave_request_repository import LeaveRequestRepository
 
 EMPLOYEE = 10
@@ -20,6 +27,7 @@ MANAGER = 20
 # the other belongs finds nothing.
 APPROVAL_ID = 301
 LEAVE_ID = 501
+LEDGER_ID = 701
 
 
 def _approval():
@@ -63,6 +71,21 @@ class LeaveRecipientsTest(unittest.IsolatedAsyncioTestCase):
         )
         self.get_leave = leave_lookup.start()
         self.addCleanup(leave_lookup.stop)
+        self.entries = {
+            LEDGER_ID: LeaveLedgerEntity(
+                leave_ledger_id=LEDGER_ID,
+                user_id=EMPLOYEE,
+                entry_type=LeaveEntryType.MANUAL_ADJUSTMENT,
+            )
+        }
+        entry_lookup = patch.object(
+            LeaveLedgerRepository,
+            "get_by_id",
+            new_callable=AsyncMock,
+            side_effect=lambda _session, entry_id: self.entries.get(entry_id),
+        )
+        self.get_entry = entry_lookup.start()
+        self.addCleanup(entry_lookup.stop)
 
     async def _resolve(self, event):
         return await recipient_registry.resolve_recipients(self.session, event)
@@ -132,6 +155,35 @@ class LeaveRecipientsTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self._resolve(_event(LeaveEvent.SICK_LEAVE_AUTO_APPROVED))
+
+    def _adjusted(self):
+        return EventEntity(
+            subject_type=LEAVE_LEDGER_SUBJECT,
+            subject_id=LEDGER_ID,
+            actor_id=MANAGER,
+            event_type=LeaveEvent.BALANCE_ADJUSTED,
+            details={"hours": "8.00"},
+        )
+
+    async def test_an_adjustment_goes_to_the_person_whose_balance_it_is(self):
+        recipients = await self._resolve(self._adjusted())
+
+        self.assertEqual(recipients, {EMPLOYEE})
+        self.get_entry.assert_awaited_once_with(self.session, LEDGER_ID)
+
+    async def test_an_adjustment_naming_an_unknown_row_fails_loudly(self):
+        self.entries.clear()
+
+        with self.assertRaises(ValueError):
+            await self._resolve(self._adjusted())
+
+    async def test_an_adjustment_about_a_leave_request_is_refused(self):
+        """subject_id would otherwise be read as a ledger id."""
+        event = self._adjusted()
+        event.subject_type = LEAVE_REQUEST_SUBJECT
+
+        with self.assertRaises(ValueError):
+            await self._resolve(event)
 
     async def test_reassignment_notifies_nobody(self):
         """A leave request's approver is never reassigned, so the event has no

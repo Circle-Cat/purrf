@@ -100,3 +100,16 @@ async def _render_sick_leave_auto_approved(session: AsyncSession, event: EventEn
         details.get("hours"),
         leave.reason if leave is not None else None,
     )
+
+
+@register_render(LeaveEvent.BALANCE_ADJUSTED)
+async def _render_balance_adjusted(session: AsyncSession, event: EventEntity):
+    """Tell the employee an admin changed their balance."""
+    details = event.details
+    return copy.balance_adjusted(
+        await _actor(session, event, "An administrator"),
+        details.get("hours"),
+        details.get("effectiveDate"),
+        details.get("note"),
+        details.get("balanceHours"),
+    )

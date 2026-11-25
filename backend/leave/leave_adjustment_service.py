@@ -5,11 +5,16 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.leave_enums import LeaveEntryType
+from backend.common.leave_enums import (
+    LEAVE_LEDGER_SUBJECT,
+    LeaveEntryType,
+    LeaveEvent,
+)
 from backend.dto.leave_adjustment_dto import LeaveAdjustmentResultDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.leave.leave_accrual import NO_HOURS, format_hours
 from backend.leave.leave_clock import business_today
+from backend.notification_management.event_recorder import record_event
 
 
 class LeaveAdjustmentService:
@@ -19,6 +24,9 @@ class LeaveAdjustmentService:
     the previous year arrives as a positive correction dated 31 December; leave
     already taken this year arrives as negative hours, because a request cannot
     be dated in the past. Which one a row is lives in its note.
+
+    Either way the person whose balance it is gets told, with the note and the
+    balance it left them with.
 
     Corrections are deliberately outside the ledger's double-write index: an
     admin may legitimately book several for one person on one day. Nothing here
@@ -76,22 +84,33 @@ class LeaveAdjustmentService:
         if await self.users_repository.get_user_by_user_id(session, user_id) is None:
             raise ValueError(f"No user with id {user_id}.")
 
-        await self.leave_ledger_repository.add_entries(
+        entry = LeaveLedgerEntity(
+            user_id=user_id,
+            entry_type=LeaveEntryType.MANUAL_ADJUSTMENT,
+            hours=hours,
+            effective_date=effective_date,
+            note=reason,
+            created_by=author_user_id,
+        )
+        await self.leave_ledger_repository.add_entries(session, [entry])
+
+        # Read before the commit, so the notification and the row it reports
+        # land together; the flushed row is already counted.
+        balance = await self.leave_ledger_repository.balance(session, user_id)
+        await record_event(
             session,
-            [
-                LeaveLedgerEntity(
-                    user_id=user_id,
-                    entry_type=LeaveEntryType.MANUAL_ADJUSTMENT,
-                    hours=hours,
-                    effective_date=effective_date,
-                    note=reason,
-                    created_by=author_user_id,
-                )
-            ],
+            subject_type=LEAVE_LEDGER_SUBJECT,
+            subject_id=entry.leave_ledger_id,
+            actor_id=author_user_id,
+            event_type=LeaveEvent.BALANCE_ADJUSTED,
+            details={
+                "hours": format_hours(hours),
+                "effectiveDate": effective_date.isoformat(),
+                "note": reason,
+                "balanceHours": format_hours(balance),
+            },
         )
         await session.commit()
-
-        balance = await self.leave_ledger_repository.balance(session, user_id)
         self.logger.info(
             "Leave balance adjusted by %s: user %s, %s hours on %s",
             author_user_id,
