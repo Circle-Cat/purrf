@@ -245,6 +245,11 @@ class NotificationLinks:
         leave approved on submission is listed under Decided."""
         return "/leave/approvals"
 
+    async def _leave_balance_history(self, event: EventEntity) -> str:
+        """The employee's own balance history, where the adjustment is a
+        row."""
+        return "/leave/balance-history"
+
     async def _leave_decided(self, event: EventEntity) -> str:
         """The employee reads the outcome on their requests; the manager is
         told only of a withdrawal, which leaves their approvals list."""
@@ -346,6 +351,7 @@ _RULES: dict[str, Rule] = {
     LeaveEvent.REQUEST_SUBMITTED: NotificationLinks._leave_approvals,
     LeaveEvent.REQUEST_DECIDED: NotificationLinks._leave_decided,
     LeaveEvent.SICK_LEAVE_AUTO_APPROVED: NotificationLinks._leave_approvals,
+    LeaveEvent.BALANCE_ADJUSTED: NotificationLinks._leave_balance_history,
     MentorshipEvent.APPROVAL_REQUESTED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_REASSIGNED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_DECIDED: NotificationLinks._approval_decided,

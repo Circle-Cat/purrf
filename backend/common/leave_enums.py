@@ -68,6 +68,8 @@ class LeaveRequestStatus(StrEnum):
 # recorded against.
 LEAVE_APPROVAL = "leave_approval"
 LEAVE_REQUEST_SUBJECT = "leave_request"
+# The subject of an event about one ledger row, such as an admin adjustment.
+LEAVE_LEDGER_SUBJECT = "leave_ledger"
 
 
 class LeaveEvent(StrEnum):
@@ -81,3 +83,6 @@ class LeaveEvent(StrEnum):
     # Sick leave short enough to be approved on submission. It never reaches
     # the shared approval flow, so the request service records it itself.
     SICK_LEAVE_AUTO_APPROVED = "leave.sick_leave_auto_approved"
+    # An admin wrote a correction to somebody's balance, an opening balance
+    # included. Its subject is the ledger row.
+    BALANCE_ADJUSTED = "leave.balance_adjusted"

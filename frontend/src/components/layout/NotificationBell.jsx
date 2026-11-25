@@ -157,6 +157,13 @@ const wordOf = (n) => {
     // employee's name comes from details.
     case "leave.sick_leave_auto_approved":
       return `${n.details?.employeeName || "Someone"} took ${leaveAsk(n.details)}, approved automatically`;
+    // Told to the employee whose balance an admin corrected, an opening
+    // balance included. The sign is the point, so a gain carries "+".
+    case "leave.balance_adjusted": {
+      const hours = n.details?.hours ?? "";
+      const signed = hours && !hours.startsWith("-") ? `+${hours}` : hours;
+      return `${actor} adjusted your leave balance by ${signed} hours`;
+    }
     // Told to whoever can handle that service's Inbox threads, for new mail
     // or for a thread moved in from another service.
     case "inbox.needs_reply": {
