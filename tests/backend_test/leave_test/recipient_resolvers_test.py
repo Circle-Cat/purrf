@@ -134,17 +134,18 @@ class LeaveRecipientsTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self._resolve(event)
 
-    async def test_auto_approved_sick_leave_goes_to_the_manager_it_was_filed_with(
+    async def test_auto_approved_sick_leave_goes_to_the_manager_and_the_employee(
         self,
     ):
-        """No approval stands behind it, so the manager is read off the
-        request itself."""
+        """No approval stands behind it, so both are read off the request
+        itself. Nobody decided it, so the employee is not subtracted as the
+        actor: no other notification tells them it went through."""
         event = _event(LeaveEvent.SICK_LEAVE_AUTO_APPROVED)
         del event.details["requestId"]
 
         recipients = await self._resolve(event)
 
-        self.assertEqual(recipients, {MANAGER})
+        self.assertEqual(recipients, {MANAGER, EMPLOYEE})
         self.get_leave.assert_awaited_once_with(self.session, LEAVE_ID)
         self.get.assert_not_awaited()
 

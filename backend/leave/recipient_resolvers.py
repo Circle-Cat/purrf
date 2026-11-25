@@ -5,7 +5,8 @@ waits on, a decision goes to the employee, and a withdrawal goes back to the
 manager. Recipients come from the approval row the event names.
 
 Sick leave approved on submission has no approval row; its manager is read off
-the request itself. An admin adjustment goes to the person whose balance it is.
+the request itself, and it goes to the employee as well: no decision reaches
+them otherwise. An admin adjustment goes to the person whose balance it is.
 
 Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.
@@ -84,15 +85,19 @@ async def _the_other_side(session: AsyncSession, event: EventEntity) -> set[int]
 @register_recipients(
     LeaveEvent.SICK_LEAVE_AUTO_APPROVED, subject_type=LEAVE_REQUEST_SUBJECT
 )
-async def _the_approver(session: AsyncSession, event: EventEntity) -> set[int]:
-    """The manager the sick leave was filed with.
+async def _both_sides(session: AsyncSession, event: EventEntity) -> set[int]:
+    """The manager the sick leave was filed with, and the employee.
+
+    Nobody decided it, so the event has no actor and nobody is subtracted:
+    the employee hears that it went through just as the manager hears that it
+    happened.
 
     Args:
         session (AsyncSession): Session inside the caller's open transaction.
         event (EventEntity): The event; its subject is the leave request.
 
     Returns:
-        set[int]: The manager's user id.
+        set[int]: The manager's and the employee's user ids.
 
     Raises:
         ValueError: The request does not exist. Failing loudly beats telling
@@ -103,7 +108,7 @@ async def _the_approver(session: AsyncSession, event: EventEntity) -> set[int]:
         raise ValueError(
             f"{event.event_type!r} names unknown leave request {event.subject_id}"
         )
-    return {leave.approver_user_id}
+    return {leave.approver_user_id, leave.user_id}
 
 
 @register_recipients(LeaveEvent.BALANCE_ADJUSTED, subject_type=LEAVE_LEDGER_SUBJECT)

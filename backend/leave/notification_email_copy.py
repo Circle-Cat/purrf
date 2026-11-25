@@ -137,8 +137,9 @@ def sick_leave_auto_approved(
     hours: str | None,
     reason: str | None,
 ) -> tuple[str, str]:
-    """The email a manager gets when sick leave filed with them is approved on
-    submission, which it is up to three days.
+    """The email both the employee and their manager get when sick leave is
+    approved on submission, which it is up to 24 working hours. One email for
+    both, so it names the employee and asks nothing of either reader.
 
     Args:
         employee (str): Who is off sick, already HTML-escaped.
@@ -153,12 +154,12 @@ def sick_leave_auto_approved(
     covers = f" ({html.escape(hours)} hours)" if hours else ""
     return (
         "Sick leave was approved automatically",
-        f"<p>{employee} took sick leave {_when(start_date, end_date)}{covers}. "
-        "Sick leave of three days or less is approved automatically, so there "
-        "is nothing for you to decide.</p>"
-        + _quoted("Their reason", reason)
-        + "<p>It is under Decided in Approvals on the Time off card in "
-        "Purrf.</p>" + _FOOTER,
+        f"<p>{employee}'s sick leave {_when(start_date, end_date)}{covers} "
+        "was approved automatically. Sick leave of up to 24 working hours "
+        "(three working days) needs nobody's decision.</p>"
+        + _quoted("Reason", reason)
+        + "<p>It is on the Time off card in Purrf.</p>"
+        + _FOOTER,
     )
 
 
