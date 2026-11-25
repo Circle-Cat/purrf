@@ -240,7 +240,9 @@ class NotificationLinks:
         service = service_from(thread.context_type, None) if thread else None
         return _path("/inbox", service=str(service) if service else None)
 
-    async def _leave_submitted(self, event: EventEntity) -> str:
+    async def _leave_approvals(self, event: EventEntity) -> str:
+        """The manager's approvals: a filed request waits there, and sick
+        leave approved on submission is listed under Decided."""
         return "/leave/approvals"
 
     async def _leave_decided(self, event: EventEntity) -> str:
@@ -341,8 +343,9 @@ _RULES: dict[str, Rule] = {
     RecruitingEvent.EMAIL_BOUNCED: NotificationLinks._application,
     InboxEvent.NEEDS_REPLY: NotificationLinks._inbox_needs_reply,
     InboxEvent.BOUNCED: NotificationLinks._inbox_bounced,
-    LeaveEvent.REQUEST_SUBMITTED: NotificationLinks._leave_submitted,
+    LeaveEvent.REQUEST_SUBMITTED: NotificationLinks._leave_approvals,
     LeaveEvent.REQUEST_DECIDED: NotificationLinks._leave_decided,
+    LeaveEvent.SICK_LEAVE_AUTO_APPROVED: NotificationLinks._leave_approvals,
     MentorshipEvent.APPROVAL_REQUESTED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_REASSIGNED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_DECIDED: NotificationLinks._approval_decided,

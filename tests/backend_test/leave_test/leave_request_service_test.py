@@ -271,6 +271,15 @@ class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
         )
         recorder.start()
         self.addCleanup(recorder.stop)
+        # Sick leave approved on submission never reaches the approval flow,
+        # so the request service records its own event.
+        self.record_own_event = AsyncMock()
+        own_recorder = patch(
+            "backend.leave.leave_request_service.record_event",
+            new=self.record_own_event,
+        )
+        own_recorder.start()
+        self.addCleanup(own_recorder.stop)
 
         self.approval_requests = _FakeApprovalRequests()
         self.approval_service = ApprovalService(
@@ -684,13 +693,62 @@ class TestSickLeave(LeaveRequestServiceTest):
         self.assertIsNone(request.decision_comment)
 
     async def test_approved_on_submission_raises_no_approval(self):
-        """It never goes to the manager, so nobody is asked and nobody is
-        told."""
+        """It never goes to the manager for a decision, so nobody is asked."""
         await self._submit(request_type=LeaveRequestType.SICK)
 
         self.assertEqual(self.approval_requests.rows, [])
         self.record_event.assert_not_awaited()
         self.session.commit.assert_awaited_once()
+
+    async def test_approved_on_submission_tells_the_manager(self):
+        """The manager still hears of it, as sick leave approved by nobody,
+        from a snapshot of what was asked for."""
+        await self._submit(request_type=LeaveRequestType.SICK)
+
+        self.record_own_event.assert_awaited_once()
+        kwargs = self.record_own_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], LeaveEvent.SICK_LEAVE_AUTO_APPROVED)
+        self.assertEqual(kwargs["subject_type"], LEAVE_REQUEST_SUBJECT)
+        self.assertEqual(kwargs["subject_id"], FILED_REQUEST_ID)
+        self.assertIsNone(kwargs["actor_id"])
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "employeeName": "Ann Employee",
+                "leaveType": "sick",
+                "startDate": "2026-08-13",
+                "endDate": "2026-08-15",
+                "hours": "24.00",
+            },
+        )
+
+    async def test_the_manager_is_told_inside_the_same_commit(self):
+        """Recorded before the commit, so the request and its notification are
+        stored together or not at all."""
+        order = []
+        self.record_own_event.side_effect = lambda *a, **kw: order.append("event")
+        self.session.commit.side_effect = lambda: order.append("commit")
+
+        await self._submit(request_type=LeaveRequestType.SICK)
+
+        self.assertEqual(order, ["event", "commit"])
+
+    async def test_sick_leave_that_needs_a_decision_is_not_announced_twice(self):
+        """Over three days it goes through approval, which tells the manager;
+        the auto-approval event is not recorded as well."""
+        await self._submit(
+            request_type=LeaveRequestType.SICK,
+            start_date=LEAVE_START,
+            end_date=datetime.date(2026, 8, 18),
+        )
+
+        self.record_own_event.assert_not_awaited()
+        self.record_event.assert_awaited_once()
+
+    async def test_paid_leave_is_never_announced_as_auto_approved(self):
+        await self._submit()
+
+        self.record_own_event.assert_not_awaited()
 
     async def test_a_fourth_day_puts_it_in_front_of_the_manager(self):
         """24h exactly is approved on submission; the next working day past it

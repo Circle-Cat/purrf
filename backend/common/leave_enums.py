@@ -78,3 +78,6 @@ class LeaveEvent(StrEnum):
     # request's approver is its owner's manager, and nobody reassigns it.
     REQUEST_REASSIGNED = "leave.request_reassigned"
     REQUEST_DECIDED = "leave.request_decided"
+    # Sick leave short enough to be approved on submission. It never reaches
+    # the shared approval flow, so the request service records it itself.
+    SICK_LEAVE_AUTO_APPROVED = "leave.sick_leave_auto_approved"

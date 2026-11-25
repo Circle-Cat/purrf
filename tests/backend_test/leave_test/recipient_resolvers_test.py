@@ -8,9 +8,11 @@ from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.event_entity import EventEntity
 from backend.leave import recipient_resolvers  # noqa: F401 (registers)
 from backend.notification_management import recipient_registry
+from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
+from backend.repository.leave_request_repository import LeaveRequestRepository
 
 EMPLOYEE = 10
 MANAGER = 20
@@ -48,6 +50,19 @@ class LeaveRecipientsTest(unittest.IsolatedAsyncioTestCase):
         )
         self.get = lookup.start()
         self.addCleanup(lookup.stop)
+        self.leaves = {
+            LEAVE_ID: LeaveRequestEntity(
+                leave_request_id=LEAVE_ID, user_id=EMPLOYEE, approver_user_id=MANAGER
+            )
+        }
+        leave_lookup = patch.object(
+            LeaveRequestRepository,
+            "get_by_id",
+            new_callable=AsyncMock,
+            side_effect=lambda _session, leave_id: self.leaves.get(leave_id),
+        )
+        self.get_leave = leave_lookup.start()
+        self.addCleanup(leave_lookup.stop)
 
     async def _resolve(self, event):
         return await recipient_registry.resolve_recipients(self.session, event)
@@ -95,6 +110,28 @@ class LeaveRecipientsTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self._resolve(event)
+
+    async def test_auto_approved_sick_leave_goes_to_the_manager_it_was_filed_with(
+        self,
+    ):
+        """No approval stands behind it, so the manager is read off the
+        request itself."""
+        event = _event(LeaveEvent.SICK_LEAVE_AUTO_APPROVED)
+        del event.details["requestId"]
+
+        recipients = await self._resolve(event)
+
+        self.assertEqual(recipients, {MANAGER})
+        self.get_leave.assert_awaited_once_with(self.session, LEAVE_ID)
+        self.get.assert_not_awaited()
+
+    async def test_auto_approved_sick_leave_for_an_unknown_request_fails_loudly(
+        self,
+    ):
+        self.leaves.clear()
+
+        with self.assertRaises(ValueError):
+            await self._resolve(_event(LeaveEvent.SICK_LEAVE_AUTO_APPROVED))
 
     async def test_reassignment_notifies_nobody(self):
         """A leave request's approver is never reassigned, so the event has no
