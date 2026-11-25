@@ -1,6 +1,7 @@
 [
   "inbox.bounced",
   "inbox.needs_reply",
+  "leave.balance_adjusted",
   "leave.request_decided",
   "leave.request_submitted",
   "leave.sick_leave_auto_approved",

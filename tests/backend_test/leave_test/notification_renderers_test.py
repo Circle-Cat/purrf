@@ -6,6 +6,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
 
 from backend.common.leave_enums import (
+    LEAVE_LEDGER_SUBJECT,
     LEAVE_REQUEST_SUBJECT,
     LeaveEvent,
     LeaveRequestStatus,
@@ -342,6 +343,57 @@ class LeaveRenderTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("&lt;b&gt;Ann&lt;/b&gt;", body)
         self.assertIn("&lt;i&gt;flu&lt;/i&gt;", body)
         self.assertNotIn("Ann", subject)
+
+    # -- admin adjustment ---------------------------------------------------
+
+    async def _adjusted(self, actor_id=MANAGER, **details):
+        event = EventEntity(
+            subject_type=LEAVE_LEDGER_SUBJECT,
+            subject_id=701,
+            actor_id=actor_id,
+            event_type=LeaveEvent.BALANCE_ADJUSTED,
+            details={
+                "hours": "8.00",
+                "effectiveDate": "2025-12-31",
+                "note": "Carried over from 2025",
+                "balanceHours": "48.00",
+                **details,
+            },
+        )
+        return await self._render(event)
+
+    async def test_an_adjustment_tells_the_employee_what_changed(self):
+        subject, body = await self._adjusted()
+
+        self.assertEqual(subject, "Your leave balance was adjusted")
+        self.assertIn(
+            "Bob Manager adjusted your leave balance by +8.00 hours, counted "
+            "from 2025-12-31.",
+            body,
+        )
+        self.assertIn("<p>Their note: Carried over from 2025</p>", body)
+        self.assertIn("<p>Your balance is now 48.00 hours.</p>", body)
+        self.assertIn("balance history", body)
+
+    async def test_a_deduction_keeps_its_minus_sign_and_gains_no_plus(self):
+        _, body = await self._adjusted(hours="-16.00", balanceHours="-8.00")
+
+        self.assertIn("by -16.00 hours", body)
+        self.assertNotIn("+-", body)
+        self.assertIn("Your balance is now -8.00 hours.", body)
+
+    async def test_an_admin_who_cannot_be_named_reads_as_an_administrator(self):
+        self.people.pop(MANAGER)
+
+        _, body = await self._adjusted()
+
+        self.assertIn("An administrator adjusted your leave balance", body)
+
+    async def test_the_note_is_escaped_and_kept_out_of_the_subject(self):
+        subject, body = await self._adjusted(note="<b>fix</b> & more")
+
+        self.assertIn("&lt;b&gt;fix&lt;/b&gt; &amp; more", body)
+        self.assertNotIn("fix", subject)
 
 
 class LeaveEmailCopyTest(unittest.TestCase):
