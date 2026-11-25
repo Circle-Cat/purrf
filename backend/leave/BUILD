@@ -97,6 +97,7 @@ py_library(
         "//backend/common:leave_enums",
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/notification_management:event_recorder",
         "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],

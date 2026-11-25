@@ -13,6 +13,7 @@ from backend.common.communication_enums import ContextType
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.common.leave_enums import (
     LEAVE_APPROVAL,
+    LEAVE_LEDGER_SUBJECT,
     LEAVE_REQUEST_SUBJECT,
     LeaveEvent,
     LeaveRequestStatus,
@@ -393,6 +394,11 @@ class NotificationLinksTest(BaseRepositoryTestLib):
         )
 
         self.assertEqual(await self._link(event, MANAGER), "/leave/approvals")
+
+    async def test_an_adjustment_opens_the_employees_balance_history(self):
+        event = _event(LeaveEvent.BALANCE_ADJUSTED, LEAVE_LEDGER_SUBJECT, 4242, {})
+
+        self.assertEqual(await self._link(event, EMPLOYEE), "/leave/balance-history")
 
     # Mentorship approvals
 

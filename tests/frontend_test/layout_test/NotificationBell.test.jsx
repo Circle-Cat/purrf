@@ -1056,6 +1056,25 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    ["8.00", "Ann Lee adjusted your leave balance by +8.00 hours"],
+    ["-16.00", "Ann Lee adjusted your leave balance by -16.00 hours"],
+  ])(
+    "tells an employee an admin adjusted their balance by %s",
+    async (hours, text) => {
+      await openWith(
+        leaveRow("leave.balance_adjusted", {
+          hours,
+          effectiveDate: "2025-12-31",
+          note: "Carried over",
+          balanceHours: "40.00",
+        }),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
   // -- the matching-run line ---------------------------------------------
   //
   // Written under subject_type "mentorship_round", so everything it says comes

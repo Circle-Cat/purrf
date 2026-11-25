@@ -212,6 +212,20 @@ class LeaveLedgerRepository:
         session.add_all(entries)
         await session.flush()
 
+    async def get_by_id(
+        self, session: AsyncSession, leave_ledger_id: int
+    ) -> LeaveLedgerEntity | None:
+        """One ledger row, or None when there is no such row.
+
+        Args:
+            session: Active async session.
+            leave_ledger_id: The row's id.
+
+        Returns:
+            The row, or None.
+        """
+        return await session.get(LeaveLedgerEntity, leave_ledger_id)
+
     async def list_entries(
         self,
         session: AsyncSession,
