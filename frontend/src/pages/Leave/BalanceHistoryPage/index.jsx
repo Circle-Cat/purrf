@@ -91,7 +91,9 @@ export default function BalanceHistoryPage() {
     );
   }
 
-  const balanceHours = Number(ledgerData?.balanceHours ?? 0).toFixed(2);
+  // Shown as the server sent it, the way every other figure in the feature is.
+  const balanceHours = ledgerData?.balanceHours ?? "0.00";
+  const isBalanceNegative = Number(balanceHours) < 0;
   const entries = ledgerData?.entries ?? [];
 
   return (
@@ -124,7 +126,11 @@ export default function BalanceHistoryPage() {
 
             <div className="flex justify-between border-t border-gray-200 py-3 px-4 sm:px-6 font-bold">
               <span className="text-sm">Total on record</span>
-              <span className="text-sm font-mono tabular-nums">
+              <span
+                className={`text-sm font-mono tabular-nums ${
+                  isBalanceNegative ? "text-rose-600" : ""
+                }`}
+              >
                 {balanceHours} h
               </span>
             </div>
