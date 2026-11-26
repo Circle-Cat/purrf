@@ -1,11 +1,16 @@
 import datetime
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.leave_enums import LeaveEntryType
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
+
+# The advisory lock key the two scheduled leave jobs share. Any fixed pair of
+# int4s will do as long as nothing else in the database uses it.
+_JOB_LOCK_NAMESPACE = 0x4C4A4F42  # "LJOB"
+_JOB_LOCK_KEY = 0
 
 
 class LeaveLedgerRepository:
@@ -196,14 +201,27 @@ class LeaveLedgerRepository:
         )
         return list(result.scalars().all())
 
+    async def lock_jobs(self, session: AsyncSession) -> None:
+        """Holds the scheduled jobs' lock until the transaction ends.
+
+        Each job pays the difference between what is owed and what the ledger
+        already holds. Two runs at once would both read the same holding and
+        both pay the difference; queued, the second reads the first's rows and
+        pays only what is still owed. The weekly accrual and the annual close
+        share the one lock, since both write the year's accrual.
+
+        Args:
+            session: Active async session.
+        """
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+            {"namespace": _JOB_LOCK_NAMESPACE, "key": _JOB_LOCK_KEY},
+        )
+
     async def add_entries(
         self, session: AsyncSession, entries: list[LeaveLedgerEntity]
     ) -> None:
         """Appends ledger rows. Never updates or deletes one.
-
-        Flushes so that the partial unique index speaks now rather than at
-        commit: a retried job hitting the same person and date raises here
-        instead of appearing to succeed.
 
         Args:
             session: Active async session. Not committed.
