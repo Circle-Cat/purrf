@@ -31,7 +31,12 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
  */
 const LeaveRequestsPage = () => {
   const { isEnabled, isReady } = useLeaveEnabled();
-  const { isCovered, isLoading: isCoverageLoading } = useLeaveStanding({
+  const {
+    isCovered,
+    isLoading: isCoverageLoading,
+    loadError: coverageLoadError,
+    reload: reloadCoverage,
+  } = useLeaveStanding({
     enabled: isEnabled,
   });
   const {
@@ -56,6 +61,20 @@ const LeaveRequestsPage = () => {
   // it is still false-because-loading would bounce somebody who is covered.
   if (isCoverageLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
+
+  if (coverageLoadError) {
+    return (
+      <div className="space-y-2">
+        <h2 className="m-0 text-lg font-medium">My Leave</h2>
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-muted-foreground">
+            Couldn't load your leave.
+          </p>
+          <Button onClick={reloadCoverage}>Retry</Button>
+        </div>
+      </div>
+    );
   }
 
   if (!isCovered) {

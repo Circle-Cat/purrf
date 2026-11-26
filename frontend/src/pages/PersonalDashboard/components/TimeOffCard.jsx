@@ -57,6 +57,14 @@ const Stat = ({ label, hours, hint, isRed = false }) => (
  * three figures come from the server; the only arithmetic here is hours into
  * days for the hint.
  *
+ * The figures belong to the dashboard, so a filed request reports back through
+ * `onFiled` for them to be fetched again.
+ *
+ * A failed coverage check is not the same as "not covered". An approver, who
+ * gets the card either way, is told it did not load and offered a retry; for
+ * anybody else the card stays hidden, since most people on the dashboard are
+ * outside the leave population and a failure must not show them a card.
+ *
  * @param {{
  *   isCovered: boolean,
  *   isApprover: boolean,
@@ -64,6 +72,9 @@ const Stat = ({ label, hours, hint, isRed = false }) => (
  *   availableHours: string|null,
  *   pendingHours: string|null,
  *   usedHours: string|null,
+ *   loadError?: boolean,
+ *   onRetry?: () => void,
+ *   onFiled?: () => void,
  * }} props
  */
 const TimeOffCard = ({
@@ -73,6 +84,9 @@ const TimeOffCard = ({
   availableHours,
   pendingHours,
   usedHours,
+  loadError = false,
+  onRetry,
+  onFiled,
 }) => {
   const navigate = useNavigate();
   const { isEnabled } = useLeaveEnabled();
@@ -80,6 +94,12 @@ const TimeOffCard = ({
   const { isSaving, saveError, file } = useMyLeaveRequests({
     enabled: isCovered,
   });
+
+  const fileAndRefresh = async (payload) => {
+    const saved = await file(payload);
+    if (saved) onFiled?.();
+    return saved;
+  };
   const [isFiling, setIsFiling] = useState(false);
   const [isViewingHolidays, setIsViewingHolidays] = useState(false);
 
@@ -156,9 +176,20 @@ const TimeOffCard = ({
           </>
         ) : (
           <>
-            <p className="m-0 text-sm text-muted-foreground">
-              Leave isn&apos;t tracked for your account.
-            </p>
+            {loadError ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="m-0 text-sm text-muted-foreground">
+                  Couldn&apos;t load your time off.
+                </p>
+                <Button variant="outline" size="sm" onClick={onRetry}>
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              <p className="m-0 text-sm text-muted-foreground">
+                Leave isn&apos;t tracked for your account.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               {approvals}
               {holidays}
@@ -173,7 +204,7 @@ const TimeOffCard = ({
           isSaving={isSaving}
           saveError={saveError}
           onClose={() => setIsFiling(false)}
-          onSubmit={file}
+          onSubmit={fileAndRefresh}
         />
       )}
       <CompanyHolidaysDialog

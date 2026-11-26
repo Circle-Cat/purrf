@@ -49,8 +49,12 @@ export const useLeaveCalendarAdmin = ({ enabled = true } = {}) => {
   const [saveError, setSaveError] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
+  // Until this answers there is no year to load, so a failure here has to end
+  // the loading itself; nothing after it will.
+  const loadYears = useCallback(() => {
     if (!enabled) return;
+    setIsLoading(true);
+    setLoadError(false);
     getLeaveHolidayYears()
       .then(({ data }) => {
         const offered = Array.from(
@@ -63,8 +67,15 @@ export const useLeaveCalendarAdmin = ({ enabled = true } = {}) => {
         setYears(offered);
         setYear((previous) => previous ?? data?.currentYear ?? null);
       })
-      .catch(() => setLoadError(true));
+      .catch(() => {
+        setLoadError(true);
+        setIsLoading(false);
+      });
   }, [enabled]);
+
+  useEffect(() => {
+    loadYears();
+  }, [loadYears]);
 
   const load = useCallback(
     (wanted) => {
@@ -147,6 +158,7 @@ export const useLeaveCalendarAdmin = ({ enabled = true } = {}) => {
     saveError,
     isDirty,
     load,
+    retry: () => (year === null ? loadYears() : load(year)),
     edit,
     add,
     remove,
