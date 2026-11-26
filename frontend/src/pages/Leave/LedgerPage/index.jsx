@@ -29,9 +29,17 @@ export default function LedgerPage({
   page = 1,
   onUserChange,
   onPageChange,
-  people = [],
 }) {
-  const { entries, totalEntries, isLoading, loadError, load } = useLeaveLedger({
+  // The filter lists everyone with ledger history, from the server, so people
+  // the engine no longer pays (who have left, say) can still be picked.
+  const {
+    entries,
+    totalEntries,
+    isLoading,
+    loadError,
+    load,
+    people = [],
+  } = useLeaveLedger({
     userId,
     page,
     pageSize: PAGE_SIZE,
