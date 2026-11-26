@@ -6,7 +6,6 @@ import LeaveBalancesPanel from "@/pages/Leave/BalancesPage";
 import LeaveCalendarPanel from "@/pages/Leave/CalendarAdminPage";
 import DiscardChangesDialog from "@/pages/Leave/components/DiscardChangesDialog";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
-import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
 import LedgerPage from "@/pages/Leave/LedgerPage";
 
 /**
@@ -24,10 +23,6 @@ import LedgerPage from "@/pages/Leave/LedgerPage";
  */
 const LeaveAdminPage = () => {
   const { isEnabled, isReady } = useLeaveEnabled();
-
-  const { people: paidPeople } = useLeaveBalances({
-    enabled: isReady && isEnabled,
-  });
 
   const [tab, setTab] = useState("balances");
   const [ledgerUserId, setLedgerUserId] = useState(null);
@@ -86,7 +81,6 @@ const LeaveAdminPage = () => {
           <LedgerPage
             userId={ledgerUserId}
             page={ledgerPage}
-            people={paidPeople || []}
             onUserChange={handleLedgerUserChange}
             onPageChange={setLedgerPage}
           />

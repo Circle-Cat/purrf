@@ -199,6 +199,7 @@ describe("LeaveAdminPage", () => {
           },
         ],
         totalEntries: 1,
+        people: [{ userId: 42, name: "Alice Smith", ldap: "asmith" }],
       }),
     );
 

@@ -127,4 +127,27 @@ describe("useLeaveLedger", () => {
     await waitFor(() => expect(result.current.totalEntries).toBe(1));
     expect(result.current.loadError).toBe(false);
   });
+  it("keeps the people with history for the filter, even when a page fails", async () => {
+    getLeaveLedger.mockResolvedValueOnce({
+      data: {
+        entries: [],
+        totalEntries: 0,
+        people: [{ userId: 7, name: "Zoe Wu", ldap: null }],
+      },
+    });
+    getLeaveLedger.mockRejectedValueOnce(new Error("network error"));
+
+    const { result, rerender } = renderHook(
+      ({ page }) => useLeaveLedger({ page }),
+      { initialProps: { page: 1 } },
+    );
+    await waitFor(() => expect(result.current.people).toHaveLength(1));
+
+    rerender({ page: 2 });
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    expect(result.current.people).toEqual([
+      { userId: 7, name: "Zoe Wu", ldap: null },
+    ]);
+  });
 });
