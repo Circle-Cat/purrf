@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import DiscardChangesDialog from "@/pages/Leave/components/DiscardChangesDialog";
+import { calendarProblems } from "@/pages/Leave/utils/calendarProblems";
 import SegmentRow from "@/pages/Leave/CalendarAdminPage/components/SegmentRow";
 import { useLeaveCalendarAdmin } from "@/pages/Leave/hooks/useLeaveCalendarAdmin";
 import {
@@ -32,9 +33,10 @@ import {
  * saved is deleted, and that is confirmed before it happens rather than
  * reported after.
  *
- * Nothing here validates a segment. The server refuses six ways and each
- * message names the holiday at fault; a copy of those rules in the browser
- * would be free to disagree with the one that actually refuses.
+ * The server's rules are also checked here as the admin types, so the row at
+ * fault is marked where it is and the year cannot be saved until it is fixed.
+ * The server still checks; if the two disagree, its refusal is shown and
+ * nothing is written.
  *
  * Edits live only in this page until the year is saved, so moving to another
  * year asks first, and `onDirtyChange` lets the page around it ask before a
@@ -79,6 +81,11 @@ const LeaveCalendarAdminPage = ({ onDirtyChange } = {}) => {
     }
     setYear(next);
   };
+
+  const { byIndex: problemsByIndex, hasProblems } = calendarProblems(
+    year,
+    segments,
+  );
 
   const totalDays = segments.reduce((running, segment) => {
     if (!segment.startDate || !segment.endDate) return running;
@@ -129,7 +136,7 @@ const LeaveCalendarAdminPage = ({ onDirtyChange } = {}) => {
             Add a holiday
           </Button>
           <Button
-            disabled={isSaving || !isDirty}
+            disabled={isSaving || !isDirty || hasProblems}
             onClick={() => setIsConfirming(true)}
           >
             {isSaving ? "Saving…" : "Save the year"}
@@ -178,6 +185,7 @@ const LeaveCalendarAdminPage = ({ onDirtyChange } = {}) => {
                   isSaving={isSaving}
                   onEdit={edit}
                   onRemove={remove}
+                  problems={problemsByIndex[index]}
                 />
               ))}
             </ul>
