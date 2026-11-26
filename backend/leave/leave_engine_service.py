@@ -12,8 +12,9 @@ comes back in the run's report.
 
 A second run is harmless without either job looking for its own rows. The
 target formula counts what it has already granted, so the difference is zero
-the second time; the ledger's partial unique index is the backstop for two runs
-landing at once, not the mechanism.
+the second time, and a later run on the same day pays only what has become
+owed since. Two runs landing at once are queued on a lock both jobs take
+before reading anything, so the second always sees the first's rows.
 """
 
 import datetime
@@ -174,6 +175,7 @@ class LeaveEngineService:
             The run's report, including everyone left out and why.
         """
         on = today or business_today()
+        await self.leave_ledger_repository.lock_jobs(session)
         participants, excluded, considered = await self._participants(session, on)
 
         entries = []
@@ -232,6 +234,7 @@ class LeaveEngineService:
             The run's report.
         """
         on = today or business_today()
+        await self.leave_ledger_repository.lock_jobs(session)
         closing_year = on.year - 1
         closing_day = datetime.date(closing_year, 12, 31)
         participants, excluded, considered = await self._participants(
