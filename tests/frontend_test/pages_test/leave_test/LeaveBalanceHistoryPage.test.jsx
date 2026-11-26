@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
@@ -243,6 +243,25 @@ describe("BalanceHistoryPage", () => {
     expect(useMyLeaveLedger).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("says the balance did not load, rather than that it is not tracked", () => {
+    const reload = vi.fn();
+    vi.mocked(useLeaveStanding).mockReturnValue({
+      isCovered: false,
+      isLoading: false,
+      loadError: true,
+      reload,
+    });
+
+    renderPage();
+
+    expect(
+      screen.queryByText("Leave isn't tracked for your account."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Couldn't load your leave.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("shows loading state while useLeaveStanding is loading", () => {

@@ -11,7 +11,12 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 export default function BalanceHistoryPage() {
   const { isEnabled, isReady } = useLeaveEnabled();
 
-  const { isCovered, isLoading: isStandingLoading } = useLeaveStanding({
+  const {
+    isCovered,
+    isLoading: isStandingLoading,
+    loadError: standingLoadError,
+    reload: reloadStanding,
+  } = useLeaveStanding({
     enabled: isEnabled,
   });
 
@@ -40,6 +45,19 @@ export default function BalanceHistoryPage() {
     return (
       <div className="p-6 text-sm text-muted-foreground">
         Loading balance history...
+      </div>
+    );
+  }
+
+  if (standingLoadError) {
+    return (
+      <div className="flex flex-col items-start gap-3 p-6">
+        <p className="text-sm text-muted-foreground">
+          Couldn't load your leave.
+        </p>
+        <Button variant="link" onClick={() => reloadStanding()}>
+          Retry
+        </Button>
       </div>
     );
   }

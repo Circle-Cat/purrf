@@ -154,4 +154,37 @@ describe("useLeaveCalendarAdmin", () => {
     expect(api.getLeaveHolidayYears).not.toHaveBeenCalled();
     expect(api.getLeaveHolidays).not.toHaveBeenCalled();
   });
+
+  it("stops loading when the year list will not load", async () => {
+    api.getLeaveHolidayYears.mockRejectedValue(new Error("network error"));
+
+    const { result } = renderHook(() => useLeaveCalendarAdmin());
+
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("retries the year list when that is what failed", async () => {
+    api.getLeaveHolidayYears.mockRejectedValueOnce(new Error("network error"));
+    const { result } = renderHook(() => useLeaveCalendarAdmin());
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    act(() => result.current.retry());
+
+    await waitFor(() => expect(result.current.year).toBe(2026));
+    await waitFor(() => expect(result.current.segments).toHaveLength(1));
+    expect(result.current.loadError).toBe(false);
+    expect(api.getLeaveHolidays).toHaveBeenCalledWith(2026);
+  });
+
+  it("retries the year when only the year failed", async () => {
+    api.getLeaveHolidays.mockRejectedValueOnce(new Error("network error"));
+    const { result } = renderHook(() => useLeaveCalendarAdmin());
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    act(() => result.current.retry());
+
+    await waitFor(() => expect(result.current.segments).toHaveLength(1));
+    expect(api.getLeaveHolidayYears).toHaveBeenCalledTimes(1);
+  });
 });

@@ -48,7 +48,7 @@ const LeaveCalendarAdminPage = () => {
     isSaving,
     saveError,
     isDirty,
-    load,
+    retry,
     edit,
     add,
     remove,
@@ -134,7 +134,7 @@ const LeaveCalendarAdminPage = () => {
               <p className="text-sm text-muted-foreground">
                 Couldn't load the calendar.
               </p>
-              <Button onClick={() => load(year)}>Retry</Button>
+              <Button onClick={retry}>Retry</Button>
             </div>
           )}
 
