@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import DiscardChangesDialog from "@/pages/Leave/components/DiscardChangesDialog";
 import SegmentRow from "@/pages/Leave/CalendarAdminPage/components/SegmentRow";
 import { useLeaveCalendarAdmin } from "@/pages/Leave/hooks/useLeaveCalendarAdmin";
 import {
@@ -35,9 +36,14 @@ import {
  * message names the holiday at fault; a copy of those rules in the browser
  * would be free to disagree with the one that actually refuses.
  *
+ * Edits live only in this page until the year is saved, so moving to another
+ * year asks first, and `onDirtyChange` lets the page around it ask before a
+ * tab switch unmounts it.
+ *
+ * @param {{onDirtyChange?: (isDirty: boolean) => void}} props
  * @returns {JSX.Element}
  */
-const LeaveCalendarAdminPage = () => {
+const LeaveCalendarAdminPage = ({ onDirtyChange } = {}) => {
   const {
     years,
     year,
@@ -56,6 +62,23 @@ const LeaveCalendarAdminPage = () => {
   } = useLeaveCalendarAdmin();
 
   const [isConfirming, setIsConfirming] = useState(false);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    // Unmounted, there are no edits left to lose.
+    return () => onDirtyChange?.(false);
+  }, [isDirty, onDirtyChange]);
+
+  // A year asked for while edits are unsaved, waiting on the discard dialog.
+  const [pendingYear, setPendingYear] = useState(null);
+
+  const changeYear = (next) => {
+    if (isDirty) {
+      setPendingYear(next);
+      return;
+    }
+    setYear(next);
+  };
 
   const totalDays = segments.reduce((running, segment) => {
     if (!segment.startDate || !segment.endDate) return running;
@@ -92,7 +115,7 @@ const LeaveCalendarAdminPage = () => {
             className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
             value={year ?? ""}
             disabled={isSaving}
-            onChange={(event) => setYear(Number(event.target.value))}
+            onChange={(event) => changeYear(Number(event.target.value))}
           >
             {years.map((option) => (
               <option key={option} value={option}>
@@ -161,6 +184,15 @@ const LeaveCalendarAdminPage = () => {
           )}
         </CardContent>
       </Card>
+
+      <DiscardChangesDialog
+        isOpen={pendingYear !== null}
+        onStay={() => setPendingYear(null)}
+        onDiscard={() => {
+          setYear(pendingYear);
+          setPendingYear(null);
+        }}
+      />
 
       <Dialog
         open={isConfirming}
