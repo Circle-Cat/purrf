@@ -113,6 +113,21 @@ describe("TimeOffCard", () => {
     expect(screen.getByText("Request leave")).toBeInTheDocument();
   });
 
+  it("tells the request form who will approve it", async () => {
+    renderCard({ approverName: "Jasmine Li", approverLdap: "jasmine" });
+    await waitFor(() =>
+      expect(screen.getByText("Time off")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Request time off" }));
+
+    expect(
+      screen.getByText(
+        "Your request goes to Jasmine Li (jasmine) for approval.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("opens the company holidays on the card too", async () => {
     api.getLeaveHolidayYears.mockResolvedValue(
       envelope({ years: [2026], currentYear: 2026, nextYear: 2027 }),
