@@ -762,6 +762,25 @@ class TestLedgerLines(BaseRepositoryTestLib):
         )
         self.assertEqual(first[1].hours, Decimal("-24.00"))
 
+    async def test_everyone_with_a_row_is_listed_once(self):
+        other = _make_user()
+        nobody = _make_user()
+        await self.insert_entities([other, nobody])
+        await self.insert_entities([
+            self._accrual(datetime.date(2026, 1, 5)),
+            self._accrual(datetime.date(2026, 1, 12)),
+            LeaveLedgerEntity(
+                user_id=other.user_id,
+                entry_type=LeaveEntryType.MANUAL_ADJUSTMENT,
+                hours=Decimal("8.00"),
+                effective_date=datetime.date(2025, 12, 31),
+            ),
+        ])
+
+        user_ids = await self.repository.list_user_ids(self.session)
+
+        self.assertEqual(user_ids, sorted([self.user.user_id, other.user_id]))
+
     async def test_leave_across_new_year_counts_in_each_year(self):
         await self._request_days([
             datetime.date(2026, 12, 30),

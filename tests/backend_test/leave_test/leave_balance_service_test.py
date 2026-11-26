@@ -37,6 +37,7 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.repository.balance = AsyncMock(return_value=Decimal("80.00"))
         self.repository.list_lines = AsyncMock(return_value=[])
         self.repository.count_lines = AsyncMock(return_value=0)
+        self.repository.list_user_ids = AsyncMock(return_value=[])
 
         self.users_repository = MagicMock()
         self.users_repository.get_all_by_ids = AsyncMock(return_value=[])
@@ -158,6 +159,7 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
 
         self.repository.list_lines.return_value = [entry1, entry2, entry3]
         self.repository.count_lines.return_value = 347
+        self.repository.list_user_ids.return_value = [44, 51, 60]
 
         self.users_repository.get_all_by_ids.return_value = [
             MagicMock(
@@ -215,32 +217,35 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.assertEqual(row3.hours, "8.00")
         self.assertEqual(row3.note, "Weekly Accrual")
 
-    async def test_list_ledger_only_resolves_users_on_that_page(self):
-        """Verify user details are fetched ONLY for user_ids appearing on the requested page."""
-        entry = _ledger_entry(user_id=99)
-        self.repository.list_lines.return_value = [entry]
-        self.repository.count_lines.return_value = 100
-
+    async def test_the_filter_lists_everyone_with_history_by_name(self):
+        """Including somebody not on this page, and somebody the engine no
+        longer pays: their history is still on record."""
+        self.repository.list_lines.return_value = [_ledger_entry(user_id=99)]
+        self.repository.list_user_ids.return_value = [7, 99]
         self.users_repository.get_all_by_ids.return_value = [
             MagicMock(
                 user_id=99, first_name="Ann", last_name="Lee", preferred_name=None
-            )
+            ),
+            MagicMock(user_id=7, first_name="Zoe", last_name="Wu", preferred_name=None),
         ]
         self.user_emails_repository.get_emails_by_user_ids.return_value = {
-            99: ["ann.lee@circlecat.org"]
+            99: ["ann.lee@circlecat.org"],
         }
 
-        await self.service.list_ledger(self.session, user_id=10, page=2, page_size=10)
+        page_dto = await self.service.list_ledger(
+            self.session, user_id=10, page=2, page_size=10
+        )
 
         self.repository.list_lines.assert_awaited_once_with(
             self.session, 10, limit=10, offset=10
         )
-
-        self.users_repository.get_all_by_ids.assert_awaited_once_with(
-            self.session, [99]
+        self.assertEqual(
+            [(p.user_id, p.name, p.ldap) for p in page_dto.people],
+            [(99, "Ann Lee", "ann.lee"), (7, "Zoe Wu", None)],
         )
-        self.user_emails_repository.get_emails_by_user_ids.assert_awaited_once_with(
-            self.session, [99]
+        self.assertEqual(page_dto.entries[0].name, "Ann Lee")
+        self.users_repository.get_all_by_ids.assert_awaited_once_with(
+            self.session, [7, 99]
         )
 
     async def test_a_requests_line_carries_its_last_day(self):
