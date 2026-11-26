@@ -93,6 +93,20 @@ def _separate_part_days(
     return end_time <= other.start_time or other.end_time <= start_time
 
 
+def _describe_clash(other: LeaveRequestEntity) -> str:
+    """How a refusal names a request it clashed with.
+
+    A part day is named by its times, so somebody refused an afternoon can see
+    it is those minutes that are taken and not the whole date.
+    """
+    if other.start_time is not None and other.end_time is not None:
+        return (
+            f"#{other.leave_request_id} ({other.start_time:%H:%M} to "
+            f"{other.end_time:%H:%M} on {other.start_date})"
+        )
+    return f"#{other.leave_request_id} ({other.start_date} to {other.end_date})"
+
+
 def _balance_delta(request_type: LeaveRequestType, hours: Decimal) -> Decimal:
     """What approving a request of this type does to a balance.
 
@@ -380,10 +394,7 @@ class LeaveRequestService:
             if not _separate_part_days(start_date, start_time, end_time, other)
         ]
         if clashes:
-            named = ", ".join(
-                f"#{clash.leave_request_id} ({clash.start_date} to {clash.end_date})"
-                for clash in clashes
-            )
+            named = ", ".join(_describe_clash(clash) for clash in clashes)
             raise ValueError(f"These days are already covered by {named}.")
         taken_that_day = sum((other.hours for other in nearby), NO_HOURS)
         if nearby and taken_that_day + hours > HOURS_PER_DAY:

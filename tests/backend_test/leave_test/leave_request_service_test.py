@@ -542,27 +542,33 @@ class TestSubmit(LeaveRequestServiceTest):
         clash.leave_request_id = 501
         clash.start_date = LEAVE_START
         clash.end_date = LEAVE_END
+        clash.start_time = None
+        clash.end_time = None
         self.requests.list_overlapping.return_value = [clash]
 
         with self.assertRaises(ValueError) as caught:
             await self._submit()
 
-        self.assertIn("501", str(caught.exception))
+        self.assertIn(f"#501 ({LEAVE_START} to {LEAVE_END})", str(caught.exception))
         self.requests.add.assert_not_awaited()
 
     async def test_the_filing_lock_is_taken_before_the_overlap_check(self):
         """A second filing arriving at the same moment waits on the lock, so
-        its overlap check sees the first one rather than nothing."""
+        its overlap check and the pending hours behind its overdraft mark both
+        see the first one rather than nothing."""
         order = []
         self.requests.lock_filing.side_effect = lambda *a: order.append("lock")
         self.requests.list_overlapping.side_effect = (
             lambda *a: order.append("overlap") or []
         )
+        self.requests.sum_pending_paid_hours.side_effect = lambda *a: order.append(
+            "pending"
+        ) or Decimal("0.00")
 
         await self._submit()
 
         self.requests.lock_filing.assert_awaited_once_with(self.session, EMPLOYEE)
-        self.assertEqual(order, ["lock", "overlap"])
+        self.assertEqual(order, ["lock", "overlap", "pending"])
 
     def _part_day(self, start, end, hours, request_id=STORED_REQUEST_ID):
         """A part day already on file on LEAVE_START."""
@@ -585,8 +591,8 @@ class TestSubmit(LeaveRequestServiceTest):
         )
 
     async def test_a_morning_and_an_afternoon_on_one_day_may_both_be_filed(self):
-        """Decided 2026-11-25: part days on one date are fine as long as their
-        times do not overlap. Back to back counts as not overlapping."""
+        """Part days on one date are fine as long as their times do not
+        overlap. Back to back counts as not overlapping."""
         self.requests.list_overlapping.return_value = [
             self._part_day((9, 0), (12, 0), "3.00")
         ]
@@ -604,7 +610,10 @@ class TestSubmit(LeaveRequestServiceTest):
         with self.assertRaises(ValueError) as caught:
             await self._submit_part_day((11, 30), (14, 0))
 
-        self.assertIn(str(STORED_REQUEST_ID), str(caught.exception))
+        self.assertIn(
+            f"#{STORED_REQUEST_ID} (09:00 to 12:00 on {LEAVE_START})",
+            str(caught.exception),
+        )
         self.requests.add.assert_not_awaited()
 
     async def test_a_whole_day_overlaps_a_part_day_on_its_date(self):

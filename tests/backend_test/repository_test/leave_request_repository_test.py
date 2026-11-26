@@ -460,10 +460,12 @@ class TestFilingLock(BaseRepositoryTestLib):
 
         self.assertIn((0x4C454156, 4242), await self._held_advisory_locks())
 
-    async def test_another_person_is_not_locked(self):
+    async def test_only_this_person_is_locked(self):
         await self.repository.lock_filing(self.session, 4242)
 
-        self.assertNotIn((0x4C454156, 4243), await self._held_advisory_locks())
+        held = await self._held_advisory_locks()
+        self.assertIn((0x4C454156, 4242), held)
+        self.assertNotIn((0x4C454156, 4243), held)
 
 
 class TestGetByIdLocking(BaseRepositoryTestLib):
