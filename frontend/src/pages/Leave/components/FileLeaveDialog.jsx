@@ -88,12 +88,19 @@ const structuralProblem = (form) => {
  * contradicts. The figure appears on the request as soon as it is filed, and a
  * pending request can be taken back if it surprises.
  *
+ * Who will read the request is said above Submit, from the same lookup filing
+ * makes. When nobody can approve it, the reason is shown instead and Submit is
+ * off: filing would only be refused with that same reason.
+ *
  * @param {{
  *   isOpen: boolean,
  *   isSaving: boolean,
  *   saveError: string|null,
  *   onClose: () => void,
  *   onSubmit: (payload: object) => Promise<boolean>,
+ *   approverName?: string|null,
+ *   approverLdap?: string|null,
+ *   approverProblem?: string|null,
  * }} props
  */
 const FileLeaveDialog = ({
@@ -102,6 +109,9 @@ const FileLeaveDialog = ({
   saveError,
   onClose,
   onSubmit,
+  approverName = null,
+  approverLdap = null,
+  approverProblem = null,
 }) => {
   const [form, setForm] = useState(EMPTY);
   const [problem, setProblem] = useState(null);
@@ -229,6 +239,20 @@ const FileLeaveDialog = ({
             />
           </div>
 
+          {approverProblem ? (
+            <p className="text-sm text-red-700">{approverProblem}</p>
+          ) : (
+            (approverName || approverLdap) && (
+              <p className="text-sm text-muted-foreground">
+                {`Your request goes to ${
+                  approverName && approverLdap
+                    ? `${approverName} (${approverLdap})`
+                    : approverName || approverLdap
+                } for approval.`}
+              </p>
+            )
+          )}
+
           {problem && <p className="text-sm text-red-700">{problem}</p>}
           {/* The server's own wording: each refusal names the fix, and a
               generic message would throw that away. */}
@@ -241,7 +265,10 @@ const FileLeaveDialog = ({
           <Button variant="outline" disabled={isSaving} onClick={close}>
             Cancel
           </Button>
-          <Button disabled={isSaving} onClick={submit}>
+          <Button
+            disabled={isSaving || Boolean(approverProblem)}
+            onClick={submit}
+          >
             {isSaving ? "Submitting…" : "Submit"}
           </Button>
         </DialogFooter>
