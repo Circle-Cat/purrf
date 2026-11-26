@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import LeaveBalancesPanel from "@/pages/Leave/BalancesPage";
 import LeaveCalendarPanel from "@/pages/Leave/CalendarAdminPage";
+import DiscardChangesDialog from "@/pages/Leave/components/DiscardChangesDialog";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
 import LedgerPage from "@/pages/Leave/LedgerPage";
@@ -31,6 +32,10 @@ const LeaveAdminPage = () => {
   const [tab, setTab] = useState("balances");
   const [ledgerUserId, setLedgerUserId] = useState(null);
   const [ledgerPage, setLedgerPage] = useState(1);
+  // Leaving the calendar tab unmounts it, and its unsaved edits with it.
+  const [isCalendarDirty, setIsCalendarDirty] = useState(false);
+  // A tab asked for while the calendar has unsaved edits.
+  const [pendingTab, setPendingTab] = useState(null);
 
   if (!isReady) {
     return null;
@@ -54,7 +59,16 @@ const LeaveAdminPage = () => {
   return (
     <div className="space-y-5">
       <h2 className="m-0 text-lg font-medium">Leave administration</h2>
-      <Tabs onValueChange={setTab} value={tab}>
+      <Tabs
+        onValueChange={(next) => {
+          if (tab === "calendar" && isCalendarDirty) {
+            setPendingTab(next);
+            return;
+          }
+          setTab(next);
+        }}
+        value={tab}
+      >
         <TabsList>
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="calendar">Yearly setup</TabsTrigger>
@@ -66,7 +80,7 @@ const LeaveAdminPage = () => {
         </TabsContent>
 
         <TabsContent value="calendar" className="pt-4">
-          <LeaveCalendarPanel />
+          <LeaveCalendarPanel onDirtyChange={setIsCalendarDirty} />
         </TabsContent>
         <TabsContent value="ledger" className="pt-4">
           <LedgerPage
@@ -78,6 +92,15 @@ const LeaveAdminPage = () => {
           />
         </TabsContent>
       </Tabs>
+
+      <DiscardChangesDialog
+        isOpen={pendingTab !== null}
+        onStay={() => setPendingTab(null)}
+        onDiscard={() => {
+          setTab(pendingTab);
+          setPendingTab(null);
+        }}
+      />
     </div>
   );
 };

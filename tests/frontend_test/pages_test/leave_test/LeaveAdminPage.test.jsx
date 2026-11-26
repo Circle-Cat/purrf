@@ -129,6 +129,54 @@ describe("LeaveAdminPage", () => {
     expect(screen.getByRole("tab", { name: "Ledger" })).toBeInTheDocument();
   });
 
+  const editTheCalendar = async () => {
+    api.getLeaveHolidays.mockResolvedValue(
+      envelope({
+        year: 2026,
+        totalDays: 3,
+        segments: [
+          {
+            name: "National Day",
+            startDate: "2026-10-01",
+            endDate: "2026-10-03",
+            dayCount: 3,
+            isExchangeable: true,
+          },
+        ],
+      }),
+    );
+    renderPage();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Yearly setup" }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByDisplayValue("National Day"), {
+      target: { value: "Golden Week" },
+    });
+  };
+
+  it("asks before leaving the calendar with unsaved edits", async () => {
+    await editTheCalendar();
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Balances" }));
+    expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(screen.getByDisplayValue("Golden Week")).toBeInTheDocument();
+  });
+
+  it("leaves the calendar once the edits are given up", async () => {
+    await editTheCalendar();
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Balances" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Alice Smith")).toBeInTheDocument(),
+    );
+    expect(screen.queryByDisplayValue("Golden Week")).not.toBeInTheDocument();
+  });
+
   it("opens on the balances, which is what an admin comes to read", async () => {
     renderPage();
 
