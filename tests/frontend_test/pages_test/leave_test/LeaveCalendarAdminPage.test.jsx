@@ -82,6 +82,61 @@ describe("LeaveCalendarAdminPage", () => {
     );
   });
 
+  const editName = async () => {
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByDisplayValue("National Day"), {
+      target: { value: "Golden Week" },
+    });
+  };
+
+  it("asks before another year throws away unsaved edits", async () => {
+    renderPage();
+    await editName();
+
+    fireEvent.change(screen.getByLabelText("Year"), {
+      target: { value: "2027" },
+    });
+    expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(screen.getByDisplayValue("Golden Week")).toBeInTheDocument();
+    expect(api.getLeaveHolidays).not.toHaveBeenCalledWith(2027);
+  });
+
+  it("moves to the other year once the edits are given up", async () => {
+    renderPage();
+    await editName();
+
+    fireEvent.change(screen.getByLabelText("Year"), {
+      target: { value: "2027" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() =>
+      expect(api.getLeaveHolidays).toHaveBeenCalledWith(2027),
+    );
+  });
+
+  it("changes year without asking when nothing is unsaved", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText("Year"), {
+      target: { value: "2027" },
+    });
+
+    expect(
+      screen.queryByText("Discard unsaved changes?"),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.getLeaveHolidays).toHaveBeenCalledWith(2027),
+    );
+  });
+
   it("cannot be saved until something changes", async () => {
     renderPage();
     await waitFor(() =>
