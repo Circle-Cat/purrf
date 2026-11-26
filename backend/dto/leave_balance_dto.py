@@ -28,8 +28,17 @@ class LeaveLedgerRowDto(BaseDto):
     note: str | None = None
 
 
+class LeaveLedgerPersonDto(BaseDto):
+    user_id: int
+    name: str | None = None
+    ldap: str | None = None
+
+
 class LeaveLedgerPageDto(BaseDto):
     entries: list[LeaveLedgerRowDto]
+    # Everyone with a ledger row, for the person filter: including people the
+    # engine no longer pays, whose history is still on record.
+    people: list[LeaveLedgerPersonDto]
     page: int
     page_size: int
     total_entries: int

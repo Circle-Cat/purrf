@@ -4,6 +4,7 @@ from backend.dto.leave_balance_dto import (
     LeaveBalanceDto,
     LeaveLedgerEntryDto,
     LeaveLedgerPageDto,
+    LeaveLedgerPersonDto,
     LeaveLedgerRowDto,
 )
 
@@ -97,14 +98,29 @@ class LeaveBalanceService:
         # accruals or manual adjustments) may cause total_entries to slightly
         # disagree with the returned page rows. This is acceptable for an admin view.
 
-        # Extract user_ids for the current page only to avoid bulk loading unnecessary accounts
-        page_user_ids = sorted({line.user_id for line in lines})
+        # The filter needs everyone with history, which covers this page too.
+        ledger_user_ids = await self.leave_ledger_repository.list_user_ids(session)
 
         name_by_id, ldap_by_id = await resolve_names_and_ldaps(
             session,
-            page_user_ids,
+            ledger_user_ids,
             self.users_repository,
             self.user_emails_repository,
+        )
+        people = sorted(
+            (
+                LeaveLedgerPersonDto(
+                    user_id=user_id,
+                    name=name_by_id.get(user_id),
+                    ldap=ldap_by_id.get(user_id),
+                )
+                for user_id in ledger_user_ids
+            ),
+            key=lambda person: (
+                (person.name or "").casefold(),
+                person.ldap or "",
+                person.user_id,
+            ),
         )
 
         entry_dtos = [
@@ -124,6 +140,7 @@ class LeaveBalanceService:
 
         return LeaveLedgerPageDto(
             entries=entry_dtos,
+            people=people,
             page=page,
             page_size=page_size,
             total_entries=total_entries,
