@@ -321,6 +321,26 @@ class LeaveLedgerRepository:
         result = await session.execute(stmt)
         return [LedgerLine(**row._mapping) for row in result.all()]
 
+    async def list_user_ids(self, session: AsyncSession) -> list[int]:
+        """Everyone with at least one ledger row, whatever they are now.
+
+        Wider than the people the engine pays: somebody who has left, or is no
+        longer internal, keeps the history they built up and an admin still
+        needs to read it.
+
+        Args:
+            session: Active async session.
+
+        Returns:
+            Their user ids, ascending.
+        """
+        result = await session.execute(
+            select(LeaveLedgerEntity.user_id)
+            .distinct()
+            .order_by(LeaveLedgerEntity.user_id)
+        )
+        return list(result.scalars().all())
+
     async def count_lines(
         self, session: AsyncSession, user_id: int | None = None
     ) -> int:
