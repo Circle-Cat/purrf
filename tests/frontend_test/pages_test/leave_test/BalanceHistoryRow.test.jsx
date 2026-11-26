@@ -1,18 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import BalanceHistoryRow from "@/pages/Leave/components/BalanceHistoryRow";
 import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest";
-
-vi.mock("@/pages/Leave/utils/leaveDates", () => ({
-  formatBusinessDate: vi.fn((date) => {
-    const d = new Date(date);
-    return d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  }),
-}));
 
 const entry = (overrides = {}) => ({
   leaveLedgerId: 1,
@@ -98,6 +87,34 @@ describe("BalanceHistoryRow", () => {
     );
 
     expect(screen.getByText(/Aug 15, 2026/)).toBeInTheDocument();
+  });
+
+  it("shows a request's days as a range", () => {
+    // A request is stored a row per day and listed as one line, from its
+    // first day to its last.
+    render(
+      <BalanceHistoryRow
+        entry={entry({
+          entryType: "leave_deduction",
+          hours: "-24.00",
+          effectiveDate: "2026-12-30",
+          endDate: "2027-01-02",
+          note: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Dec 30, 2026 – Jan 2, 2027")).toBeInTheDocument();
+  });
+
+  it("shows one date when the line is a single day", () => {
+    render(
+      <BalanceHistoryRow
+        entry={entry({ effectiveDate: "2026-08-15", endDate: "2026-08-15" })}
+      />,
+    );
+
+    expect(screen.getByText("Aug 15, 2026")).toBeInTheDocument();
   });
 
   it("renders as a list item", () => {
