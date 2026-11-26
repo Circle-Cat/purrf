@@ -46,6 +46,7 @@ from backend.leave.leave_clock import business_today
 from backend.leave.leave_participants import resolve_names_and_ldaps
 from backend.leave.leave_policy import HOURS_PER_DAY
 from backend.leave.leave_workdays import (
+    hours_by_day,
     request_hours,
     required_notice_workdays,
     workdays_before,
@@ -215,40 +216,70 @@ def unexchangeable_days(
     return days
 
 
-def ledger_entry_for(
-    request: LeaveRequestEntity, *, created_by: int | None
-) -> LeaveLedgerEntity | None:
-    """The row approving a request writes, or None for sick leave.
+def ledger_entries_for(
+    request: LeaveRequestEntity,
+    holidays: frozenset[datetime.date],
+    *,
+    created_by: int | None,
+) -> list[LeaveLedgerEntity]:
+    """The rows approving a request writes: one per day it takes hours from.
 
-    One row per request, dated where the leave starts and pointing back at
-    it: per-day rows would multiply the ledger and buy nothing, since the
-    request already says which days. Sick leave has no allowance and deducts
-    nothing, so it produces no row at all -- not even a zero one, which would
-    only be a row readers have to learn to ignore.
+    Each row is dated on its own day and points back at the request, so a
+    request spanning New Year counts in the year each day falls in, and the
+    days a changed calendar touches can be found. Readers that list the ledger
+    merge them back into one line per request.
+
+    Sick leave has no allowance and deducts nothing, so it produces no rows at
+    all -- not even zero ones, which would only be rows readers have to learn
+    to ignore.
 
     Args:
         request: The request being approved.
+        holidays: Company holidays covering its days. Approval checks the total
+            against the stored hours with these same holidays first.
         created_by: Who approved it.
 
     Returns:
-        The row to write, or None.
+        The rows to write, in date order. Empty for sick leave.
+
+    Raises:
+        ValueError: The days do not add up to the hours on the request, which
+            would mean the calendar changed after approval checked it.
     """
     if request.type is LeaveRequestType.SICK:
-        return None
+        return []
+
+    days = hours_by_day(
+        request.type,
+        request.start_date,
+        request.end_date,
+        request.start_time,
+        request.end_time,
+        holidays,
+    )
+    total = sum((hours for _, hours in days), NO_HOURS)
+    if total != request.hours:
+        raise ValueError(
+            f"Request {request.leave_request_id} is for {request.hours:.2f} "
+            f"hours, but its days come to {total:.2f}."
+        )
 
     entry_type = (
         LeaveEntryType.EXCHANGE_CREDIT
         if request.type is LeaveRequestType.EXCHANGE
         else LeaveEntryType.LEAVE_DEDUCTION
     )
-    return LeaveLedgerEntity(
-        user_id=request.user_id,
-        entry_type=entry_type,
-        hours=_balance_delta(request.type, request.hours),
-        effective_date=request.start_date,
-        source_request_id=request.leave_request_id,
-        created_by=created_by,
-    )
+    return [
+        LeaveLedgerEntity(
+            user_id=request.user_id,
+            entry_type=entry_type,
+            hours=_balance_delta(request.type, hours),
+            effective_date=day,
+            source_request_id=request.leave_request_id,
+            created_by=created_by,
+        )
+        for day, hours in days
+    ]
 
 
 async def overdraft_now(

@@ -973,21 +973,28 @@ class TestDecisions(LeaveRequestServiceTest):
             self.session, STORED_REQUEST_ID, approver, approve=approve, comment=comment
         )
 
-    async def test_approving_paid_leave_deducts_it_on_the_first_day(self):
-        """One row for the request, dated where the leave starts, pointing back
-        at it. Per-day rows would multiply the ledger and buy nothing: the
-        request already says which days."""
+    async def test_approving_paid_leave_deducts_each_day_on_that_day(self):
+        """A row per working day, each dated on its own day and pointing back at
+        the request, so leave across a year end counts in the year each day
+        falls in."""
         request = self._pending()
 
         await self._decide()
 
         self.assertEqual(request.status, LeaveRequestStatus.APPROVED)
-        [row] = self._ledger_rows()
-        self.assertEqual(row.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
-        self.assertEqual(row.hours, Decimal("-24.00"))
-        self.assertEqual(row.effective_date, LEAVE_START)
-        self.assertEqual(row.source_request_id, STORED_REQUEST_ID)
-        self.assertEqual(row.user_id, EMPLOYEE)
+        rows = self._ledger_rows()
+        self.assertEqual(
+            [(row.effective_date, row.hours) for row in rows],
+            [
+                (LEAVE_START, Decimal("-8.00")),
+                (datetime.date(2026, 8, 14), Decimal("-8.00")),
+                (LEAVE_END, Decimal("-8.00")),
+            ],
+        )
+        for row in rows:
+            self.assertEqual(row.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
+            self.assertEqual(row.source_request_id, STORED_REQUEST_ID)
+            self.assertEqual(row.user_id, EMPLOYEE)
 
     async def test_an_approval_is_attributed_to_the_approver(self):
         """Both the ledger row and the approval say who decided; the request
@@ -996,8 +1003,7 @@ class TestDecisions(LeaveRequestServiceTest):
 
         decided = await self._decide()
 
-        [row] = self._ledger_rows()
-        self.assertEqual(row.created_by, MANAGER)
+        self.assertEqual({row.created_by for row in self._ledger_rows()}, {MANAGER})
         approval = self._approval_for(STORED_REQUEST_ID)
         self.assertEqual(approval.status, ApprovalRequestStatus.APPROVED)
         self.assertEqual(approval.decided_by, MANAGER)
@@ -1029,9 +1035,16 @@ class TestDecisions(LeaveRequestServiceTest):
 
         await self._decide()
 
-        [row] = self._ledger_rows()
-        self.assertEqual(row.entry_type, LeaveEntryType.EXCHANGE_CREDIT)
-        self.assertEqual(row.hours, Decimal("16.00"))
+        rows = self._ledger_rows()
+        self.assertEqual(
+            [(row.effective_date, row.hours) for row in rows],
+            [
+                (datetime.date(2026, 8, 13), Decimal("8.00")),
+                (datetime.date(2026, 8, 14), Decimal("8.00")),
+            ],
+        )
+        for row in rows:
+            self.assertEqual(row.entry_type, LeaveEntryType.EXCHANGE_CREDIT)
 
     async def test_approving_sick_leave_writes_no_row(self):
         request = self._pending(
@@ -1158,8 +1171,10 @@ class TestDecisions(LeaveRequestServiceTest):
         )
 
         self.assertEqual(decided.status, LeaveRequestStatus.APPROVED.value)
-        [row] = self._ledger_rows()
-        self.assertEqual(row.source_request_id, FILED_REQUEST_ID)
+        self.assertEqual(
+            {row.source_request_id for row in self._ledger_rows()},
+            {FILED_REQUEST_ID},
+        )
 
 
 class TestWithdraw(LeaveRequestServiceTest):
