@@ -16,6 +16,10 @@ from backend.leave.leave_accrual import NO_HOURS, format_hours
 from backend.leave.leave_clock import business_today
 from backend.notification_management.event_recorder import record_event
 
+# A guard against a mistyped figure, well inside what the ledger column holds.
+# A real year's entitlement is at most a few hundred hours.
+MAX_ADJUSTMENT_HOURS = Decimal("1000")
+
 
 class LeaveAdjustmentService:
     """Adjusts one person's balance by hand, for a stated reason.
@@ -68,14 +72,27 @@ class LeaveAdjustmentService:
             The row as written, plus the resulting balance.
 
         Raises:
-            ValueError: The note is blank, the hours are zero, the date is in
-                the future, or there is no such person. Each becomes a 400.
+            ValueError: The note is blank, the hours are zero, more than
+                1000 either way or past two decimal places, the date is in the
+                future, or there is no such person. Each becomes a 400.
         """
         reason = note.strip()
         if not reason:
             raise ValueError("A leave adjustment needs a note saying why.")
         if hours == NO_HOURS:
             raise ValueError("A leave adjustment of zero hours changes nothing.")
+        # Checked before the places: quantize raises on a number too large for
+        # the decimal context, and the size is the more useful thing to say.
+        if abs(hours) > MAX_ADJUSTMENT_HOURS:
+            raise ValueError(
+                f"{format_hours(hours)} hours is more than the "
+                f"{MAX_ADJUSTMENT_HOURS} a single adjustment may move."
+            )
+        if hours != hours.quantize(NO_HOURS):
+            raise ValueError(
+                f"{hours} has more than two decimal places, which is all a "
+                "balance keeps."
+            )
         if effective_date > business_today():
             raise ValueError(
                 f"{effective_date} is in the future. A balance is the sum of "

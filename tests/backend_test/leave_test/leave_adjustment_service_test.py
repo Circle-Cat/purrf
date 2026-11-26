@@ -130,6 +130,43 @@ class LeaveAdjustmentServiceTest(IsolatedAsyncioTestCase):
 
         self.ledger_repository.add_entries.assert_not_awaited()
 
+    async def test_more_than_two_decimal_places_is_refused(self):
+        """The ledger keeps two places. A third would be rounded on storage
+        while the notification repeated the hours as typed, so the two would
+        disagree."""
+        with self.assertRaises(ValueError) as caught:
+            await self._adjust(hours=Decimal("1.555"))
+
+        self.assertIn("two decimal places", str(caught.exception))
+        self.ledger_repository.add_entries.assert_not_awaited()
+
+    async def test_two_decimal_places_are_accepted(self):
+        """Accruals are 1.54h a week, so settling one exactly needs both."""
+        await self._adjust(hours=Decimal("-0.04"))
+
+        self.assertEqual(self._written().hours, Decimal("-0.04"))
+
+    async def test_trailing_zeros_past_two_places_are_not_extra_precision(self):
+        await self._adjust(hours=Decimal("8.000"))
+
+        self.ledger_repository.add_entries.assert_awaited_once()
+
+    async def test_more_than_a_thousand_hours_either_way_is_refused(self):
+        """A typo guard well inside what the column holds; past 9999.99 the
+        database itself refused and the request answered 500."""
+        for hours in (Decimal("1000.01"), Decimal("-1000.01"), Decimal("10000")):
+            with self.subTest(hours=hours):
+                with self.assertRaises(ValueError) as caught:
+                    await self._adjust(hours=hours)
+                self.assertIn("1000", str(caught.exception))
+
+        self.ledger_repository.add_entries.assert_not_awaited()
+
+    async def test_exactly_a_thousand_hours_is_accepted(self):
+        await self._adjust(hours=Decimal("-1000"))
+
+        self.ledger_repository.add_entries.assert_awaited_once()
+
     async def test_a_date_in_the_future_is_refused(self):
         """A balance is a plain sum with no date filter, so a future-dated row
         counts from the moment it is written -- it would show up as hours the
