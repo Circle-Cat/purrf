@@ -311,6 +311,55 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
         pipe.hdel.assert_called_once()
         self.assertEqual(pipe.hdel.call_args.args[1:], ("gone",))
 
+    async def test_an_empty_read_keeps_every_cached_profile(self):
+        """An empty directory read is a failed read, not everybody leaving.
+        Dropping the cache would leave nobody covered until the next run, and
+        that run would see everyone as a first sighting and record no level
+        change made in between."""
+        self.microsoft_service.get_all_microsoft_members = AsyncMock(return_value=[])
+        self._stub_redis(
+            employee_ldaps=["alice"],
+            cached_profiles={"alice": self._cached(), "carol": self._cached()},
+        )
+        pipe = self.redis_client.pipeline.return_value
+
+        with self.assertRaises(RuntimeError):
+            await self.service.sync_employment_profiles_to_redis()
+
+        pipe.hdel.assert_not_called()
+        pipe.hset.assert_not_called()
+        pipe.execute.assert_not_called()
+        self.ledger_repository.add_entries.assert_not_awaited()
+
+    async def test_a_read_with_nobody_in_scope_keeps_every_cached_profile(self):
+        """Users came back, but none in leave scope: the same failure, from a
+        filter or a field that stopped arriving."""
+        self.microsoft_service.get_all_microsoft_members = AsyncMock(
+            return_value=[
+                make_graph_user("id-alice", "alice@circlecat.org", employee_type=None)
+            ]
+        )
+        self._stub_redis(
+            employee_ldaps=["alice"], cached_profiles={"alice": self._cached()}
+        )
+        pipe = self.redis_client.pipeline.return_value
+
+        with self.assertRaises(RuntimeError):
+            await self.service.sync_employment_profiles_to_redis()
+
+        pipe.hdel.assert_not_called()
+        pipe.execute.assert_not_called()
+
+    async def test_an_empty_read_with_nothing_cached_is_not_an_error(self):
+        """A fresh environment has nothing to protect."""
+        self.microsoft_service.get_all_microsoft_members = AsyncMock(return_value=[])
+        self._stub_redis(employee_ldaps=[], cached_profiles={})
+        pipe = self.redis_client.pipeline.return_value
+
+        await self.service.sync_employment_profiles_to_redis()
+
+        pipe.execute.assert_not_called()
+
     async def test_writes_nothing_when_no_profile_changed(self):
         unchanged = json.dumps(
             {
