@@ -115,6 +115,7 @@ class _FakeLeaveRequests:
         self.add = AsyncMock(side_effect=self._add)
         self.get_by_id = AsyncMock(side_effect=self._get_by_id)
         self.list_overlapping = AsyncMock(return_value=[])
+        self.lock_filing = AsyncMock()
         self.sum_pending_paid_hours = AsyncMock(return_value=Decimal("0.00"))
         self.list_for_user = AsyncMock(return_value=[])
         self.list_for_approver = AsyncMock(return_value=[])
@@ -541,13 +542,121 @@ class TestSubmit(LeaveRequestServiceTest):
         clash.leave_request_id = 501
         clash.start_date = LEAVE_START
         clash.end_date = LEAVE_END
+        clash.start_time = None
+        clash.end_time = None
         self.requests.list_overlapping.return_value = [clash]
 
         with self.assertRaises(ValueError) as caught:
             await self._submit()
 
-        self.assertIn("501", str(caught.exception))
+        self.assertIn(f"#501 ({LEAVE_START} to {LEAVE_END})", str(caught.exception))
         self.requests.add.assert_not_awaited()
+
+    async def test_the_filing_lock_is_taken_before_the_overlap_check(self):
+        """A second filing arriving at the same moment waits on the lock, so
+        its overlap check and the pending hours behind its overdraft mark both
+        see the first one rather than nothing."""
+        order = []
+        self.requests.lock_filing.side_effect = lambda *a: order.append("lock")
+        self.requests.list_overlapping.side_effect = (
+            lambda *a: order.append("overlap") or []
+        )
+        self.requests.sum_pending_paid_hours.side_effect = lambda *a: order.append(
+            "pending"
+        ) or Decimal("0.00")
+
+        await self._submit()
+
+        self.requests.lock_filing.assert_awaited_once_with(self.session, EMPLOYEE)
+        self.assertEqual(order, ["lock", "overlap", "pending"])
+
+    def _part_day(self, start, end, hours, request_id=STORED_REQUEST_ID):
+        """A part day already on file on LEAVE_START."""
+        request = _stored_request(
+            hours=hours,
+            request_id=request_id,
+            start_date=LEAVE_START,
+            end_date=LEAVE_START,
+        )
+        request.start_time = datetime.time(*start)
+        request.end_time = datetime.time(*end)
+        return request
+
+    async def _submit_part_day(self, start, end):
+        return await self._submit(
+            start_date=LEAVE_START,
+            end_date=LEAVE_START,
+            start_time=datetime.time(*start),
+            end_time=datetime.time(*end),
+        )
+
+    async def test_a_morning_and_an_afternoon_on_one_day_may_both_be_filed(self):
+        """Part days on one date are fine as long as their times do not
+        overlap. Back to back counts as not overlapping."""
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (12, 0), "3.00")
+        ]
+
+        request = await self._submit_part_day((12, 0), (16, 0))
+
+        self.assertEqual(request.hours, "4.00")
+        self.requests.add.assert_awaited_once()
+
+    async def test_part_days_whose_times_overlap_are_refused(self):
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (12, 0), "3.00")
+        ]
+
+        with self.assertRaises(ValueError) as caught:
+            await self._submit_part_day((11, 30), (14, 0))
+
+        self.assertIn(
+            f"#{STORED_REQUEST_ID} (09:00 to 12:00 on {LEAVE_START})",
+            str(caught.exception),
+        )
+        self.requests.add.assert_not_awaited()
+
+    async def test_a_whole_day_overlaps_a_part_day_on_its_date(self):
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (12, 0), "3.00")
+        ]
+
+        with self.assertRaises(ValueError):
+            await self._submit(start_date=LEAVE_START, end_date=LEAVE_START)
+
+        self.requests.add.assert_not_awaited()
+
+    async def test_a_part_day_overlaps_a_whole_day_on_file(self):
+        self.requests.list_overlapping.return_value = [
+            _stored_request(hours="8.00", start_date=LEAVE_START, end_date=LEAVE_START)
+        ]
+
+        with self.assertRaises(ValueError):
+            await self._submit_part_day((14, 0), (16, 0))
+
+        self.requests.add.assert_not_awaited()
+
+    async def test_part_days_may_not_add_up_to_more_than_a_working_day(self):
+        """Two separate part days that together pass eight hours would deduct
+        more than taking the whole day off."""
+        self.requests.list_overlapping.return_value = [
+            self._part_day((8, 0), (14, 0), "6.00")
+        ]
+
+        with self.assertRaises(ValueError) as caught:
+            await self._submit_part_day((15, 0), (18, 0))
+
+        self.assertIn("6.00 hours", str(caught.exception))
+        self.requests.add.assert_not_awaited()
+
+    async def test_part_days_adding_up_to_exactly_a_working_day_are_fine(self):
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (13, 0), "4.00")
+        ]
+
+        await self._submit_part_day((14, 0), (18, 0))
+
+        self.requests.add.assert_awaited_once()
 
     async def test_a_request_worth_no_hours_is_refused(self):
         """A Sunday and a Monday: nothing to deduct, so there is nothing to

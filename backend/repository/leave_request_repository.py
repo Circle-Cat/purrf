@@ -1,7 +1,7 @@
 import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.leave_enums import LeaveRequestStatus, LeaveRequestType
@@ -10,6 +10,10 @@ from backend.entity.leave_request_entity import LeaveRequestEntity
 # A day already claimed by one of these cannot be claimed again. Rejected and
 # withdrawn requests deducted nothing, so their days are free.
 BLOCKING_STATUSES = (LeaveRequestStatus.PENDING, LeaveRequestStatus.APPROVED)
+
+# The first half of the advisory lock key a filing takes; the second half is the
+# person. Any fixed int4 will do as long as nothing else in the database uses it.
+_FILING_LOCK_NAMESPACE = 0x4C454156  # "LEAV"
 
 
 class LeaveRequestRepository:
@@ -59,6 +63,24 @@ class LeaveRequestRepository:
             stmt = stmt.with_for_update()
         result = await session.execute(stmt)
         return result.scalars().one_or_none()
+
+    async def lock_filing(self, session: AsyncSession, user_id: int) -> None:
+        """Holds this person's filing lock until the transaction ends.
+
+        The overlap check is a read, and nothing in the table forbids two
+        overlapping rows, so two filings arriving together (a double click, two
+        tabs) would each see the other as absent and both be stored. Taking
+        this first makes the second wait until the first commits or rolls back,
+        and then its overlap check sees the first. Other people never wait.
+
+        Args:
+            session: Active async session. Released by its commit or rollback.
+            user_id: Whose filings to serialise.
+        """
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :user_id)"),
+            {"namespace": _FILING_LOCK_NAMESPACE, "user_id": user_id},
+        )
 
     async def list_overlapping(
         self,
