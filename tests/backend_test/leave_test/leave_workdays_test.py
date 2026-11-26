@@ -16,6 +16,7 @@ from decimal import Decimal
 from backend.common.leave_enums import LeaveRequestType
 from backend.leave.leave_workdays import (
     count_workdays,
+    hours_by_day,
     is_workday,
     request_hours,
     required_notice_workdays,
@@ -341,6 +342,99 @@ class TestWorkdaysBefore(unittest.TestCase):
                 DRAGON_BOAT,
             ),
             1,
+        )
+
+
+class TestHoursByDay(unittest.TestCase):
+    """The days a request covers, each with its hours. Their sum is what
+    request_hours answers, so the two cannot drift apart."""
+
+    def _split(
+        self,
+        request_type,
+        start,
+        end,
+        start_time=None,
+        end_time=None,
+        holidays=NO_HOLIDAYS,
+    ):
+        days = hours_by_day(request_type, start, end, start_time, end_time, holidays)
+        total = request_hours(request_type, start, end, start_time, end_time, holidays)
+        self.assertEqual(sum((hours for _, hours in days), Decimal("0.00")), total)
+        return days
+
+    def test_a_range_across_new_year_lists_each_working_day(self):
+        new_year = frozenset({datetime.date(2027, 1, 1)})
+
+        days = self._split(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 12, 30),
+            datetime.date(2027, 1, 2),
+            holidays=new_year,
+        )
+
+        self.assertEqual(
+            days,
+            [
+                (datetime.date(2026, 12, 30), Decimal("8.00")),
+                (datetime.date(2026, 12, 31), Decimal("8.00")),
+                (datetime.date(2027, 1, 2), Decimal("8.00")),
+            ],
+        )
+
+    def test_the_weekly_days_off_are_left_out(self):
+        # Saturday 2026-06-13 to Tuesday 2026-06-16: Sunday and Monday are off.
+        days = self._split(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 13),
+            datetime.date(2026, 6, 16),
+        )
+
+        self.assertEqual(
+            [day for day, _ in days],
+            [datetime.date(2026, 6, 13), datetime.date(2026, 6, 16)],
+        )
+
+    def test_a_part_day_is_its_one_day_and_its_hours(self):
+        days = self._split(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 18),
+            datetime.date(2026, 6, 18),
+            datetime.time(9, 0),
+            datetime.time(12, 30),
+        )
+
+        self.assertEqual(days, [(datetime.date(2026, 6, 18), Decimal("3.50"))])
+
+    def test_a_part_day_on_a_holiday_lists_nothing(self):
+        days = self._split(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 19),
+            datetime.date(2026, 6, 19),
+            datetime.time(9, 0),
+            datetime.time(12, 0),
+            holidays=DRAGON_BOAT,
+        )
+
+        self.assertEqual(days, [])
+
+    def test_an_exchange_lists_every_day_it_covers(self):
+        days = self._split(
+            LeaveRequestType.EXCHANGE,
+            datetime.date(2026, 6, 19),
+            datetime.date(2026, 6, 20),
+            holidays=frozenset({
+                datetime.date(2026, 6, 19),
+                datetime.date(2026, 6, 20),
+            }),
+        )
+
+        self.assertEqual(
+            days,
+            [
+                (datetime.date(2026, 6, 19), Decimal("8.00")),
+                (datetime.date(2026, 6, 20), Decimal("8.00")),
+            ],
         )
 
 

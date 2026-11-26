@@ -3,6 +3,8 @@ from backend.dto.base_dto import BaseDto
 
 class LeaveLedgerEntryDto(BaseDto):
     effectiveDate: str
+    # The last day of a request's line; equal to effectiveDate for any other.
+    endDate: str
     entryType: str
     hours: str
     note: str | None = None
@@ -16,6 +18,8 @@ class LeaveBalanceDto(BaseDto):
 class LeaveLedgerRowDto(BaseDto):
     leave_ledger_id: int
     effective_date: str
+    # The last day of a request's line; equal to effective_date for any other.
+    end_date: str
     user_id: int
     name: str | None = None
     ldap: str | None = None
