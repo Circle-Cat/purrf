@@ -1748,6 +1748,45 @@ class TestStanding(LeaveRequestServiceTest):
 
         self.assertEqual(standing.available, Decimal("-8.00"))
 
+    async def test_names_who_a_request_filed_now_would_go_to(self):
+        """The same lookup filing makes, so nobody files without knowing who
+        reads it."""
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(standing.approver.user_id, MANAGER)
+        self.assertEqual(standing.approver.name, "Bob Manager")
+        self.assertEqual(standing.approver.ldap, "bob")
+        self.assertIsNone(standing.approver_problem)
+
+    async def test_the_approver_shown_is_the_one_filing_records(self):
+        standing = await self.service.standing(self.session, EMPLOYEE)
+        filed = await self._submit()
+
+        self.assertEqual(filed.approver_user_id, standing.approver.user_id)
+
+    async def test_says_why_nobody_would_approve_when_azure_has_no_manager(self):
+        profile = json.loads(self.redis_client.hgetall.return_value["ann"])
+        profile["manager_ldap"] = None
+        self.redis_client.hgetall.return_value = {"ann": json.dumps(profile)}
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertTrue(standing.is_covered)
+        self.assertIsNone(standing.approver)
+        self.assertIn("Azure record has no manager", standing.approver_problem)
+
+    async def test_says_why_nobody_would_approve_when_the_manager_has_no_account(
+        self,
+    ):
+        self.resolver.resolve.return_value = ResolvedParticipants(
+            by_ldap={}, unresolved=("bob",), not_internal=()
+        )
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertIsNone(standing.approver)
+        self.assertIn("(bob) has no purrf account", standing.approver_problem)
+
     async def test_nothing_is_quoted_to_somebody_the_feature_misses(self):
         """Zero would read as an entitlement of nothing rather than as a
         feature with nothing to do with them."""
@@ -1760,6 +1799,8 @@ class TestStanding(LeaveRequestServiceTest):
         self.assertIsNone(standing.available)
         self.assertIsNone(standing.pending)
         self.assertIsNone(standing.used)
+        self.assertIsNone(standing.approver)
+        self.assertIsNone(standing.approver_problem)
 
     async def test_no_ledger_is_read_for_somebody_it_misses(self):
         """Nothing to compute, so nothing is asked."""

@@ -143,6 +143,19 @@ class LeaveStanding:
     available: Decimal | None
     pending: Decimal | None
     used: Decimal | None
+    # Who a request filed now would go to, or why nobody would. Both None for
+    # somebody the feature does not apply to.
+    approver: "LeaveApprover | None" = None
+    approver_problem: str | None = None
+
+
+@dataclass(frozen=True)
+class LeaveApprover:
+    """The account a request filed now would wait on."""
+
+    user_id: int
+    name: str | None
+    ldap: str
 
 
 async def load_calendar(
@@ -748,12 +761,38 @@ class LeaveRequestService:
         deducted = await self.leave_ledger_repository.sum_deductions_for_year(
             session, user_id, business_today().year
         )
+        # The same lookup filing makes, so the name shown before filing is who
+        # filing will record -- unless the manager changes in between.
+        approver, approver_problem = None, None
+        try:
+            approver_id, approver_ldap = await self._approver(session, user_id)
+        except ValueError as exc:
+            approver_problem = str(exc)
+        else:
+            person = await self.users_repository.get_user_by_user_id(
+                session, approver_id
+            )
+            approver = LeaveApprover(
+                user_id=approver_id,
+                name=(
+                    user_display_name(
+                        first_name=person.first_name,
+                        last_name=person.last_name,
+                        preferred_name=person.preferred_name,
+                    )
+                    if person is not None
+                    else None
+                ),
+                ldap=approver_ldap,
+            )
         return LeaveStanding(
             is_covered=True,
             available=balance - pending,
             pending=pending,
             # Stored negative; shown as an amount spent.
             used=-deducted,
+            approver=approver,
+            approver_problem=approver_problem,
         )
 
     async def coverage(self, session: AsyncSession, user_id: int) -> bool:
@@ -990,7 +1029,13 @@ class LeaveRequestService:
         return balance - held < hours
 
     async def _approver_for(self, session: AsyncSession, user_id: int) -> int:
-        """The account that will decide this person's requests.
+        """The account that will decide this person's requests. See
+        :meth:`_approver`."""
+        approver_id, _ = await self._approver(session, user_id)
+        return approver_id
+
+    async def _approver(self, session: AsyncSession, user_id: int) -> tuple[int, str]:
+        """The account that will decide this person's requests, and its ldap.
 
         A snapshot taken now, not a lookup at decision time: changing manager
         later must not repoint a request somebody has already decided.
@@ -1028,7 +1073,7 @@ class LeaveRequestService:
                 f"Your manager ({manager_ldap}) has no purrf account, so they "
                 "cannot approve anything yet."
             )
-        return resolved.by_ldap[manager_ldap]
+        return resolved.by_ldap[manager_ldap], manager_ldap
 
     async def _confirmed_ldap(self, session: AsyncSession, user_id: int) -> str | None:
         """This account's Azure ldap, or None, from a confirmed corporate address.

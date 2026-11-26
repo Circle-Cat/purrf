@@ -121,13 +121,60 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         anybody read somebody else's standing."""
         self.service.standing = AsyncMock(
             return_value=SimpleNamespace(
-                is_covered=True, available=None, pending=None, used=None
+                is_covered=True,
+                available=None,
+                pending=None,
+                used=None,
+                approver=None,
+                approver_problem=None,
             )
         )
 
         await self.controller.coverage(self.ctx)
 
         self.service.standing.assert_awaited_once_with(self.session, 10)
+
+    async def test_coverage_names_the_approver(self):
+        """The request form says who will read the request before it is
+        filed."""
+        self.service.standing = AsyncMock(
+            return_value=SimpleNamespace(
+                is_covered=True,
+                available=None,
+                pending=None,
+                used=None,
+                approver=SimpleNamespace(user_id=20, name="Bob Manager", ldap="bob"),
+                approver_problem=None,
+            )
+        )
+
+        response = await self.controller.coverage(self.ctx)
+
+        data = response["data"].model_dump(by_alias=True)
+        self.assertEqual(data["approverUserId"], 20)
+        self.assertEqual(data["approverName"], "Bob Manager")
+        self.assertEqual(data["approverLdap"], "bob")
+        self.assertIsNone(data["approverProblem"])
+
+    async def test_coverage_says_why_nobody_would_approve(self):
+        self.service.standing = AsyncMock(
+            return_value=SimpleNamespace(
+                is_covered=True,
+                available=None,
+                pending=None,
+                used=None,
+                approver=None,
+                approver_problem="Your manager (bob) has no purrf account.",
+            )
+        )
+
+        response = await self.controller.coverage(self.ctx)
+
+        data = response["data"].model_dump(by_alias=True)
+        self.assertIsNone(data["approverName"])
+        self.assertEqual(
+            data["approverProblem"], "Your manager (bob) has no purrf account."
+        )
 
     def test_every_route_is_open_to_any_signed_in_employee(self):
         """Leave is not an administered feature: everybody files their own and
