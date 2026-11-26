@@ -38,8 +38,7 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const loadYears = useCallback(() => {
     setLoadError(false);
     getLeaveHolidayYears()
       .then(({ data }) => {
@@ -55,7 +54,11 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
         setYear((previous) => previous ?? data?.currentYear ?? null);
       })
       .catch(() => setLoadError(true));
-  }, [isOpen]);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) loadYears();
+  }, [isOpen, loadYears]);
 
   const loadYear = useCallback((wanted) => {
     if (wanted === null || wanted === undefined) return;
@@ -113,7 +116,11 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
                 <p className="text-sm text-muted-foreground">
                   Couldn't load the calendar.
                 </p>
-                <Button onClick={() => loadYear(year)}>Retry</Button>
+                <Button
+                  onClick={() => (year === null ? loadYears() : loadYear(year))}
+                >
+                  Retry
+                </Button>
               </div>
             )}
 

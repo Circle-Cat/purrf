@@ -162,6 +162,23 @@ describe("LeaveRequestsPage", () => {
     );
   });
 
+  it("says leave did not load, rather than that it is not tracked", async () => {
+    api.getLeaveCoverage.mockRejectedValueOnce(new Error("network error"));
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load your leave.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/isn't tracked/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/24\.00 h/)).toBeInTheDocument(),
+    );
+  });
+
   it("offers a retry when the list will not load", async () => {
     api.getMyLeaveRequests.mockRejectedValueOnce(new Error("network error"));
     api.getMyLeaveRequests.mockResolvedValue(envelope([row()]));

@@ -28,28 +28,44 @@ const NOTHING = {
  * `enabled` false asks nothing: a feature switched off must not be calling its
  * endpoint on every dashboard load.
  *
+ * `reload` starts over and shows loading, for a retry after a failure.
+ * `refresh` is for figures that have just moved, after filing: the old ones
+ * stay up until the new ones arrive, and a failed refresh keeps them, since
+ * dropping to "loading" or "not covered" would take the card off the screen.
+ *
  * @param {{enabled?: boolean}} [options]
  * @returns {{isCovered: boolean, availableHours: string|null,
  *   pendingHours: string|null, usedHours: string|null, isLoading: boolean,
- *   loadError: boolean, reload: () => void}}
+ *   loadError: boolean, reload: () => Promise<void>,
+ *   refresh: () => Promise<void>}}
  */
 export const useLeaveStanding = ({ enabled = true } = {}) => {
   const [standing, setStanding] = useState(NOTHING);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  const load = useCallback(() => {
-    if (!enabled) return Promise.resolve();
-    setIsLoading(true);
-    setLoadError(false);
-    return getLeaveCoverage()
-      .then(({ data }) => setStanding({ ...NOTHING, ...(data ?? {}) }))
-      .catch(() => {
-        setLoadError(true);
-        setStanding(NOTHING);
-      })
-      .finally(() => setIsLoading(false));
-  }, [enabled]);
+  const load = useCallback(
+    ({ silent = false } = {}) => {
+      if (!enabled) return Promise.resolve();
+      // The error stays up during a retry, so the card does not flash "not
+      // tracked" while the second attempt is in flight.
+      if (!silent) setIsLoading(true);
+      return getLeaveCoverage()
+        .then(({ data }) => {
+          setStanding({ ...NOTHING, ...(data ?? {}) });
+          setLoadError(false);
+        })
+        .catch(() => {
+          if (silent) return;
+          setLoadError(true);
+          setStanding(NOTHING);
+        })
+        .finally(() => {
+          if (!silent) setIsLoading(false);
+        });
+    },
+    [enabled],
+  );
 
   useEffect(() => {
     load();
@@ -63,6 +79,7 @@ export const useLeaveStanding = ({ enabled = true } = {}) => {
     usedHours: usable ? standing.usedHours : null,
     isLoading,
     loadError,
-    reload: load,
+    reload: () => load(),
+    refresh: () => load({ silent: true }),
   };
 };
