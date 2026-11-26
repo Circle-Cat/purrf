@@ -432,6 +432,42 @@ class TestLeaveRequestRepository(BaseRepositoryTestLib):
         )
 
 
+class TestFilingLock(BaseRepositoryTestLib):
+    """The lock that makes two filings by one person wait for each other.
+
+    Two sessions racing cannot be staged inside this test's single outer
+    transaction, so what is asserted is that the lock is really held, on this
+    person, until the transaction ends.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repository = LeaveRequestRepository()
+
+    async def _held_advisory_locks(self):
+        from sqlalchemy import text
+
+        rows = await self.session.execute(
+            text(
+                "SELECT classid, objid FROM pg_locks "
+                "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted"
+            )
+        )
+        return {(int(classid), int(objid)) for classid, objid in rows.all()}
+
+    async def test_the_lock_is_held_on_this_person(self):
+        await self.repository.lock_filing(self.session, 4242)
+
+        self.assertIn((0x4C454156, 4242), await self._held_advisory_locks())
+
+    async def test_only_this_person_is_locked(self):
+        await self.repository.lock_filing(self.session, 4242)
+
+        held = await self._held_advisory_locks()
+        self.assertIn((0x4C454156, 4242), held)
+        self.assertNotIn((0x4C454156, 4243), held)
+
+
 class TestGetByIdLocking(BaseRepositoryTestLib):
     """Whether the read that precedes a decision holds the row.
 

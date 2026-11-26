@@ -44,6 +44,7 @@ from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_clock import business_today
 from backend.leave.leave_participants import resolve_names_and_ldaps
+from backend.leave.leave_policy import HOURS_PER_DAY
 from backend.leave.leave_workdays import (
     request_hours,
     required_notice_workdays,
@@ -58,6 +59,52 @@ NO_HOURS = Decimal("0.00")
 # "Over three days, talk to your manager" -- so three days exactly does not need
 # one. Measured in hours, through the same working-day count as a deduction.
 SICK_AUTO_APPROVE_HOURS = Decimal("24.00")
+
+
+def _separate_part_days(
+    date: datetime.date,
+    start_time: datetime.time | None,
+    end_time: datetime.time | None,
+    other: LeaveRequestEntity,
+) -> bool:
+    """Whether a new part day and an existing request share a date but not a
+    minute, which is the one way two requests may touch the same day.
+
+    A morning and an afternoon off are two requests that do not overlap. A
+    whole day overlaps every part day on its date, and anything spanning
+    several days is whole days.
+
+    Args:
+        date: The new request's day (its only day, if it carries times).
+        start_time: The new request's start, None for whole days.
+        end_time: The new request's end, None for whole days.
+        other: A live request already on file whose days touch the new one.
+
+    Returns:
+        True when both are part days on that same date and their times do not
+        intersect.
+    """
+    if start_time is None or end_time is None:
+        return False
+    if other.start_time is None or other.end_time is None:
+        return False
+    if not (other.start_date == other.end_date == date):
+        return False
+    return end_time <= other.start_time or other.end_time <= start_time
+
+
+def _describe_clash(other: LeaveRequestEntity) -> str:
+    """How a refusal names a request it clashed with.
+
+    A part day is named by its times, so somebody refused an afternoon can see
+    it is those minutes that are taken and not the whole date.
+    """
+    if other.start_time is not None and other.end_time is not None:
+        return (
+            f"#{other.leave_request_id} ({other.start_time:%H:%M} to "
+            f"{other.end_time:%H:%M} on {other.start_date})"
+        )
+    return f"#{other.leave_request_id} ({other.start_date} to {other.end_date})"
 
 
 def _balance_delta(request_type: LeaveRequestType, hours: Decimal) -> Decimal:
@@ -337,15 +384,25 @@ class LeaveRequestService:
                 "Those days are already time off, so there is nothing to request."
             )
 
-        clashes = await self.leave_request_repository.list_overlapping(
+        await self.leave_request_repository.lock_filing(session, user_id)
+        nearby = await self.leave_request_repository.list_overlapping(
             session, user_id, start_date, end_date
         )
+        clashes = [
+            other
+            for other in nearby
+            if not _separate_part_days(start_date, start_time, end_time, other)
+        ]
         if clashes:
-            named = ", ".join(
-                f"#{clash.leave_request_id} ({clash.start_date} to {clash.end_date})"
-                for clash in clashes
-            )
+            named = ", ".join(_describe_clash(clash) for clash in clashes)
             raise ValueError(f"These days are already covered by {named}.")
+        taken_that_day = sum((other.hours for other in nearby), NO_HOURS)
+        if nearby and taken_that_day + hours > HOURS_PER_DAY:
+            raise ValueError(
+                f"{start_date} already has {taken_that_day:.2f} hours of leave, "
+                f"so {hours:.2f} more would be longer than a working day of "
+                f"{HOURS_PER_DAY} hours."
+            )
 
         if request_type is LeaveRequestType.EXCHANGE:
             self._check_exchangeable(start_date, end_date, exchangeable)
