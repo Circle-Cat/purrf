@@ -22,7 +22,6 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     page: 1,
     onUserChange: vi.fn(),
     onPageChange: vi.fn(),
-    people: mockPeople,
   };
 
   const sampleEntries = [
@@ -42,11 +41,14 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
   });
 
   it("renders person select dropdown with all options", () => {
+    // The options are everyone with ledger history, as the server lists them,
+    // so somebody the engine no longer pays can still be picked.
     mockUseLeaveLedger.mockReturnValue({
       entries: [],
       totalEntries: 0,
       isLoading: false,
       loadError: false,
+      people: mockPeople,
     });
 
     render(<LedgerPage {...defaultProps} />);
@@ -64,6 +66,7 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
       totalEntries: 0,
       isLoading: false,
       loadError: false,
+      people: mockPeople,
     });
 
     render(<LedgerPage {...defaultProps} />);
@@ -101,6 +104,23 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
 
     render(<LedgerPage {...defaultProps} />);
     expect(screen.getByText(/Loading ledger entries/i)).toBeInTheDocument();
+  });
+
+  it("offers a retry when the ledger will not load", () => {
+    const load = vi.fn();
+    mockUseLeaveLedger.mockReturnValue({
+      entries: [],
+      totalEntries: 0,
+      isLoading: false,
+      loadError: true,
+      load,
+    });
+
+    render(<LedgerPage {...defaultProps} />);
+
+    expect(screen.getByText("Couldn't load the ledger.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   it("renders empty message when no entries exist", () => {

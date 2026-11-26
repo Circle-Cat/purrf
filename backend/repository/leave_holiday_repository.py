@@ -1,7 +1,12 @@
-from sqlalchemy import delete, distinct, select
+from sqlalchemy import delete, distinct, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.leave_holiday_entity import LeaveHolidayEntity
+
+# The first half of the advisory lock key a year's replacement takes; the second
+# half is the year. Any fixed int4 will do as long as nothing else in the
+# database uses it.
+_YEAR_LOCK_NAMESPACE = 0x4C484F4C  # "LHOL"
 
 
 class LeaveHolidayRepository:
@@ -68,11 +73,21 @@ class LeaveHolidayRepository:
         shortening a holiday actually shortens it instead of leaving its old
         tail behind.
 
+        Two saves of one year queue on a lock held until the transaction ends.
+        Without it the second delete waits on the rows the first deleted, then
+        cannot see the rows the first inserted, so it removes nothing: its
+        insert either collides with the first save's dates or merges with them.
+        Queued, the later save replaces the earlier one.
+
         Args:
             session: Active async session. Not committed here.
             year: The year being replaced.
             holidays: Its complete set of rows.
         """
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :year)"),
+            {"namespace": _YEAR_LOCK_NAMESPACE, "year": year},
+        )
         await session.execute(
             delete(LeaveHolidayEntity).where(LeaveHolidayEntity.year == year)
         )

@@ -128,3 +128,82 @@ def request_withdrawn(
         f"{_when(start_date, end_date)}. There is nothing left for you to "
         "do.</p>" + _FOOTER,
     )
+
+
+def sick_leave_auto_approved(
+    employee: str,
+    start_date: str | None,
+    end_date: str | None,
+    hours: str | None,
+    reason: str | None,
+) -> tuple[str, str]:
+    """The email both the employee and their manager get when sick leave is
+    approved on submission, which it is up to 24 working hours. One email for
+    both, so it names the employee and asks nothing of either reader.
+
+    Args:
+        employee (str): Who is off sick, already HTML-escaped.
+        start_date (str | None): First day, ISO.
+        end_date (str | None): Last day, ISO.
+        hours (str | None): The hours it covers.
+        reason (str | None): The employee's reason.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    covers = f" ({html.escape(hours)} hours)" if hours else ""
+    return (
+        "Sick leave was approved automatically",
+        f"<p>{employee}'s sick leave {_when(start_date, end_date)}{covers} "
+        "was approved automatically. Sick leave of up to 24 working hours "
+        "(three working days) needs nobody's decision.</p>"
+        + _quoted("Reason", reason)
+        + "<p>It is on the Time off card in Purrf.</p>"
+        + _FOOTER,
+    )
+
+
+def _signed(hours: str | None) -> str:
+    """Puts a plus on a gain; a loss already carries its minus. The sign is
+    the point of an adjustment."""
+    hours = (hours or "").strip()
+    if not hours or hours.startswith("-"):
+        return hours
+    return f"+{hours}"
+
+
+def balance_adjusted(
+    admin: str,
+    hours: str | None,
+    effective_date: str | None,
+    note: str | None,
+    balance_hours: str | None,
+) -> tuple[str, str]:
+    """The email an employee gets when an admin corrects their balance,
+    which is also how an opening balance arrives.
+
+    Args:
+        admin (str): Who made the correction, already HTML-escaped.
+        hours (str | None): The signed change, e.g. "8.00" or "-16.00".
+        effective_date (str | None): The day it counts from, ISO.
+        note (str | None): The admin's reason, always given.
+        balance_hours (str | None): The balance right after the correction.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    dated = f", counted from {html.escape(effective_date)}" if effective_date else ""
+    now = (
+        f"<p>Your balance is now {html.escape(balance_hours)} hours.</p>"
+        if balance_hours
+        else ""
+    )
+    return (
+        "Your leave balance was adjusted",
+        f"<p>{admin} adjusted your leave balance by "
+        f"{html.escape(_signed(hours))} hours{dated}.</p>"
+        + _quoted("Their note", note)
+        + now
+        + "<p>Every change to your balance is listed in your balance history "
+        "on the Time off card in Purrf.</p>" + _FOOTER,
+    )

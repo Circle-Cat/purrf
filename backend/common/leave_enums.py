@@ -24,15 +24,6 @@ class LeaveEntryType(StrEnum):
     LEVEL_CHANGE = "level_change"
 
 
-# The types a job pays hours out with. The partial unique index on
-# leave_ledger covers exactly these; the entity explains why LEVEL_CHANGE,
-# which a job also writes, stays outside it.
-JOB_WRITTEN_ENTRY_TYPES = (
-    LeaveEntryType.WEEKLY_ACCRUAL,
-    LeaveEntryType.CARRYOVER_FORFEIT,
-)
-
-
 class LeaveRequestType(StrEnum):
     """What is being requested.
 
@@ -68,6 +59,8 @@ class LeaveRequestStatus(StrEnum):
 # recorded against.
 LEAVE_APPROVAL = "leave_approval"
 LEAVE_REQUEST_SUBJECT = "leave_request"
+# The subject of an event about one ledger row, such as an admin adjustment.
+LEAVE_LEDGER_SUBJECT = "leave_ledger"
 
 
 class LeaveEvent(StrEnum):
@@ -78,3 +71,9 @@ class LeaveEvent(StrEnum):
     # request's approver is its owner's manager, and nobody reassigns it.
     REQUEST_REASSIGNED = "leave.request_reassigned"
     REQUEST_DECIDED = "leave.request_decided"
+    # Sick leave short enough to be approved on submission. It never reaches
+    # the shared approval flow, so the request service records it itself.
+    SICK_LEAVE_AUTO_APPROVED = "leave.sick_leave_auto_approved"
+    # An admin wrote a correction to somebody's balance, an opening balance
+    # included. Its subject is the ledger row.
+    BALANCE_ADJUSTED = "leave.balance_adjusted"

@@ -115,6 +115,7 @@ class _FakeLeaveRequests:
         self.add = AsyncMock(side_effect=self._add)
         self.get_by_id = AsyncMock(side_effect=self._get_by_id)
         self.list_overlapping = AsyncMock(return_value=[])
+        self.lock_filing = AsyncMock()
         self.sum_pending_paid_hours = AsyncMock(return_value=Decimal("0.00"))
         self.list_for_user = AsyncMock(return_value=[])
         self.list_for_approver = AsyncMock(return_value=[])
@@ -271,6 +272,15 @@ class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
         )
         recorder.start()
         self.addCleanup(recorder.stop)
+        # Sick leave approved on submission never reaches the approval flow,
+        # so the request service records its own event.
+        self.record_own_event = AsyncMock()
+        own_recorder = patch(
+            "backend.leave.leave_request_service.record_event",
+            new=self.record_own_event,
+        )
+        own_recorder.start()
+        self.addCleanup(own_recorder.stop)
 
         self.approval_requests = _FakeApprovalRequests()
         self.approval_service = ApprovalService(
@@ -532,13 +542,121 @@ class TestSubmit(LeaveRequestServiceTest):
         clash.leave_request_id = 501
         clash.start_date = LEAVE_START
         clash.end_date = LEAVE_END
+        clash.start_time = None
+        clash.end_time = None
         self.requests.list_overlapping.return_value = [clash]
 
         with self.assertRaises(ValueError) as caught:
             await self._submit()
 
-        self.assertIn("501", str(caught.exception))
+        self.assertIn(f"#501 ({LEAVE_START} to {LEAVE_END})", str(caught.exception))
         self.requests.add.assert_not_awaited()
+
+    async def test_the_filing_lock_is_taken_before_the_overlap_check(self):
+        """A second filing arriving at the same moment waits on the lock, so
+        its overlap check and the pending hours behind its overdraft mark both
+        see the first one rather than nothing."""
+        order = []
+        self.requests.lock_filing.side_effect = lambda *a: order.append("lock")
+        self.requests.list_overlapping.side_effect = (
+            lambda *a: order.append("overlap") or []
+        )
+        self.requests.sum_pending_paid_hours.side_effect = lambda *a: order.append(
+            "pending"
+        ) or Decimal("0.00")
+
+        await self._submit()
+
+        self.requests.lock_filing.assert_awaited_once_with(self.session, EMPLOYEE)
+        self.assertEqual(order, ["lock", "overlap", "pending"])
+
+    def _part_day(self, start, end, hours, request_id=STORED_REQUEST_ID):
+        """A part day already on file on LEAVE_START."""
+        request = _stored_request(
+            hours=hours,
+            request_id=request_id,
+            start_date=LEAVE_START,
+            end_date=LEAVE_START,
+        )
+        request.start_time = datetime.time(*start)
+        request.end_time = datetime.time(*end)
+        return request
+
+    async def _submit_part_day(self, start, end):
+        return await self._submit(
+            start_date=LEAVE_START,
+            end_date=LEAVE_START,
+            start_time=datetime.time(*start),
+            end_time=datetime.time(*end),
+        )
+
+    async def test_a_morning_and_an_afternoon_on_one_day_may_both_be_filed(self):
+        """Part days on one date are fine as long as their times do not
+        overlap. Back to back counts as not overlapping."""
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (12, 0), "3.00")
+        ]
+
+        request = await self._submit_part_day((12, 0), (16, 0))
+
+        self.assertEqual(request.hours, "4.00")
+        self.requests.add.assert_awaited_once()
+
+    async def test_part_days_whose_times_overlap_are_refused(self):
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (12, 0), "3.00")
+        ]
+
+        with self.assertRaises(ValueError) as caught:
+            await self._submit_part_day((11, 30), (14, 0))
+
+        self.assertIn(
+            f"#{STORED_REQUEST_ID} (09:00 to 12:00 on {LEAVE_START})",
+            str(caught.exception),
+        )
+        self.requests.add.assert_not_awaited()
+
+    async def test_a_whole_day_overlaps_a_part_day_on_its_date(self):
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (12, 0), "3.00")
+        ]
+
+        with self.assertRaises(ValueError):
+            await self._submit(start_date=LEAVE_START, end_date=LEAVE_START)
+
+        self.requests.add.assert_not_awaited()
+
+    async def test_a_part_day_overlaps_a_whole_day_on_file(self):
+        self.requests.list_overlapping.return_value = [
+            _stored_request(hours="8.00", start_date=LEAVE_START, end_date=LEAVE_START)
+        ]
+
+        with self.assertRaises(ValueError):
+            await self._submit_part_day((14, 0), (16, 0))
+
+        self.requests.add.assert_not_awaited()
+
+    async def test_part_days_may_not_add_up_to_more_than_a_working_day(self):
+        """Two separate part days that together pass eight hours would deduct
+        more than taking the whole day off."""
+        self.requests.list_overlapping.return_value = [
+            self._part_day((8, 0), (14, 0), "6.00")
+        ]
+
+        with self.assertRaises(ValueError) as caught:
+            await self._submit_part_day((15, 0), (18, 0))
+
+        self.assertIn("6.00 hours", str(caught.exception))
+        self.requests.add.assert_not_awaited()
+
+    async def test_part_days_adding_up_to_exactly_a_working_day_are_fine(self):
+        self.requests.list_overlapping.return_value = [
+            self._part_day((9, 0), (13, 0), "4.00")
+        ]
+
+        await self._submit_part_day((14, 0), (18, 0))
+
+        self.requests.add.assert_awaited_once()
 
     async def test_a_request_worth_no_hours_is_refused(self):
         """A Sunday and a Monday: nothing to deduct, so there is nothing to
@@ -684,13 +802,62 @@ class TestSickLeave(LeaveRequestServiceTest):
         self.assertIsNone(request.decision_comment)
 
     async def test_approved_on_submission_raises_no_approval(self):
-        """It never goes to the manager, so nobody is asked and nobody is
-        told."""
+        """It never goes to the manager for a decision, so nobody is asked."""
         await self._submit(request_type=LeaveRequestType.SICK)
 
         self.assertEqual(self.approval_requests.rows, [])
         self.record_event.assert_not_awaited()
         self.session.commit.assert_awaited_once()
+
+    async def test_approved_on_submission_tells_the_manager(self):
+        """The manager still hears of it, as sick leave approved by nobody,
+        from a snapshot of what was asked for."""
+        await self._submit(request_type=LeaveRequestType.SICK)
+
+        self.record_own_event.assert_awaited_once()
+        kwargs = self.record_own_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], LeaveEvent.SICK_LEAVE_AUTO_APPROVED)
+        self.assertEqual(kwargs["subject_type"], LEAVE_REQUEST_SUBJECT)
+        self.assertEqual(kwargs["subject_id"], FILED_REQUEST_ID)
+        self.assertIsNone(kwargs["actor_id"])
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "employeeName": "Ann Employee",
+                "leaveType": "sick",
+                "startDate": "2026-08-13",
+                "endDate": "2026-08-15",
+                "hours": "24.00",
+            },
+        )
+
+    async def test_the_manager_is_told_inside_the_same_commit(self):
+        """Recorded before the commit, so the request and its notification are
+        stored together or not at all."""
+        order = []
+        self.record_own_event.side_effect = lambda *a, **kw: order.append("event")
+        self.session.commit.side_effect = lambda: order.append("commit")
+
+        await self._submit(request_type=LeaveRequestType.SICK)
+
+        self.assertEqual(order, ["event", "commit"])
+
+    async def test_sick_leave_that_needs_a_decision_is_not_announced_twice(self):
+        """Over three days it goes through approval, which tells the manager;
+        the auto-approval event is not recorded as well."""
+        await self._submit(
+            request_type=LeaveRequestType.SICK,
+            start_date=LEAVE_START,
+            end_date=datetime.date(2026, 8, 18),
+        )
+
+        self.record_own_event.assert_not_awaited()
+        self.record_event.assert_awaited_once()
+
+    async def test_paid_leave_is_never_announced_as_auto_approved(self):
+        await self._submit()
+
+        self.record_own_event.assert_not_awaited()
 
     async def test_a_fourth_day_puts_it_in_front_of_the_manager(self):
         """24h exactly is approved on submission; the next working day past it
@@ -806,21 +973,28 @@ class TestDecisions(LeaveRequestServiceTest):
             self.session, STORED_REQUEST_ID, approver, approve=approve, comment=comment
         )
 
-    async def test_approving_paid_leave_deducts_it_on_the_first_day(self):
-        """One row for the request, dated where the leave starts, pointing back
-        at it. Per-day rows would multiply the ledger and buy nothing: the
-        request already says which days."""
+    async def test_approving_paid_leave_deducts_each_day_on_that_day(self):
+        """A row per working day, each dated on its own day and pointing back at
+        the request, so leave across a year end counts in the year each day
+        falls in."""
         request = self._pending()
 
         await self._decide()
 
         self.assertEqual(request.status, LeaveRequestStatus.APPROVED)
-        [row] = self._ledger_rows()
-        self.assertEqual(row.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
-        self.assertEqual(row.hours, Decimal("-24.00"))
-        self.assertEqual(row.effective_date, LEAVE_START)
-        self.assertEqual(row.source_request_id, STORED_REQUEST_ID)
-        self.assertEqual(row.user_id, EMPLOYEE)
+        rows = self._ledger_rows()
+        self.assertEqual(
+            [(row.effective_date, row.hours) for row in rows],
+            [
+                (LEAVE_START, Decimal("-8.00")),
+                (datetime.date(2026, 8, 14), Decimal("-8.00")),
+                (LEAVE_END, Decimal("-8.00")),
+            ],
+        )
+        for row in rows:
+            self.assertEqual(row.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
+            self.assertEqual(row.source_request_id, STORED_REQUEST_ID)
+            self.assertEqual(row.user_id, EMPLOYEE)
 
     async def test_an_approval_is_attributed_to_the_approver(self):
         """Both the ledger row and the approval say who decided; the request
@@ -829,8 +1003,7 @@ class TestDecisions(LeaveRequestServiceTest):
 
         decided = await self._decide()
 
-        [row] = self._ledger_rows()
-        self.assertEqual(row.created_by, MANAGER)
+        self.assertEqual({row.created_by for row in self._ledger_rows()}, {MANAGER})
         approval = self._approval_for(STORED_REQUEST_ID)
         self.assertEqual(approval.status, ApprovalRequestStatus.APPROVED)
         self.assertEqual(approval.decided_by, MANAGER)
@@ -862,9 +1035,16 @@ class TestDecisions(LeaveRequestServiceTest):
 
         await self._decide()
 
-        [row] = self._ledger_rows()
-        self.assertEqual(row.entry_type, LeaveEntryType.EXCHANGE_CREDIT)
-        self.assertEqual(row.hours, Decimal("16.00"))
+        rows = self._ledger_rows()
+        self.assertEqual(
+            [(row.effective_date, row.hours) for row in rows],
+            [
+                (datetime.date(2026, 8, 13), Decimal("8.00")),
+                (datetime.date(2026, 8, 14), Decimal("8.00")),
+            ],
+        )
+        for row in rows:
+            self.assertEqual(row.entry_type, LeaveEntryType.EXCHANGE_CREDIT)
 
     async def test_approving_sick_leave_writes_no_row(self):
         request = self._pending(
@@ -991,8 +1171,10 @@ class TestDecisions(LeaveRequestServiceTest):
         )
 
         self.assertEqual(decided.status, LeaveRequestStatus.APPROVED.value)
-        [row] = self._ledger_rows()
-        self.assertEqual(row.source_request_id, FILED_REQUEST_ID)
+        self.assertEqual(
+            {row.source_request_id for row in self._ledger_rows()},
+            {FILED_REQUEST_ID},
+        )
 
 
 class TestWithdraw(LeaveRequestServiceTest):

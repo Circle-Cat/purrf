@@ -288,6 +288,55 @@ describe("LeaveBalancesPage", () => {
     );
   });
 
+  it("does not carry one person's refusal into the next correction", async () => {
+    api.getLeaveBalances.mockResolvedValue(
+      envelope(
+        overview({
+          people: [
+            person(),
+            person({ userId: 11, name: "Bo Second", ldap: "bsecond" }),
+          ],
+        }),
+      ),
+    );
+    api.adjustLeaveBalance.mockRejectedValue(
+      Object.assign(new Error("Request failed"), {
+        response: {
+          data: { message: "A leave adjustment needs a note saying why." },
+        },
+      }),
+    );
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("Ann Employee")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Correct" })[0]);
+    fireEvent.change(screen.getByLabelText("Hours"), {
+      target: { value: "8.00" },
+    });
+    fireEvent.change(screen.getByLabelText("Effective date"), {
+      target: { value: "2026-08-20" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write the correction" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, write it" }));
+    await waitFor(() =>
+      expect(
+        screen.getByText("A leave adjustment needs a note saying why."),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Correct" })[1]);
+
+    expect(
+      screen.queryByText("A leave adjustment needs a note saying why."),
+    ).not.toBeInTheDocument();
+  });
+
   it("corrects the person whose row was clicked, with no id to mistype", async () => {
     api.getLeaveBalances.mockResolvedValue(
       envelope(

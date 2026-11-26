@@ -1,11 +1,35 @@
 import datetime
+from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import case, extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.leave_enums import LeaveEntryType
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
+
+# The advisory lock key the two scheduled leave jobs share. Any fixed pair of
+# int4s will do as long as nothing else in the database uses it.
+_JOB_LOCK_NAMESPACE = 0x4C4A4F42  # "LJOB"
+_JOB_LOCK_KEY = 0
+
+
+@dataclass(frozen=True)
+class LedgerLine:
+    """One line of a ledger listing.
+
+    A request's days are stored as a row each and read back as one line: hours
+    summed, dated from its first day to its last. Every other row is a line of
+    its own, with ``end_date`` equal to ``effective_date``.
+    """
+
+    leave_ledger_id: int
+    user_id: int
+    entry_type: LeaveEntryType
+    hours: Decimal
+    effective_date: datetime.date
+    end_date: datetime.date
+    note: str | None
 
 
 class LeaveLedgerRepository:
@@ -196,14 +220,27 @@ class LeaveLedgerRepository:
         )
         return list(result.scalars().all())
 
+    async def lock_jobs(self, session: AsyncSession) -> None:
+        """Holds the scheduled jobs' lock until the transaction ends.
+
+        Each job pays the difference between what is owed and what the ledger
+        already holds. Two runs at once would both read the same holding and
+        both pay the difference; queued, the second reads the first's rows and
+        pays only what is still owed. The weekly accrual and the annual close
+        share the one lock, since both write the year's accrual.
+
+        Args:
+            session: Active async session.
+        """
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+            {"namespace": _JOB_LOCK_NAMESPACE, "key": _JOB_LOCK_KEY},
+        )
+
     async def add_entries(
         self, session: AsyncSession, entries: list[LeaveLedgerEntity]
     ) -> None:
         """Appends ledger rows. Never updates or deletes one.
-
-        Flushes so that the partial unique index speaks now rather than at
-        commit: a retried job hitting the same person and date raises here
-        instead of appearing to succeed.
 
         Args:
             session: Active async session. Not committed.
@@ -212,56 +249,114 @@ class LeaveLedgerRepository:
         session.add_all(entries)
         await session.flush()
 
-    async def list_entries(
+    async def get_by_id(
+        self, session: AsyncSession, leave_ledger_id: int
+    ) -> LeaveLedgerEntity | None:
+        """One ledger row, or None when there is no such row.
+
+        Args:
+            session: Active async session.
+            leave_ledger_id: The row's id.
+
+        Returns:
+            The row, or None.
+        """
+        return await session.get(LeaveLedgerEntity, leave_ledger_id)
+
+    @staticmethod
+    def _line_key():
+        """Rows of one request share a line; any other row is a line alone."""
+        return case(
+            (
+                LeaveLedgerEntity.source_request_id.is_not(None),
+                -LeaveLedgerEntity.source_request_id,
+            ),
+            else_=LeaveLedgerEntity.leave_ledger_id,
+        )
+
+    async def list_lines(
         self,
         session: AsyncSession,
         user_id: int | None = None,
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> list[LeaveLedgerEntity]:
-        """Lists ledger entries for all users or a specific user in reverse chronological order.
+    ) -> list[LedgerLine]:
+        """The ledger as people read it, newest first, one line per request.
+
+        Merged here rather than by the caller so a page never splits a
+        request's days and the count beside it agrees with what is shown.
 
         Args:
             session: Active async session.
-            user_id: Whose ledger entries to retrieve. If None, retrieves entries across all users.
-            limit: Maximum number of entries to return for pagination. If None, retrieves all matching entries.
-            offset: Number of entries to skip before starting to collect the result set.
+            user_id: Whose lines. None lists everybody's.
+            limit: Lines per page. None returns them all.
+            offset: Lines to skip.
 
         Returns:
-            A list of LeaveLedgerEntity objects ordered by effective_date and id descending.
+            Lines ordered by their first day, then by their first row, both
+            descending.
         """
-        stmt = select(LeaveLedgerEntity)
+        key = self._line_key()
+        stmt = select(
+            func.min(LeaveLedgerEntity.leave_ledger_id).label("leave_ledger_id"),
+            LeaveLedgerEntity.user_id,
+            LeaveLedgerEntity.entry_type,
+            func.sum(LeaveLedgerEntity.hours).label("hours"),
+            func.min(LeaveLedgerEntity.effective_date).label("effective_date"),
+            func.max(LeaveLedgerEntity.effective_date).label("end_date"),
+            func.max(LeaveLedgerEntity.note).label("note"),
+        )
         if user_id is not None:
             stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
-
         stmt = (
-            stmt.order_by(
-                LeaveLedgerEntity.effective_date.desc(),
-                LeaveLedgerEntity.leave_ledger_id.desc(),
+            stmt.group_by(key, LeaveLedgerEntity.user_id, LeaveLedgerEntity.entry_type)
+            .order_by(
+                func.min(LeaveLedgerEntity.effective_date).desc(),
+                func.min(LeaveLedgerEntity.leave_ledger_id).desc(),
             )
             .limit(limit)
             .offset(offset)
         )
-
         result = await session.execute(stmt)
-        return list(result.scalars().all())
+        return [LedgerLine(**row._mapping) for row in result.all()]
 
-    async def count_entries(
-        self, session: AsyncSession, user_id: int | None = None
-    ) -> int:
-        """Counts total ledger entries for a user or across the whole company.
+    async def list_user_ids(self, session: AsyncSession) -> list[int]:
+        """Everyone with at least one ledger row, whatever they are now.
+
+        Wider than the people the engine pays: somebody who has left, or is no
+        longer internal, keeps the history they built up and an admin still
+        needs to read it.
 
         Args:
             session: Active async session.
-            user_id: Whose ledger entries to count. None means everybody.
 
         Returns:
-            Total count of matching ledger entries.
+            Their user ids, ascending.
         """
-        stmt = select(func.count()).select_from(LeaveLedgerEntity)
+        result = await session.execute(
+            select(LeaveLedgerEntity.user_id)
+            .distinct()
+            .order_by(LeaveLedgerEntity.user_id)
+        )
+        return list(result.scalars().all())
+
+    async def count_lines(
+        self, session: AsyncSession, user_id: int | None = None
+    ) -> int:
+        """How many lines :meth:`list_lines` would return without a limit.
+
+        Args:
+            session: Active async session.
+            user_id: Whose lines. None counts everybody's.
+
+        Returns:
+            The number of lines.
+        """
+        stmt = select(self._line_key().label("line")).distinct()
         if user_id is not None:
             stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
-
-        result = await session.execute(stmt)
+        result = await session.execute(
+            select(func.count()).select_from(stmt.subquery())
+        )
         return result.scalar_one()

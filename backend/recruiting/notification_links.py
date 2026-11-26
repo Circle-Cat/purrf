@@ -240,12 +240,20 @@ class NotificationLinks:
         service = service_from(thread.context_type, None) if thread else None
         return _path("/inbox", service=str(service) if service else None)
 
-    async def _leave_submitted(self, event: EventEntity) -> str:
+    async def _leave_approvals(self, event: EventEntity) -> str:
+        """The manager's approvals: a filed request waits there, and sick
+        leave approved on submission is listed under Decided."""
         return "/leave/approvals"
 
+    async def _leave_balance_history(self, event: EventEntity) -> str:
+        """The employee's own balance history, where the adjustment is a
+        row."""
+        return "/leave/balance-history"
+
     async def _leave_decided(self, event: EventEntity) -> str:
-        """The employee reads the outcome on their requests; the manager is
-        told only of a withdrawal, which leaves their approvals list."""
+        """The employee reads the outcome on their requests; anyone else (the
+        manager, told of a withdrawal or of sick leave approved on submission)
+        finds the request on their approvals."""
         leave = await _leave_requests.get_by_id(self.session, event.subject_id)
         if leave is not None and leave.user_id == self.user_id:
             return "/leave/requests"
@@ -341,8 +349,10 @@ _RULES: dict[str, Rule] = {
     RecruitingEvent.EMAIL_BOUNCED: NotificationLinks._application,
     InboxEvent.NEEDS_REPLY: NotificationLinks._inbox_needs_reply,
     InboxEvent.BOUNCED: NotificationLinks._inbox_bounced,
-    LeaveEvent.REQUEST_SUBMITTED: NotificationLinks._leave_submitted,
+    LeaveEvent.REQUEST_SUBMITTED: NotificationLinks._leave_approvals,
     LeaveEvent.REQUEST_DECIDED: NotificationLinks._leave_decided,
+    LeaveEvent.SICK_LEAVE_AUTO_APPROVED: NotificationLinks._leave_decided,
+    LeaveEvent.BALANCE_ADJUSTED: NotificationLinks._leave_balance_history,
     MentorshipEvent.APPROVAL_REQUESTED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_REASSIGNED: NotificationLinks._approval_waiting,
     MentorshipEvent.APPROVAL_DECIDED: NotificationLinks._approval_decided,

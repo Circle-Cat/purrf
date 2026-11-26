@@ -6,6 +6,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
 
 from backend.common.leave_enums import (
+    LEAVE_LEDGER_SUBJECT,
     LEAVE_REQUEST_SUBJECT,
     LeaveEvent,
     LeaveRequestStatus,
@@ -294,6 +295,118 @@ class LeaveRenderTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(event_type=event_type):
                 self.assertIn(event_type, recipient_registry._RESOLVERS)
                 self.assertIn(event_type, render_registry._RENDERERS)
+
+    # -- sick leave approved on submission ---------------------------------
+
+    async def _auto_approved(self, **details):
+        """No actor: nobody decided it. Sick leave carries no approval id."""
+        event = _event(
+            LeaveEvent.SICK_LEAVE_AUTO_APPROVED,
+            None,
+            leaveType="sick",
+            endDate="2026-08-13",
+            hours="8.00",
+            **details,
+        )
+        del event.details["requestId"]
+        return await self._render(event)
+
+    async def test_auto_approved_sick_leave_reads_for_employee_and_manager(self):
+        """One email goes to both, so it names the employee and asks nothing
+        of whoever reads it."""
+        subject, body = await self._auto_approved()
+
+        self.assertEqual(subject, "Sick leave was approved automatically")
+        self.assertIn(
+            "Ann Employee's sick leave on 2026-08-13 (8.00 hours) was approved "
+            "automatically.",
+            body,
+        )
+        self.assertIn("<p>Reason: Family wedding</p>", body)
+        self.assertNotIn("Their reason", body)
+        self.assertNotIn("for you to decide", body)
+
+    async def test_auto_approved_sick_leave_states_the_rule_in_working_hours(self):
+        """The old wording, three days or less, read as calendar dates: 27 to
+        29 November is three dates but 16 hours, since Sunday is a day off."""
+        _, body = await self._auto_approved()
+
+        self.assertIn("up to 24 working hours (three working days)", body)
+        self.assertNotIn("three days or less", body)
+
+    async def test_auto_approved_sick_leave_names_nobody_as_deciding(self):
+        """Nobody decided it, so neither manager nor employee is the actor."""
+        _, body = await self._auto_approved()
+
+        self.assertNotIn("Bob", body)
+        self.assertNotIn("Your manager", body)
+
+    async def test_auto_approved_sick_leave_without_a_reason_has_no_reason_line(self):
+        self.leave = _leave(None)
+
+        _, body = await self._auto_approved()
+
+        self.assertNotIn("Reason:", body)
+
+    async def test_auto_approved_sick_leave_escapes_the_name_and_reason(self):
+        self.leave = _leave("<i>flu</i>")
+
+        subject, body = await self._auto_approved(employeeName="<b>Ann</b>")
+
+        self.assertIn("&lt;b&gt;Ann&lt;/b&gt;", body)
+        self.assertIn("&lt;i&gt;flu&lt;/i&gt;", body)
+        self.assertNotIn("Ann", subject)
+
+    # -- admin adjustment ---------------------------------------------------
+
+    async def _adjusted(self, actor_id=MANAGER, **details):
+        event = EventEntity(
+            subject_type=LEAVE_LEDGER_SUBJECT,
+            subject_id=701,
+            actor_id=actor_id,
+            event_type=LeaveEvent.BALANCE_ADJUSTED,
+            details={
+                "hours": "8.00",
+                "effectiveDate": "2025-12-31",
+                "note": "Carried over from 2025",
+                "balanceHours": "48.00",
+                **details,
+            },
+        )
+        return await self._render(event)
+
+    async def test_an_adjustment_tells_the_employee_what_changed(self):
+        subject, body = await self._adjusted()
+
+        self.assertEqual(subject, "Your leave balance was adjusted")
+        self.assertIn(
+            "Bob Manager adjusted your leave balance by +8.00 hours, counted "
+            "from 2025-12-31.",
+            body,
+        )
+        self.assertIn("<p>Their note: Carried over from 2025</p>", body)
+        self.assertIn("<p>Your balance is now 48.00 hours.</p>", body)
+        self.assertIn("balance history", body)
+
+    async def test_a_deduction_keeps_its_minus_sign_and_gains_no_plus(self):
+        _, body = await self._adjusted(hours="-16.00", balanceHours="-8.00")
+
+        self.assertIn("by -16.00 hours", body)
+        self.assertNotIn("+-", body)
+        self.assertIn("Your balance is now -8.00 hours.", body)
+
+    async def test_an_admin_who_cannot_be_named_reads_as_an_administrator(self):
+        self.people.pop(MANAGER)
+
+        _, body = await self._adjusted()
+
+        self.assertIn("An administrator adjusted your leave balance", body)
+
+    async def test_the_note_is_escaped_and_kept_out_of_the_subject(self):
+        subject, body = await self._adjusted(note="<b>fix</b> & more")
+
+        self.assertIn("&lt;b&gt;fix&lt;/b&gt; &amp; more", body)
+        self.assertNotIn("fix", subject)
 
 
 class LeaveEmailCopyTest(unittest.TestCase):

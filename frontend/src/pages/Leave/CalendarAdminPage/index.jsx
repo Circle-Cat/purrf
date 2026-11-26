@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,9 +9,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import DiscardChangesDialog from "@/pages/Leave/components/DiscardChangesDialog";
+import { calendarProblems } from "@/pages/Leave/utils/calendarProblems";
 import SegmentRow from "@/pages/Leave/CalendarAdminPage/components/SegmentRow";
 import { useLeaveCalendarAdmin } from "@/pages/Leave/hooks/useLeaveCalendarAdmin";
-import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
+import {
+  LEAVE_CALENDAR_ZONE_LABEL,
+  LEAVE_WORKWEEK_LABEL,
+} from "@/pages/Leave/utils/leaveDates";
 
 /**
  * LeaveCalendarAdminPage
@@ -28,13 +33,19 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
  * saved is deleted, and that is confirmed before it happens rather than
  * reported after.
  *
- * Nothing here validates a segment. The server refuses six ways and each
- * message names the holiday at fault; a copy of those rules in the browser
- * would be free to disagree with the one that actually refuses.
+ * The server's rules are also checked here as the admin types, so the row at
+ * fault is marked where it is and the year cannot be saved until it is fixed.
+ * The server still checks; if the two disagree, its refusal is shown and
+ * nothing is written.
  *
+ * Edits live only in this page until the year is saved, so moving to another
+ * year asks first, and `onDirtyChange` lets the page around it ask before a
+ * tab switch unmounts it.
+ *
+ * @param {{onDirtyChange?: (isDirty: boolean) => void}} props
  * @returns {JSX.Element}
  */
-const LeaveCalendarAdminPage = () => {
+const LeaveCalendarAdminPage = ({ onDirtyChange } = {}) => {
   const {
     years,
     year,
@@ -45,7 +56,7 @@ const LeaveCalendarAdminPage = () => {
     isSaving,
     saveError,
     isDirty,
-    load,
+    retry,
     edit,
     add,
     remove,
@@ -53,6 +64,28 @@ const LeaveCalendarAdminPage = () => {
   } = useLeaveCalendarAdmin();
 
   const [isConfirming, setIsConfirming] = useState(false);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    // Unmounted, there are no edits left to lose.
+    return () => onDirtyChange?.(false);
+  }, [isDirty, onDirtyChange]);
+
+  // A year asked for while edits are unsaved, waiting on the discard dialog.
+  const [pendingYear, setPendingYear] = useState(null);
+
+  const changeYear = (next) => {
+    if (isDirty) {
+      setPendingYear(next);
+      return;
+    }
+    setYear(next);
+  };
+
+  const { byIndex: problemsByIndex, hasProblems } = calendarProblems(
+    year,
+    segments,
+  );
 
   const totalDays = segments.reduce((running, segment) => {
     if (!segment.startDate || !segment.endDate) return running;
@@ -77,19 +110,19 @@ const LeaveCalendarAdminPage = () => {
     <div className="space-y-5">
       <div className="flex justify-end">
         <span className="text-sm text-muted-foreground">
-          {LEAVE_CALENDAR_ZONE_LABEL}
+          {LEAVE_CALENDAR_ZONE_LABEL} · {LEAVE_WORKWEEK_LABEL}
         </span>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
           <Label htmlFor="calendar-year">Year</Label>
           <select
             id="calendar-year"
             className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
             value={year ?? ""}
             disabled={isSaving}
-            onChange={(event) => setYear(Number(event.target.value))}
+            onChange={(event) => changeYear(Number(event.target.value))}
           >
             {years.map((option) => (
               <option key={option} value={option}>
@@ -103,7 +136,7 @@ const LeaveCalendarAdminPage = () => {
             Add a holiday
           </Button>
           <Button
-            disabled={isSaving || !isDirty}
+            disabled={isSaving || !isDirty || hasProblems}
             onClick={() => setIsConfirming(true)}
           >
             {isSaving ? "Saving…" : "Save the year"}
@@ -131,7 +164,7 @@ const LeaveCalendarAdminPage = () => {
               <p className="text-sm text-muted-foreground">
                 Couldn't load the calendar.
               </p>
-              <Button onClick={() => load(year)}>Retry</Button>
+              <Button onClick={retry}>Retry</Button>
             </div>
           )}
 
@@ -152,12 +185,22 @@ const LeaveCalendarAdminPage = () => {
                   isSaving={isSaving}
                   onEdit={edit}
                   onRemove={remove}
+                  problems={problemsByIndex[index]}
                 />
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
+
+      <DiscardChangesDialog
+        isOpen={pendingYear !== null}
+        onStay={() => setPendingYear(null)}
+        onDiscard={() => {
+          setYear(pendingYear);
+          setPendingYear(null);
+        }}
+      />
 
       <Dialog
         open={isConfirming}

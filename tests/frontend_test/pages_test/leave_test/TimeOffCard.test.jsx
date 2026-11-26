@@ -144,6 +144,12 @@ describe("TimeOffCard", () => {
       expect(screen.getByText("National Day")).toBeInTheDocument(),
     );
     expect(api.getLeaveHolidays).toHaveBeenCalledWith(2026);
+    // A Saturday counts and a Monday does not, which nobody guesses.
+    expect(
+      screen.getByText(
+        "Dates in Asia/Shanghai · Working days are Tuesday to Saturday. Sunday and Monday are days off.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("sends the history to a page of its own", async () => {
@@ -256,6 +262,83 @@ describe("TimeOffCard for an approver", () => {
 
     expect(container).toBeEmptyDOMElement();
     expect(api.getMyLeaveRequests).not.toHaveBeenCalled();
+  });
+
+  const fileOneDay = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Request time off" }));
+    fireEvent.change(screen.getByLabelText("First day"), {
+      target: { value: "2026-08-25" },
+    });
+    fireEvent.change(screen.getByLabelText("Last day"), {
+      target: { value: "2026-08-25" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  };
+
+  it("asks for fresh figures once a request is filed", async () => {
+    api.submitLeaveRequest.mockResolvedValue(envelope(row()));
+    const onFiled = vi.fn();
+    renderCard({ onFiled });
+    await waitFor(() =>
+      expect(screen.getByText("Time off")).toBeInTheDocument(),
+    );
+
+    await fileOneDay();
+
+    await waitFor(() => expect(onFiled).toHaveBeenCalledTimes(1));
+  });
+
+  it("leaves the figures alone when filing is refused", async () => {
+    const refused = new Error("Request failed");
+    refused.response = { data: { message: "These days are already covered" } };
+    api.submitLeaveRequest.mockRejectedValue(refused);
+    const onFiled = vi.fn();
+    renderCard({ onFiled });
+    await waitFor(() =>
+      expect(screen.getByText("Time off")).toBeInTheDocument(),
+    );
+
+    await fileOneDay();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("These days are already covered"),
+      ).toBeInTheDocument(),
+    );
+    expect(onFiled).not.toHaveBeenCalled();
+  });
+
+  it("tells an approver their own leave did not load, rather than that it is not tracked", () => {
+    const onRetry = vi.fn();
+    renderCard({
+      isCovered: false,
+      isApprover: true,
+      approvalsPendingCount: 0,
+      loadError: true,
+      onRetry,
+    });
+
+    expect(screen.queryByText(/isn't tracked/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Couldn't load your time off."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Approvals" }),
+    ).toBeInTheDocument();
+  });
+
+  it("stays hidden from somebody who is no approver when their leave did not load", () => {
+    // Most people on the dashboard are not in the leave population at all; a
+    // failed check must not put a time off card in front of them.
+    const { container } = renderCard({
+      isCovered: false,
+      isApprover: false,
+      loadError: true,
+    });
+
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("sends the balance history to a page of its own", async () => {

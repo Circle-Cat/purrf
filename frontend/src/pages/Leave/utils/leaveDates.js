@@ -36,6 +36,16 @@ const MONTHS = [
  */
 export const LEAVE_CALENDAR_ZONE_LABEL = "Dates in Asia/Shanghai";
 
+/**
+ * The working week, shown beside each leave calendar so nobody has to work out
+ * why a Saturday counts and a Monday does not.
+ *
+ * Written out rather than fetched: it mirrors `WEEKEND_WEEKDAYS` in
+ * `backend/leave/leave_policy.py`, and changing one means changing the other.
+ */
+export const LEAVE_WORKWEEK_LABEL =
+  "Working days are Tuesday to Saturday. Sunday and Monday are days off.";
+
 const parts = (iso) => {
   const [year, month, day] = iso.split("-");
   return { year, month: MONTHS[Number(month) - 1], day: String(Number(day)) };

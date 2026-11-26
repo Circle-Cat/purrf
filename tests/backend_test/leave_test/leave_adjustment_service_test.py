@@ -11,17 +11,26 @@ from decimal import Decimal
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.common.leave_enums import LeaveEntryType
+from backend.common.leave_enums import (
+    LEAVE_LEDGER_SUBJECT,
+    LeaveEntryType,
+    LeaveEvent,
+)
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 
 TODAY = datetime.date(2026, 8, 21)
+LEDGER_ID = 4242
 
 
 class LeaveAdjustmentServiceTest(IsolatedAsyncioTestCase):
     def setUp(self):
         self.logger = MagicMock()
         self.ledger_repository = MagicMock()
-        self.ledger_repository.add_entries = AsyncMock()
+
+        def _assign_id(_session, entries):
+            entries[0].leave_ledger_id = LEDGER_ID
+
+        self.ledger_repository.add_entries = AsyncMock(side_effect=_assign_id)
         self.ledger_repository.balance = AsyncMock(return_value=Decimal("40.00"))
         self.users_repository = MagicMock()
         self.users_repository.get_user_by_user_id = AsyncMock(return_value=MagicMock())
@@ -36,6 +45,13 @@ class LeaveAdjustmentServiceTest(IsolatedAsyncioTestCase):
         self.business_today = clock.start()
         self.business_today.return_value = TODAY
         self.addCleanup(clock.stop)
+        self.record_event = AsyncMock()
+        recorder = patch(
+            "backend.leave.leave_adjustment_service.record_event",
+            new=self.record_event,
+        )
+        recorder.start()
+        self.addCleanup(recorder.stop)
 
     async def _adjust(self, **overrides):
         payload = {
@@ -114,6 +130,43 @@ class LeaveAdjustmentServiceTest(IsolatedAsyncioTestCase):
 
         self.ledger_repository.add_entries.assert_not_awaited()
 
+    async def test_more_than_two_decimal_places_is_refused(self):
+        """The ledger keeps two places. A third would be rounded on storage
+        while the notification repeated the hours as typed, so the two would
+        disagree."""
+        with self.assertRaises(ValueError) as caught:
+            await self._adjust(hours=Decimal("1.555"))
+
+        self.assertIn("two decimal places", str(caught.exception))
+        self.ledger_repository.add_entries.assert_not_awaited()
+
+    async def test_two_decimal_places_are_accepted(self):
+        """Accruals are 1.54h a week, so settling one exactly needs both."""
+        await self._adjust(hours=Decimal("-0.04"))
+
+        self.assertEqual(self._written().hours, Decimal("-0.04"))
+
+    async def test_trailing_zeros_past_two_places_are_not_extra_precision(self):
+        await self._adjust(hours=Decimal("8.000"))
+
+        self.ledger_repository.add_entries.assert_awaited_once()
+
+    async def test_more_than_a_thousand_hours_either_way_is_refused(self):
+        """A typo guard well inside what the column holds; past 9999.99 the
+        database itself refused and the request answered 500."""
+        for hours in (Decimal("1000.01"), Decimal("-1000.01"), Decimal("10000")):
+            with self.subTest(hours=hours):
+                with self.assertRaises(ValueError) as caught:
+                    await self._adjust(hours=hours)
+                self.assertIn("1000", str(caught.exception))
+
+        self.ledger_repository.add_entries.assert_not_awaited()
+
+    async def test_exactly_a_thousand_hours_is_accepted(self):
+        await self._adjust(hours=Decimal("-1000"))
+
+        self.ledger_repository.add_entries.assert_awaited_once()
+
     async def test_a_date_in_the_future_is_refused(self):
         """A balance is a plain sum with no date filter, so a future-dated row
         counts from the moment it is written -- it would show up as hours the
@@ -145,6 +198,65 @@ class LeaveAdjustmentServiceTest(IsolatedAsyncioTestCase):
             await self._adjust(user_id=999)
 
         self.ledger_repository.add_entries.assert_not_awaited()
+
+    # -- telling the person whose balance it is ----------------------------
+
+    async def test_the_person_is_told_what_changed_and_where_it_left_them(self):
+        """The row is the subject, the admin the actor; the details are what
+        the email and the bell say, so a late delivery still reads true."""
+        await self._adjust(
+            hours=Decimal("-16.00"),
+            effective_date=datetime.date(2026, 3, 2),
+            note="  Leave taken before launch  ",
+        )
+
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], LeaveEvent.BALANCE_ADJUSTED)
+        self.assertEqual(kwargs["subject_type"], LEAVE_LEDGER_SUBJECT)
+        self.assertEqual(kwargs["subject_id"], LEDGER_ID)
+        self.assertEqual(kwargs["actor_id"], 2)
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "hours": "-16.00",
+                "effectiveDate": "2026-03-02",
+                "note": "Leave taken before launch",
+                "balanceHours": "40.00",
+            },
+        )
+
+    async def test_an_opening_balance_is_announced_like_any_correction(self):
+        """Opening balances arrive through the same path and are not
+        exempt: the person checks their starting figure from it."""
+        await self._adjust()
+
+        self.assertEqual(
+            self.record_event.await_args.kwargs["details"]["hours"], "40.00"
+        )
+
+    async def test_the_event_is_recorded_before_the_commit(self):
+        """The row and its notification are stored together or not at all,
+        and the balance it reports already counts the row."""
+        order = []
+
+        def _balance(*_args, **_kwargs):
+            order.append("balance")
+            return Decimal("40.00")
+
+        self.ledger_repository.balance.side_effect = _balance
+        self.record_event.side_effect = lambda *a, **kw: order.append("event")
+        self.session.commit.side_effect = lambda: order.append("commit")
+
+        await self._adjust()
+
+        self.assertEqual(order, ["balance", "event", "commit"])
+
+    async def test_a_refused_adjustment_tells_nobody(self):
+        with self.assertRaises(ValueError):
+            await self._adjust(note="   ")
+
+        self.record_event.assert_not_awaited()
 
 
 if __name__ == "__main__":
