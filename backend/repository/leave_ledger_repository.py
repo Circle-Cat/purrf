@@ -1,7 +1,8 @@
 import datetime
+from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select, text
+from sqlalchemy import case, extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.leave_enums import LeaveEntryType
@@ -11,6 +12,24 @@ from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 # int4s will do as long as nothing else in the database uses it.
 _JOB_LOCK_NAMESPACE = 0x4C4A4F42  # "LJOB"
 _JOB_LOCK_KEY = 0
+
+
+@dataclass(frozen=True)
+class LedgerLine:
+    """One line of a ledger listing.
+
+    A request's days are stored as a row each and read back as one line: hours
+    summed, dated from its first day to its last. Every other row is a line of
+    its own, with ``end_date`` equal to ``effective_date``.
+    """
+
+    leave_ledger_id: int
+    user_id: int
+    entry_type: LeaveEntryType
+    hours: Decimal
+    effective_date: datetime.date
+    end_date: datetime.date
+    note: str | None
 
 
 class LeaveLedgerRepository:
@@ -244,56 +263,80 @@ class LeaveLedgerRepository:
         """
         return await session.get(LeaveLedgerEntity, leave_ledger_id)
 
-    async def list_entries(
+    @staticmethod
+    def _line_key():
+        """Rows of one request share a line; any other row is a line alone."""
+        return case(
+            (
+                LeaveLedgerEntity.source_request_id.is_not(None),
+                -LeaveLedgerEntity.source_request_id,
+            ),
+            else_=LeaveLedgerEntity.leave_ledger_id,
+        )
+
+    async def list_lines(
         self,
         session: AsyncSession,
         user_id: int | None = None,
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> list[LeaveLedgerEntity]:
-        """Lists ledger entries for all users or a specific user in reverse chronological order.
+    ) -> list[LedgerLine]:
+        """The ledger as people read it, newest first, one line per request.
+
+        Merged here rather than by the caller so a page never splits a
+        request's days and the count beside it agrees with what is shown.
 
         Args:
             session: Active async session.
-            user_id: Whose ledger entries to retrieve. If None, retrieves entries across all users.
-            limit: Maximum number of entries to return for pagination. If None, retrieves all matching entries.
-            offset: Number of entries to skip before starting to collect the result set.
+            user_id: Whose lines. None lists everybody's.
+            limit: Lines per page. None returns them all.
+            offset: Lines to skip.
 
         Returns:
-            A list of LeaveLedgerEntity objects ordered by effective_date and id descending.
+            Lines ordered by their first day, then by their first row, both
+            descending.
         """
-        stmt = select(LeaveLedgerEntity)
+        key = self._line_key()
+        stmt = select(
+            func.min(LeaveLedgerEntity.leave_ledger_id).label("leave_ledger_id"),
+            LeaveLedgerEntity.user_id,
+            LeaveLedgerEntity.entry_type,
+            func.sum(LeaveLedgerEntity.hours).label("hours"),
+            func.min(LeaveLedgerEntity.effective_date).label("effective_date"),
+            func.max(LeaveLedgerEntity.effective_date).label("end_date"),
+            func.max(LeaveLedgerEntity.note).label("note"),
+        )
         if user_id is not None:
             stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
-
         stmt = (
-            stmt.order_by(
-                LeaveLedgerEntity.effective_date.desc(),
-                LeaveLedgerEntity.leave_ledger_id.desc(),
+            stmt.group_by(key, LeaveLedgerEntity.user_id, LeaveLedgerEntity.entry_type)
+            .order_by(
+                func.min(LeaveLedgerEntity.effective_date).desc(),
+                func.min(LeaveLedgerEntity.leave_ledger_id).desc(),
             )
             .limit(limit)
             .offset(offset)
         )
-
         result = await session.execute(stmt)
-        return list(result.scalars().all())
+        return [LedgerLine(**row._mapping) for row in result.all()]
 
-    async def count_entries(
+    async def count_lines(
         self, session: AsyncSession, user_id: int | None = None
     ) -> int:
-        """Counts total ledger entries for a user or across the whole company.
+        """How many lines :meth:`list_lines` would return without a limit.
 
         Args:
             session: Active async session.
-            user_id: Whose ledger entries to count. None means everybody.
+            user_id: Whose lines. None counts everybody's.
 
         Returns:
-            Total count of matching ledger entries.
+            The number of lines.
         """
-        stmt = select(func.count()).select_from(LeaveLedgerEntity)
+        stmt = select(self._line_key().label("line")).distinct()
         if user_id is not None:
             stmt = stmt.where(LeaveLedgerEntity.user_id == user_id)
-
-        result = await session.execute(stmt)
+        result = await session.execute(
+            select(func.count()).select_from(stmt.subquery())
+        )
         return result.scalar_one()

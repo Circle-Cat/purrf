@@ -205,10 +205,16 @@ class LeaveRequestFlowTest(BaseRepositoryTestLib):
         self.assertEqual(decided.status, "approved")
         self.assertEqual(decided.decided_by, self.manager.user_id)
         self.assertIsNotNone(decided.decided_at)
-        (entry,) = await self._ledger()
-        self.assertEqual(entry.hours, -Decimal("24.00"))
-        self.assertEqual(entry.created_by, self.manager.user_id)
-        self.assertEqual(entry.source_request_id, filed.request_id)
+        entries = await self._ledger()
+        self.assertEqual(
+            sorted(entry.effective_date for entry in entries),
+            [START, START + datetime.timedelta(days=1), END],
+        )
+        self.assertEqual(sum(entry.hours for entry in entries), -Decimal("24.00"))
+        for entry in entries:
+            self.assertEqual(entry.hours, -Decimal("8.00"))
+            self.assertEqual(entry.created_by, self.manager.user_id)
+            self.assertEqual(entry.source_request_id, filed.request_id)
         events = await self._events(filed.request_id)
         self.assertEqual(
             [e[1] for e in events], ["leave.request_submitted", "leave.request_decided"]
@@ -267,7 +273,8 @@ class LeaveRequestFlowTest(BaseRepositoryTestLib):
             await self.service.decide(
                 self.session, filed.request_id, self.manager.user_id, approve=True
             )
-        self.assertEqual(len(await self._ledger()), 1)
+        # One approval's three days, not a second approval's.
+        self.assertEqual(len(await self._ledger()), 3)
 
     async def test_an_outsider_cannot_learn_a_requests_status(self):
         filed = await self._file()
