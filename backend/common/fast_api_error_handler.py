@@ -97,11 +97,25 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+# Each of these is a refusal answered with a 4xx. Registered by class they are
+# answered by Starlette's ExceptionMiddleware and end there; only the
+# Exception handler runs in ServerErrorMiddleware, which re-raises after
+# answering, so uvicorn logs it as an ERROR with a stack trace.
+_CLIENT_ERRORS = (
+    RequestValidationError,
+    ValueError,
+    PermissionError,
+    NotFoundError,
+    ConflictError,
+    RateLimitedError,
+)
+
+
 def register_exception_handlers(app: FastAPI):
     """
     Registers the global exception handlers on the provided FastAPI application.
     This ensures unexpected exceptions are consistently processed and returned
     in the standard API response format.
     """
-    for exc_cls in (Exception, RequestValidationError):
+    for exc_cls in (*_CLIENT_ERRORS, Exception):
         app.add_exception_handler(exc_cls, global_exception_handler)
