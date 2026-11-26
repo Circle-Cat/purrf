@@ -72,6 +72,9 @@ const Stat = ({ label, hours, hint, isRed = false }) => (
  *   availableHours: string|null,
  *   pendingHours: string|null,
  *   usedHours: string|null,
+ *   approverName?: string|null,
+ *   approverLdap?: string|null,
+ *   approverProblem?: string|null,
  *   loadError?: boolean,
  *   onRetry?: () => void,
  *   onFiled?: () => void,
@@ -84,6 +87,9 @@ const TimeOffCard = ({
   availableHours,
   pendingHours,
   usedHours,
+  approverName = null,
+  approverLdap = null,
+  approverProblem = null,
   loadError = false,
   onRetry,
   onFiled,
@@ -205,6 +211,9 @@ const TimeOffCard = ({
           saveError={saveError}
           onClose={() => setIsFiling(false)}
           onSubmit={fileAndRefresh}
+          approverName={approverName}
+          approverLdap={approverLdap}
+          approverProblem={approverProblem}
         />
       )}
       <CompanyHolidaysDialog

@@ -7,6 +7,9 @@ const NOTHING = {
   availableHours: null,
   pendingHours: null,
   usedHours: null,
+  approverName: null,
+  approverLdap: null,
+  approverProblem: null,
 };
 
 /**
@@ -35,7 +38,9 @@ const NOTHING = {
  *
  * @param {{enabled?: boolean}} [options]
  * @returns {{isCovered: boolean, availableHours: string|null,
- *   pendingHours: string|null, usedHours: string|null, isLoading: boolean,
+ *   pendingHours: string|null, usedHours: string|null,
+ *   approverName: string|null, approverLdap: string|null,
+ *   approverProblem: string|null, isLoading: boolean,
  *   loadError: boolean, reload: () => Promise<void>,
  *   refresh: () => Promise<void>}}
  */
@@ -77,6 +82,10 @@ export const useLeaveStanding = ({ enabled = true } = {}) => {
     availableHours: usable ? standing.availableHours : null,
     pendingHours: usable ? standing.pendingHours : null,
     usedHours: usable ? standing.usedHours : null,
+    // Who a request filed now would go to, or why nobody would.
+    approverName: usable ? standing.approverName : null,
+    approverLdap: usable ? standing.approverLdap : null,
+    approverProblem: usable ? standing.approverProblem : null,
     isLoading,
     loadError,
     reload: () => load(),

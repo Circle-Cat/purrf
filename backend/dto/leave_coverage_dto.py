@@ -34,6 +34,12 @@ class LeaveCoverageDto(BaseDto):
     available_hours: str | None
     pending_hours: str | None
     used_hours: str | None
+    # Who a request filed now would go to, or why nobody would. Shown on the
+    # request form so nobody files without knowing who reads it.
+    approver_user_id: int | None = None
+    approver_name: str | None = None
+    approver_ldap: str | None = None
+    approver_problem: str | None = None
 
     @classmethod
     def of(cls, standing) -> "LeaveCoverageDto":
@@ -50,4 +56,8 @@ class LeaveCoverageDto(BaseDto):
             available_hours=_hours(standing.available),
             pending_hours=_hours(standing.pending),
             used_hours=_hours(standing.used),
+            approver_user_id=standing.approver.user_id if standing.approver else None,
+            approver_name=standing.approver.name if standing.approver else None,
+            approver_ldap=standing.approver.ldap if standing.approver else None,
+            approver_problem=standing.approver_problem,
         )
