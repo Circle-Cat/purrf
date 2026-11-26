@@ -122,6 +122,9 @@ class EmploymentSyncService:
     async def _write_profiles(self, in_scope: list[dict]) -> None:
         """Writes changed profiles and drops anyone no longer in scope.
 
+        Refuses to write anything when nobody is in scope but profiles are
+        cached; see the check below.
+
         A change of entitlement is recorded on the ledger first, before Redis is
         overwritten. Detection compares tonight's profile against last night's,
         so overwriting first and then failing on the database would erase the
@@ -132,6 +135,16 @@ class EmploymentSyncService:
         cached = self.retry_utils.get_retry_on_transient(
             self.redis_client.hgetall, LEAVE_EMPLOYMENT_KEY
         )
+
+        # Nobody in scope while the cache holds people is a failed read, not
+        # everybody leaving at once. Dropping the cache would leave nobody
+        # covered until the next run, and that run would take everyone for a
+        # first sighting and record no level change made in between.
+        if not in_scope and cached:
+            raise RuntimeError(
+                "The directory read found nobody in leave scope while "
+                f"{len(cached)} employment profiles are cached; kept them all."
+            )
 
         latest = {}
         for raw in in_scope:
