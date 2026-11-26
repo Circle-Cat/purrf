@@ -3,12 +3,13 @@
 Every query here has a filter that is silent when it is wrong: a sum that
 counts one type too many quietly changes everyone's entitlement, and a sum that
 forgets the year stops the engine dead for a whole year. The database-level
-cases at the bottom pin the guard against a cron paying twice.
+cases at the bottom pin what the ledger accepts and the jobs' lock.
 """
 
 import datetime
 from decimal import Decimal
 
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from backend.common.mentorship_enums import CommunicationMethod
@@ -386,33 +387,44 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
             Decimal("1.54"),
         )
 
-    async def test_the_same_accrual_cannot_be_written_twice_for_one_day(self):
-        """The guard behind "a retried pod does not double-grant". It is the
-        partial unique index doing this, so it has to be checked against a real
-        database rather than asserted on the model."""
+    async def test_a_second_accrual_on_one_day_is_stored(self):
+        """A job run again the same day pays only what became owed since, as a
+        second row. The database must take it: refusing it failed the whole
+        run, and an annual close that hit it could never complete."""
         await self.repository.add_entries(
             self.session,
             [
                 self._entry(
                     LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
-                )
+                ),
+                self._entry(
+                    LeaveEntryType.WEEKLY_ACCRUAL, "0.31", datetime.date(2026, 3, 1)
+                ),
             ],
         )
 
-        with self.assertRaises(IntegrityError):
-            await self.repository.add_entries(
-                self.session,
-                [
-                    self._entry(
-                        LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
-                    )
-                ],
+        self.assertEqual(
+            await self.repository.sum_weekly_accrual(
+                self.session, self.user.user_id, 2026
+            ),
+            Decimal("1.85"),
+        )
+
+    async def test_the_jobs_lock_is_held_until_the_transaction_ends(self):
+        """What keeps two runs at once from both paying the same difference."""
+        await self.repository.lock_jobs(self.session)
+
+        rows = await self.session.execute(
+            text(
+                "SELECT classid, objid FROM pg_locks "
+                "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted"
             )
+        )
+        self.assertIn((0x4C4A4F42, 0), {(int(c), int(o)) for c, o in rows.all()})
 
     async def test_a_level_may_change_twice_in_one_day(self):
-        """Deliberately outside that index. A level raised and put back inside
-        one day is two real events; rejecting the second would drop an event
-        rather than deduplicate a payment. They come back in the order they
+        """A level raised and put back inside one day is two real events;
+        rejecting the second would drop an event. They come back in the order they
         were written, since the later one is where the level ended up."""
         await self.repository.add_entries(
             self.session,

@@ -24,15 +24,6 @@ class LeaveEntryType(StrEnum):
     LEVEL_CHANGE = "level_change"
 
 
-# The types a job pays hours out with. The partial unique index on
-# leave_ledger covers exactly these; the entity explains why LEVEL_CHANGE,
-# which a job also writes, stays outside it.
-JOB_WRITTEN_ENTRY_TYPES = (
-    LeaveEntryType.WEEKLY_ACCRUAL,
-    LeaveEntryType.CARRYOVER_FORFEIT,
-)
-
-
 class LeaveRequestType(StrEnum):
     """What is being requested.
 
