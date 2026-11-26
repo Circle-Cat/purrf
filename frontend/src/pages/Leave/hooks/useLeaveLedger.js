@@ -12,6 +12,7 @@ import { getLeaveLedger } from "@/api/leaveApi";
  *   totalEntries: number,
  *   isLoading: boolean,
  *   loadError: boolean,
+ *   people: Array<{userId: number, name: string|null, ldap: string|null}>,
  *   load: () => Promise<void>
  * }}
  */
@@ -24,6 +25,9 @@ export const useLeaveLedger = ({
   const [totalEntries, setTotalEntries] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  // Everyone with history, for the person filter. Kept across a failed or
+  // pending load so the filter does not empty while a page is fetched.
+  const [people, setPeople] = useState([]);
 
   const load = useCallback(
     ({ isCancelled } = {}) => {
@@ -36,6 +40,7 @@ export const useLeaveLedger = ({
 
           setEntries(data?.entries ?? []);
           setTotalEntries(data?.totalEntries ?? 0);
+          setPeople(data?.people ?? []);
         })
         .catch(() => {
           if (isCancelled?.()) return;
@@ -68,6 +73,7 @@ export const useLeaveLedger = ({
     totalEntries,
     isLoading,
     loadError,
+    people,
     load: () => load(),
   };
 };
