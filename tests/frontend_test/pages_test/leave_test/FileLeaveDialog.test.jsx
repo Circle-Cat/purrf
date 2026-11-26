@@ -32,6 +32,38 @@ describe("FileLeaveDialog", () => {
     vi.clearAllMocks();
   });
 
+  it("says who will read the request before it is filed", () => {
+    open({ approverName: "Jasmine Li", approverLdap: "jasmine" });
+
+    expect(
+      screen.getByText(
+        "Your request goes to Jasmine Li (jasmine) for approval.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
+  });
+
+  it("shows why nobody can approve it, and will not submit", () => {
+    const onSubmit = open({
+      approverProblem:
+        "Your manager (jasmine) has no purrf account, so they cannot approve anything yet.",
+    });
+    setDates("2026-10-01", "2026-10-03");
+
+    expect(
+      screen.getByText(/Your manager \(jasmine\) has no purrf account/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about the approver before it is known", () => {
+    open();
+
+    expect(screen.queryByText(/for approval/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
+  });
+
   it("sends the dates as the strings the inputs hold", async () => {
     // A native date input's value is already `YYYY-MM-DD`, which is what the
     // API takes. Building a Date from it renders 1 October as 30 September

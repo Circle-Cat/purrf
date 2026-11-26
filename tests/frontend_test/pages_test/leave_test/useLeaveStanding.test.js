@@ -107,6 +107,24 @@ describe("useLeaveStanding", () => {
     expect(result.current.availableHours).toBe("56.00");
   });
 
+  it("passes on who would approve a request, or why nobody would", async () => {
+    api.getLeaveCoverage.mockResolvedValue({
+      data: {
+        isCovered: true,
+        approverName: "Jasmine Li",
+        approverLdap: "jasmine",
+        approverProblem: null,
+      },
+    });
+
+    const { result } = renderHook(() => useLeaveStanding());
+
+    await waitFor(() => expect(result.current.isCovered).toBe(true));
+    expect(result.current.approverName).toBe("Jasmine Li");
+    expect(result.current.approverLdap).toBe("jasmine");
+    expect(result.current.approverProblem).toBeNull();
+  });
+
   it("asks nothing while the feature is switched off", () => {
     const { result } = renderHook(() => useLeaveStanding({ enabled: false }));
 

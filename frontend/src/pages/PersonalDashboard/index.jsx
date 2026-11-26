@@ -115,6 +115,9 @@ const PersonalDashboard = () => {
     availableHours,
     pendingHours,
     usedHours,
+    approverName,
+    approverLdap,
+    approverProblem,
     loadError: leaveLoadError,
     reload: reloadLeave,
     refresh: refreshLeave,
@@ -191,6 +194,9 @@ const PersonalDashboard = () => {
           availableHours={availableHours}
           pendingHours={pendingHours}
           usedHours={usedHours}
+          approverName={approverName}
+          approverLdap={approverLdap}
+          approverProblem={approverProblem}
           loadError={leaveLoadError}
           onRetry={reloadLeave}
           onFiled={refreshLeave}
