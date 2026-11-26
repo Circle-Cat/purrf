@@ -94,7 +94,12 @@ export const useLeaveBalances = ({ enabled = true } = {}) => {
     isSaving,
     saveError,
     lastResult,
-    clearResult: () => setLastResult(null),
+    // Clears the refusal too: the dialog is reused for the next person, and
+    // an error left standing would read as theirs.
+    clearResult: () => {
+      setLastResult(null);
+      setSaveError(null);
+    },
     load,
     adjust,
   };
