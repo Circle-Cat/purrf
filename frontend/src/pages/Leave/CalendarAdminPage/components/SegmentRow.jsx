@@ -15,16 +15,33 @@ import { Label } from "@/components/ui/label";
  * Native date inputs, whose values are already the `YYYY-MM-DD` strings the API
  * takes, so nothing here constructs a Date.
  *
+ * A row with problems is outlined in red and says what they are beneath it.
+ *
  * @param {{
  *   index: number,
  *   segment: object,
  *   isSaving: boolean,
  *   onEdit: (index: number, field: string, value: any) => void,
  *   onRemove: (index: number) => void,
+ *   problems?: string[],
  * }} props
  */
-const SegmentRow = ({ index, segment, isSaving, onEdit, onRemove }) => (
-  <li className="flex flex-wrap items-end gap-3 py-3">
+const SegmentRow = ({
+  index,
+  segment,
+  isSaving,
+  onEdit,
+  onRemove,
+  problems = [],
+}) => (
+  <li
+    className={`flex flex-wrap items-end gap-3 py-3 ${
+      problems.length > 0
+        ? "-mx-3 rounded-md border border-red-300 bg-red-50/40 px-3"
+        : ""
+    }`}
+    aria-invalid={problems.length > 0 || undefined}
+  >
     <div className="min-w-[12rem] flex-1 space-y-1.5">
       <Label htmlFor={`segment-name-${index}`}>Name</Label>
       <Input
@@ -72,6 +89,13 @@ const SegmentRow = ({ index, segment, isSaving, onEdit, onRemove }) => (
     >
       Remove
     </Button>
+    {problems.length > 0 && (
+      <ul className="w-full space-y-0.5 text-sm text-red-700">
+        {problems.map((problem) => (
+          <li key={problem}>{problem}</li>
+        ))}
+      </ul>
+    )}
   </li>
 );
 

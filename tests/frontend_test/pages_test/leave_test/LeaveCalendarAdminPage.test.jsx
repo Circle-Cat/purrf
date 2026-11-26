@@ -137,6 +137,54 @@ describe("LeaveCalendarAdminPage", () => {
     );
   });
 
+  it("does not save an empty year", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(
+      screen.getByRole("button", { name: "Save the year" }),
+    ).toBeDisabled();
+  });
+
+  it("marks a holiday that ends before it starts, and will not save", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText("Last day"), {
+      target: { value: "2026-09-30" },
+    });
+
+    expect(screen.getByText("It ends before it starts.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save the year" }),
+    ).toBeDisabled();
+  });
+
+  it("can be saved again once the problem is fixed", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText("Last day"), {
+      target: { value: "2026-09-30" },
+    });
+    fireEvent.change(screen.getByLabelText("Last day"), {
+      target: { value: "2026-10-04" },
+    });
+
+    expect(
+      screen.queryByText("It ends before it starts."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save the year" })).toBeEnabled();
+  });
+
   it("cannot be saved until something changes", async () => {
     renderPage();
     await waitFor(() =>
@@ -156,7 +204,9 @@ describe("LeaveCalendarAdminPage", () => {
       expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.change(screen.getByDisplayValue("National Day"), {
+      target: { value: "Golden Week" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save the year" }));
 
     expect(screen.getByText("Replace all of 2026?")).toBeInTheDocument();
@@ -172,7 +222,9 @@ describe("LeaveCalendarAdminPage", () => {
       expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Add a holiday" }));
+    fireEvent.change(screen.getByDisplayValue("National Day"), {
+      target: { value: "Golden Week" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save the year" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -185,15 +237,26 @@ describe("LeaveCalendarAdminPage", () => {
       expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.change(screen.getByDisplayValue("National Day"), {
+      target: { value: "Golden Week" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save the year" }));
     fireEvent.click(screen.getByRole("button", { name: "Replace 2026" }));
 
     await waitFor(() => expect(api.replaceLeaveHolidays).toHaveBeenCalled());
-    expect(api.replaceLeaveHolidays.mock.calls[0][1]).toEqual([]);
+    expect(api.replaceLeaveHolidays.mock.calls[0][1]).toEqual([
+      {
+        name: "Golden Week",
+        startDate: "2026-10-01",
+        endDate: "2026-10-03",
+        isExchangeable: true,
+      },
+    ]);
   });
 
-  it("shows the server's refusal naming the holiday at fault", async () => {
+  it("shows the server's refusal if it disagrees with the checks here", async () => {
+    // The browser's checks are a convenience; the server's are the ones that
+    // decide, and its words are shown when it refuses.
     api.replaceLeaveHolidays.mockRejectedValue(
       Object.assign(new Error("Request failed"), {
         response: {
@@ -207,7 +270,9 @@ describe("LeaveCalendarAdminPage", () => {
       expect(screen.getByDisplayValue("National Day")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Add a holiday" }));
+    fireEvent.change(screen.getByDisplayValue("National Day"), {
+      target: { value: "Golden Week" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save the year" }));
     fireEvent.click(screen.getByRole("button", { name: "Replace 2026" }));
 
