@@ -31,7 +31,7 @@ export default function LedgerPage({
   onPageChange,
   people = [],
 }) {
-  const { entries, totalEntries, isLoading, loadError } = useLeaveLedger({
+  const { entries, totalEntries, isLoading, loadError, load } = useLeaveLedger({
     userId,
     page,
     pageSize: PAGE_SIZE,
@@ -97,8 +97,11 @@ export default function LedgerPage({
             Loading ledger entries...
           </div>
         ) : loadError ? (
-          <div className="p-8 text-center text-sm text-rose-600">
-            Failed to load ledger history. Please try again.
+          <div className="flex flex-col items-center gap-3 p-8">
+            <p className="m-0 text-sm text-muted-foreground">
+              Couldn't load the ledger.
+            </p>
+            <Button onClick={load}>Retry</Button>
           </div>
         ) : entries.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">

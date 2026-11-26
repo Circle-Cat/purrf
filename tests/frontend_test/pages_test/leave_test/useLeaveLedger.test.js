@@ -111,4 +111,20 @@ describe("useLeaveLedger", () => {
 
     expect(result.current.entries).toEqual([{ entryId: 2 }]);
   });
+  it("loads again on request after a failure", async () => {
+    getLeaveLedger.mockRejectedValueOnce(new Error("network error"));
+    getLeaveLedger.mockResolvedValue({
+      data: { entries: [{ leaveLedgerId: 1 }], totalEntries: 1 },
+    });
+
+    const { result } = renderHook(() => useLeaveLedger());
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    act(() => {
+      result.current.load();
+    });
+
+    await waitFor(() => expect(result.current.totalEntries).toBe(1));
+    expect(result.current.loadError).toBe(false);
+  });
 });

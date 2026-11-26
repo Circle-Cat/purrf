@@ -47,20 +47,29 @@ export const useLeaveApprovals = ({ enabled = true } = {}) => {
   // started or its hours have changed says so, and the manager acts on that.
   const [decideError, setDecideError] = useState(null);
 
-  const load = useCallback(() => {
-    if (!enabled) return Promise.resolve();
-    setIsLoading(true);
-    setLoadError(false);
-    return getLeaveApprovals()
-      .then(({ data }) => setRequests(data ?? []))
-      .catch(() => {
-        setLoadError(true);
-        // A failed reload must not leave a stale queue standing: it would keep
-        // offering Approve on requests we can no longer see the state of.
-        setRequests([]);
-      })
-      .finally(() => setIsLoading(false));
-  }, [enabled]);
+  // `quietly` re-reads without the loading state, for the read that follows a
+  // decision: showing "Loading…" would unmount the queue, and with it a
+  // rejection reason the approver typed and may want to send again.
+  const fetchQueue = useCallback(
+    ({ quietly = false } = {}) => {
+      if (!enabled) return Promise.resolve();
+      if (!quietly) setIsLoading(true);
+      setLoadError(false);
+      return getLeaveApprovals()
+        .then(({ data }) => setRequests(data ?? []))
+        .catch(() => {
+          setLoadError(true);
+          // A failed reload must not leave a stale queue standing: it would
+          // keep offering Approve on requests we can no longer see the state of.
+          setRequests([]);
+        })
+        .finally(() => {
+          if (!quietly) setIsLoading(false);
+        });
+    },
+    [enabled],
+  );
+  const load = useCallback(() => fetchQueue(), [fetchQueue]);
 
   useEffect(() => {
     load();
@@ -76,7 +85,7 @@ export const useLeaveApprovals = ({ enabled = true } = {}) => {
       setDecideError(null);
       try {
         await decideLeaveRequest(requestId, approve, comment);
-        await load();
+        await fetchQueue({ quietly: true });
       } catch (error) {
         setDecideError(
           error?.response?.data?.message ??
@@ -85,12 +94,12 @@ export const useLeaveApprovals = ({ enabled = true } = {}) => {
         // Re-read on failure too. A refusal usually means the request moved
         // under us (withdrawn, already started), and a network error may have
         // reached the server; the stale row would keep offering the same click.
-        await load();
+        await fetchQueue({ quietly: true });
       } finally {
         setDecidingId(null);
       }
     },
-    [decidingId, load],
+    [decidingId, fetchQueue],
   );
 
   const pending = requests.filter(

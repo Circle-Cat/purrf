@@ -11,7 +11,8 @@ import { getLeaveLedger } from "@/api/leaveApi";
  *   entries: Array,
  *   totalEntries: number,
  *   isLoading: boolean,
- *   loadError: boolean
+ *   loadError: boolean,
+ *   load: () => Promise<void>
  * }}
  */
 export const useLeaveLedger = ({
@@ -67,5 +68,6 @@ export const useLeaveLedger = ({
     totalEntries,
     isLoading,
     loadError,
+    load: () => load(),
   };
 };

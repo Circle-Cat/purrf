@@ -158,6 +158,46 @@ describe("LeaveApprovalsPage", () => {
     );
   });
 
+  it("keeps the reason typed when a rejection fails", async () => {
+    // The queue is re-read after a failure. Dropping to "Loading…" while it
+    // did would unmount the row and throw away what the approver wrote. The
+    // re-read is held open so the test sees the page while it is in flight.
+    let finishReload;
+    api.getLeaveApprovals
+      .mockResolvedValueOnce(envelope([row()]))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishReload = resolve;
+        }),
+      );
+    api.decideLeaveRequest.mockRejectedValue(new Error("network error"));
+
+    render(<LeaveApprovalsPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Ann Employee/)).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.change(screen.getByLabelText(/Reason/), {
+      target: { value: "Team is short that week" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+
+    await waitFor(() => expect(api.getLeaveApprovals).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText(/Reason/)).toHaveValue(
+      "Team is short that week",
+    );
+
+    finishReload(envelope([row()]));
+
+    await waitFor(() =>
+      expect(screen.getByText(/nothing was recorded/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByLabelText(/Reason/)).toHaveValue(
+      "Team is short that week",
+    );
+  });
+
   it("names the calendar the dates belong to", async () => {
     api.getLeaveApprovals.mockResolvedValue(envelope([]));
 
