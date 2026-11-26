@@ -6,14 +6,6 @@ from backend.common.leave_enums import LeaveEntryType
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 
 
-def _job_written_index():
-    return next(
-        index
-        for index in LeaveLedgerEntity.__table__.indexes
-        if index.name == "uq_leave_ledger_job_written_entry"
-    )
-
-
 class TestLeaveLedgerEntity(unittest.TestCase):
     def test_entry_carries_a_signed_hour_amount_and_its_reason(self):
         entry = LeaveLedgerEntity(
@@ -28,18 +20,6 @@ class TestLeaveLedgerEntity(unittest.TestCase):
         self.assertEqual(entry.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
         self.assertEqual(entry.hours, Decimal("-8.00"))
         self.assertEqual(entry.effective_date, datetime.date(2026, 3, 2))
-
-    def test_the_double_write_guard_covers_only_what_a_job_pays_out(self):
-        """The test is "does a cron pay hours with it", not "did a cron write
-        it". LEVEL_CHANGE is cron-written and stays outside: a level raised and
-        put back on one day is two real events, and uniqueness would reject the
-        second instead of deduplicating it."""
-        where = str(_job_written_index().dialect_options["postgresql"]["where"])
-
-        self.assertIn(LeaveEntryType.WEEKLY_ACCRUAL.value, where)
-        self.assertIn(LeaveEntryType.CARRYOVER_FORFEIT.value, where)
-        self.assertNotIn(LeaveEntryType.MANUAL_ADJUSTMENT.value, where)
-        self.assertNotIn(LeaveEntryType.LEVEL_CHANGE.value, where)
 
     def test_a_level_change_marks_a_date_and_moves_no_hours(self):
         """The accrual engine reads the date; the note is for people to read.
@@ -56,13 +36,18 @@ class TestLeaveLedgerEntity(unittest.TestCase):
         self.assertEqual(entry.hours, Decimal("0.00"))
         self.assertEqual(entry.effective_date, datetime.date(2026, 7, 1))
 
-    def test_the_double_write_guard_is_keyed_on_user_type_and_date(self):
-        index = _job_written_index()
-
-        self.assertTrue(index.unique)
+    def test_nothing_forbids_a_second_row_of_a_kind_on_one_day(self):
+        """A job run again on the same day pays what became owed since, as a
+        second row. A unique index on person, type and date refused that row
+        and failed the whole run; two runs at once are kept apart by the jobs'
+        lock instead."""
         self.assertEqual(
-            [column.name for column in index.columns],
-            ["user_id", "entry_type", "effective_date"],
+            [
+                index.name
+                for index in LeaveLedgerEntity.__table__.indexes
+                if index.unique
+            ],
+            [],
         )
 
     def test_the_ledger_has_no_updated_timestamp(self):

@@ -60,6 +60,7 @@ class LeaveEngineServiceTest(IsolatedAsyncioTestCase):
         self.resolver.resolve = AsyncMock()
         self.repository = MagicMock()
         self.repository.add_entries = AsyncMock()
+        self.repository.lock_jobs = AsyncMock()
         self.repository.sum_weekly_accrual = AsyncMock(return_value=Decimal("0.00"))
         self.repository.list_level_changes = AsyncMock(return_value=[])
         self.repository.balance = AsyncMock(return_value=Decimal("0.00"))
@@ -242,6 +243,43 @@ class TestWeeklyAccrual(LeaveEngineServiceTest):
 
         self.assertEqual(report.unreadable, ("ann",))
         self.assertEqual(report.paid, 1)
+
+
+class TestJobLock(LeaveEngineServiceTest):
+    """Both jobs pay the difference between what is owed and what the ledger
+    holds, so the lock has to be held before the first read of either."""
+
+    def _record_order(self):
+        order = []
+        self.repository.lock_jobs.side_effect = lambda *a: order.append("lock")
+        self.redis_client.hgetall.side_effect = lambda *a: (
+            order.append("directory") or {"alice": _profile()}
+        )
+        self.repository.sum_weekly_accrual.side_effect = lambda *a: (
+            order.append("ledger") or Decimal("0.00")
+        )
+        self.resolver.resolve.return_value = ResolvedParticipants(
+            by_ldap={"alice": 10}, unresolved=(), not_internal=()
+        )
+        return order
+
+    async def test_the_weekly_accrual_locks_before_it_reads(self):
+        order = self._record_order()
+
+        await self.service.run_weekly_accrual(self.session, MID_YEAR)
+
+        self.repository.lock_jobs.assert_awaited_once_with(self.session)
+        self.assertEqual(order[0], "lock")
+        self.assertIn("ledger", order)
+
+    async def test_the_annual_close_locks_before_it_reads(self):
+        order = self._record_order()
+
+        await self.service.run_annual_close(self.session, NEW_YEAR)
+
+        self.repository.lock_jobs.assert_awaited_once_with(self.session)
+        self.assertEqual(order[0], "lock")
+        self.assertIn("ledger", order)
 
 
 class TestAnnualClose(LeaveEngineServiceTest):

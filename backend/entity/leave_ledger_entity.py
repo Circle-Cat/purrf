@@ -7,19 +7,15 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
-    Index,
     Integer,
     Numeric,
     String,
     func,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.common.base import Base
-from backend.common.leave_enums import JOB_WRITTEN_ENTRY_TYPES, LeaveEntryType
-
-_JOB_WRITTEN_VALUES = ", ".join(f"'{entry.value}'" for entry in JOB_WRITTEN_ENTRY_TYPES)
+from backend.common.leave_enums import LeaveEntryType
 
 
 class LeaveLedgerEntity(Base):
@@ -40,21 +36,6 @@ class LeaveLedgerEntity(Base):
 
     __tablename__ = "leave_ledger"
     __table_args__ = (
-        # Deliberately partial. It covers the two types a cron pays hours out
-        # with, and a cron can run twice -- a retried pod, a manual re-trigger
-        # -- so either would double-grant or double-forfeit. Every other type
-        # is outside it on purpose, because for those a second row on the same
-        # day is a second real event: an admin may book several corrections for
-        # one person in a day, and a level may be raised and put back inside
-        # one day. Rejecting those would drop the event rather than dedupe it.
-        Index(
-            "uq_leave_ledger_job_written_entry",
-            "user_id",
-            "entry_type",
-            "effective_date",
-            unique=True,
-            postgresql_where=text(f"entry_type IN ({_JOB_WRITTEN_VALUES})"),
-        ),
         # A level change is only useful with both sides of it, and no other
         # row has a level to speak of.
         CheckConstraint(
