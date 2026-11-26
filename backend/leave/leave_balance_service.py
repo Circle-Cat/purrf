@@ -52,18 +52,17 @@ class LeaveBalanceService:
         raw_balance = await self.leave_ledger_repository.balance(session, user_id)
         balance_hours_str = f"{raw_balance:.2f}"
 
-        entries_entities = await self.leave_ledger_repository.list_entries(
-            session, user_id
-        )
+        lines = await self.leave_ledger_repository.list_lines(session, user_id)
 
         entry_dtos = [
             LeaveLedgerEntryDto(
-                effectiveDate=str(entry.effective_date),
-                entryType=entry.entry_type,
-                hours=f"{entry.hours:.2f}",
-                note=entry.note,
+                effectiveDate=str(line.effective_date),
+                endDate=str(line.end_date),
+                entryType=line.entry_type,
+                hours=f"{line.hours:.2f}",
+                note=line.note,
             )
-            for entry in entries_entities
+            for line in lines
         ]
 
         return LeaveBalanceDto(balanceHours=balance_hours_str, entries=entry_dtos)
@@ -89,19 +88,17 @@ class LeaveBalanceService:
         """
         offset = (page - 1) * page_size
 
-        entries_entities = await self.leave_ledger_repository.list_entries(
+        lines = await self.leave_ledger_repository.list_lines(
             session, user_id, limit=page_size, offset=offset
         )
-        total_entries = await self.leave_ledger_repository.count_entries(
-            session, user_id
-        )
+        total_entries = await self.leave_ledger_repository.count_lines(session, user_id)
         # Note: total_entries is queried separately from the page entries.
         # A concurrent write committed between these two queries (e.g., weekly
         # accruals or manual adjustments) may cause total_entries to slightly
         # disagree with the returned page rows. This is acceptable for an admin view.
 
         # Extract user_ids for the current page only to avoid bulk loading unnecessary accounts
-        page_user_ids = sorted({entry.user_id for entry in entries_entities})
+        page_user_ids = sorted({line.user_id for line in lines})
 
         name_by_id, ldap_by_id = await resolve_names_and_ldaps(
             session,
@@ -112,16 +109,17 @@ class LeaveBalanceService:
 
         entry_dtos = [
             LeaveLedgerRowDto(
-                leave_ledger_id=entry.leave_ledger_id,
-                effective_date=str(entry.effective_date),
-                user_id=entry.user_id,
-                name=name_by_id.get(entry.user_id),
-                ldap=ldap_by_id.get(entry.user_id),
-                entry_type=entry.entry_type.value,
-                hours=f"{entry.hours:.2f}",
-                note=entry.note,
+                leave_ledger_id=line.leave_ledger_id,
+                effective_date=str(line.effective_date),
+                end_date=str(line.end_date),
+                user_id=line.user_id,
+                name=name_by_id.get(line.user_id),
+                ldap=ldap_by_id.get(line.user_id),
+                entry_type=line.entry_type.value,
+                hours=f"{line.hours:.2f}",
+                note=line.note,
             )
-            for entry in entries_entities
+            for line in lines
         ]
 
         return LeaveLedgerPageDto(

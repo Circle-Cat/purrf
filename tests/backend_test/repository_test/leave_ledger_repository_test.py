@@ -13,14 +13,18 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from backend.common.mentorship_enums import CommunicationMethod
-from backend.common.leave_enums import LeaveEntryType
+from backend.common.leave_enums import (
+    LeaveEntryType,
+    LeaveRequestStatus,
+    LeaveRequestType,
+)
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 
 # Imported for its side effect only: a ledger row's source_request_id points at
 # leave_request, and SQLAlchemy cannot configure the ledger mapper until that
 # table is in the registry. Production imports every entity at startup, so this
 # only bites a test that names one of them.
-from backend.entity.leave_request_entity import LeaveRequestEntity  # noqa: F401
+from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.entity.users_entity import UsersEntity
 from backend.repository.leave_ledger_repository import LeaveLedgerRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -453,8 +457,8 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
             [(0, 80), (80, 0)],
         )
 
-    async def test_list_entries_returns_entries_in_reverse_chronological_order(self):
-        """list_entries returns all rows for a user in reverse chronological order
+    async def test_list_lines_returns_entries_in_reverse_chronological_order(self):
+        """list_lines returns all rows for a user in reverse chronological order
         by effective_date and leave_ledger_id."""
         # Insert entries in random date order to verify sorting
         entry1 = self._entry(
@@ -473,7 +477,7 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
 
         await self.insert_entities([entry1, entry2, entry3_first, entry3_second])
 
-        entries = await self.repository.list_entries(self.session, self.user.user_id)
+        entries = await self.repository.list_lines(self.session, self.user.user_id)
 
         # Assert total count
         self.assertEqual(len(entries), 4)
@@ -489,8 +493,8 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         self.assertEqual(entries[1].entry_type, LeaveEntryType.MANUAL_ADJUSTMENT)
         self.assertEqual(entries[2].entry_type, LeaveEntryType.WEEKLY_ACCRUAL)
 
-    async def test_list_entries_filters_by_user_id(self):
-        """list_entries only returns rows belonging to the specified user and returns
+    async def test_list_lines_filters_by_user_id(self):
+        """list_lines only returns rows belonging to the specified user and returns
         an empty list for a user with no ledger entries."""
         await self.insert_entities([
             self._entry(
@@ -505,9 +509,7 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         ])
 
         # Assert querying one user isolates their records from others
-        user_entries = await self.repository.list_entries(
-            self.session, self.user.user_id
-        )
+        user_entries = await self.repository.list_lines(self.session, self.user.user_id)
         self.assertEqual(len(user_entries), 1)
         self.assertEqual(user_entries[0].hours, Decimal("1.54"))
 
@@ -515,19 +517,19 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         empty_user = _make_user()
         await self.insert_entities([empty_user])
 
-        empty_entries = await self.repository.list_entries(
+        empty_entries = await self.repository.list_lines(
             self.session, empty_user.user_id
         )
         self.assertEqual(empty_entries, [])
 
-    async def test_list_and_count_entries_no_rows(self):
+    async def test_list_and_count_lines_no_rows(self):
         """No rows in DB returns [] and count 0."""
-        entries = await self.repository.list_entries(self.session)
-        count = await self.repository.count_entries(self.session)
+        entries = await self.repository.list_lines(self.session)
+        count = await self.repository.count_lines(self.session)
         self.assertEqual(entries, [])
         self.assertEqual(count, 0)
 
-    async def test_list_entries_unfiltered_returns_all_users_newest_first(self):
+    async def test_list_lines_unfiltered_returns_all_users_newest_first(self):
         """user_id=None returns every user's rows, newest first."""
         third_user = _make_user()
         await self.insert_entities([third_user])
@@ -552,8 +554,8 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([e1, e2, e3])
 
-        entries = await self.repository.list_entries(self.session, user_id=None)
-        count = await self.repository.count_entries(self.session, user_id=None)
+        entries = await self.repository.list_lines(self.session, user_id=None)
+        count = await self.repository.count_lines(self.session, user_id=None)
 
         self.assertEqual(len(entries), 3)
         self.assertEqual(count, 3)
@@ -561,7 +563,7 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         self.assertEqual(entries[1].user_id, self.other_user.user_id)
         self.assertEqual(entries[2].user_id, self.user.user_id)
 
-    async def test_list_and_count_entries_filtered_by_user_id(self):
+    async def test_list_and_count_lines_filtered_by_user_id(self):
         """userId specified isolates rows AND filtered count."""
         third_user = _make_user()
         await self.insert_entities([third_user])
@@ -593,10 +595,10 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
             ),
         ])
 
-        entries = await self.repository.list_entries(
+        entries = await self.repository.list_lines(
             self.session, user_id=self.user.user_id
         )
-        count = await self.repository.count_entries(
+        count = await self.repository.count_lines(
             self.session, user_id=self.user.user_id
         )
 
@@ -604,7 +606,7 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         self.assertEqual(count, 2)
         self.assertTrue(all(e.user_id == self.user.user_id for e in entries))
 
-    async def test_list_entries_stable_secondary_sort_on_same_date(self):
+    async def test_list_lines_stable_secondary_sort_on_same_date(self):
         """Two rows on same effective_date ordered by leave_ledger_id desc."""
         e1 = self._entry(
             LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
@@ -614,14 +616,14 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([e1, e2])
 
-        entries = await self.repository.list_entries(
+        entries = await self.repository.list_lines(
             self.session, user_id=self.user.user_id
         )
         self.assertEqual(len(entries), 2)
         self.assertGreater(entries[0].leave_ledger_id, entries[1].leave_ledger_id)
         self.assertEqual(entries[0].entry_type, LeaveEntryType.MANUAL_ADJUSTMENT)
 
-    async def test_list_entries_pagination_union_has_no_duplicates(self):
+    async def test_list_lines_pagination_union_has_no_duplicates(self):
         """5 rows, pageSize=2 -> page 1, 2, 3 cover all 5 rows without overlaps."""
         rows = [
             self._entry(
@@ -631,9 +633,9 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         ]
         await self.insert_entities(rows)
 
-        page1 = await self.repository.list_entries(self.session, limit=2, offset=0)
-        page2 = await self.repository.list_entries(self.session, limit=2, offset=2)
-        page3 = await self.repository.list_entries(self.session, limit=2, offset=4)
+        page1 = await self.repository.list_lines(self.session, limit=2, offset=0)
+        page2 = await self.repository.list_lines(self.session, limit=2, offset=2)
+        page3 = await self.repository.list_lines(self.session, limit=2, offset=4)
 
         self.assertEqual(len(page1), 2)
         self.assertEqual(len(page2), 2)
@@ -643,7 +645,7 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         self.assertEqual(len(all_ids), 5)
         self.assertEqual(len(set(all_ids)), 5)
 
-    async def test_list_entries_page_beyond_end_returns_empty(self):
+    async def test_list_lines_page_beyond_end_returns_empty(self):
         """Asking for page 4 of a 5-row result returns [] with real count 5."""
         rows = [
             self._entry(
@@ -653,11 +655,129 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
         ]
         await self.insert_entities(rows)
 
-        entries = await self.repository.list_entries(self.session, limit=2, offset=6)
-        count = await self.repository.count_entries(self.session)
+        entries = await self.repository.list_lines(self.session, limit=2, offset=6)
+        count = await self.repository.count_lines(self.session)
 
         self.assertEqual(entries, [])
         self.assertEqual(count, 5)
+
+
+class TestLedgerLines(BaseRepositoryTestLib):
+    """A request's days are stored a row each and listed as one line."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repository = LeaveLedgerRepository()
+        self.user = _make_user()
+        await self.insert_entities([self.user])
+
+    async def _request_days(self, days, hours="-8.00"):
+        """An approved request and its per-day deduction rows."""
+        request = LeaveRequestEntity(
+            user_id=self.user.user_id,
+            type=LeaveRequestType.PAID,
+            start_date=days[0],
+            end_date=days[-1],
+            hours=Decimal(hours).copy_abs() * len(days),
+            status=LeaveRequestStatus.APPROVED,
+            approver_user_id=self.user.user_id,
+            is_overdraft=False,
+            is_late_notice=False,
+        )
+        await self.insert_entities([request])
+        await self.insert_entities([
+            LeaveLedgerEntity(
+                user_id=self.user.user_id,
+                entry_type=LeaveEntryType.LEAVE_DEDUCTION,
+                hours=Decimal(hours),
+                effective_date=day,
+                source_request_id=request.leave_request_id,
+            )
+            for day in days
+        ])
+        return request
+
+    def _accrual(self, day):
+        return LeaveLedgerEntity(
+            user_id=self.user.user_id,
+            entry_type=LeaveEntryType.WEEKLY_ACCRUAL,
+            hours=Decimal("1.54"),
+            effective_date=day,
+        )
+
+    async def test_a_requests_days_come_back_as_one_line(self):
+        await self._request_days([
+            datetime.date(2026, 12, 30),
+            datetime.date(2026, 12, 31),
+            datetime.date(2027, 1, 2),
+        ])
+        await self.insert_entities([self._accrual(datetime.date(2026, 12, 28))])
+
+        lines = await self.repository.list_lines(self.session, self.user.user_id)
+
+        self.assertEqual(len(lines), 2)
+        request_line, accrual_line = lines
+        self.assertEqual(request_line.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
+        self.assertEqual(request_line.hours, Decimal("-24.00"))
+        self.assertEqual(request_line.effective_date, datetime.date(2026, 12, 30))
+        self.assertEqual(request_line.end_date, datetime.date(2027, 1, 2))
+        self.assertEqual(accrual_line.hours, Decimal("1.54"))
+        self.assertEqual(accrual_line.end_date, accrual_line.effective_date)
+
+    async def test_two_requests_stay_two_lines(self):
+        await self._request_days([datetime.date(2026, 3, 3)])
+        await self._request_days([datetime.date(2026, 3, 4)])
+
+        lines = await self.repository.list_lines(self.session, self.user.user_id)
+
+        self.assertEqual([line.hours for line in lines], [Decimal("-8.00")] * 2)
+
+    async def test_a_page_never_splits_a_request_and_the_count_agrees(self):
+        await self._request_days([
+            datetime.date(2026, 5, 5),
+            datetime.date(2026, 5, 6),
+            datetime.date(2026, 5, 7),
+        ])
+        await self.insert_entities([
+            self._accrual(datetime.date(2026, 5, 4)),
+            self._accrual(datetime.date(2026, 5, 11)),
+        ])
+
+        first = await self.repository.list_lines(
+            self.session, self.user.user_id, limit=2, offset=0
+        )
+        second = await self.repository.list_lines(
+            self.session, self.user.user_id, limit=2, offset=2
+        )
+        count = await self.repository.count_lines(self.session, self.user.user_id)
+
+        self.assertEqual(count, 3)
+        self.assertEqual(
+            [line.effective_date for line in first + second],
+            [
+                datetime.date(2026, 5, 11),
+                datetime.date(2026, 5, 5),
+                datetime.date(2026, 5, 4),
+            ],
+        )
+        self.assertEqual(first[1].hours, Decimal("-24.00"))
+
+    async def test_leave_across_new_year_counts_in_each_year(self):
+        await self._request_days([
+            datetime.date(2026, 12, 30),
+            datetime.date(2026, 12, 31),
+            datetime.date(2027, 1, 2),
+        ])
+
+        used_2026 = await self.repository.sum_deductions_for_year(
+            self.session, self.user.user_id, 2026
+        )
+        used_2027 = await self.repository.sum_deductions_for_year(
+            self.session, self.user.user_id, 2027
+        )
+
+        self.assertEqual(used_2026, Decimal("-16.00"))
+        self.assertEqual(used_2027, Decimal("-8.00"))
 
 
 if __name__ == "__main__":

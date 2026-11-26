@@ -138,8 +138,53 @@ def request_hours(
             off the half hour. Nothing here is rounded or dropped: acting on a
             request nobody meant to make is worse than refusing it.
     """
-    days = (end_date - start_date).days + 1
+    return sum(
+        (
+            hours
+            for _, hours in hours_by_day(
+                request_type, start_date, end_date, start_time, end_time, holidays
+            )
+        ),
+        NO_HOURS,
+    )
+
+
+def hours_by_day(
+    request_type: LeaveRequestType,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    start_time: datetime.time | None,
+    end_time: datetime.time | None,
+    holidays: frozenset[datetime.date],
+) -> list[tuple[datetime.date, Decimal]]:
+    """The days one request covers and the hours each is worth.
+
+    The rules :func:`request_hours` describes, applied a day at a time; that
+    total is the sum of this list, so the two cannot disagree. A day worth
+    nothing -- a weekend day or a holiday inside a range of leave -- is left
+    out rather than listed at zero.
+
+    Args:
+        request_type: Paid, sick or exchange.
+        start_date: First day.
+        end_date: Last day. Equal to ``start_date`` for one day.
+        start_time: Only meaningful for a single day of leave.
+        end_time: As above.
+        holidays: Company holidays.
+
+    Returns:
+        ``(day, hours)`` in date order. Empty when a single day of leave falls
+        on a day off.
+
+    Raises:
+        ValueError: As :func:`request_hours`.
+    """
+    days = [
+        start_date + ONE_DAY * offset
+        for offset in range((end_date - start_date).days + 1)
+    ]
     has_times = start_time is not None or end_time is not None
+    whole_day = Decimal(HOURS_PER_DAY).quantize(NO_HOURS)
 
     if request_type is LeaveRequestType.EXCHANGE:
         if has_times:
@@ -147,10 +192,10 @@ def request_hours(
                 "An exchange covers whole days: half a day back at work is not "
                 "on offer."
             )
-        return Decimal(days * HOURS_PER_DAY).quantize(NO_HOURS)
+        return [(day, whole_day) for day in days]
 
     if has_times:
-        if days > 1:
+        if len(days) > 1:
             raise ValueError(
                 "A range of days is taken whole. Times describe one day, so a "
                 "part day has to be asked for on its own."
@@ -162,14 +207,12 @@ def request_hours(
             )
 
     if not has_times:
-        return Decimal(
-            count_workdays(start_date, end_date, holidays) * HOURS_PER_DAY
-        ).quantize(NO_HOURS)
+        return [(day, whole_day) for day in days if is_workday(day, holidays)]
 
     if not is_workday(start_date, holidays):
-        return NO_HOURS
+        return []
 
-    return _hours_between(start_time, end_time)
+    return [(start_date, _hours_between(start_time, end_time))]
 
 
 def _hours_between(start_time: datetime.time, end_time: datetime.time) -> Decimal:

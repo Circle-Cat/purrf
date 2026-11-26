@@ -237,12 +237,42 @@ class LeaveRequestHandlerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(self.leave.status, LeaveRequestStatus.APPROVED)
         self.assertTrue(self.leave.is_overdraft)
-        (entry,) = self.ledger.add_entries.await_args.args[1]
-        self.assertEqual(entry.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
-        self.assertEqual(entry.hours, -self.leave.hours)
-        self.assertEqual(entry.created_by, MANAGER)
-        self.assertEqual(entry.source_request_id, LEAVE_ID)
-        self.assertEqual(entry.effective_date, START)
+        entries = self.ledger.add_entries.await_args.args[1]
+        # A row per working day, each on its own date, all pointing back.
+        self.assertEqual(
+            [(entry.effective_date, entry.hours) for entry in entries],
+            [
+                (START, Decimal("-8.00")),
+                (START + datetime.timedelta(days=1), Decimal("-8.00")),
+                (END, Decimal("-8.00")),
+            ],
+        )
+        for entry in entries:
+            self.assertEqual(entry.entry_type, LeaveEntryType.LEAVE_DEDUCTION)
+            self.assertEqual(entry.created_by, MANAGER)
+            self.assertEqual(entry.source_request_id, LEAVE_ID)
+
+    async def test_a_holiday_inside_the_leave_gets_no_row(self):
+        holiday = START + datetime.timedelta(days=1)
+        self.holidays.list_by_year.return_value = [_holiday(holiday)]
+        self.leave = _leave(hours=Decimal("16.00"))
+
+        await self.handler.execute(self.session, _request(), actor_id=MANAGER)
+
+        entries = self.ledger.add_entries.await_args.args[1]
+        self.assertEqual([entry.effective_date for entry in entries], [START, END])
+        self.assertEqual(sum(entry.hours for entry in entries), Decimal("-16.00"))
+
+    async def test_days_that_do_not_add_up_to_the_request_write_nothing(self):
+        """The check before approval compares the same totals, so this only
+        fires if the calendar moved between them; writing days that disagree
+        with the request would leave the ledger and the request apart."""
+        self.leave = _leave(hours=Decimal("16.00"))
+
+        with self.assertRaises(ValueError):
+            await self.handler.execute(self.session, _request(), actor_id=MANAGER)
+
+        self.ledger.add_entries.assert_not_awaited()
 
     async def test_approving_sick_leave_writes_no_ledger_row(self):
         self.leave = _leave(leave_type=LeaveRequestType.SICK)

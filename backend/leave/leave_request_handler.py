@@ -25,7 +25,7 @@ from backend.common.leave_enums import (
 from backend.common.name_utils import user_display_name
 from backend.leave.leave_clock import business_today
 from backend.leave.leave_request_service import (
-    ledger_entry_for,
+    ledger_entries_for,
     load_calendar,
     overdraft_now,
     unexchangeable_days,
@@ -163,9 +163,13 @@ class LeaveRequestHandler(ApprovalHandler):
             session, self._ledger, self._requests, leave
         )
         leave.status = LeaveRequestStatus.APPROVED
-        entry = ledger_entry_for(leave, created_by=actor_id)
-        if entry is not None:
-            await self._ledger.add_entries(session, [entry])
+        # The same calendar the check above read, in the same transaction.
+        holidays, _ = await load_calendar(
+            session, self._holidays, business_today(), leave.start_date, leave.end_date
+        )
+        entries = ledger_entries_for(leave, holidays, created_by=actor_id)
+        if entries:
+            await self._ledger.add_entries(session, entries)
 
     async def revert(self, session, request, outcome) -> None:
         leave = await self._leave(session, request, for_update=True)
