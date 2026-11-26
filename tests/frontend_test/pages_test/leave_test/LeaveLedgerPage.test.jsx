@@ -103,6 +103,23 @@ describe("LeaveLedgerPage (LedgerTab)", () => {
     expect(screen.getByText(/Loading ledger entries/i)).toBeInTheDocument();
   });
 
+  it("offers a retry when the ledger will not load", () => {
+    const load = vi.fn();
+    mockUseLeaveLedger.mockReturnValue({
+      entries: [],
+      totalEntries: 0,
+      isLoading: false,
+      loadError: true,
+      load,
+    });
+
+    render(<LedgerPage {...defaultProps} />);
+
+    expect(screen.getByText("Couldn't load the ledger.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it("renders empty message when no entries exist", () => {
     mockUseLeaveLedger.mockReturnValue({
       entries: [],
