@@ -531,11 +531,13 @@ class LeaveRequestService:
             end_time: As above.
 
         Returns:
-            The hours, the working days counted and the days not counted.
+            The hours, the working days counted, the days not counted, and
+            whether filing today would be marked short notice.
 
         Raises:
             ValueError: The dates cannot be filed, for the same reasons and
-                with the same messages as submitting.
+                with the same messages as submitting -- an exchange with too
+                little notice among them.
         """
         today = business_today()
         self._check_dates(today, start_date, end_date)
@@ -544,6 +546,12 @@ class LeaveRequestService:
         )
         if request_type is LeaveRequestType.EXCHANGE:
             self._check_exchangeable(start_date, end_date, exchangeable)
+        notice_needed = required_notice_workdays(hours)
+        is_late_notice = self._notice(
+            request_type,
+            workdays_before(today, start_date, holidays),
+            notice_needed,
+        )
 
         names = await self._holiday_names(session, start_date.year, end_date.year)
         counted = hours_by_day(
@@ -555,6 +563,10 @@ class LeaveRequestService:
         return LeaveRequestPreviewDto(
             hours=f"{hours:.2f}",
             workdays=len(counted),
+            is_late_notice=is_late_notice,
+            required_notice_workdays=(
+                None if request_type is LeaveRequestType.SICK else notice_needed
+            ),
             days_not_counted=[
                 LeaveDayNotCountedDto(date=day, holiday_name=names.get(day))
                 for day in skipped

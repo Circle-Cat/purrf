@@ -1820,6 +1820,10 @@ class TestPreview(LeaveRequestServiceTest):
         self.assertEqual(preview.hours, filed.hours)
         self.assertEqual(preview.workdays, filed.workdays)
         self.assertEqual(preview.days_not_counted, filed.days_not_counted)
+        self.assertEqual(preview.is_late_notice, filed.is_late_notice)
+        self.assertEqual(
+            preview.required_notice_workdays, filed.required_notice_workdays
+        )
 
     async def test_it_stores_nothing_and_tells_nobody(self):
         await self._preview()
@@ -1857,6 +1861,48 @@ class TestPreview(LeaveRequestServiceTest):
                 start_date=datetime.date(2026, 8, 21),
                 end_date=datetime.date(2026, 8, 21),
             )
+
+    async def test_an_exchange_with_too_little_notice_is_refused(self):
+        """Filing refuses it outright, so the preview must too. Today is
+        Wednesday 8/5; Thursday 8/6 gives one working day of notice and one
+        day needs two."""
+        self.holidays.list_by_year.return_value = [
+            _holiday(datetime.date(2026, 8, 6), is_exchangeable=True)
+        ]
+
+        with self.assertRaisesRegex(ValueError, "working days' notice"):
+            await self._preview(
+                request_type=LeaveRequestType.EXCHANGE,
+                start_date=datetime.date(2026, 8, 6),
+                end_date=datetime.date(2026, 8, 6),
+            )
+
+    async def test_paid_leave_at_short_notice_says_it_will_be_marked(self):
+        """Three days from Thursday 8/6 need six working days of notice; one
+        is given. Paid leave is still filed, marked late."""
+        preview = await self._preview(
+            start_date=datetime.date(2026, 8, 6),
+            end_date=datetime.date(2026, 8, 8),
+        )
+
+        self.assertTrue(preview.is_late_notice)
+        self.assertEqual(preview.required_notice_workdays, 6)
+
+    async def test_paid_leave_with_enough_notice_is_not_marked(self):
+        preview = await self._preview()
+
+        self.assertFalse(preview.is_late_notice)
+        self.assertEqual(preview.required_notice_workdays, 6)
+
+    async def test_sick_leave_owes_no_notice(self):
+        preview = await self._preview(
+            request_type=LeaveRequestType.SICK,
+            start_date=datetime.date(2026, 8, 6),
+            end_date=datetime.date(2026, 8, 6),
+        )
+
+        self.assertFalse(preview.is_late_notice)
+        self.assertIsNone(preview.required_notice_workdays)
 
     async def test_a_part_day_comes_to_its_hours(self):
         preview = await self._preview(
