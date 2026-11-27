@@ -11,8 +11,8 @@ import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
  * would make the approvals entry point vanish the moment a manager finished
  * deciding.
  *
- * @returns {Promise<object>} The API envelope; `data` is the request list,
- *   oldest first.
+ * @returns {Promise<object>} The API envelope; `data` is the request list:
+ *   waiting requests oldest first, then decided ones newest first.
  */
 export async function getLeaveApprovals() {
   return await request.get(API_ENDPOINTS.LEAVE_APPROVALS);

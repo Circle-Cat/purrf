@@ -207,4 +207,94 @@ describe("LeaveApprovalsPage", () => {
       expect(screen.getByText(/Shanghai/)).toBeInTheDocument(),
     );
   });
+
+  it("marks sick leave that was approved automatically", async () => {
+    api.getLeaveApprovals.mockResolvedValue(
+      envelope([
+        row({
+          requestId: 2,
+          type: "sick",
+          status: "approved",
+          startDate: "2026-08-13",
+          endDate: "2026-08-13",
+          hours: "8.00",
+          balanceBefore: null,
+          balanceAfter: null,
+          isAutoApproved: true,
+        }),
+        row({
+          requestId: 3,
+          employeeName: "Cat Colleague",
+          status: "approved",
+          balanceBefore: null,
+          balanceAfter: null,
+          decidedBy: 20,
+          isAutoApproved: false,
+        }),
+      ]),
+    );
+
+    render(<LeaveApprovalsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Approved automatically")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/needs nobody's decision/i)).toBeInTheDocument();
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+  });
+
+  it("lists decided requests in the order the server sends", async () => {
+    // The server puts the latest leave first; re-sorting here would put a
+    // second ordering rule on the page.
+    api.getLeaveApprovals.mockResolvedValue(
+      envelope([
+        row({
+          requestId: 4,
+          employeeName: "Later Leave",
+          status: "rejected",
+          startDate: "2026-09-01",
+          endDate: "2026-09-01",
+        }),
+        row({
+          requestId: 5,
+          employeeName: "Earlier Leave",
+          status: "rejected",
+          startDate: "2026-08-04",
+          endDate: "2026-08-04",
+        }),
+      ]),
+    );
+
+    render(<LeaveApprovalsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Later Leave/)).toBeInTheDocument(),
+    );
+    const names = screen
+      .getAllByText(/^(Later|Earlier) Leave$/)
+      .map((node) => node.textContent);
+    expect(names[0]).toMatch(/Later Leave/);
+    expect(names[1]).toMatch(/Earlier Leave/);
+  });
+
+  it("shows the working days and the days not counted", async () => {
+    api.getLeaveApprovals.mockResolvedValue(
+      envelope([
+        row({
+          workdays: 3,
+          daysNotCounted: [{ date: "2026-08-16", holidayName: null }],
+          endDate: "2026-08-18",
+        }),
+      ]),
+    );
+
+    render(<LeaveApprovalsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/3 working days · 24\.00 h/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText("Not counted: Aug 16 (weekend)"),
+    ).toBeInTheDocument();
+  });
 });

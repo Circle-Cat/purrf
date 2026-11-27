@@ -9,11 +9,10 @@ import {
   LEAVE_STATUS_LABELS,
   LEAVE_TYPE_EFFECT,
   LEAVE_TYPE_LABELS,
+  AUTO_APPROVAL_NOTE,
+  AUTO_APPROVED_LABEL,
 } from "@/constants/LeaveRequest";
-import {
-  formatBusinessRange,
-  formatTimeSpan,
-} from "@/pages/Leave/utils/leaveDates";
+import RequestSpan from "@/pages/Leave/components/RequestSpan";
 
 /**
  * One request in an approver's list.
@@ -50,7 +49,6 @@ const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
   // null, "approve" or "reject": which decision is being confirmed.
   const [confirming, setConfirming] = useState(null);
   const [reason, setReason] = useState("");
-  const timeSpan = formatTimeSpan(row.startTime, row.endTime);
   const effect = LEAVE_TYPE_EFFECT[row.type];
   // Sent only while a request is still waiting: once decided, the ledger has
   // already moved and there is no "would" left to show.
@@ -75,11 +73,7 @@ const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
             {LEAVE_TYPE_LABELS[row.type] ?? row.type}
           </Badge>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {formatBusinessRange(row.startDate, row.endDate)}
-          {timeSpan && ` · ${timeSpan}`}
-          {` · ${row.hours} h`}
-        </p>
+        <RequestSpan row={row} className="text-sm text-muted-foreground" />
         {row.reason && <p className="mt-1 text-sm">{row.reason}</p>}
         {/* For a waiting request the server works the overdraft out against
             the balance as it stands now, counting every paid hour still
@@ -106,7 +100,14 @@ const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
         )}
         {!isDecidable && (
           <p className="mt-1 text-sm text-muted-foreground">
-            {LEAVE_STATUS_LABELS[row.status] ?? row.status}
+            {row.isAutoApproved
+              ? AUTO_APPROVED_LABEL
+              : (LEAVE_STATUS_LABELS[row.status] ?? row.status)}
+          </p>
+        )}
+        {row.isAutoApproved && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {AUTO_APPROVAL_NOTE}
           </p>
         )}
         {!isDecidable && row.decisionComment && (
