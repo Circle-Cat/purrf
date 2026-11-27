@@ -14,6 +14,9 @@ locals {
     "yuji@circlecat.org",
     "jasmine@circlecat.org",
     "daisyisadaisy@circlecat.org",
+    "admin@circlecat.org",
+    "jxie@circlecat.org",
+    "wuyu@circlecat.org",
   ]
 }
 
