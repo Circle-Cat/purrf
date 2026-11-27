@@ -36,7 +36,13 @@ describe("FileLeaveDialog", () => {
     api.previewLeaveRequest.mockResolvedValue({
       success: true,
       message: "ok",
-      data: { hours: "24.00", workdays: 3, daysNotCounted: [] },
+      data: {
+        hours: "24.00",
+        workdays: 3,
+        daysNotCounted: [],
+        isLateNotice: false,
+        requiredNoticeWorkdays: 6,
+      },
     });
   });
 
@@ -81,6 +87,7 @@ describe("FileLeaveDialog", () => {
   it("shows why the dates cannot be filed before Submit is pressed", async () => {
     api.previewLeaveRequest.mockRejectedValue({
       response: {
+        status: 400,
         data: {
           message:
             "Those days are already time off, so there is nothing to request.",
@@ -119,6 +126,33 @@ describe("FileLeaveDialog", () => {
         "Less than 6 working days' notice. Your manager will see it marked as short notice.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("drops an earlier submit's refusal once the dates change", async () => {
+    // The refusal was about the old dates; the preview speaks for the new.
+    const onSubmit = vi.fn().mockResolvedValue(false);
+    render(
+      <FileLeaveDialog
+        isOpen
+        isSaving={false}
+        saveError="These days are already covered by request 7."
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+    setDates("2026-12-22", "2026-12-24");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(
+      await screen.findByText("These days are already covered by request 7."),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Last day"), {
+      target: { value: "2026-12-25" },
+    });
+
+    expect(
+      screen.queryByText("These days are already covered by request 7."),
+    ).not.toBeInTheDocument();
   });
 
   it("asks nothing until both dates make sense", async () => {
