@@ -96,3 +96,32 @@ export const formatTimeSpan = (startTime, endTime) => {
   if (!startTime || !endTime) return "";
   return `${startTime.slice(0, 5)} – ${endTime.slice(0, 5)}`;
 };
+
+/**
+ * Renders how many working days a request takes hours from.
+ *
+ * @param {number|null|undefined} count From the server's `workdays`.
+ * @returns {string} e.g. `3 working days`, or an empty string when unknown.
+ */
+export const formatWorkdays = (count) => {
+  if (count === null || count === undefined) return "";
+  return count === 1 ? "1 working day" : `${count} working days`;
+};
+
+/**
+ * Renders the days off inside a request's range that it takes no hours for.
+ *
+ * @param {Array<{date: string, holidayName: string|null}>|null|undefined} days
+ *   From the server's `daysNotCounted`; a null holiday name is a weekend day.
+ * @returns {string} e.g. `Jun 19 (Dragon Boat Festival), Jun 21 (weekend)`,
+ *   or an empty string when nothing was skipped.
+ */
+export const formatDaysNotCounted = (days) => {
+  if (!days || days.length === 0) return "";
+  return days
+    .map(({ date, holidayName }) => {
+      const { month, day } = parts(date);
+      return `${month} ${day} (${holidayName || "weekend"})`;
+    })
+    .join(", ");
+};

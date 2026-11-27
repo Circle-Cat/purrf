@@ -49,6 +49,15 @@ export const LEAVE_STATUS_LABELS = {
   [LEAVE_REQUEST_STATUS.WITHDRAWN]: "Withdrawn",
 };
 
+/**
+ * How sick leave approved on submission is named, and why nobody decided it.
+ * The rule itself lives in the backend (`SICK_AUTO_APPROVE_HOURS`); the note
+ * repeats the wording the notification uses.
+ */
+export const AUTO_APPROVED_LABEL = "Approved automatically";
+export const AUTO_APPROVAL_NOTE =
+  "Sick leave of up to 24 working hours (three working days) needs nobody's decision.";
+
 export const ENTRY_TYPE_LABELS = {
   weekly_accrual: "Weekly accrual",
   leave_deduction: "Leave taken",

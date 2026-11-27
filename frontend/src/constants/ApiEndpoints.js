@@ -87,6 +87,7 @@ export const API_ENDPOINTS = {
   LEAVE_APPROVALS: "/leave/requests/approvals",
   LEAVE_ME: "/leave/me",
   LEAVE_REQUESTS: "/leave/requests",
+  LEAVE_REQUESTS_PREVIEW: "/leave/requests/preview",
   LEAVE_REQUEST_WITHDRAW: (requestId) =>
     `/leave/requests/${requestId}/withdraw`,
   LEAVE_POLICY: "/leave/policy",

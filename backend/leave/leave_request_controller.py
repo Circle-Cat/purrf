@@ -6,6 +6,7 @@ from backend.common.api_endpoints import (
     LEAVE_REQUEST_WITHDRAW_ENDPOINT,
     LEAVE_REQUESTS_ENDPOINT,
     LEAVE_REQUESTS_APPROVALS_ENDPOINT,
+    LEAVE_REQUESTS_PREVIEW_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.leave_coverage_dto import LeaveCoverageDto
@@ -54,6 +55,12 @@ class LeaveRequestController:
         self.router.add_api_route(
             LEAVE_REQUESTS_ENDPOINT,
             endpoint=authenticate()(self.submit),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            LEAVE_REQUESTS_PREVIEW_ENDPOINT,
+            endpoint=authenticate()(self.preview),
             methods=["POST"],
             response_model=None,
         )
@@ -110,6 +117,26 @@ class LeaveRequestController:
                 reason=payload.reason,
             )
         return api_response(message="Leave request filed.", data=request)
+
+    async def preview(
+        self, payload: LeaveRequestSubmitDto, current_user: UserContextDto
+    ):
+        """What a request would come to, worked out before it is filed.
+
+        Takes the same body as filing; the reason is not used. Nothing is
+        stored. A signed-in account is required like every route here, but the
+        figures depend only on the dates and the calendar.
+        """
+        async with self.database.session() as session:
+            preview = await self.leave_request_service.preview(
+                session,
+                request_type=payload.type,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
+                start_time=payload.start_time,
+                end_time=payload.end_time,
+            )
+        return api_response(message="Leave request worked out.", data=preview)
 
     async def list_own(self, current_user: UserContextDto):
         """Return the signed-in employee's own requests, newest first."""

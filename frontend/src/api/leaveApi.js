@@ -11,8 +11,8 @@ import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
  * would make the approvals entry point vanish the moment a manager finished
  * deciding.
  *
- * @returns {Promise<object>} The API envelope; `data` is the request list,
- *   oldest first.
+ * @returns {Promise<object>} The API envelope; `data` is the request list:
+ *   waiting requests oldest first, then decided ones newest first.
  */
 export async function getLeaveApprovals() {
   return await request.get(API_ENDPOINTS.LEAVE_APPROVALS);
@@ -74,6 +74,20 @@ export async function getMyLeaveRequests() {
  */
 export async function submitLeaveRequest(payload) {
   return await request.post(API_ENDPOINTS.LEAVE_REQUESTS, payload);
+}
+
+/**
+ * Works out what a request would come to without filing it: the hours, the
+ * working days counted and the days off the range skips. Refused with the
+ * same message filing would give when the dates cannot be filed.
+ *
+ * @param {{type: string, startDate: string, endDate: string,
+ *          startTime: string|null, endTime: string|null}} payload
+ * @returns {Promise<object>} The API envelope; `data` is
+ *   `{hours, workdays, daysNotCounted, isLateNotice, requiredNoticeWorkdays}`.
+ */
+export async function previewLeaveRequest(payload) {
+  return await request.post(API_ENDPOINTS.LEAVE_REQUESTS_PREVIEW, payload);
 }
 
 /**
