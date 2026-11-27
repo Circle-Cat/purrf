@@ -84,7 +84,7 @@ export async function submitLeaveRequest(payload) {
  * @param {{type: string, startDate: string, endDate: string,
  *          startTime: string|null, endTime: string|null}} payload
  * @returns {Promise<object>} The API envelope; `data` is
- *   `{hours, workdays, daysNotCounted}`.
+ *   `{hours, workdays, daysNotCounted, isLateNotice, requiredNoticeWorkdays}`.
  */
 export async function previewLeaveRequest(payload) {
   return await request.post(API_ENDPOINTS.LEAVE_REQUESTS_PREVIEW, payload);

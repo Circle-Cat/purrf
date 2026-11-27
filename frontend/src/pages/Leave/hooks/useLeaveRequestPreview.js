@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import { previewLeaveRequest } from "@/api/leaveApi";
-import { refusalMessage } from "@/pages/Leave/hooks/useMyLeaveRequests";
 
 /** How long typing has to pause before the server is asked. */
 export const PREVIEW_DELAY_MS = 400;
@@ -13,7 +12,8 @@ export const PREVIEW_DELAY_MS = 400;
  * The server works the figures out with the same rules filing uses, so the
  * form never quotes a number the list then contradicts. Each answer is kept
  * with the request it answers, so a slow reply for dates since changed is
- * never shown against the new ones.
+ * never shown against the new ones. Only the server's refusal of the dates is
+ * reported; a preview that failed for another reason shows nothing.
  *
  * @param {object|null} payload The request as it would be filed, or null
  *   while the form cannot be sent yet.
@@ -38,7 +38,14 @@ export function useLeaveRequestPreview(payload) {
         }
       } catch (error) {
         if (isCurrent) {
-          setAnswer({ key, preview: null, error: refusalMessage(error) });
+          // Only a refusal of these dates is worth showing. A preview that
+          // failed for any other reason -- the network, an expired sign-in --
+          // says nothing about the request, and Submit may well go through.
+          const refusal =
+            error?.response?.status === 400
+              ? (error.response.data?.message ?? null)
+              : null;
+          setAnswer({ key, preview: null, error: refusal });
         }
       }
     }, PREVIEW_DELAY_MS);

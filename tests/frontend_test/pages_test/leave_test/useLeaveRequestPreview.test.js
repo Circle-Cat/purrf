@@ -64,7 +64,10 @@ describe("useLeaveRequestPreview", () => {
 
   it("shows the server's reason when the dates cannot be filed", async () => {
     api.previewLeaveRequest.mockRejectedValue({
-      response: { data: { message: "Those days are already time off." } },
+      response: {
+        status: 400,
+        data: { message: "Those days are already time off." },
+      },
     });
 
     const { result } = renderHook(() => useLeaveRequestPreview(payload()));
@@ -111,5 +114,44 @@ describe("useLeaveRequestPreview", () => {
       vi.advanceTimersByTime(PREVIEW_DELAY_MS);
     });
     expect(result.current.preview.hours).toBe("8.00");
+  });
+
+  it("asks once for a burst of changes, after the last one", async () => {
+    api.previewLeaveRequest.mockResolvedValue(
+      answer({ hours: "8.00", workdays: 1, daysNotCounted: [] }),
+    );
+
+    const { rerender } = renderHook(
+      ({ value }) => useLeaveRequestPreview(value),
+      { initialProps: { value: payload({ endDate: "2026-12-23" }) } },
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DELAY_MS / 2);
+    });
+    rerender({ value: payload({ endDate: "2026-12-24" }) });
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DELAY_MS / 2);
+    });
+    rerender({ value: payload() });
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DELAY_MS);
+    });
+
+    expect(api.previewLeaveRequest).toHaveBeenCalledTimes(1);
+    expect(api.previewLeaveRequest).toHaveBeenCalledWith(payload());
+  });
+
+  it("shows nothing when the preview fails for a reason other than the dates", async () => {
+    // A network failure or a 500 says nothing about the request, and Submit
+    // may still go through.
+    api.previewLeaveRequest.mockRejectedValue(new Error("Network Error"));
+
+    const { result } = renderHook(() => useLeaveRequestPreview(payload()));
+    await act(async () => {
+      vi.advanceTimersByTime(PREVIEW_DELAY_MS);
+    });
+
+    expect(result.current.preview).toBeNull();
+    expect(result.current.previewError).toBeNull();
   });
 });
