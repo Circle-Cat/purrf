@@ -15,6 +15,8 @@ import {
   LEAVE_REQUEST_TYPE,
   LEAVE_TYPE_LABELS,
 } from "@/constants/LeaveRequest";
+import RequestSpan from "@/pages/Leave/components/RequestSpan";
+import { useLeaveRequestPreview } from "@/pages/Leave/hooks/useLeaveRequestPreview";
 
 const EMPTY = {
   type: LEAVE_REQUEST_TYPE.PAID,
@@ -82,11 +84,12 @@ const structuralProblem = (form) => {
  * has to construct a Date, and a native control needs no pointer events to be
  * driven in a test.
  *
- * The hours the days come to are not shown here. They are computed on the
- * server -- the count skips company holidays and the weekend -- and a second
- * implementation in the browser would quote a figure the ledger then
- * contradicts. The figure appears on the request as soon as it is filed, and a
- * pending request can be taken back if it surprises.
+ * The hours the days come to are asked of the server as soon as the dates
+ * make sense, and shown above Submit with the working days and the days off
+ * the range skips. They are never worked out here: the count skips company
+ * holidays and the weekend, and a second implementation in the browser would
+ * quote a figure the ledger then contradicts. When the dates cannot be filed
+ * the server's reason shows instead, before anything is submitted.
  *
  * Who will read the request is said above Submit, from the same lookup filing
  * makes. When nobody can approve it, the reason is shown instead and Submit is
@@ -119,6 +122,19 @@ const FileLeaveDialog = ({
   // so it is shown only for a submit made since the dialog was opened.
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
+  const withTimes = takesTimes(form) && form.startTime && form.endTime;
+  const payload =
+    isOpen && !structuralProblem(form)
+      ? {
+          type: form.type,
+          startDate: form.startDate,
+          endDate: form.endDate,
+          startTime: withTimes ? form.startTime : null,
+          endTime: withTimes ? form.endTime : null,
+        }
+      : null;
+  const { preview, previewError } = useLeaveRequestPreview(payload);
+
   const set = (field) => (event) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
@@ -134,7 +150,6 @@ const FileLeaveDialog = ({
     setProblem(found);
     if (found) return;
 
-    const withTimes = takesTimes(form) && form.startTime && form.endTime;
     setHasSubmitted(true);
     const saved = await onSubmit({
       type: form.type,
@@ -238,6 +253,18 @@ const FileLeaveDialog = ({
               rows={3}
             />
           </div>
+
+          {preview && payload && (
+            <RequestSpan row={{ ...payload, ...preview }} />
+          )}
+          {preview?.isLateNotice && (
+            <p className="text-sm text-amber-700">
+              {`Less than ${preview.requiredNoticeWorkdays} working days' notice. Your manager will see it marked as short notice.`}
+            </p>
+          )}
+          {previewError && !(hasSubmitted && saveError) && (
+            <p className="text-sm text-red-700">{previewError}</p>
+          )}
 
           {approverProblem ? (
             <p className="text-sm text-red-700">{approverProblem}</p>

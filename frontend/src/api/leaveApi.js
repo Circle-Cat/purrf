@@ -77,6 +77,20 @@ export async function submitLeaveRequest(payload) {
 }
 
 /**
+ * Works out what a request would come to without filing it: the hours, the
+ * working days counted and the days off the range skips. Refused with the
+ * same message filing would give when the dates cannot be filed.
+ *
+ * @param {{type: string, startDate: string, endDate: string,
+ *          startTime: string|null, endTime: string|null}} payload
+ * @returns {Promise<object>} The API envelope; `data` is
+ *   `{hours, workdays, daysNotCounted}`.
+ */
+export async function previewLeaveRequest(payload) {
+  return await request.post(API_ENDPOINTS.LEAVE_REQUESTS_PREVIEW, payload);
+}
+
+/**
  * Takes back one of the signed-in employee's undecided requests.
  *
  * Only a pending request can be taken back. Approval is the end of the line:
