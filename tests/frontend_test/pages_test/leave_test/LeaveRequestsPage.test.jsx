@@ -210,4 +210,55 @@ describe("LeaveRequestsPage", () => {
       screen.queryByRole("button", { name: /request/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("says when sick leave was approved automatically, and why", async () => {
+    api.getMyLeaveRequests.mockResolvedValue(
+      envelope([
+        row({
+          type: "sick",
+          status: "approved",
+          startDate: "2026-08-25",
+          endDate: "2026-08-25",
+          hours: "8.00",
+          isAutoApproved: true,
+        }),
+      ]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Approved automatically")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/needs nobody's decision/i)).toBeInTheDocument();
+  });
+
+  it("explains the hours of a range with the days it did not count", async () => {
+    api.getMyLeaveRequests.mockResolvedValue(
+      envelope([
+        row({
+          startDate: "2026-06-18",
+          endDate: "2026-06-22",
+          hours: "16.00",
+          workdays: 2,
+          daysNotCounted: [
+            { date: "2026-06-19", holidayName: "Dragon Boat Festival" },
+            { date: "2026-06-21", holidayName: null },
+            { date: "2026-06-22", holidayName: null },
+          ],
+        }),
+      ]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/2 working days · 16\.00 h/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(
+        "Not counted: Jun 19 (Dragon Boat Festival), Jun 21 (weekend), Jun 22 (weekend)",
+      ),
+    ).toBeInTheDocument();
+  });
 });

@@ -1,14 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  AUTO_APPROVAL_NOTE,
+  AUTO_APPROVED_LABEL,
   LEAVE_STATUS_LABELS,
   LEAVE_TYPE_EFFECT,
   LEAVE_TYPE_LABELS,
 } from "@/constants/LeaveRequest";
-import {
-  formatBusinessRange,
-  formatTimeSpan,
-} from "@/pages/Leave/utils/leaveDates";
+import RequestSpan from "@/pages/Leave/components/RequestSpan";
 
 /** How each state reads on somebody's own list. */
 const OWN_STATUS_LABELS = {
@@ -38,7 +37,6 @@ const OWN_STATUS_LABELS = {
  */
 const MyRequestRow = ({ row, isWithdrawable, isWithdrawing, onWithdraw }) => {
   const effect = LEAVE_TYPE_EFFECT[row.type];
-  const timeSpan = formatTimeSpan(row.startTime, row.endTime);
 
   return (
     <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
@@ -49,16 +47,19 @@ const MyRequestRow = ({ row, isWithdrawable, isWithdrawing, onWithdraw }) => {
             {LEAVE_TYPE_LABELS[row.type] ?? row.type}
           </Badge>
           <span className="text-sm text-muted-foreground">
-            {OWN_STATUS_LABELS[row.status] ?? row.status}
+            {row.isAutoApproved
+              ? AUTO_APPROVED_LABEL
+              : (OWN_STATUS_LABELS[row.status] ?? row.status)}
           </span>
         </div>
-        <p className="mt-1 text-sm">
-          {formatBusinessRange(row.startDate, row.endDate)}
-          {timeSpan && ` · ${timeSpan}`}
-          {` · ${row.hours} h`}
-        </p>
+        <RequestSpan row={row} className="mt-1 text-sm" />
         {row.reason && (
           <p className="mt-1 text-sm text-muted-foreground">{row.reason}</p>
+        )}
+        {row.isAutoApproved && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {AUTO_APPROVAL_NOTE}
+          </p>
         )}
         {row.decisionComment && (
           <p className="mt-1 text-sm">{`Your manager's reason: ${row.decisionComment}`}</p>
