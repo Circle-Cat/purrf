@@ -163,6 +163,45 @@ class LeaveApprover:
     ldap: str
 
 
+async def load_calendar_rows(
+    session: AsyncSession,
+    leave_holiday_repository,
+    today: datetime.date,
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> list:
+    """The holiday rows covering a request and its notice window.
+
+    The read and the "has this year been entered" rule behind
+    :func:`load_calendar`, for a caller that needs the rows themselves -- the
+    preview names each holiday it skips. One rule, so the preview refuses
+    exactly what filing refuses.
+
+    Args:
+        session: Active async session.
+        leave_holiday_repository (LeaveHolidayRepository): The calendar.
+        today: The business day the request is judged on.
+        start_date: First day of the leave.
+        end_date: Last day of the leave.
+
+    Returns:
+        list[LeaveHolidayEntity]: Every holiday in those years.
+
+    Raises:
+        ValueError: A year the request covers has no holidays entered.
+    """
+    rows = []
+    for year in range(min(today.year, start_date.year), end_date.year + 1):
+        year_rows = await leave_holiday_repository.list_by_year(session, year)
+        if not year_rows and start_date.year <= year <= end_date.year:
+            raise ValueError(
+                f"The company holidays for {year} have not been entered "
+                "yet, so leave in that year cannot be worked out."
+            )
+        rows.extend(year_rows)
+    return rows
+
+
 async def load_calendar(
     session: AsyncSession,
     leave_holiday_repository,
@@ -194,20 +233,13 @@ async def load_calendar(
     Raises:
         ValueError: A year the request covers has no holidays entered.
     """
-    holidays: set[datetime.date] = set()
-    exchangeable: set[datetime.date] = set()
-    for year in range(min(today.year, start_date.year), end_date.year + 1):
-        rows = await leave_holiday_repository.list_by_year(session, year)
-        if not rows and start_date.year <= year <= end_date.year:
-            raise ValueError(
-                f"The company holidays for {year} have not been entered "
-                "yet, so leave in that year cannot be worked out."
-            )
-        for row in rows:
-            holidays.add(row.date)
-            if row.is_exchangeable:
-                exchangeable.add(row.date)
-    return frozenset(holidays), frozenset(exchangeable)
+    rows = await load_calendar_rows(
+        session, leave_holiday_repository, today, start_date, end_date
+    )
+    return (
+        frozenset(row.date for row in rows),
+        frozenset(row.date for row in rows if row.is_exchangeable),
+    )
 
 
 def unexchangeable_days(
@@ -415,7 +447,7 @@ class LeaveRequestService:
         self._check_dates(today, start_date, end_date)
 
         approver_user_id = await self._approver_for(session, user_id)
-        holidays, exchangeable, hours = await self._hours_for(
+        holidays, exchangeable, hours, _ = await self._hours_for(
             session, today, request_type, start_date, end_date, start_time, end_time
         )
 
@@ -541,7 +573,7 @@ class LeaveRequestService:
         """
         today = business_today()
         self._check_dates(today, start_date, end_date)
-        holidays, exchangeable, hours = await self._hours_for(
+        holidays, exchangeable, hours, names = await self._hours_for(
             session, today, request_type, start_date, end_date, start_time, end_time
         )
         if request_type is LeaveRequestType.EXCHANGE:
@@ -553,7 +585,6 @@ class LeaveRequestService:
             notice_needed,
         )
 
-        names = await self._holiday_names(session, start_date.year, end_date.year)
         counted = hours_by_day(
             request_type, start_date, end_date, start_time, end_time, holidays
         )
@@ -602,16 +633,22 @@ class LeaveRequestService:
     ):
         """The calendar a request is worked out against, and its hours.
 
+        The calendar is read once; the holiday names come from the same read,
+        for the preview to say which holidays a range skips.
+
         Returns:
-            ``(holidays, exchangeable, hours)``.
+            ``(holidays, exchangeable, hours, names)``, ``names`` being each
+            holiday's name by date.
 
         Raises:
             ValueError: A year it covers has no calendar, the times have no
                 reading, or every day in it is already time off.
         """
-        holidays, exchangeable = await load_calendar(
+        rows = await load_calendar_rows(
             session, self.leave_holiday_repository, today, start_date, end_date
         )
+        holidays = frozenset(row.date for row in rows)
+        exchangeable = frozenset(row.date for row in rows if row.is_exchangeable)
         hours = request_hours(
             request_type, start_date, end_date, start_time, end_time, holidays
         )
@@ -619,7 +656,7 @@ class LeaveRequestService:
             raise ValueError(
                 "Those days are already time off, so there is nothing to request."
             )
-        return holidays, exchangeable, hours
+        return holidays, exchangeable, hours, {row.date: row.name for row in rows}
 
     async def _record_auto_approval(
         self, session: AsyncSession, request: LeaveRequestEntity

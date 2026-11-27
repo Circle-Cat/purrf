@@ -1825,6 +1825,31 @@ class TestPreview(LeaveRequestServiceTest):
             preview.required_notice_workdays, filed.required_notice_workdays
         )
 
+    async def test_it_reads_the_calendar_once(self):
+        """The names it shows come from the same read that works out the
+        hours: one read of 2026, not one for the hours and one for the names."""
+        await self._preview()
+
+        self.holidays.list_by_year.assert_awaited_once_with(self.session, 2026)
+
+    async def test_a_range_across_new_year_names_holidays_from_both_years(self):
+        calendars = {
+            2026: [_holiday(datetime.date(2026, 10, 1), name="National Day")],
+            2027: [_holiday(datetime.date(2027, 1, 1), name="New Year's Day")],
+        }
+        self.holidays.list_by_year.side_effect = lambda _session, year: calendars[year]
+
+        preview = await self._preview(
+            start_date=datetime.date(2026, 12, 30),
+            end_date=datetime.date(2027, 1, 2),
+        )
+
+        self.assertEqual(preview.hours, "24.00")
+        self.assertEqual(
+            [(d.date, d.holiday_name) for d in preview.days_not_counted],
+            [(datetime.date(2027, 1, 1), "New Year's Day")],
+        )
+
     async def test_it_stores_nothing_and_tells_nobody(self):
         await self._preview()
 
