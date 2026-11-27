@@ -8,9 +8,12 @@ const row = (overrides = {}) => ({
   endDate: "2026-06-22",
   startTime: null,
   endTime: null,
-  hours: "16.00",
-  workdays: 2,
-  daysNotCounted: [{ date: "2026-06-21", holidayName: null }],
+  hours: "24.00",
+  workdays: 3,
+  daysNotCounted: [
+    { date: "2026-06-21", holidayName: null },
+    { date: "2026-06-22", holidayName: null },
+  ],
   ...overrides,
 });
 
@@ -19,10 +22,10 @@ describe("RequestSpan", () => {
     render(<RequestSpan row={row()} />);
 
     expect(
-      screen.getByText("Jun 18 – Jun 22, 2026 · 2 working days · 16.00 h"),
+      screen.getByText("Jun 18 – Jun 22, 2026 · 3 working days · 24.00 h"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Not counted: Jun 21 (weekend)"),
+      screen.getByText("Not counted: Jun 21 (weekend), Jun 22 (weekend)"),
     ).toBeInTheDocument();
   });
 
@@ -53,7 +56,7 @@ describe("RequestSpan", () => {
     render(<RequestSpan row={row({ workdays: null, daysNotCounted: null })} />);
 
     expect(
-      screen.getByText("Jun 18 – Jun 22, 2026 · 16.00 h"),
+      screen.getByText("Jun 18 – Jun 22, 2026 · 24.00 h"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Not counted/)).not.toBeInTheDocument();
   });

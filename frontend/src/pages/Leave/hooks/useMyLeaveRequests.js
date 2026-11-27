@@ -8,7 +8,7 @@ import {
 import { LEAVE_REQUEST_STATUS } from "@/constants/LeaveRequest";
 
 /** The message the server sent, which names what to do about the refusal. */
-const refusalMessage = (error) =>
+export const refusalMessage = (error) =>
   error?.response?.data?.message ?? "Something went wrong. Try again.";
 
 /**

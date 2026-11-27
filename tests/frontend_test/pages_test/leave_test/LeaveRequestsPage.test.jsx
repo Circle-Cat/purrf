@@ -231,6 +231,7 @@ describe("LeaveRequestsPage", () => {
       expect(screen.getByText("Approved automatically")).toBeInTheDocument(),
     );
     expect(screen.getByText(/needs nobody's decision/i)).toBeInTheDocument();
+    expect(screen.queryByText("Approved")).not.toBeInTheDocument();
   });
 
   it("explains the hours of a range with the days it did not count", async () => {

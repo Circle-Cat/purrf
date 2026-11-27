@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import FileLeaveDialog from "@/pages/Leave/components/FileLeaveDialog";
+import * as api from "@/api/leaveApi";
+
+vi.mock("@/api/leaveApi");
 
 const open = (props = {}) => {
   const onSubmit = vi.fn().mockResolvedValue(true);
@@ -30,6 +33,103 @@ const setDates = (first, last) => {
 describe("FileLeaveDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: { hours: "24.00", workdays: 3, daysNotCounted: [] },
+    });
+  });
+
+  it("shows what the dates come to before anything is submitted", async () => {
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: {
+        hours: "40.00",
+        workdays: 5,
+        daysNotCounted: [
+          { date: "2026-12-25", holidayName: "QA holiday" },
+          { date: "2026-12-27", holidayName: null },
+          { date: "2026-12-28", holidayName: null },
+        ],
+      },
+    });
+    const onSubmit = open();
+
+    setDates("2026-12-22", "2026-12-29");
+
+    expect(
+      await screen.findByText(
+        "Dec 22 – Dec 29, 2026 · 5 working days · 40.00 h",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Not counted: Dec 25 (QA holiday), Dec 27 (weekend), Dec 28 (weekend)",
+      ),
+    ).toBeInTheDocument();
+    expect(api.previewLeaveRequest).toHaveBeenCalledWith({
+      type: "paid",
+      startDate: "2026-12-22",
+      endDate: "2026-12-29",
+      startTime: null,
+      endTime: null,
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("shows why the dates cannot be filed before Submit is pressed", async () => {
+    api.previewLeaveRequest.mockRejectedValue({
+      response: {
+        data: {
+          message:
+            "Those days are already time off, so there is nothing to request.",
+        },
+      },
+    });
+    open();
+
+    setDates("2026-12-27", "2026-12-28");
+
+    expect(
+      await screen.findByText(
+        "Those days are already time off, so there is nothing to request.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("warns before filing that the request will be marked short notice", async () => {
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: {
+        hours: "24.00",
+        workdays: 3,
+        daysNotCounted: [],
+        isLateNotice: true,
+        requiredNoticeWorkdays: 6,
+      },
+    });
+    open();
+
+    setDates("2026-12-22", "2026-12-24");
+
+    expect(
+      await screen.findByText(
+        "Less than 6 working days' notice. Your manager will see it marked as short notice.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("asks nothing until both dates make sense", async () => {
+    open();
+
+    fireEvent.change(screen.getByLabelText("First day"), {
+      target: { value: "2026-12-22" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(api.previewLeaveRequest).not.toHaveBeenCalled();
   });
 
   it("says who will read the request before it is filed", () => {
