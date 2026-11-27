@@ -1,3 +1,4 @@
+import { LEAVE_REQUEST_TYPE } from "@/constants/LeaveRequest";
 import {
   formatBusinessRange,
   formatDaysNotCounted,
@@ -14,14 +15,17 @@ import {
  * computes the hours; nothing here works them out again.
  *
  * The working-day count is left off a single day, where it would only repeat
- * the date.
+ * the date, and off an exchange, whose days are holidays worked rather than
+ * working days.
  *
  * @param {{ row: object, className?: string }} props
  */
 const RequestSpan = ({ row, className = "text-sm" }) => {
   const timeSpan = formatTimeSpan(row.startTime, row.endTime);
   const workdays =
-    row.startDate !== row.endDate ? formatWorkdays(row.workdays) : "";
+    row.startDate !== row.endDate && row.type !== LEAVE_REQUEST_TYPE.EXCHANGE
+      ? formatWorkdays(row.workdays)
+      : "";
   const notCounted = formatDaysNotCounted(row.daysNotCounted);
 
   return (

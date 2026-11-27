@@ -57,4 +57,23 @@ describe("RequestSpan", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Not counted/)).not.toBeInTheDocument();
   });
+
+  it("leaves the count off an exchange, whose days are holidays worked", () => {
+    render(
+      <RequestSpan
+        row={row({
+          type: "exchange",
+          startDate: "2026-10-01",
+          endDate: "2026-10-02",
+          hours: "16.00",
+          workdays: 2,
+          daysNotCounted: [],
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("Oct 1 – Oct 2, 2026 · 16.00 h"),
+    ).toBeInTheDocument();
+  });
 });
