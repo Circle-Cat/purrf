@@ -281,9 +281,13 @@ describe("LeaveApprovalsPage", () => {
     api.getLeaveApprovals.mockResolvedValue(
       envelope([
         row({
-          workdays: 3,
-          daysNotCounted: [{ date: "2026-08-16", holidayName: null }],
           endDate: "2026-08-18",
+          hours: "32.00",
+          workdays: 4,
+          daysNotCounted: [
+            { date: "2026-08-16", holidayName: null },
+            { date: "2026-08-17", holidayName: null },
+          ],
         }),
       ]),
     );
@@ -291,10 +295,10 @@ describe("LeaveApprovalsPage", () => {
     render(<LeaveApprovalsPage />);
 
     await waitFor(() =>
-      expect(screen.getByText(/3 working days · 24\.00 h/)).toBeInTheDocument(),
+      expect(screen.getByText(/4 working days · 32\.00 h/)).toBeInTheDocument(),
     );
     expect(
-      screen.getByText("Not counted: Aug 16 (weekend)"),
+      screen.getByText("Not counted: Aug 16 (weekend), Aug 17 (weekend)"),
     ).toBeInTheDocument();
   });
 });
