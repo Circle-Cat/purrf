@@ -151,7 +151,9 @@ class LeaveRequestDto(BaseDto):
         """
         decided = approval is not None and approval.decided_at is not None
         auto_approved = (
-            approval is None and request.status is LeaveRequestStatus.APPROVED
+            approval is None
+            and request.status is LeaveRequestStatus.APPROVED
+            and request.type is LeaveRequestType.SICK
         )
         return cls(
             request_id=request.leave_request_id,

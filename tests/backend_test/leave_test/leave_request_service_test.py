@@ -439,6 +439,25 @@ class TestSubmit(LeaveRequestServiceTest):
         self.assertEqual(request.user_id, EMPLOYEE)
         self.session.commit.assert_awaited_once()
 
+    async def test_the_filed_request_comes_back_with_its_working_days(self):
+        request = await self._submit()
+
+        self.assertEqual(request.workdays, 3)
+        self.assertEqual(request.days_not_counted, [])
+
+    async def test_a_calendar_read_that_fails_stores_nothing(self):
+        """The breakdown is read before anything commits, so a failure there
+        leaves no request behind for a retry to collide with."""
+        self.holidays.list_by_year.side_effect = [
+            [_holiday(datetime.date(2026, 6, 19))],
+            RuntimeError("database went away"),
+        ]
+
+        with self.assertRaises(RuntimeError):
+            await self._submit()
+
+        self.session.commit.assert_not_awaited()
+
     async def test_the_approver_is_the_manager_azure_names_today(self):
         """A snapshot, not a lookup at decision time: changing manager later
         must not repoint a request somebody has already decided."""
@@ -1718,6 +1737,39 @@ class TestLists(LeaveRequestServiceTest):
 
         self.assertIsNone(listed[0].workdays)
         self.assertIsNone(listed[0].days_not_counted)
+
+    async def test_only_sick_leave_reads_as_approved_automatically(self):
+        """Paid leave is always decided by somebody. Approved paid leave whose
+        approval cannot be found is not thereby automatic."""
+        orphan = _stored_request(request_id=621, status=LeaveRequestStatus.APPROVED)
+        self.requests.list_for_approver.return_value = [orphan]
+
+        listed = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertFalse(listed[0].is_auto_approved)
+
+    async def test_a_range_across_new_year_reads_both_calendars(self):
+        """Wednesday 12/30 to Saturday 1/2: New Year's Day is in the 2027
+        calendar, the weekend has no holiday in it."""
+        calendars = {
+            2026: [],
+            2027: [_holiday(datetime.date(2027, 1, 1), name="New Year's Day")],
+        }
+        self.holidays.list_by_year.side_effect = lambda _session, year: calendars[year]
+        row = _stored_request(
+            hours="24.00",
+            start_date=datetime.date(2026, 12, 30),
+            end_date=datetime.date(2027, 1, 2),
+        )
+        self.requests.list_for_user.return_value = [row]
+
+        listed = await self.service.list_own(self.session, EMPLOYEE)
+
+        self.assertEqual(listed[0].workdays, 3)
+        self.assertEqual(
+            [(d.date, d.holiday_name) for d in listed[0].days_not_counted],
+            [(datetime.date(2027, 1, 1), "New Year's Day")],
+        )
 
 
 class TestCoverage(LeaveRequestServiceTest):

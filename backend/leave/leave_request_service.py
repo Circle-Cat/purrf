@@ -485,6 +485,9 @@ class LeaveRequestService:
             request.status = LeaveRequestStatus.APPROVED
 
         stored = await self.leave_request_repository.add(session, request)
+        # Before anything commits: a failed calendar read then stores nothing,
+        # rather than storing the request and answering with an error.
+        breakdowns = await self._day_breakdowns(session, [stored])
         approval = None
         if auto_approved:
             await self._record_auto_approval(session, stored)
@@ -510,7 +513,6 @@ class LeaveRequestService:
             hours,
             stored.status.value,
         )
-        breakdowns = await self._day_breakdowns(session, [stored])
         return self._read_model(stored, approval, breakdowns)
 
     async def _record_auto_approval(
@@ -894,6 +896,10 @@ class LeaveRequestService:
         requests touch. A request whose days no longer add up to its stored
         hours -- the calendar changed after it was filed -- is left out, so it
         carries no breakdown rather than one that contradicts its hours.
+
+        Only the total is compared. A holiday moved to another day inside the
+        same range keeps the total and so keeps the breakdown, which then
+        names the day as it stands in today's calendar.
 
         Args:
             session: Active async session.
