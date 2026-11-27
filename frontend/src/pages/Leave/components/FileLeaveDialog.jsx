@@ -257,6 +257,11 @@ const FileLeaveDialog = ({
           {preview && payload && (
             <RequestSpan row={{ ...payload, ...preview }} />
           )}
+          {preview?.isLateNotice && (
+            <p className="text-sm text-amber-700">
+              {`Less than ${preview.requiredNoticeWorkdays} working days' notice. Your manager will see it marked as short notice.`}
+            </p>
+          )}
           {previewError && !(hasSubmitted && saveError) && (
             <p className="text-sm text-red-700">{previewError}</p>
           )}

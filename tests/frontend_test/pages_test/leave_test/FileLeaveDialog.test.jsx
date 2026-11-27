@@ -98,6 +98,29 @@ describe("FileLeaveDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("warns before filing that the request will be marked short notice", async () => {
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: {
+        hours: "24.00",
+        workdays: 3,
+        daysNotCounted: [],
+        isLateNotice: true,
+        requiredNoticeWorkdays: 6,
+      },
+    });
+    open();
+
+    setDates("2026-12-22", "2026-12-24");
+
+    expect(
+      await screen.findByText(
+        "Less than 6 working days' notice. Your manager will see it marked as short notice.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("asks nothing until both dates make sense", async () => {
     open();
 
