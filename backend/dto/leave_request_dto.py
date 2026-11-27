@@ -50,6 +50,22 @@ class LeaveDayNotCountedDto(BaseDto):
     holiday_name: str | None
 
 
+class LeaveRequestPreviewDto(BaseDto):
+    """What a request would come to, before it is filed.
+
+    The dated figures a filed request carries, worked out with the same rules,
+    so what the form shows is what the list will show once it is filed.
+    ``is_late_notice`` and ``required_notice_workdays`` mean what they mean on
+    a filed request, judged as if it were filed today.
+    """
+
+    hours: str
+    workdays: int
+    days_not_counted: list[LeaveDayNotCountedDto]
+    is_late_notice: bool
+    required_notice_workdays: int | None
+
+
 class LeaveRequestDto(BaseDto):
     """A request as it is read back.
 

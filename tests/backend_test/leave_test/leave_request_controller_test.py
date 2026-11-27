@@ -41,6 +41,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         self.service.withdraw = AsyncMock(return_value=MagicMock())
         self.service.decide = AsyncMock(return_value=MagicMock())
         self.service.list_own = AsyncMock(return_value=[])
+        self.service.preview = AsyncMock(return_value=MagicMock())
         self.service.list_for_approver = AsyncMock(return_value=[])
         self.controller = LeaveRequestController(self.service, self.database)
 
@@ -82,6 +83,25 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
             start_time=None,
             end_time=None,
             reason="Holiday",
+        )
+
+    async def test_a_preview_passes_the_dates_and_drops_the_reason(self):
+        payload = LeaveRequestSubmitDto(
+            type=LeaveRequestType.PAID,
+            start_date=datetime.date(2026, 8, 13),
+            end_date=datetime.date(2026, 8, 15),
+            reason="Holiday",
+        )
+
+        await self.controller.preview(payload, self.ctx)
+
+        self.service.preview.assert_awaited_once_with(
+            self.session,
+            request_type=LeaveRequestType.PAID,
+            start_date=datetime.date(2026, 8, 13),
+            end_date=datetime.date(2026, 8, 15),
+            start_time=None,
+            end_time=None,
         )
 
     async def test_withdrawing_names_the_caller_as_the_owner(self):
@@ -187,6 +207,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
             ("/leave/requests", "POST"),
             ("/leave/requests", "GET"),
             ("/leave/requests/approvals", "GET"),
+            ("/leave/requests/preview", "POST"),
             ("/leave/requests/{request_id}/withdraw", "POST"),
             ("/leave/requests/{request_id}/decision", "POST"),
         ):
@@ -288,6 +309,20 @@ class TestLeaveRequestRoutesOverHttp(unittest.TestCase):
         response = self._decide({"approve": False})
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+
+    def test_a_preview_of_dates_that_cannot_be_filed_is_a_400(self):
+        """The form shows the same message filing would give."""
+        self.service.preview = AsyncMock(
+            side_effect=ValueError("Those days are already time off.")
+        )
+
+        response = self.client.post(
+            "/leave/requests/preview",
+            json={"type": "paid", "startDate": "2026-08-23", "endDate": "2026-08-24"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already time off", response.json()["message"])
 
     def test_withdrawing_a_decided_request_is_a_409(self):
         self.service.withdraw.side_effect = ConflictError(
