@@ -97,12 +97,19 @@ locals {
       allow_emails = []
     }
     work_guide = {
-      key          = "work-guide"
-      name         = "Work Guide"
-      description  = "Shows the Guide button next to the notification bell, only to the listed people"
-      off_in       = []
-      public_in    = []
-      allow_emails = ["yuji@circlecat.org", "jasmine@circlecat.org", "daisyisadaisy@circlecat.org"]
+      key         = "work-guide"
+      name        = "Work Guide"
+      description = "Shows the Guide button next to the notification bell, only to the listed people"
+      off_in      = []
+      public_in   = []
+      allow_emails = [
+        "yuji@circlecat.org",
+        "jasmine@circlecat.org",
+        "daisyisadaisy@circlecat.org",
+        "admin@circlecat.org",
+        "jxie@circlecat.org",
+        "wuyu@circlecat.org",
+      ]
     }
   }
 
