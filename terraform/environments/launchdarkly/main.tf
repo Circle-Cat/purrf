@@ -73,8 +73,8 @@ locals {
       key          = "leave-management"
       name         = "Leave Management"
       description  = "Shows the leave screens: requests, approvals, balances and administration"
-      off_in       = ["staging", "production"]
-      public_in    = ["test"]
+      off_in       = []
+      public_in    = ["production", "staging", "test"]
       allow_emails = []
     }
     # Gates sending mentorship notifications through Kit, backend and frontend.
