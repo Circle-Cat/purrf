@@ -50,6 +50,18 @@ class LeaveDayNotCountedDto(BaseDto):
     holiday_name: str | None
 
 
+class LeaveRequestPreviewDto(BaseDto):
+    """What a request would come to, before it is filed.
+
+    The same figures a filed request carries, worked out with the same rules,
+    so what the form shows is what the list will show once it is filed.
+    """
+
+    hours: str
+    workdays: int
+    days_not_counted: list[LeaveDayNotCountedDto]
+
+
 class LeaveRequestDto(BaseDto):
     """A request as it is read back.
 

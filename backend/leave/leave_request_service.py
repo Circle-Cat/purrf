@@ -39,7 +39,11 @@ from backend.common.leave_enums import (
     LeaveRequestType,
 )
 from backend.common.name_utils import user_display_name
-from backend.dto.leave_request_dto import LeaveDayNotCountedDto, LeaveRequestDto
+from backend.dto.leave_request_dto import (
+    LeaveDayNotCountedDto,
+    LeaveRequestDto,
+    LeaveRequestPreviewDto,
+)
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_clock import business_today
@@ -408,26 +412,12 @@ class LeaveRequestService:
                 fix rather than retry.
         """
         today = business_today()
-        if start_date < today:
-            raise ValueError(
-                f"Leave cannot start on {start_date}, which has passed. The "
-                "ledger is a history, so it is never written backwards."
-            )
-        if end_date < start_date:
-            raise ValueError(f"{end_date} is before {start_date}.")
+        self._check_dates(today, start_date, end_date)
 
         approver_user_id = await self._approver_for(session, user_id)
-        holidays, exchangeable = await load_calendar(
-            session, self.leave_holiday_repository, today, start_date, end_date
+        holidays, exchangeable, hours = await self._hours_for(
+            session, today, request_type, start_date, end_date, start_time, end_time
         )
-
-        hours = request_hours(
-            request_type, start_date, end_date, start_time, end_time, holidays
-        )
-        if hours <= NO_HOURS:
-            raise ValueError(
-                "Those days are already time off, so there is nothing to request."
-            )
 
         await self.leave_request_repository.lock_filing(session, user_id)
         nearby = await self.leave_request_repository.list_overlapping(
@@ -514,6 +504,110 @@ class LeaveRequestService:
             stored.status.value,
         )
         return self._read_model(stored, approval, breakdowns)
+
+    async def preview(
+        self,
+        session: AsyncSession,
+        request_type: LeaveRequestType,
+        start_date: datetime.date,
+        end_date: datetime.date,
+        start_time: datetime.time | None,
+        end_time: datetime.time | None,
+    ) -> LeaveRequestPreviewDto:
+        """What a request would come to, without filing it.
+
+        Runs the checks submitting makes on the dates themselves, with the
+        same messages, then works out the hours and the days off the range
+        skips. Nothing is stored and nobody is told. The checks that depend on
+        the person -- their manager, other requests, their balance -- are left
+        to submitting.
+
+        Args:
+            session: Active async session; only read from.
+            request_type: Paid, sick or exchange.
+            start_date: First day.
+            end_date: Last day.
+            start_time: Only for a single day of leave.
+            end_time: As above.
+
+        Returns:
+            The hours, the working days counted and the days not counted.
+
+        Raises:
+            ValueError: The dates cannot be filed, for the same reasons and
+                with the same messages as submitting.
+        """
+        today = business_today()
+        self._check_dates(today, start_date, end_date)
+        holidays, exchangeable, hours = await self._hours_for(
+            session, today, request_type, start_date, end_date, start_time, end_time
+        )
+        if request_type is LeaveRequestType.EXCHANGE:
+            self._check_exchangeable(start_date, end_date, exchangeable)
+
+        names = await self._holiday_names(session, start_date.year, end_date.year)
+        counted = hours_by_day(
+            request_type, start_date, end_date, start_time, end_time, holidays
+        )
+        skipped = days_not_counted(
+            request_type, start_date, end_date, start_time, end_time, holidays
+        )
+        return LeaveRequestPreviewDto(
+            hours=f"{hours:.2f}",
+            workdays=len(counted),
+            days_not_counted=[
+                LeaveDayNotCountedDto(date=day, holiday_name=names.get(day))
+                for day in skipped
+            ],
+        )
+
+    @staticmethod
+    def _check_dates(
+        today: datetime.date, start_date: datetime.date, end_date: datetime.date
+    ) -> None:
+        """Refuses a range that starts in the past or runs backwards.
+
+        Raises:
+            ValueError: Either of those, saying which.
+        """
+        if start_date < today:
+            raise ValueError(
+                f"Leave cannot start on {start_date}, which has passed. The "
+                "ledger is a history, so it is never written backwards."
+            )
+        if end_date < start_date:
+            raise ValueError(f"{end_date} is before {start_date}.")
+
+    async def _hours_for(
+        self,
+        session: AsyncSession,
+        today: datetime.date,
+        request_type: LeaveRequestType,
+        start_date: datetime.date,
+        end_date: datetime.date,
+        start_time: datetime.time | None,
+        end_time: datetime.time | None,
+    ):
+        """The calendar a request is worked out against, and its hours.
+
+        Returns:
+            ``(holidays, exchangeable, hours)``.
+
+        Raises:
+            ValueError: A year it covers has no calendar, the times have no
+                reading, or every day in it is already time off.
+        """
+        holidays, exchangeable = await load_calendar(
+            session, self.leave_holiday_repository, today, start_date, end_date
+        )
+        hours = request_hours(
+            request_type, start_date, end_date, start_time, end_time, holidays
+        )
+        if hours <= NO_HOURS:
+            raise ValueError(
+                "Those days are already time off, so there is nothing to request."
+            )
+        return holidays, exchangeable, hours
 
     async def _record_auto_approval(
         self, session: AsyncSession, request: LeaveRequestEntity
@@ -888,6 +982,25 @@ class LeaveRequestService:
             **(breakdowns or {}).get(request.leave_request_id, {}),
         )
 
+    async def _holiday_names(
+        self, session: AsyncSession, first_year: int, last_year: int
+    ) -> dict[datetime.date, str]:
+        """Every company holiday from ``first_year`` to ``last_year``, by date.
+
+        Args:
+            session: Active async session.
+            first_year: First calendar year to read.
+            last_year: Last one, included.
+
+        Returns:
+            The holiday's name for each date.
+        """
+        names: dict[datetime.date, str] = {}
+        for year in range(first_year, last_year + 1):
+            for row in await self.leave_holiday_repository.list_by_year(session, year):
+                names[row.date] = row.name
+        return names
+
     async def _day_breakdowns(self, session: AsyncSession, requests) -> dict[int, dict]:
         """How each request's hours come about: the days it counts and the
         days off inside its range it skips, by request id.
@@ -910,12 +1023,11 @@ class LeaveRequestService:
         """
         if not requests:
             return {}
-        first_year = min(request.start_date.year for request in requests)
-        last_year = max(request.end_date.year for request in requests)
-        names: dict[datetime.date, str] = {}
-        for year in range(first_year, last_year + 1):
-            for row in await self.leave_holiday_repository.list_by_year(session, year):
-                names[row.date] = row.name
+        names = await self._holiday_names(
+            session,
+            min(request.start_date.year for request in requests),
+            max(request.end_date.year for request in requests),
+        )
         holidays = frozenset(names)
 
         breakdowns = {}

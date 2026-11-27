@@ -1772,6 +1772,114 @@ class TestLists(LeaveRequestServiceTest):
         )
 
 
+class TestPreview(LeaveRequestServiceTest):
+    """What a request would come to, worked out before it is filed."""
+
+    def setUp(self):
+        super().setUp()
+        self.holidays.list_by_year.return_value = [
+            _holiday(datetime.date(2026, 8, 20), name="QA holiday")
+        ]
+
+    async def _preview(self, **overrides):
+        payload = {
+            "request_type": LeaveRequestType.PAID,
+            "start_date": datetime.date(2026, 8, 20),
+            "end_date": datetime.date(2026, 8, 25),
+            "start_time": None,
+            "end_time": None,
+        }
+        payload.update(overrides)
+        return await self.service.preview(self.session, **payload)
+
+    async def test_a_range_comes_to_its_working_days_and_names_what_it_skips(self):
+        """Thursday 8/20 to Tuesday 8/25: Thursday is a holiday, Sunday and
+        Monday are the weekend, so three days and 24 hours."""
+        preview = await self._preview()
+
+        self.assertEqual(preview.hours, "24.00")
+        self.assertEqual(preview.workdays, 3)
+        self.assertEqual(
+            [(d.date, d.holiday_name) for d in preview.days_not_counted],
+            [
+                (datetime.date(2026, 8, 20), "QA holiday"),
+                (datetime.date(2026, 8, 23), None),
+                (datetime.date(2026, 8, 24), None),
+            ],
+        )
+
+    async def test_it_comes_to_what_submitting_the_same_dates_stores(self):
+        """One rule for both: the form must not quote a figure the list then
+        contradicts."""
+        preview = await self._preview()
+        filed = await self._submit(
+            start_date=datetime.date(2026, 8, 20),
+            end_date=datetime.date(2026, 8, 25),
+        )
+
+        self.assertEqual(preview.hours, filed.hours)
+        self.assertEqual(preview.workdays, filed.workdays)
+        self.assertEqual(preview.days_not_counted, filed.days_not_counted)
+
+    async def test_it_stores_nothing_and_tells_nobody(self):
+        await self._preview()
+
+        self.requests.add.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+        self.record_event.assert_not_awaited()
+        self.record_own_event.assert_not_awaited()
+        self.assertEqual(self.approval_requests.rows, [])
+
+    async def test_a_past_start_is_refused_as_submitting_refuses_it(self):
+        with self.assertRaisesRegex(ValueError, "which has passed"):
+            await self._preview(
+                start_date=datetime.date(2026, 8, 4),
+                end_date=datetime.date(2026, 8, 4),
+            )
+
+    async def test_a_year_with_no_calendar_is_refused(self):
+        self.holidays.list_by_year.return_value = []
+
+        with self.assertRaisesRegex(ValueError, "have not been entered"):
+            await self._preview()
+
+    async def test_only_days_off_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "already time off"):
+            await self._preview(
+                start_date=datetime.date(2026, 8, 23),
+                end_date=datetime.date(2026, 8, 24),
+            )
+
+    async def test_an_exchange_of_a_day_that_cannot_be_exchanged_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "not exchangeable"):
+            await self._preview(
+                request_type=LeaveRequestType.EXCHANGE,
+                start_date=datetime.date(2026, 8, 21),
+                end_date=datetime.date(2026, 8, 21),
+            )
+
+    async def test_a_part_day_comes_to_its_hours(self):
+        preview = await self._preview(
+            start_date=datetime.date(2026, 8, 21),
+            end_date=datetime.date(2026, 8, 21),
+            start_time=datetime.time(9, 0),
+            end_time=datetime.time(12, 30),
+        )
+
+        self.assertEqual(preview.hours, "3.50")
+        self.assertEqual(preview.workdays, 1)
+        self.assertEqual(preview.days_not_counted, [])
+
+    async def test_it_does_not_need_a_manager(self):
+        """The figures depend only on the dates and the calendar; who would
+        approve is for submitting to check."""
+        self.redis_client.hgetall.return_value = {}
+
+        preview = await self._preview()
+
+        self.assertEqual(preview.hours, "24.00")
+
+
 class TestCoverage(LeaveRequestServiceTest):
     """Whether the leave system has anything to do with one account.
 
