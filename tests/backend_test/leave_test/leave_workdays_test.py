@@ -16,6 +16,7 @@ from decimal import Decimal
 from backend.common.leave_enums import LeaveRequestType
 from backend.leave.leave_workdays import (
     count_workdays,
+    days_not_counted,
     hours_by_day,
     is_workday,
     request_hours,
@@ -436,6 +437,90 @@ class TestHoursByDay(unittest.TestCase):
                 (datetime.date(2026, 6, 20), Decimal("8.00")),
             ],
         )
+
+
+class TestDaysNotCounted(unittest.TestCase):
+    def test_a_range_lists_the_weekend_and_the_holiday_it_skips(self):
+        """Thursday 6/18 to Tuesday 6/23: Friday is the Dragon Boat Festival,
+        Sunday and Monday are the weekend. Three days counted, three skipped,
+        and together they are the whole range."""
+        skipped = days_not_counted(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 18),
+            datetime.date(2026, 6, 23),
+            None,
+            None,
+            DRAGON_BOAT,
+        )
+
+        self.assertEqual(
+            skipped,
+            [
+                datetime.date(2026, 6, 19),
+                datetime.date(2026, 6, 21),
+                datetime.date(2026, 6, 22),
+            ],
+        )
+        counted = hours_by_day(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 18),
+            datetime.date(2026, 6, 23),
+            None,
+            None,
+            DRAGON_BOAT,
+        )
+        self.assertEqual(len(counted) + len(skipped), 6)
+
+    def test_sick_leave_skips_days_off_the_same_way(self):
+        skipped = days_not_counted(
+            LeaveRequestType.SICK,
+            datetime.date(2026, 6, 20),
+            datetime.date(2026, 6, 23),
+            None,
+            None,
+            NO_HOLIDAYS,
+        )
+
+        self.assertEqual(
+            skipped, [datetime.date(2026, 6, 21), datetime.date(2026, 6, 22)]
+        )
+
+    def test_a_range_of_working_days_skips_nothing(self):
+        skipped = days_not_counted(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 16),
+            datetime.date(2026, 6, 18),
+            None,
+            None,
+            NO_HOLIDAYS,
+        )
+
+        self.assertEqual(skipped, [])
+
+    def test_an_exchange_skips_nothing(self):
+        """An exchange counts every day it covers."""
+        skipped = days_not_counted(
+            LeaveRequestType.EXCHANGE,
+            datetime.date(2026, 6, 19),
+            datetime.date(2026, 6, 19),
+            None,
+            None,
+            DRAGON_BOAT,
+        )
+
+        self.assertEqual(skipped, [])
+
+    def test_a_part_day_skips_nothing(self):
+        skipped = days_not_counted(
+            LeaveRequestType.PAID,
+            datetime.date(2026, 6, 16),
+            datetime.date(2026, 6, 16),
+            datetime.time(9, 0),
+            datetime.time(12, 0),
+            NO_HOLIDAYS,
+        )
+
+        self.assertEqual(skipped, [])
 
 
 if __name__ == "__main__":

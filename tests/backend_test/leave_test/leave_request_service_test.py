@@ -1621,6 +1621,104 @@ class TestLists(LeaveRequestServiceTest):
 
         self.assertFalse(own.is_overdraft)
 
+    async def test_the_approver_list_has_waiting_oldest_first_then_decided_newest_first(
+        self,
+    ):
+        """Waiting requests are a queue, worked from the front; decided ones
+        are a history, read from the latest leave."""
+        early = _stored_request(
+            request_id=601,
+            status=LeaveRequestStatus.APPROVED,
+            start_date=datetime.date(2026, 8, 4),
+            end_date=datetime.date(2026, 8, 4),
+            hours="8.00",
+        )
+        waiting_first = _stored_request(request_id=602)
+        late = _stored_request(
+            request_id=603,
+            status=LeaveRequestStatus.REJECTED,
+            start_date=datetime.date(2026, 9, 1),
+            end_date=datetime.date(2026, 9, 1),
+            hours="8.00",
+        )
+        waiting_second = _stored_request(request_id=604)
+        self.requests.list_for_approver.return_value = [
+            early,
+            waiting_first,
+            late,
+            waiting_second,
+        ]
+
+        listed = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual([r.request_id for r in listed], [602, 604, 603, 601])
+
+    async def test_sick_leave_approved_on_submission_says_so(self):
+        """No approval behind it and nobody decided it: the row says it was
+        automatic, so the reader does not have to know that convention."""
+        sick = _stored_request(
+            request_id=611,
+            request_type=LeaveRequestType.SICK,
+            status=LeaveRequestStatus.APPROVED,
+            hours="8.00",
+            start_date=datetime.date(2026, 8, 13),
+            end_date=datetime.date(2026, 8, 13),
+        )
+        decided = _stored_request(request_id=612, status=LeaveRequestStatus.APPROVED)
+        self._decided(decided, ApprovalRequestStatus.APPROVED)
+        self.requests.list_for_approver.return_value = [sick, decided]
+
+        listed = await self.service.list_for_approver(self.session, MANAGER)
+
+        by_id = {r.request_id: r for r in listed}
+        self.assertTrue(by_id[611].is_auto_approved)
+        self.assertFalse(by_id[612].is_auto_approved)
+
+    async def test_a_range_names_the_weekend_and_holiday_it_skips(self):
+        """Thursday 6/18 to Monday 6/22: Friday is the Dragon Boat Festival,
+        Sunday and Monday are the weekend, so 16 hours over two days."""
+        row = _stored_request(
+            hours="16.00",
+            start_date=datetime.date(2026, 6, 18),
+            end_date=datetime.date(2026, 6, 22),
+        )
+        self.requests.list_for_user.return_value = [row]
+
+        listed = await self.service.list_own(self.session, EMPLOYEE)
+
+        self.assertEqual(listed[0].workdays, 2)
+        self.assertEqual(
+            [(d.date, d.holiday_name) for d in listed[0].days_not_counted],
+            [
+                (datetime.date(2026, 6, 19), "Dragon Boat Festival"),
+                (datetime.date(2026, 6, 21), None),
+                (datetime.date(2026, 6, 22), None),
+            ],
+        )
+        self.holidays.list_by_year.assert_awaited_once_with(self.session, 2026)
+
+    async def test_the_approver_list_carries_the_breakdown_too(self):
+        self.requests.list_for_approver.return_value = [self._row()]
+
+        listed = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(listed[0].workdays, 3)
+        self.assertEqual(listed[0].days_not_counted, [])
+
+    async def test_no_breakdown_when_the_calendar_no_longer_adds_up(self):
+        """A holiday entered after filing: today's calendar says 16 hours, the
+        request says 24. Showing two days next to 24 hours would contradict
+        the hours, so the breakdown is left out."""
+        self.holidays.list_by_year.return_value = [
+            _holiday(datetime.date(2026, 8, 14), name="Added later")
+        ]
+        self.requests.list_for_user.return_value = [self._row()]
+
+        listed = await self.service.list_own(self.session, EMPLOYEE)
+
+        self.assertIsNone(listed[0].workdays)
+        self.assertIsNone(listed[0].days_not_counted)
+
 
 class TestCoverage(LeaveRequestServiceTest):
     """Whether the leave system has anything to do with one account.
