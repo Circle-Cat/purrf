@@ -135,8 +135,12 @@ const FileLeaveDialog = ({
       : null;
   const { preview, previewError } = useLeaveRequestPreview(payload);
 
-  const set = (field) => (event) =>
+  // Changing what is being asked for retires the refusal of the last submit:
+  // it was about other dates, and the preview now speaks for these ones.
+  const set = (field) => (event) => {
+    if (field !== "reason") setHasSubmitted(false);
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
 
   const close = () => {
     setForm(EMPTY);
