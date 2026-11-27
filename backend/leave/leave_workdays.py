@@ -215,6 +215,47 @@ def hours_by_day(
     return [(start_date, _hours_between(start_time, end_time))]
 
 
+def days_not_counted(
+    request_type: LeaveRequestType,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    start_time: datetime.time | None,
+    end_time: datetime.time | None,
+    holidays: frozenset[datetime.date],
+) -> list[datetime.date]:
+    """The days inside a request's range that it takes no hours for.
+
+    The complement of :func:`hours_by_day` over the same range, so the days
+    shown as skipped and the hours charged come from one rule. An exchange
+    skips nothing: a range holding a day off is refused before it is filed.
+
+    Args:
+        request_type: Paid, sick or exchange.
+        start_date: First day.
+        end_date: Last day.
+        start_time: As :func:`hours_by_day`.
+        end_time: As :func:`hours_by_day`.
+        holidays: Company holidays.
+
+    Returns:
+        The skipped days in date order; empty when every day counts.
+
+    Raises:
+        ValueError: As :func:`request_hours`.
+    """
+    counted = {
+        day
+        for day, _ in hours_by_day(
+            request_type, start_date, end_date, start_time, end_time, holidays
+        )
+    }
+    return [
+        start_date + ONE_DAY * offset
+        for offset in range((end_date - start_date).days + 1)
+        if start_date + ONE_DAY * offset not in counted
+    ]
+
+
 def _hours_between(start_time: datetime.time, end_time: datetime.time) -> Decimal:
     """The span between two times on one day, in hours.
 

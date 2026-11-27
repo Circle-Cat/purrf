@@ -39,13 +39,14 @@ from backend.common.leave_enums import (
     LeaveRequestType,
 )
 from backend.common.name_utils import user_display_name
-from backend.dto.leave_request_dto import LeaveRequestDto
+from backend.dto.leave_request_dto import LeaveDayNotCountedDto, LeaveRequestDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_clock import business_today
 from backend.leave.leave_participants import resolve_names_and_ldaps
 from backend.leave.leave_policy import HOURS_PER_DAY
 from backend.leave.leave_workdays import (
+    days_not_counted,
     hours_by_day,
     request_hours,
     required_notice_workdays,
@@ -484,6 +485,9 @@ class LeaveRequestService:
             request.status = LeaveRequestStatus.APPROVED
 
         stored = await self.leave_request_repository.add(session, request)
+        # Before anything commits: a failed calendar read then stores nothing,
+        # rather than storing the request and answering with an error.
+        breakdowns = await self._day_breakdowns(session, [stored])
         approval = None
         if auto_approved:
             await self._record_auto_approval(session, stored)
@@ -509,7 +513,7 @@ class LeaveRequestService:
             hours,
             stored.status.value,
         )
-        return self._read_model(stored, approval)
+        return self._read_model(stored, approval, breakdowns)
 
     async def _record_auto_approval(
         self, session: AsyncSession, request: LeaveRequestEntity
@@ -600,7 +604,8 @@ class LeaveRequestService:
             request.status.value,
             approver_user_id,
         )
-        return self._read_model(request, approval)
+        breakdowns = await self._day_breakdowns(session, [request])
+        return self._read_model(request, approval, breakdowns)
 
     async def withdraw(
         self, session: AsyncSession, request_id: int, user_id: int
@@ -635,7 +640,8 @@ class LeaveRequestService:
         )
         request = await self.leave_request_repository.get_by_id(session, request_id)
         self.logger.info("Leave request %s withdrawn by %s.", request_id, user_id)
-        return self._read_model(request, approval)
+        breakdowns = await self._day_breakdowns(session, [request])
+        return self._read_model(request, approval, breakdowns)
 
     async def list_own(
         self, session: AsyncSession, user_id: int
@@ -651,15 +657,23 @@ class LeaveRequestService:
         """
         requests = await self.leave_request_repository.list_for_user(session, user_id)
         approvals = await self._approvals_of(session, requests)
+        breakdowns = await self._day_breakdowns(session, requests)
         return [
-            self._read_model(request, approvals.get(str(request.leave_request_id)))
+            self._read_model(
+                request, approvals.get(str(request.leave_request_id)), breakdowns
+            )
             for request in requests
         ]
 
     async def list_for_approver(
         self, session: AsyncSession, approver_user_id: int
     ) -> list[LeaveRequestDto]:
-        """Everything ever filed against one approver, oldest first.
+        """Everything ever filed against one approver: what is waiting, oldest
+        first, then what has been decided, newest first.
+
+        Waiting requests are a queue, worked from the front. Decided ones are a
+        history, read from the latest, in the order a person's own list uses:
+        by the day the leave starts.
 
         Every status, not just the ones waiting. Nobody carries a manager flag
         -- being an approver is not a permission, and a manager who gets no
@@ -685,9 +699,16 @@ class LeaveRequestService:
         Returns:
             The requests, decided ones included.
         """
-        requests = await self.leave_request_repository.list_for_approver(
+        filed = await self.leave_request_repository.list_for_approver(
             session, approver_user_id, list(LeaveRequestStatus)
         )
+        waiting = [r for r in filed if r.status is LeaveRequestStatus.PENDING]
+        decided = sorted(
+            (r for r in filed if r.status is not LeaveRequestStatus.PENDING),
+            key=lambda r: (r.start_date, r.leave_request_id),
+            reverse=True,
+        )
+        requests = waiting + decided
         user_ids = sorted({request.user_id for request in requests})
 
         name_by_id, ldap_by_id = await resolve_names_and_ldaps(
@@ -714,10 +735,12 @@ class LeaveRequestService:
             for user_id in pending_user_ids
         }
         approvals = await self._approvals_of(session, requests)
+        breakdowns = await self._day_breakdowns(session, requests)
         return [
             LeaveRequestDto.of(
                 request,
                 approval=approvals.get(str(request.leave_request_id)),
+                **breakdowns.get(request.leave_request_id, {}),
                 employee_name=name_by_id.get(request.user_id),
                 employee_ldap=ldap_by_id.get(request.user_id),
                 required_notice_workdays=self._required_notice(request),
@@ -841,7 +864,7 @@ class LeaveRequestService:
         return user_id in balances
 
     def _read_model(
-        self, request: LeaveRequestEntity, approval=None
+        self, request: LeaveRequestEntity, approval=None, breakdowns=None
     ) -> LeaveRequestDto:
         """One request as it is read back, in the shape the lists use.
 
@@ -862,7 +885,67 @@ class LeaveRequestService:
             request,
             approval=approval,
             required_notice_workdays=self._required_notice(request),
+            **(breakdowns or {}).get(request.leave_request_id, {}),
         )
+
+    async def _day_breakdowns(self, session: AsyncSession, requests) -> dict[int, dict]:
+        """How each request's hours come about: the days it counts and the
+        days off inside its range it skips, by request id.
+
+        Worked out from the calendar as it stands, one read per year the
+        requests touch. A request whose days no longer add up to its stored
+        hours -- the calendar changed after it was filed -- is left out, so it
+        carries no breakdown rather than one that contradicts its hours.
+
+        Only the total is compared. A holiday moved to another day inside the
+        same range keeps the total and so keeps the breakdown, which then
+        names the day as it stands in today's calendar.
+
+        Args:
+            session: Active async session.
+            requests: The requests being read back.
+
+        Returns:
+            ``{"workdays": int, "days_not_counted": [...]}`` per request id.
+        """
+        if not requests:
+            return {}
+        first_year = min(request.start_date.year for request in requests)
+        last_year = max(request.end_date.year for request in requests)
+        names: dict[datetime.date, str] = {}
+        for year in range(first_year, last_year + 1):
+            for row in await self.leave_holiday_repository.list_by_year(session, year):
+                names[row.date] = row.name
+        holidays = frozenset(names)
+
+        breakdowns = {}
+        for request in requests:
+            days = hours_by_day(
+                request.type,
+                request.start_date,
+                request.end_date,
+                request.start_time,
+                request.end_time,
+                holidays,
+            )
+            if sum((hours for _, hours in days), NO_HOURS) != request.hours:
+                continue
+            skipped = days_not_counted(
+                request.type,
+                request.start_date,
+                request.end_date,
+                request.start_time,
+                request.end_time,
+                holidays,
+            )
+            breakdowns[request.leave_request_id] = {
+                "workdays": len(days),
+                "days_not_counted": [
+                    LeaveDayNotCountedDto(date=day, holiday_name=names.get(day))
+                    for day in skipped
+                ],
+            }
+        return breakdowns
 
     async def _approvals_of(self, session: AsyncSession, requests) -> dict:
         """The approval behind each of these requests, by request id as text.

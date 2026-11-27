@@ -39,6 +39,17 @@ class LeaveDecisionDto(BaseDto):
     comment: str | None = None
 
 
+class LeaveDayNotCountedDto(BaseDto):
+    """One day inside a request's range that it takes no hours for.
+
+    ``holiday_name`` names the company holiday; None means the day is a
+    weekend day.
+    """
+
+    date: datetime.date
+    holiday_name: str | None
+
+
 class LeaveRequestDto(BaseDto):
     """A request as it is read back.
 
@@ -56,7 +67,8 @@ class LeaveRequestDto(BaseDto):
     approval behind the request. ``decided_by`` empty on an approved request
     means nobody decided it: that is sick leave of three days or less,
     approved on submission, which has no approval and was decided when it was
-    filed.
+    filed. ``is_auto_approved`` says the same thing outright, so a reader does
+    not have to know that convention.
 
     ``required_notice_workdays`` is the notice the rule asked of this request,
     in working days. The late-notice flag says only that it fell short; the
@@ -69,6 +81,12 @@ class LeaveRequestDto(BaseDto):
     They are filled in only while a request is still waiting. Once it has been
     decided the ledger has already moved, so "where would this land" has no
     answer, and a number there would be read as the balance today.
+
+    ``workdays`` and ``days_not_counted`` explain the hours: how many days the
+    request takes hours from, and the weekend days and company holidays inside
+    its range that it skips. Both are worked out from today's calendar, and are
+    None when that calendar no longer adds up to the stored hours -- a
+    breakdown that contradicts the hours next to it is worse than none.
     """
 
     request_id: int
@@ -89,6 +107,9 @@ class LeaveRequestDto(BaseDto):
     decided_by: int | None
     decided_at: datetime.datetime | None
     decision_comment: str | None
+    is_auto_approved: bool
+    workdays: int | None
+    days_not_counted: list[LeaveDayNotCountedDto] | None
     required_notice_workdays: int | None
     balance_before: str | None
     balance_after: str | None
@@ -104,6 +125,8 @@ class LeaveRequestDto(BaseDto):
         balance_before: Decimal | None = None,
         balance_after: Decimal | None = None,
         is_overdraft: bool | None = None,
+        workdays: int | None = None,
+        days_not_counted: list[LeaveDayNotCountedDto] | None = None,
     ) -> "LeaveRequestDto":
         """Builds one from a stored request.
 
@@ -120,13 +143,17 @@ class LeaveRequestDto(BaseDto):
             balance_after: Where approving it would leave that balance.
             is_overdraft: The overdraft mark to show, when it has been worked
                 out again; the stored one otherwise.
+            workdays: Days the request takes hours from, or None.
+            days_not_counted: Days off inside its range, or None.
 
         Returns:
             The read model.
         """
         decided = approval is not None and approval.decided_at is not None
         auto_approved = (
-            approval is None and request.status is LeaveRequestStatus.APPROVED
+            approval is None
+            and request.status is LeaveRequestStatus.APPROVED
+            and request.type is LeaveRequestType.SICK
         )
         return cls(
             request_id=request.leave_request_id,
@@ -153,6 +180,9 @@ class LeaveRequestDto(BaseDto):
                 else (request.created_timestamp if auto_approved else None)
             ),
             decision_comment=approval.decision_comment if decided else None,
+            is_auto_approved=auto_approved,
+            workdays=workdays,
+            days_not_counted=days_not_counted,
             required_notice_workdays=required_notice_workdays,
             balance_before=_hours(balance_before),
             balance_after=_hours(balance_after),
