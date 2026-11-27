@@ -116,6 +116,7 @@ py_test(
     srcs = ["delivery_service_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/common:email_sending",
         "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
