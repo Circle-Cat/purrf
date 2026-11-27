@@ -4,7 +4,9 @@ import {
   LEAVE_CALENDAR_ZONE_LABEL,
   formatBusinessDate,
   formatBusinessRange,
+  formatDaysNotCounted,
   formatTimeSpan,
+  formatWorkdays,
 } from "@/pages/Leave/utils/leaveDates";
 
 describe("formatBusinessDate", () => {
@@ -61,5 +63,41 @@ describe("LEAVE_CALENDAR_ZONE_LABEL", () => {
     // Company holidays are one calendar for the whole company, so the label is
     // fixed rather than taken from the viewer's profile.
     expect(LEAVE_CALENDAR_ZONE_LABEL).toContain("Shanghai");
+  });
+});
+
+describe("formatWorkdays", () => {
+  test("says one day in the singular", () => {
+    expect(formatWorkdays(1)).toBe("1 working day");
+    expect(formatWorkdays(4)).toBe("4 working days");
+  });
+
+  test("says nothing when the server sent no count", () => {
+    expect(formatWorkdays(null)).toBe("");
+    expect(formatWorkdays(undefined)).toBe("");
+  });
+});
+
+describe("formatDaysNotCounted", () => {
+  test("names each holiday and calls the rest weekend", () => {
+    expect(
+      formatDaysNotCounted([
+        { date: "2026-06-19", holidayName: "Dragon Boat Festival" },
+        { date: "2026-06-21", holidayName: null },
+      ]),
+    ).toBe("Jun 19 (Dragon Boat Festival), Jun 21 (weekend)");
+  });
+
+  test("reads the date without a Date, so it never shifts a day", () => {
+    expect(
+      formatDaysNotCounted([
+        { date: "2026-10-01", holidayName: "National Day" },
+      ]),
+    ).toBe("Oct 1 (National Day)");
+  });
+
+  test("says nothing when nothing was skipped", () => {
+    expect(formatDaysNotCounted([])).toBe("");
+    expect(formatDaysNotCounted(null)).toBe("");
   });
 });

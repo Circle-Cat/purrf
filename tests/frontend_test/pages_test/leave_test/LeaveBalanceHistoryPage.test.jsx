@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
@@ -90,7 +90,7 @@ describe("BalanceHistoryPage", () => {
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 
-  it("displays negative balance without error styling", async () => {
+  it("colours a negative balance red, on the rows and in the total", async () => {
     vi.mocked(useMyLeaveLedger).mockReturnValue({
       data: {
         balanceHours: "-16.00",
@@ -122,7 +122,33 @@ describe("BalanceHistoryPage", () => {
       el.className.includes("font-mono"),
     );
     expect(footerBalance).toBeInTheDocument();
-    expect(footerBalance.className).toMatch(/font-mono/);
+    expect(footerBalance.className).toMatch(/text-rose-600/);
+  });
+
+  it("shows the total exactly as the server sent it", async () => {
+    vi.mocked(useMyLeaveLedger).mockReturnValue({
+      data: {
+        balanceHours: "88.25",
+        entries: [
+          {
+            id: "1",
+            effectiveDate: "2026-05-06",
+            entryType: "weekly_accrual",
+            hours: "1.54",
+            note: null,
+          },
+        ],
+      },
+      isLoading: false,
+      loadError: null,
+      load: vi.fn(),
+    });
+
+    renderPage();
+
+    const total = screen.getByText("88.25 h");
+    expect(total.className).toMatch(/font-mono/);
+    expect(total.className).not.toMatch(/text-rose-600/);
   });
 
   it("renders English labels for all 6 entry types and raw value for unrecognised type", async () => {
@@ -243,6 +269,25 @@ describe("BalanceHistoryPage", () => {
     expect(useMyLeaveLedger).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("says the balance did not load, rather than that it is not tracked", () => {
+    const reload = vi.fn();
+    vi.mocked(useLeaveStanding).mockReturnValue({
+      isCovered: false,
+      isLoading: false,
+      loadError: true,
+      reload,
+    });
+
+    renderPage();
+
+    expect(
+      screen.queryByText("Leave isn't tracked for your account."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Couldn't load your leave.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("shows loading state while useLeaveStanding is loading", () => {

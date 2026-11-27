@@ -1036,6 +1036,45 @@ describe("NotificationBell", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
+  it("tells the employee and their manager sick leave was approved automatically", async () => {
+    // Nobody decided it, so the row carries no actor; the name is the
+    // employee's, from details.
+    await openWith({
+      ...leaveRow("leave.sick_leave_auto_approved", {
+        leaveType: "sick",
+        startDate: "2026-11-26",
+        endDate: "2026-11-26",
+        employeeName: "Ann Lee",
+      }),
+      actorName: null,
+    });
+
+    expect(
+      screen.getByText(
+        "Approved automatically: Ann Lee's sick leave, Nov 26, 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["8.00", "Ann Lee adjusted your leave balance by +8.00 hours"],
+    ["-16.00", "Ann Lee adjusted your leave balance by -16.00 hours"],
+  ])(
+    "tells an employee an admin adjusted their balance by %s",
+    async (hours, text) => {
+      await openWith(
+        leaveRow("leave.balance_adjusted", {
+          hours,
+          effectiveDate: "2025-12-31",
+          note: "Carried over",
+          balanceHours: "40.00",
+        }),
+      );
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
+
   // -- the matching-run line ---------------------------------------------
   //
   // Written under subject_type "mentorship_round", so everything it says comes

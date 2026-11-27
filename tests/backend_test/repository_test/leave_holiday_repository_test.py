@@ -1,6 +1,9 @@
 """Reads and the whole-year replacement behind the company holiday calendar."""
 
 import datetime
+from unittest.mock import patch
+
+from sqlalchemy import text
 
 from backend.entity.leave_holiday_entity import LeaveHolidayEntity
 from backend.repository.leave_holiday_repository import LeaveHolidayRepository
@@ -112,6 +115,53 @@ class TestLeaveHolidayRepository(BaseRepositoryTestLib):
         years = await self.repository.list_years(self.session)
 
         self.assertEqual(years, [2026, 2027])
+
+
+class TestReplaceYearLock(BaseRepositoryTestLib):
+    """Two saves of one year have to queue.
+
+    Unlocked, the second delete cannot see the rows the first save inserted,
+    so it removes nothing and its insert collides or merges. A missing lock is
+    invisible to every test that saves once, so the lock itself is asserted.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repository = LeaveHolidayRepository()
+
+    async def _held_advisory_locks(self):
+        rows = await self.session.execute(
+            text(
+                "SELECT classid, objid FROM pg_locks "
+                "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted"
+            )
+        )
+        return {(int(classid), int(objid)) for classid, objid in rows.all()}
+
+    async def test_only_the_year_being_saved_is_locked(self):
+        await self.repository.replace_year(
+            self.session, 2027, [_row(datetime.date(2027, 1, 1), name="New Year")]
+        )
+
+        held = await self._held_advisory_locks()
+        self.assertIn((0x4C484F4C, 2027), held)
+        self.assertNotIn((0x4C484F4C, 2026), held)
+
+    async def test_the_lock_is_taken_before_the_year_is_deleted(self):
+        """Taken after the delete, the delete has already chosen what it
+        removes and the race is back."""
+        with patch.object(
+            self.session, "execute", wraps=self.session.execute
+        ) as execute:
+            await self.repository.replace_year(
+                self.session,
+                2027,
+                [_row(datetime.date(2027, 1, 1), name="New Year")],
+            )
+
+        statements = [str(call.args[0]) for call in execute.call_args_list]
+        self.assertIn("pg_advisory_xact_lock", statements[0])
+        self.assertTrue(statements[1].startswith("DELETE FROM leave_holiday"))
 
 
 if __name__ == "__main__":

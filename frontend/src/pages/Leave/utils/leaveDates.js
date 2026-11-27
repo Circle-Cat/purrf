@@ -36,6 +36,16 @@ const MONTHS = [
  */
 export const LEAVE_CALENDAR_ZONE_LABEL = "Dates in Asia/Shanghai";
 
+/**
+ * The working week, shown beside each leave calendar so nobody has to work out
+ * why a Saturday counts and a Monday does not.
+ *
+ * Written out rather than fetched: it mirrors `WEEKEND_WEEKDAYS` in
+ * `backend/leave/leave_policy.py`, and changing one means changing the other.
+ */
+export const LEAVE_WORKWEEK_LABEL =
+  "Working days are Tuesday to Saturday. Sunday and Monday are days off.";
+
 const parts = (iso) => {
   const [year, month, day] = iso.split("-");
   return { year, month: MONTHS[Number(month) - 1], day: String(Number(day)) };
@@ -85,4 +95,33 @@ export const formatBusinessRange = (startIso, endIso) => {
 export const formatTimeSpan = (startTime, endTime) => {
   if (!startTime || !endTime) return "";
   return `${startTime.slice(0, 5)} – ${endTime.slice(0, 5)}`;
+};
+
+/**
+ * Renders how many working days a request takes hours from.
+ *
+ * @param {number|null|undefined} count From the server's `workdays`.
+ * @returns {string} e.g. `3 working days`, or an empty string when unknown.
+ */
+export const formatWorkdays = (count) => {
+  if (count === null || count === undefined) return "";
+  return count === 1 ? "1 working day" : `${count} working days`;
+};
+
+/**
+ * Renders the days off inside a request's range that it takes no hours for.
+ *
+ * @param {Array<{date: string, holidayName: string|null}>|null|undefined} days
+ *   From the server's `daysNotCounted`; a null holiday name is a weekend day.
+ * @returns {string} e.g. `Jun 19 (Dragon Boat Festival), Jun 21 (weekend)`,
+ *   or an empty string when nothing was skipped.
+ */
+export const formatDaysNotCounted = (days) => {
+  if (!days || days.length === 0) return "";
+  return days
+    .map(({ date, holidayName }) => {
+      const { month, day } = parts(date);
+      return `${month} ${day} (${holidayName || "weekend"})`;
+    })
+    .join(", ");
 };

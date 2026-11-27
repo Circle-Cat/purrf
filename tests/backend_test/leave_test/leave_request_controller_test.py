@@ -41,6 +41,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         self.service.withdraw = AsyncMock(return_value=MagicMock())
         self.service.decide = AsyncMock(return_value=MagicMock())
         self.service.list_own = AsyncMock(return_value=[])
+        self.service.preview = AsyncMock(return_value=MagicMock())
         self.service.list_for_approver = AsyncMock(return_value=[])
         self.controller = LeaveRequestController(self.service, self.database)
 
@@ -84,6 +85,25 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
             reason="Holiday",
         )
 
+    async def test_a_preview_passes_the_dates_and_drops_the_reason(self):
+        payload = LeaveRequestSubmitDto(
+            type=LeaveRequestType.PAID,
+            start_date=datetime.date(2026, 8, 13),
+            end_date=datetime.date(2026, 8, 15),
+            reason="Holiday",
+        )
+
+        await self.controller.preview(payload, self.ctx)
+
+        self.service.preview.assert_awaited_once_with(
+            self.session,
+            request_type=LeaveRequestType.PAID,
+            start_date=datetime.date(2026, 8, 13),
+            end_date=datetime.date(2026, 8, 15),
+            start_time=None,
+            end_time=None,
+        )
+
     async def test_withdrawing_names_the_caller_as_the_owner(self):
         await self.controller.withdraw(501, self.ctx)
 
@@ -121,13 +141,60 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         anybody read somebody else's standing."""
         self.service.standing = AsyncMock(
             return_value=SimpleNamespace(
-                is_covered=True, available=None, pending=None, used=None
+                is_covered=True,
+                available=None,
+                pending=None,
+                used=None,
+                approver=None,
+                approver_problem=None,
             )
         )
 
         await self.controller.coverage(self.ctx)
 
         self.service.standing.assert_awaited_once_with(self.session, 10)
+
+    async def test_coverage_names_the_approver(self):
+        """The request form says who will read the request before it is
+        filed."""
+        self.service.standing = AsyncMock(
+            return_value=SimpleNamespace(
+                is_covered=True,
+                available=None,
+                pending=None,
+                used=None,
+                approver=SimpleNamespace(user_id=20, name="Bob Manager", ldap="bob"),
+                approver_problem=None,
+            )
+        )
+
+        response = await self.controller.coverage(self.ctx)
+
+        data = response["data"].model_dump(by_alias=True)
+        self.assertEqual(data["approverUserId"], 20)
+        self.assertEqual(data["approverName"], "Bob Manager")
+        self.assertEqual(data["approverLdap"], "bob")
+        self.assertIsNone(data["approverProblem"])
+
+    async def test_coverage_says_why_nobody_would_approve(self):
+        self.service.standing = AsyncMock(
+            return_value=SimpleNamespace(
+                is_covered=True,
+                available=None,
+                pending=None,
+                used=None,
+                approver=None,
+                approver_problem="Your manager (bob) has no purrf account.",
+            )
+        )
+
+        response = await self.controller.coverage(self.ctx)
+
+        data = response["data"].model_dump(by_alias=True)
+        self.assertIsNone(data["approverName"])
+        self.assertEqual(
+            data["approverProblem"], "Your manager (bob) has no purrf account."
+        )
 
     def test_every_route_is_open_to_any_signed_in_employee(self):
         """Leave is not an administered feature: everybody files their own and
@@ -140,6 +207,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
             ("/leave/requests", "POST"),
             ("/leave/requests", "GET"),
             ("/leave/requests/approvals", "GET"),
+            ("/leave/requests/preview", "POST"),
             ("/leave/requests/{request_id}/withdraw", "POST"),
             ("/leave/requests/{request_id}/decision", "POST"),
         ):
@@ -241,6 +309,20 @@ class TestLeaveRequestRoutesOverHttp(unittest.TestCase):
         response = self._decide({"approve": False})
 
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+
+    def test_a_preview_of_dates_that_cannot_be_filed_is_a_400(self):
+        """The form shows the same message filing would give."""
+        self.service.preview = AsyncMock(
+            side_effect=ValueError("Those days are already time off.")
+        )
+
+        response = self.client.post(
+            "/leave/requests/preview",
+            json={"type": "paid", "startDate": "2026-08-23", "endDate": "2026-08-24"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already time off", response.json()["message"])
 
     def test_withdrawing_a_decided_request_is_a_409(self):
         self.service.withdraw.side_effect = ConflictError(

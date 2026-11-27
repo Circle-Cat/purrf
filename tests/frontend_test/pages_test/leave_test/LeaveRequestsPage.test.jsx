@@ -162,6 +162,23 @@ describe("LeaveRequestsPage", () => {
     );
   });
 
+  it("says leave did not load, rather than that it is not tracked", async () => {
+    api.getLeaveCoverage.mockRejectedValueOnce(new Error("network error"));
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load your leave.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/isn't tracked/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/24\.00 h/)).toBeInTheDocument(),
+    );
+  });
+
   it("offers a retry when the list will not load", async () => {
     api.getMyLeaveRequests.mockRejectedValueOnce(new Error("network error"));
     api.getMyLeaveRequests.mockResolvedValue(envelope([row()]));
@@ -192,5 +209,57 @@ describe("LeaveRequestsPage", () => {
     expect(
       screen.queryByRole("button", { name: /request/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("says when sick leave was approved automatically, and why", async () => {
+    api.getMyLeaveRequests.mockResolvedValue(
+      envelope([
+        row({
+          type: "sick",
+          status: "approved",
+          startDate: "2026-08-25",
+          endDate: "2026-08-25",
+          hours: "8.00",
+          isAutoApproved: true,
+        }),
+      ]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Approved automatically")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/needs nobody's decision/i)).toBeInTheDocument();
+    expect(screen.queryByText("Approved")).not.toBeInTheDocument();
+  });
+
+  it("explains the hours of a range with the days it did not count", async () => {
+    api.getMyLeaveRequests.mockResolvedValue(
+      envelope([
+        row({
+          startDate: "2026-06-18",
+          endDate: "2026-06-22",
+          hours: "16.00",
+          workdays: 2,
+          daysNotCounted: [
+            { date: "2026-06-19", holidayName: "Dragon Boat Festival" },
+            { date: "2026-06-21", holidayName: null },
+            { date: "2026-06-22", holidayName: null },
+          ],
+        }),
+      ]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/2 working days · 16\.00 h/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(
+        "Not counted: Jun 19 (Dragon Boat Festival), Jun 21 (weekend), Jun 22 (weekend)",
+      ),
+    ).toBeInTheDocument();
   });
 });

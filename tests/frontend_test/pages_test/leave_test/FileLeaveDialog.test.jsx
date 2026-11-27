@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import FileLeaveDialog from "@/pages/Leave/components/FileLeaveDialog";
+import * as api from "@/api/leaveApi";
+
+vi.mock("@/api/leaveApi");
 
 const open = (props = {}) => {
   const onSubmit = vi.fn().mockResolvedValue(true);
@@ -30,6 +33,169 @@ const setDates = (first, last) => {
 describe("FileLeaveDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: {
+        hours: "24.00",
+        workdays: 3,
+        daysNotCounted: [],
+        isLateNotice: false,
+        requiredNoticeWorkdays: 6,
+      },
+    });
+  });
+
+  it("shows what the dates come to before anything is submitted", async () => {
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: {
+        hours: "40.00",
+        workdays: 5,
+        daysNotCounted: [
+          { date: "2026-12-25", holidayName: "QA holiday" },
+          { date: "2026-12-27", holidayName: null },
+          { date: "2026-12-28", holidayName: null },
+        ],
+      },
+    });
+    const onSubmit = open();
+
+    setDates("2026-12-22", "2026-12-29");
+
+    expect(
+      await screen.findByText(
+        "Dec 22 – Dec 29, 2026 · 5 working days · 40.00 h",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Not counted: Dec 25 (QA holiday), Dec 27 (weekend), Dec 28 (weekend)",
+      ),
+    ).toBeInTheDocument();
+    expect(api.previewLeaveRequest).toHaveBeenCalledWith({
+      type: "paid",
+      startDate: "2026-12-22",
+      endDate: "2026-12-29",
+      startTime: null,
+      endTime: null,
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("shows why the dates cannot be filed before Submit is pressed", async () => {
+    api.previewLeaveRequest.mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          message:
+            "Those days are already time off, so there is nothing to request.",
+        },
+      },
+    });
+    open();
+
+    setDates("2026-12-27", "2026-12-28");
+
+    expect(
+      await screen.findByText(
+        "Those days are already time off, so there is nothing to request.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("warns before filing that the request will be marked short notice", async () => {
+    api.previewLeaveRequest.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: {
+        hours: "24.00",
+        workdays: 3,
+        daysNotCounted: [],
+        isLateNotice: true,
+        requiredNoticeWorkdays: 6,
+      },
+    });
+    open();
+
+    setDates("2026-12-22", "2026-12-24");
+
+    expect(
+      await screen.findByText(
+        "Less than 6 working days' notice. Your manager will see it marked as short notice.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("drops an earlier submit's refusal once the dates change", async () => {
+    // The refusal was about the old dates; the preview speaks for the new.
+    const onSubmit = vi.fn().mockResolvedValue(false);
+    render(
+      <FileLeaveDialog
+        isOpen
+        isSaving={false}
+        saveError="These days are already covered by request 7."
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+    setDates("2026-12-22", "2026-12-24");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(
+      await screen.findByText("These days are already covered by request 7."),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Last day"), {
+      target: { value: "2026-12-25" },
+    });
+
+    expect(
+      screen.queryByText("These days are already covered by request 7."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("asks nothing until both dates make sense", async () => {
+    open();
+
+    fireEvent.change(screen.getByLabelText("First day"), {
+      target: { value: "2026-12-22" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(api.previewLeaveRequest).not.toHaveBeenCalled();
+  });
+
+  it("says who will read the request before it is filed", () => {
+    open({ approverName: "Jasmine Li", approverLdap: "jasmine" });
+
+    expect(
+      screen.getByText(
+        "Your request goes to Jasmine Li (jasmine) for approval.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
+  });
+
+  it("shows why nobody can approve it, and will not submit", () => {
+    const onSubmit = open({
+      approverProblem:
+        "Your manager (jasmine) has no purrf account, so they cannot approve anything yet.",
+    });
+    setDates("2026-10-01", "2026-10-03");
+
+    expect(
+      screen.getByText(/Your manager \(jasmine\) has no purrf account/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about the approver before it is known", () => {
+    open();
+
+    expect(screen.queryByText(/for approval/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).toBeEnabled();
   });
 
   it("sends the dates as the strings the inputs hold", async () => {
@@ -60,6 +226,24 @@ describe("FileLeaveDialog", () => {
     setDates("2026-10-01", "2026-10-01");
 
     expect(screen.getByLabelText("From (optional)")).toBeInTheDocument();
+  });
+
+  it("offers only half-hour times, the steps the server takes leave in", () => {
+    open();
+    setDates("2026-10-01", "2026-10-01");
+
+    for (const label of ["From (optional)", "To (optional)"]) {
+      const choices = Array.from(
+        screen.getByLabelText(label).querySelectorAll("option"),
+        (option) => option.value,
+      );
+      // A blank for "no times", then every half hour of the day.
+      expect(choices).toHaveLength(49);
+      expect(choices[0]).toBe("");
+      expect(choices.slice(1, 4)).toEqual(["00:00", "00:30", "01:00"]);
+      expect(choices.at(-1)).toBe("23:30");
+      expect(choices).not.toContain("16:20");
+    }
   });
 
   it("offers no times on an exchange, which is always whole days", () => {

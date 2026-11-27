@@ -110,8 +110,18 @@ const PersonalDashboard = () => {
   // Whether the feature applies to the viewer at all. Independent of the line
   // above: a manager outside the leave population decides their reports'
   // requests and has no leave of their own.
-  const { isCovered, availableHours, pendingHours, usedHours } =
-    useLeaveStanding({ enabled: isLeaveEnabled });
+  const {
+    isCovered,
+    availableHours,
+    pendingHours,
+    usedHours,
+    approverName,
+    approverLdap,
+    approverProblem,
+    loadError: leaveLoadError,
+    reload: reloadLeave,
+    refresh: refreshLeave,
+  } = useLeaveStanding({ enabled: isLeaveEnabled });
 
   return (
     <div className="personal-dashboard space-y-5">
@@ -184,6 +194,12 @@ const PersonalDashboard = () => {
           availableHours={availableHours}
           pendingHours={pendingHours}
           usedHours={usedHours}
+          approverName={approverName}
+          approverLdap={approverLdap}
+          approverProblem={approverProblem}
+          loadError={leaveLoadError}
+          onRetry={reloadLeave}
+          onFiled={refreshLeave}
         />
       )}
 

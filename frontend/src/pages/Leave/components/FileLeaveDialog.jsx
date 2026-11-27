@@ -15,6 +15,8 @@ import {
   LEAVE_REQUEST_TYPE,
   LEAVE_TYPE_LABELS,
 } from "@/constants/LeaveRequest";
+import RequestSpan from "@/pages/Leave/components/RequestSpan";
+import { useLeaveRequestPreview } from "@/pages/Leave/hooks/useLeaveRequestPreview";
 
 const EMPTY = {
   type: LEAVE_REQUEST_TYPE.PAID,
@@ -24,6 +26,16 @@ const EMPTY = {
   endTime: "",
   reason: "",
 };
+
+/**
+ * Every time a part day may start or end at: the server takes leave in
+ * half-hour steps and refuses anything else, so nothing else is offered.
+ * "HH:MM", the shape the request sends.
+ */
+const HALF_HOURS = Array.from({ length: 48 }, (_, index) => {
+  const hour = String(Math.floor(index / 2)).padStart(2, "0");
+  return `${hour}:${index % 2 ? "30" : "00"}`;
+});
 
 /**
  * Whether this request can carry clock times.
@@ -72,11 +84,16 @@ const structuralProblem = (form) => {
  * has to construct a Date, and a native control needs no pointer events to be
  * driven in a test.
  *
- * The hours the days come to are not shown here. They are computed on the
- * server -- the count skips company holidays and the weekend -- and a second
- * implementation in the browser would quote a figure the ledger then
- * contradicts. The figure appears on the request as soon as it is filed, and a
- * pending request can be taken back if it surprises.
+ * The hours the days come to are asked of the server as soon as the dates
+ * make sense, and shown above Submit with the working days and the days off
+ * the range skips. They are never worked out here: the count skips company
+ * holidays and the weekend, and a second implementation in the browser would
+ * quote a figure the ledger then contradicts. When the dates cannot be filed
+ * the server's reason shows instead, before anything is submitted.
+ *
+ * Who will read the request is said above Submit, from the same lookup filing
+ * makes. When nobody can approve it, the reason is shown instead and Submit is
+ * off: filing would only be refused with that same reason.
  *
  * @param {{
  *   isOpen: boolean,
@@ -84,6 +101,9 @@ const structuralProblem = (form) => {
  *   saveError: string|null,
  *   onClose: () => void,
  *   onSubmit: (payload: object) => Promise<boolean>,
+ *   approverName?: string|null,
+ *   approverLdap?: string|null,
+ *   approverProblem?: string|null,
  * }} props
  */
 const FileLeaveDialog = ({
@@ -92,6 +112,9 @@ const FileLeaveDialog = ({
   saveError,
   onClose,
   onSubmit,
+  approverName = null,
+  approverLdap = null,
+  approverProblem = null,
 }) => {
   const [form, setForm] = useState(EMPTY);
   const [problem, setProblem] = useState(null);
@@ -99,8 +122,25 @@ const FileLeaveDialog = ({
   // so it is shown only for a submit made since the dialog was opened.
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
-  const set = (field) => (event) =>
+  const withTimes = takesTimes(form) && form.startTime && form.endTime;
+  const payload =
+    isOpen && !structuralProblem(form)
+      ? {
+          type: form.type,
+          startDate: form.startDate,
+          endDate: form.endDate,
+          startTime: withTimes ? form.startTime : null,
+          endTime: withTimes ? form.endTime : null,
+        }
+      : null;
+  const { preview, previewError } = useLeaveRequestPreview(payload);
+
+  // Changing what is being asked for retires the refusal of the last submit:
+  // it was about other dates, and the preview now speaks for these ones.
+  const set = (field) => (event) => {
+    if (field !== "reason") setHasSubmitted(false);
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
 
   const close = () => {
     setForm(EMPTY);
@@ -114,7 +154,6 @@ const FileLeaveDialog = ({
     setProblem(found);
     if (found) return;
 
-    const withTimes = takesTimes(form) && form.startTime && form.endTime;
     setHasSubmitted(true);
     const saved = await onSubmit({
       type: form.type,
@@ -176,21 +215,35 @@ const FileLeaveDialog = ({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="leave-start-time">From (optional)</Label>
-                <Input
+                <select
                   id="leave-start-time"
-                  type="time"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                   value={form.startTime}
                   onChange={set("startTime")}
-                />
+                >
+                  <option value="">—</option>
+                  {HALF_HOURS.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="leave-end-time">To (optional)</Label>
-                <Input
+                <select
                   id="leave-end-time"
-                  type="time"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                   value={form.endTime}
                   onChange={set("endTime")}
-                />
+                >
+                  <option value="">—</option>
+                  {HALF_HOURS.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           )}
@@ -205,6 +258,32 @@ const FileLeaveDialog = ({
             />
           </div>
 
+          {preview && payload && (
+            <RequestSpan row={{ ...payload, ...preview }} />
+          )}
+          {preview?.isLateNotice && (
+            <p className="text-sm text-amber-700">
+              {`Less than ${preview.requiredNoticeWorkdays} working days' notice. Your manager will see it marked as short notice.`}
+            </p>
+          )}
+          {previewError && !(hasSubmitted && saveError) && (
+            <p className="text-sm text-red-700">{previewError}</p>
+          )}
+
+          {approverProblem ? (
+            <p className="text-sm text-red-700">{approverProblem}</p>
+          ) : (
+            (approverName || approverLdap) && (
+              <p className="text-sm text-muted-foreground">
+                {`Your request goes to ${
+                  approverName && approverLdap
+                    ? `${approverName} (${approverLdap})`
+                    : approverName || approverLdap
+                } for approval.`}
+              </p>
+            )
+          )}
+
           {problem && <p className="text-sm text-red-700">{problem}</p>}
           {/* The server's own wording: each refusal names the fix, and a
               generic message would throw that away. */}
@@ -217,7 +296,10 @@ const FileLeaveDialog = ({
           <Button variant="outline" disabled={isSaving} onClick={close}>
             Cancel
           </Button>
-          <Button disabled={isSaving} onClick={submit}>
+          <Button
+            disabled={isSaving || Boolean(approverProblem)}
+            onClick={submit}
+          >
             {isSaving ? "Submitting…" : "Submit"}
           </Button>
         </DialogFooter>

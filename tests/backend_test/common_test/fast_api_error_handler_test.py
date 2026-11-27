@@ -261,5 +261,67 @@ class TestFastAPIExceptionHandler(TestCase):
         self.assertIn("pipeline returned 2 of 3", args)
 
 
+class TestClientErrorsEndAtTheHandler(TestCase):
+    """A refusal answered with a 4xx must not reach the server as an exception.
+
+    Starlette re-raises whatever its outermost middleware handled, and uvicorn
+    logs that as an ERROR with a stack trace. A TestClient that raises server
+    exceptions sees exactly what uvicorn would.
+    """
+
+    def setUp(self):
+        self.app = FastAPI()
+        register_exception_handlers(self.app)
+        self.client = TestClient(self.app)
+        self.logger_patcher = patch("backend.common.fast_api_error_handler.logger")
+        self.logger_patcher.start()
+
+    def tearDown(self):
+        self.logger_patcher.stop()
+
+    def test_client_errors_are_not_reraised(self):
+        cases = [
+            (ValueError("bad"), HTTPStatus.BAD_REQUEST),
+            (PermissionError("no"), HTTPStatus.FORBIDDEN),
+            (NotFoundError("gone"), HTTPStatus.NOT_FOUND),
+            (ConflictError("stale"), HTTPStatus.CONFLICT),
+            (RateLimitedError("slow down"), HTTPStatus.TOO_MANY_REQUESTS),
+        ]
+        for index, (exc, status) in enumerate(cases):
+            route = f"/api/test/{index}"
+
+            @self.app.get(route)
+            def trigger_error(exc=exc):
+                raise exc
+
+            with self.subTest(type(exc).__name__):
+                response = self.client.get(route)
+                self.assertEqual(response.status_code, status)
+
+    def test_validation_error_is_not_reraised(self):
+        route = "/api/test/validation"
+
+        class Item(BaseModel):
+            price: int
+
+        @self.app.post(route)
+        def trigger_validation(item: Item):
+            return item
+
+        response = self.client.post(route, json={"price": "x"})
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+
+    def test_unexpected_error_still_reaches_the_server(self):
+        route = "/api/test/boom"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise Exception(UNEXPECTED_ERROR_MSG)
+
+        with self.assertRaisesRegex(Exception, UNEXPECTED_ERROR_MSG):
+            self.client.get(route)
+
+
 if __name__ == "__main__":
     main()

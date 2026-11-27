@@ -1,19 +1,21 @@
 import React from "react";
 import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest";
-import { formatBusinessDate } from "@/pages/Leave/utils/leaveDates";
+import { formatBusinessRange } from "@/pages/Leave/utils/leaveDates";
 
 /**
  * BalanceHistoryRow
  *
  * One entry in the balance history ledger.
  * Matches the prototype: title + note on the left, colored hours + date on the right.
+ * A request's days arrive as one line from its first day to its last, shown as
+ * a range; any other line is a single day.
  *
  * @param {{ entry: object, showPerson?: boolean }} props
  */
 
 const BalanceHistoryRow = ({ entry, showPerson = false }) => {
   const displayType = ENTRY_TYPE_LABELS[entry.entryType] || entry.entryType;
-  const formattedDate = formatBusinessDate(entry.effectiveDate);
+  const formattedDate = formatBusinessRange(entry.effectiveDate, entry.endDate);
 
   const value = Number(entry.hours ?? 0);
   const displayHours = entry.hours ?? "0.00";
