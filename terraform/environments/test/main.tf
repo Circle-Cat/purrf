@@ -56,6 +56,8 @@ module "purrf_instance" {
   gmail_sender_notification = "notification-test@circlecat.org"
   gmail_sender_mentorship   = "mentorship-test@circlecat.org"
   gmail_sender_inquiries    = "inquiries-test@circlecat.org"
+  # Send no email from test; see staging's main.tf.
+  email_sending_enabled = false
   # Staging claims the aliases' mail; see its main.tf.
   gmail_inbox_enabled = false
 

@@ -244,6 +244,12 @@ variable "gmail_sender_inquiries" {
   default     = ""
 }
 
+variable "email_sending_enabled" {
+  description = "Send email through Gmail. False refuses every send (notifications are marked failed, Inbox replies and recruiting emails answer with an error) while reading the mailbox carries on. Off on test and staging, whose copies of prod people are real colleagues."
+  type        = bool
+  default     = true
+}
+
 variable "gmail_inbox_enabled" {
   description = "Claim new mail sent to the mentorship, recruiting and inquiries senders for this environment's Inbox. Environments sharing a mailbox and its aliases (test and staging) must not both turn it on, or each would file the same mail."
   type        = bool

@@ -77,6 +77,7 @@ resource "kubernetes_secret" "purrf_app" {
     GMAIL_SENDER_INQUIRIES       = var.gmail_sender_inquiries
     GMAIL_INBOX_ENABLED          = var.gmail_inbox_enabled ? "true" : "false"
     GMAIL_INBOX_UNSORTED_ENABLED = var.gmail_inbox_unsorted_enabled ? "true" : "false"
+    EMAIL_SENDING_ENABLED        = var.email_sending_enabled ? "true" : "false"
 
     # Kit v4 API key for mentorship notifications. Read only when a send is
     # made, so an empty value boots fine with the mentorship-kit-email flag off.

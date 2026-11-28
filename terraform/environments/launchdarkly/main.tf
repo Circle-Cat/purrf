@@ -82,7 +82,7 @@ locals {
       key          = "mentorship-kit-email"
       name         = "Mentorship Kit Email"
       description  = "Lets a mentorship admin send notifications to participants through Kit"
-      off_in       = []
+      off_in       = ["staging", "test"]
       public_in    = ["production", "staging", "test"]
       allow_emails = []
     }

@@ -58,6 +58,9 @@ module "purrf_instance" {
   gmail_sender_notification = "notification-test@circlecat.org"
   gmail_sender_mentorship   = "mentorship-test@circlecat.org"
   gmail_sender_inquiries    = "inquiries-test@circlecat.org"
+  # Staging people are real colleagues: send them no email. The backend
+  # reads this at start, so restart it after applying a change.
+  email_sending_enabled = false
 
   # The shared mailbox has one watch topic, owned by test. Mail to the aliases
   # is claimed here rather than on test: only one of the two may claim it, or
