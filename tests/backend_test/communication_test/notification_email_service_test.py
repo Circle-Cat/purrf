@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 
+from backend.common.email_sending import EmailSendingDisabledError
 from backend.communication.notification_email_service import (
     NotificationEmailService,
 )
@@ -46,6 +47,16 @@ class TestNotificationEmailService(unittest.IsolatedAsyncioTestCase):
         # The recipient must be in the log line -- a silent drop with no way
         # to tell who missed their notification is not debuggable.
         self.assertIn("a@b.com", str(self.logger.error.call_args))
+
+    async def test_send_lets_sending_being_off_through(self):
+        """Every other failure is swallowed and retried; this one is permanent,
+        so delivery has to see it to mark the notification failed."""
+        self.gmail.send_message = MagicMock(
+            side_effect=EmailSendingDisabledError("off")
+        )
+
+        with self.assertRaises(EmailSendingDisabledError):
+            await self.service.send("a@b.com", "Subject", "<p>Body</p>")
 
     async def test_send_does_not_start_a_thread_or_reply(self):
         await self.service.send("a@b.com", "Subject", "<p>Body</p>")

@@ -17,6 +17,7 @@ from backend.common.exceptions import (
     RateLimitedError,
 )
 from backend.common.gmail_client import GmailClient
+from backend.common.email_sending import EmailSendingDisabledError
 
 TEST_CLIENT_ID = "test-client-id"
 TEST_CLIENT_SECRET = "test-client-secret"
@@ -319,6 +320,28 @@ class TestGmailClient(TestCase):
                 sender="someone-else@example.com",
             )
         # Rejected before any Gmail service is built, so nothing went out.
+        self.mock_build.assert_not_called()
+
+    def test_send_message_refuses_everything_while_sending_is_off(self):
+        client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[TEST_SENDER],
+            sending_enabled=False,
+        )
+
+        with self.assertRaises(EmailSendingDisabledError) as caught:
+            client.send_message(
+                to=["a@example.com"],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+
+        self.assertEqual(
+            str(caught.exception), "Email is switched off in this environment."
+        )
+        # Refused before any Gmail service is built, so nothing went out.
         self.mock_build.assert_not_called()
 
     def test_owns_address_ignores_case_and_reads_a_display_name_header(self):

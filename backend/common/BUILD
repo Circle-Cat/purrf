@@ -78,9 +78,16 @@ py_library(
 )
 
 py_library(
+    name = "email_sending",
+    srcs = ["email_sending.py"],
+    deps = [":environment_constants"],
+)
+
+py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
     deps = [
+        ":email_sending",
         ":environment_constants",
         ":exceptions",
         ":html_text",
