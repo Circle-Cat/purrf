@@ -46,3 +46,7 @@ suspendCronjobs:
   # Prod-only jobs: prod holds the real chat subscriptions and the GitHub App.
   - check-chat-subscriptions
   - update-github-activity
+  # The leave jobs, always together (see values.yaml). Run them by hand when a
+  # test needs a week's accrual or a year's close.
+  - leave-weekly-accrual
+  - leave-annual-close
