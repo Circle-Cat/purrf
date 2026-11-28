@@ -117,6 +117,7 @@ py_library(
         "//backend/authentication:email_management_service",
         "//backend/common:auth0_client",
         "//backend/common:database",
+        "//backend/common:email_sending",
         "//backend/common:gerrit_client",
         "//backend/common:gmail_client",
         "//backend/common:jira_client",

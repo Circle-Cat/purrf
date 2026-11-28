@@ -15,6 +15,8 @@ logged and swallowed rather than raised.
 
 import asyncio
 
+from backend.common.email_sending import EmailSendingDisabledError
+
 
 class NotificationEmailService:
     """Delivers a rendered notification email through Gmail."""
@@ -50,6 +52,10 @@ class NotificationEmailService:
             subject (str): Subject line.
             body_html (str): Rendered HTML body.
 
+        Raises:
+            EmailSendingDisabledError: Email is switched off in this
+                environment; the one failure that is not swallowed.
+
         Returns:
             bool: True when Gmail accepted the message, False when the send
             failed (the failure is logged, never raised -- the caller runs
@@ -65,6 +71,10 @@ class NotificationEmailService:
                 sender=f"Purrf Notifications <{self._sender_address}>",
             )
             return True
+        except EmailSendingDisabledError:
+            # Permanent, unlike every failure below: let delivery mark it
+            # failed instead of retrying while email is switched off.
+            raise
         except Exception:
             self._logger.error(
                 "Failed to send notification email to %s (subject %r)",
