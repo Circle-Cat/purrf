@@ -235,3 +235,8 @@ cronjobs:
 # Jobs only some environments run, set in that environment's values file.
 # Same fields as cronjobs; kept apart because Helm replaces a list as a whole.
 extraCronjobs: []
+
+# Names of cronjobs (from cronjobs or extraCronjobs) this environment keeps
+# suspended, set in that environment's values file. A suspended job still
+# exists and can be started by hand with `kubectl create job --from=cronjob/...`.
+suspendCronjobs: []
