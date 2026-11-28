@@ -1,4 +1,4 @@
-{{- range concat .Values.cronjobs (.Values.extraCronjobs | default list) }}
+{{- range .Values.cronjobs }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -9,8 +9,8 @@ spec:
   {{- if .concurrencyPolicy }}
   concurrencyPolicy: {{ .concurrencyPolicy }}
   {{- end }}
-  {{- if .suspend }}
-  suspend: {{ .suspend }}
+  {{- if or .suspend (has .name ($.Values.suspendCronjobs | default list)) }}
+  suspend: true
   {{- end }}
   jobTemplate:
     spec:
