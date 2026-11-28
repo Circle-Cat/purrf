@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.email_sending import EmailSendingDisabledError
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import NotificationStatus
 from backend.entity.event_entity import EventEntity
@@ -229,6 +230,18 @@ class DeliveryServiceTeamsTest(DeliveryServiceTest):
 
         await self.service.deliver(self.session, notification.notification_id)
 
+        self.assertEqual(notification.status, NotificationStatus.FAILED)
+        self.teams.send.assert_awaited_once()
+
+    async def test_email_switched_off_fails_for_good_and_still_reaches_teams(self):
+        """Test and staging send no email: the notification is failed, not
+        retried, and the Teams copy still goes."""
+        notification = await self._make_notification()
+        self.email.send.side_effect = EmailSendingDisabledError("off")
+
+        outcome = await self.service.deliver(self.session, notification.notification_id)
+
+        self.assertEqual(outcome, DeliveryOutcome.ACKED)
         self.assertEqual(notification.status, NotificationStatus.FAILED)
         self.teams.send.assert_awaited_once()
 

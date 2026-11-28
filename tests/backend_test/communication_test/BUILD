@@ -47,6 +47,7 @@ py_test(
     name = "notification_email_service_test",
     srcs = ["notification_email_service_test.py"],
     deps = [
+        "//backend/common:email_sending",
         "//backend/communication",
     ],
 )

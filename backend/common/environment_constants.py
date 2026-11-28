@@ -171,6 +171,10 @@ TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
 TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"
 KIT_API_KEY = "KIT_API_KEY"
 
+# "false" switches off every email sent through Gmail. Unset means on, which is
+# how prod runs; test and staging set it so real colleagues are not emailed.
+EMAIL_SENDING_ENABLED = "EMAIL_SENDING_ENABLED"
+
 # The chat subscriptions this environment should hold, for the subscription
 # check: comma-separated Teams chat ids and Google Chat space names
 # (spaces/<id>), plus where this environment's own subscriptions deliver, so a

@@ -51,6 +51,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from backend.common.email_sending import (
+    SENDING_OFF_MESSAGE,
+    EmailSendingDisabledError,
+)
 from backend.common.environment_constants import (
     GMAIL_CLIENT_ID,
     GMAIL_CLIENT_SECRET,
@@ -150,7 +154,7 @@ def _describe_refresh_error(error):
 class GmailClient:
     """Domain-agnostic Gmail send/read transport (see module docstring)."""
 
-    def __init__(self, logger, retry_utils, sender_addresses):
+    def __init__(self, logger, retry_utils, sender_addresses, sending_enabled=True):
         """
         Read the Gmail credentials from the environment.
 
@@ -165,6 +169,9 @@ class GmailClient:
                 the environment: which services exist is a wiring question, and
                 this class stays unaware of them. Each must be verified as a
                 Send-As on the mailbox.
+            sending_enabled (bool): False refuses every send, from
+                ``email_sending.email_sending_enabled``. Reading the mailbox is
+                unaffected.
 
         Raises:
             ValueError: If any required environment variable is missing, if
@@ -179,6 +186,7 @@ class GmailClient:
             for address in (sender_addresses or [])
             if parseaddr(address or "")[1]
         }
+        self._sending_enabled = sending_enabled
         self._logger = logger
         self._retry_utils = retry_utils
         self._local = threading.local()
@@ -267,6 +275,8 @@ class GmailClient:
 
         Raises:
             ValueError: If ``sender`` is not an address this mailbox sends as.
+            EmailSendingDisabledError: If sending is switched off in this
+                environment. Nothing is sent.
             RateLimitedError: If Gmail throttles the request (HTTP 429).
             RuntimeError: For any other Gmail API failure.
         """
@@ -274,6 +284,8 @@ class GmailClient:
             raise ValueError(
                 f"Not a configured sender address for this mailbox: {sender!r}"
             )
+        if not self._sending_enabled:
+            raise EmailSendingDisabledError(SENDING_OFF_MESSAGE)
         sender_domain = parseaddr(sender)[1].split("@")[-1]
         rfc822_message_id = make_msgid(domain=sender_domain)
         mime = self._build_mime(

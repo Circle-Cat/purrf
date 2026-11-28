@@ -2,6 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
+from backend.common.email_sending import email_sending_enabled
 from backend.common.redis_client import RedisClient
 from backend.common.google_client import GoogleClient
 from backend.common.jira_client import JiraClient
@@ -379,6 +380,9 @@ class AppDependencyBuilder:
         user_email = os.getenv(USER_EMAIL)
 
         self.logger = get_logger()
+
+        # False on test and staging: no email leaves them. Unset (prod) is on.
+        self.email_sending_enabled = email_sending_enabled()
         self.retry_utils = RetryUtils()
 
         self.launchdarkly_client = LaunchDarklyClient(logger=self.logger)
@@ -1032,6 +1036,7 @@ class AppDependencyBuilder:
                 self.notification_sender_address,
                 *self.inbox_aliases.addresses(),
             ],
+            sending_enabled=self.email_sending_enabled,
         )
         self.application_submission_repository = ApplicationSubmissionRepository()
         self.recruiting_notification_service = RecruitingNotificationService(
