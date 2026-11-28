@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Integer,
     String,
@@ -77,6 +78,10 @@ class UsersEntity(Base):
     deactivated_by: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"))
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deactivated_reason: Mapped[str | None] = mapped_column(String)
+
+    # The numeric GitHub user id, looked up from the profile URL the person
+    # gives. The id rather than the username: usernames can be renamed.
+    github_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
 
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()
