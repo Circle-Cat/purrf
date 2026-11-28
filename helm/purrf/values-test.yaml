@@ -33,3 +33,16 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+
+# Data syncs test does not need day to day; start one by hand when a test needs
+# fresh data: kubectl -n purrf-test create job --from=cronjob/purrf-test-<name> <job-name>
+suspendCronjobs:
+  - update-ldap
+  - update-jira-projects
+  - update-jira-issues
+  - update-google-calendar-events
+  - gmail-watch-maintain
+  - sync-meet-attendance
+  # Prod-only jobs: prod holds the real chat subscriptions and the GitHub App.
+  - check-chat-subscriptions
+  - update-github-activity
