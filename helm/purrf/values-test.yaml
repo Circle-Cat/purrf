@@ -10,7 +10,7 @@ image:
   # [skip ci]); the purrf-test ArgoCD Application syncs it. The "main" value
   # here is just the bootstrap before the first deploy-test run pins a SHA.
   repository: ghcr.io/circle-cat/purrf
-  tag: "43556cb47ff8ba06ac6a4f026449bb29e8723fe5"
+  tag: "e2eb4ad8180e1265b66ee45fe16b6b0669c07f3d"
 # The PreSync migration hook runs `alembic upgrade head` against this
 # environment's database before the Deployment is applied. A failed migration
 # fails the sync, so the pods already running keep serving the old schema.
@@ -33,7 +33,6 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-
 # Data syncs test does not need day to day; start one by hand when a test needs
 # fresh data: kubectl -n purrf-test create job --from=cronjob/purrf-test-<name> <job-name>
 suspendCronjobs:
